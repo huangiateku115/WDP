@@ -14,7 +14,7 @@ export interface IUser extends Document {
   displayName: string;
   phone?: string;
   role: UserRole;
-  assignedFacilityIds: Types.ObjectId[];
+  assignedFacilityId?: Types.ObjectId | null;
   isActive: boolean;
   lastLoginAt?: Date;
   createdAt: Date;

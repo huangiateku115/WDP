@@ -31,10 +31,11 @@ const userSchema = new Schema<IUser>(
       enum: Object.values(UserRole),
       default: UserRole.CUSTOMER
     },
-    assignedFacilityIds: [{ 
+    assignedFacilityId: { 
       type: Schema.Types.ObjectId, 
-      ref: 'Facility' 
-    }],
+      ref: 'Facility',
+      default: null
+    },
     isActive: { 
       type: Boolean, 
       default: true 

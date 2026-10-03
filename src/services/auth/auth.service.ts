@@ -1,33 +1,70 @@
 import UserModel from '../../models/users/user.model';
-import { IUser } from '../../types/user.type';
+import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { keycloakConfig } from '../../config/keycloak.config';
 
-export const syncUserWithKeycloak = async (tokenPayload: any): Promise<IUser> => {
-  const keycloakSub = tokenPayload.sub;
-  const email = tokenPayload.email;
-  // Keycloak thường trả về name hoặc preferred_username
-  const displayName = tokenPayload.name || tokenPayload.preferred_username || email.split('@')[0]; 
+const JWKS = createRemoteJWKSet(new URL(keycloakConfig.jwksUri));
 
-  if (!keycloakSub || !email) {
-    throw new Error('Token payload is missing required fields (sub, email)');
-  }
+export class AuthService {
+  static async login(email: string, password: string) {
+    const KC_TOKEN_URL = `${process.env.KEYCLOAK_BASE_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`;
+    const params = new URLSearchParams();
+    params.append('client_id', process.env.KEYCLOAK_CLIENT_ID || 'wdp-backend');
+    params.append('client_secret', process.env.KEYCLOAK_CLIENT_SECRET || '');
+    params.append('grant_type', 'password');
+    params.append('username', email);
+    params.append('password', password);
 
-  let user = await UserModel.findOne({ keycloakSub });
-
-  if (!user) {
-    // Tạo user mới nếu chưa tồn tại
-    user = await UserModel.create({
-      keycloakSub,
-      email,
-      displayName,
-      lastLoginAt: new Date(),
+    const response = await fetch(KC_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
     });
-  } else {
-    // Cập nhật last login và các thông tin cơ bản có thể bị thay đổi trên Keycloak
+
+    if (!response.ok) {
+      throw new Error('Sai email hoặc mật khẩu');
+    }
+
+    const data = await response.json();
+    const token = data.access_token;
+
+    // Lấy sub từ token
+    const { payload } = await jwtVerify(token, JWKS, { issuer: keycloakConfig.issuer });
+    const sub = payload.sub as string;
+
+    // Kiểm tra DB
+    const user = await UserModel.findOne({ keycloakSub: sub });
+    if (!user) {
+      throw new Error('Tài khoản chưa được đăng ký trong hệ thống nội bộ');
+    }
+    if (!user.isActive) {
+      throw new Error('Tài khoản đã bị khóa');
+    }
+
     user.lastLoginAt = new Date();
-    user.email = email;
-    user.displayName = displayName;
     await user.save();
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      user
+    };
   }
 
-  return user;
-};
+  static async logout(refreshToken: string) {
+    const KC_LOGOUT_URL = `${process.env.KEYCLOAK_BASE_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/logout`;
+    const params = new URLSearchParams();
+    params.append('client_id', process.env.KEYCLOAK_CLIENT_ID || 'wdp-backend');
+    params.append('client_secret', process.env.KEYCLOAK_CLIENT_SECRET || '');
+    params.append('refresh_token', refreshToken);
+
+    const response = await fetch(KC_LOGOUT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    if (!response.ok) {
+      throw new Error('Đăng xuất thất bại');
+    }
+  }
+}

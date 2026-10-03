@@ -1,25 +1,32 @@
-import { Request, Response, NextFunction } from 'express';
-import { syncUserWithKeycloak } from '../../services/auth/auth.service';
+import { Request, Response } from 'express';
+import { AuthService } from '../../services/auth/auth.service';
 
-export const syncUser = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const login = async (req: Request, res: Response): Promise<void> => {
   try {
-    const payload = req.tokenPayload;
-    if (!payload) {
-      res.status(400).json({ success: false, message: 'Token payload missing' });
+    const { email, password } = req.body;
+    if (!email || !password) {
+      res.status(400).json({ success: false, message: 'Vui lòng cung cấp email và password' });
       return;
     }
 
-    const user = await syncUserWithKeycloak(payload);
-
-    res.status(200).json({
-      success: true,
-      message: 'User synced successfully',
-      data: user
-    });
+    const result = await AuthService.login(email, password);
+    res.status(200).json({ success: true, data: result });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Internal Server Error while syncing user'
-    });
+    res.status(401).json({ success: false, message: error.message });
+  }
+};
+
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      res.status(400).json({ success: false, message: 'Vui lòng cung cấp refreshToken' });
+      return;
+    }
+
+    await AuthService.logout(refreshToken);
+    res.status(200).json({ success: true, message: 'Đăng xuất thành công' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

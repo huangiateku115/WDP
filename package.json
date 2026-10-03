@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
+    "@keycloak/keycloak-admin-client": "^26.8.0",
     "amqplib": "^2.0.1",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "~1.4.4",

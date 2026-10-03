@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { syncUser } from '../controllers/auth/auth.controller';
-import { verifyTokenOnly } from '../middlewares/auth/verifyToken';
+import { login, logout } from '../controllers/auth/auth.controller';
+import { requireAuth } from '../middlewares/auth/requireAuth';
 
 const router = Router();
 
-// Route này KHÔNG kiểm tra user trong DB (requireAuth), mà chỉ verify Token để lưu xuống DB.
-router.post('/sync', verifyTokenOnly, syncUser);
+// Đăng nhập
+router.post('/login', login);
+
+// Đăng xuất (Yêu cầu phải có Access Token hợp lệ mới được gọi)
+router.post('/logout', requireAuth, logout);
 
 export default router;
