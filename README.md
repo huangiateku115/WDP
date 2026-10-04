@@ -25,7 +25,7 @@ Frontend và backend có dependencies, lockfile và lệnh chạy riêng. Chạy
 ## Yêu cầu
 
 - Node.js 22.12+ (đã kiểm tra với 22.23.3), npm.
-- MongoDB đang chạy và URI phù hợp cho backend.
+- Quyền truy cập MongoDB Atlas development cluster dùng chung của nhóm.
 - Docker nếu chạy Keycloak bằng Compose. Compose hiện chỉ cung cấp Keycloak, không tạo MongoDB.
 
 ## Backend
@@ -38,8 +38,8 @@ docker compose up -d
 npm run dev
 ```
 
-Chỉ sao chép `.env.example` lần đầu; chỉnh `MONGO_URL` theo môi trường thực tế. Không commit `.env`.
-Backend mặc định chạy tại `http://localhost:3000`, API prefix `/api/v1`. Server chỉ bắt đầu lắng nghe sau khi kết nối MongoDB thành công.
+Chỉ sao chép `.env.example` lần đầu. Mỗi developer đặt `MONGO_URL=<shared-mongodb-atlas-development-uri>` trong `backend/.env`, thay placeholder bằng URI Atlas development dùng chung. Compass dùng cùng URI này. Không commit `.env`, URI thật hoặc credentials.
+Backend mặc định chạy tại `http://localhost:3000`, API prefix `/api/v1`. Server chỉ bắt đầu lắng nghe sau khi kết nối MongoDB và khởi tạo Keycloak thành công.
 
 Keycloak được expose ở `http://localhost:8081`. Cần tạo realm `wdp-realm`, client và roles phù hợp với backend; Compose chưa tự import realm. Các giá trị KEYCLOAK trong `.env.example` khớp cổng Compose.
 
