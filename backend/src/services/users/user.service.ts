@@ -1,3 +1,4 @@
+import { env } from '../../config/env';
 import mongoose from 'mongoose';
 import UserModel from '../../models/users/user.model';
 import { UserRole } from '../../types/user.type';
@@ -48,10 +49,10 @@ export class UserService {
   // 3. USER: Change Password
   static async changeMyPassword(keycloakSub: string, email: string, oldPassword: string, newPassword: string) {
     // Thử lấy token để xác thực oldPassword
-    const KC_TOKEN_URL = `${process.env.KEYCLOAK_BASE_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`;
+    const KC_TOKEN_URL = `${env.keycloak.baseUrl}/realms/${env.keycloak.realm}/protocol/openid-connect/token`;
     const params = new URLSearchParams();
-    params.append('client_id', process.env.KEYCLOAK_CLIENT_ID || 'wdp-backend');
-    params.append('client_secret', process.env.KEYCLOAK_CLIENT_SECRET || '');
+    params.append('client_id', env.keycloak.clientId);
+    params.append('client_secret', env.keycloak.clientSecret);
     params.append('grant_type', 'password');
     params.append('username', email);
     params.append('password', oldPassword);
