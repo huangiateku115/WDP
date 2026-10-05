@@ -4,6 +4,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import authRoutes from './auth.routes';
 import userRoutes from './user.routes';
 import facilityRoutes from './facility.routes';
+import storageUnitRoutes from './storage-unit.routes';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.get('/', (req: Request, res: Response, next: NextFunction) => {
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/facilities', facilityRoutes);
+router.use(storageUnitRoutes);
 
 export default router;

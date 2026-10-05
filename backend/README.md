@@ -6,7 +6,7 @@ Express + TypeScript + Mongoose; authentication uses the existing Keycloak clien
 
 Run commands from `backend/`:
 
-1. Start Docker Desktop, then `docker compose up -d keycloak`.
+1. Use an existing reachable Keycloak instance, or optionally start local Keycloak with `docker compose up -d keycloak`.
 2. Each developer must create their own `backend/.env` from `.env.example` and
    set the shared MongoDB Atlas development URI supplied by the team:
    `MONGO_URL=<shared-mongodb-atlas-development-uri>`.
@@ -95,3 +95,119 @@ Future booking modules must explicitly enforce ACTIVE status. Atlas index creati
 must succeed for database-level uniqueness; these isolated tests do not verify live indexes.
 Run `npm run build` then `node --test tests/facility.test.cjs tests/infrastructure.test.cjs`.
 Facility tests mock persistence/authentication boundaries and never connect to Atlas.
+
+## Storage Unit API (BE-03)
+
+All endpoints require a Keycloak bearer token and an active backend user.
+No inventory items, pricing, reservation/rental flows or DELETE endpoint are implemented.
+
+| Method | Path |
+| --- | --- |
+| POST / GET | `/api/v1/facilities/:facilityId/storage-units` |
+| GET / PATCH | `/api/v1/storage-units/:id` |
+| PATCH | `/api/v1/storage-units/:id/status` |
+
+Create example:
+
+```json
+{
+  "unitCode": "A-01",
+  "size": "SMALL",
+  "dimensions": { "lengthM": 2, "widthM": 3, "heightM": 4 }
+}
+```
+
+The parent must exist, be ACTIVE, and support SELF_STORAGE. Code is trimmed and
+uppercased, with a unique compound index on `{facilityId:1,unitCode:1}`; the same code
+is allowed in another facility. A second index covers `facilityId,status,size`.
+Dimensions are finite positive meters; their product must be finite and positive.
+The server derives `volumeM3` (24 above). Client-supplied volume or facility reassignment
+is rejected. Updating dimensions requires all three values, to keep volume consistent.
+Optional description is a non-empty string (max 2000 characters).
+
+List query: `page=1&limit=20&status=AVAILABLE&size=SMALL&search=A-01`.
+Limit is 1–100, page 1–1000000. Search matches literal unitCode text, case-insensitively.
+List responses have `data` and `pagination: {page,limit,total,totalPages}`.
+
+### Status and authorization
+
+- Create defaults to AVAILABLE; AVAILABLE, MAINTENANCE, INACTIVE are the only
+  administrative create/status values. Status changes use the dedicated status endpoint.
+- HELD/OCCUPIED are reserved for future lifecycle modules. All resource edits and
+  status changes on a HELD/OCCUPIED unit return 409, even for ADMIN.
+- Resource edits and transitions to AVAILABLE require an ACTIVE SELF_STORAGE parent.
+  MAINTENANCE/INACTIVE remain permitted under an inactive parent.
+- ADMIN/BOM manage all facilities. FACILITY_MANAGER manages only its persisted
+  `assignedFacilityId`; missing/different assignments return 403.
+- FACILITY_STAFF reads only its assigned facility and cannot write.
+  CUSTOMER/ADMIN/BOM may read across facilities, including all statuses. These reads
+  are resource catalog endpoints, not a promise of booking availability.
+- Facility API authorization is unchanged. General/multi-facility assignment management
+  remains BE-17 work; assignments must come from a trusted administrative process.
+- Optimistic document version checks reject simultaneous stale writes with 409.
+  Future lifecycle writers must also honor version checks/atomic state predicates.
+  Parent eligibility is checked before writes, not locked across collections; future
+  booking flows need transactional coordination with concurrent Facility changes.
+
+## Testing with Postman
+
+Set a Postman environment variable `baseUrl` to `http://localhost:3000/api/v1`
+(or your staging API URL). Check `GET {{baseUrl}}/health`.
+For Facility and Storage Unit requests, select Authorization > Bearer Token and
+enter your Keycloak access token. Use Body > raw > JSON for POST/PATCH requests
+with the examples above. Keep tokens in local Postman variables; do not commit them.
+
+## Staging deployment (Node hosting, e.g. Railway)
+
+Docker is optional for local Keycloak and is not required for backend deployment.
+Use Node.js 22.12+ with the backend as the hosting service's root directory:
+
+```sh
+npm ci
+npm run build
+npm start
+```
+
+Install devDependencies during the build (TypeScript is needed);
+do not use `npm ci --omit=dev` before building. The start command runs `dist/server.js`.
+
+Configure these values in the hosting environment, never in committed files:
+
+| Variable | Requirement |
+| --- | --- |
+| NODE_ENV | Set `production` for staging/production |
+| PORT | Provider-supplied listening port; defaults to 3000 |
+| MONGO_URL | Required shared Atlas **development/staging** URI including the agreed database name |
+| KEYCLOAK_BASE_URL | Required reachable Keycloak HTTP(S) base URL; use HTTPS on staging |
+| KEYCLOAK_CLIENT_SECRET | Required secret of the existing confidential client |
+| KEYCLOAK_REALM | Defaults to `wdp-realm`; match the existing realm |
+| KEYCLOAK_CLIENT_ID | Defaults to `wdp-backend`; match the existing client |
+| KEYCLOAK_ISSUER | Optional override; must exactly match token issuer |
+| KEYCLOAK_JWKS_URI | Optional override for the reachable signing-key endpoint |
+| CORS_ORIGINS | Comma-separated exact frontend origins; no paths, credentials, wildcard or trailing slash |
+
+Development defaults allow `http://localhost:5173` and `http://127.0.0.1:5173`
+when CORS_ORIGINS is unset. Production/test default to an empty origin allowlist.
+Set your actual staging frontend origin via hosting settings; localhost may be
+included explicitly if needed. Requests without Origin (Postman/server clients)
+still work. Disallowed browser origins receive no CORS permission headers; CORS
+does not replace authentication. Bearer auth uses Authorization, not cookie credentials.
+
+Before release:
+1. Configure Keycloak's existing client/service-account permissions and valid token issuer.
+   Keycloak must be reachable from the deployment; localhost values are only local examples.
+2. Configure Atlas network access for hosting egress and least-privilege database access.
+   Confirm Facility and StorageUnit indexes are created successfully before accepting writes;
+   no destructive index synchronization or database reset is part of this change.
+3. Configure frontend CORS origins and hosting health check `/api/v1/health`.
+   HTTP starts only after Atlas connection and Keycloak admin initialization succeed.
+4. Verify real login, health and resource permissions in staging using Postman. Mocked tests
+   do not establish live Keycloak/Atlas availability or database index enforcement.
+
+Run all isolated regression tests after building:
+
+```sh
+node --test tests/facility.test.cjs tests/infrastructure.test.cjs tests/storage-unit.test.cjs tests/cors.test.cjs
+```
+
+Tests never connect to shared Atlas or reset data.
