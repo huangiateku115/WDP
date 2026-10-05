@@ -3,6 +3,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 
 import authRoutes from './auth.routes';
 import userRoutes from './user.routes';
+import facilityRoutes from './facility.routes';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.get('/', (req: Request, res: Response, next: NextFunction) => {
 // Gắn các Routes con vào
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
+router.use('/facilities', facilityRoutes);
 
 export default router;

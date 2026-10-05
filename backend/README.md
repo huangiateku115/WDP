@@ -48,3 +48,50 @@ Tests simulate dependencies and readiness; they do not prove a live MongoDB/Keyc
 
 Development uses the shared MongoDB Atlas cluster. No local MongoDB service is required
 or provided by Compose. Compose retains only the existing Keycloak service and volume.
+
+## Facility API (BE-02)
+
+All `/api/v1/facilities` endpoints require existing Keycloak authentication.
+Reads allow authenticated users; writes require `ADMIN` or `BOM`.
+Facility-scope enforcement is not implemented; reads include all facilities,
+including INACTIVE records. FACILITY_MANAGER has no write access in this phase.
+
+| Method | Path | Action |
+| --- | --- | --- |
+| POST | `/api/v1/facilities` | Create (201) |
+| GET | `/api/v1/facilities` | List with pagination |
+| GET | `/api/v1/facilities/:id` | Read one |
+| PATCH | `/api/v1/facilities/:id` | Update allowed fields |
+| PATCH | `/api/v1/facilities/:id/status` | Set ACTIVE/INACTIVE |
+
+Example create body:
+
+```json
+{
+  "code": "HCM-01",
+  "name": "Ho Chi Minh Facility",
+  "address": { "line1": "1 Example Street", "city": "Ho Chi Minh City", "country": "VN" },
+  "serviceTypes": ["SELF_STORAGE", "MANAGED_INVENTORY"]
+}
+```
+
+Optional fields: `address.ward`, `address.district`, `contact.phone`, `contact.email`,
+`description`, `operatingHours` (plain descriptive string), and `status` (default ACTIVE).
+Code is trimmed/uppercased and protected by a unique index; status and serviceTypes
+have separate indexes. Partial address/contact updates preserve sibling fields.
+Provided strings must be non-empty; null/unset operations are not supported.
+Unknown/immutable fields and MongoDB update operators are rejected.
+
+List query: `page=1&limit=20&status=ACTIVE&serviceType=SELF_STORAGE&search=HCM`.
+Limit is 1–100; page is 1–1000000. Search is a literal case-insensitive match on
+code, name, or address.city. Without status, both ACTIVE and INACTIVE are included.
+Responses use `{success:true,data:...}`; list additionally returns
+`pagination: {page,limit,total,totalPages}`. Invalid input/ID returns 400,
+missing records 404, duplicate codes 409. Production error messages follow
+Phase 0's generic safe messages.
+
+Deactivation only changes status: no delete/cascade or booking behavior exists here.
+Future booking modules must explicitly enforce ACTIVE status. Atlas index creation
+must succeed for database-level uniqueness; these isolated tests do not verify live indexes.
+Run `npm run build` then `node --test tests/facility.test.cjs tests/infrastructure.test.cjs`.
+Facility tests mock persistence/authentication boundaries and never connect to Atlas.
