@@ -1,0 +1,18 @@
+// Original image URLs from the supplied Stitch reference.
+export default {
+  "vaultspace_sign_up": [
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuAiZwBJx3OWo4BLz_NaX4tOwlSEw-J3iKRcuJrRBIUZ89Wx7fedyYBY0vv0x4lHIxRi1Rw8-huCXPI9UqDSdWPE1FGKo8dx5g-6C64OBV5yanxjl-rt0jOXebDnQSJXZqFMV1ZSngPn2qIqEyo7yZvqvll6OqLrJmnMUHHDGohn8tevP3HYvwjo4C_80-_8O_ZxEw3XvZdAqeSUxrIXU_WvyrgTNfYBApEkYDq1lJQ"
+  ],
+  "vaultspace_reservation_step_1": [
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuB3IrnqGDHwQRcSsL3lOEV8o1-iUISBzAGX2HFP-M5KnCmRCFimQTu5DbOYeTWNmsg9CbNJJ5dUoRaBS8PQfZ5ysyu5N5Wv7fV-VTRCJi4MOgvCxOjBiwC-hLbspDcz3an4TWuh4Bz2Z_yjE_cMU8WQp9XyF1xJd1PtRyNWfSisYFj9ndhRtdyGGvsf_aCuWtZynzsblKbOd5Q1RUek-0rilCLEiCB5eJnednYjUuM",
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuAp03wPPKPFYpOe8TDuW3nn7OemnEIoQkqvwtU9Zh750xlvz0modd24BcoY_3Dg3Fr1aX6CJ0HQr3AROvXwv_DdQaDtDBGy99AruCGfv5OmJxBCc4LfwA96Qy83p--nWmFP7X2TSyfhfzCBlE20FWqk-lw9e557VsMY4ECvtIbzPE-hwHUuqHdP_QE9XPJW7SYZOeDzvSIVlpub0KoAMPnfpFfIQiXnEfKnUs-I0WE",
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuC7ZKdZizog-ksJtDSQVO0s8GdULnuXHEoOySqSvoX0aqMvxNwb5gzfuSJxo3AjIHZe89QfvHvByfaSLmIzxoNMYYG8rwZl3DtEv1f3lGu_2vOzuahGEzerlfSz82iOYHHRTsPeupGdV-Lx69t-HVo4yc-zOvf17VrzgORHgU8_bdiwzFL_U8FaDi7jAZHLM4MWru1oY22JgmCAsv0RSdi1A-LM6zT5b1vMaapdSJg"
+  ],
+  "vaultspace_sign_in": [
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuASwFIliAt-0Fw2ccjlowdkPKtkqq3r6abTsfduMbLeRj-Mmil0quOpuutl3CobPU19ATaqxXcaOwZXyfQptrfiJ1gNitd01q4vKdMexCI0Z2uKPQ2NmjyCdgYTz4oHBsFhWMrzAAgUHXkOe-2xnmEDVIjA63Cc1JI8R0mJPWDGMoCCsfjbesDdydRR4ypmbbvrs4rYLMOD3agUcBiYAoVFZuqQIszKEAkxJHaN06w"
+  ],
+  "vaultspace_my_storage": [
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuCOcOgo23EWL_LpDLw3SJuzqK0nTub56nE6Z2D57rILwg0MlBiAIETPYoewIGF62FL4OKCW3aheNwuTbRd6_T01TqtUlAxDoFcUnH7D6S88UtaL3zynKzxUSi2ZFAo9XKrzj_63Kti96XQJyHFQpQspdnPjLgyNTMisxD0iYELO2hMig2nr9mm5izLZH05wS0bZmG6Q2HZxWX1ARpyEMSea-IGOC8W2ijkm4Zslve8",
+    "https://lh3.googleusercontent.com/aida-public/AB6AXuD4nFvcJhpNb7_i5P-N1vbYV6Dw4TeBHjriazpzibdlHeM9LDBH3ZgrxhthSPmQALcARRUiUVGMais8a-ZX_nv8-JB6aaNXyfBjPxDgk565x_lgQ008tutdZE1Dwf7ClcNYWspSYXYgPV_hll71Gnw2Wxth6J7r8LMHsxBi8WXZlEDZXl5mfl-uy7lpZitAmRGlJlqQnpEYHUSd1im7il77f8YBx88zD-iQKL-pHlg"
+  ]
+};

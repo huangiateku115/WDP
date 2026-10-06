@@ -1,0 +1,8 @@
+import {Routes,Route,Navigate} from 'react-router-dom';
+import BomLayout from '@/layouts/BomLayout';
+import {BomUnavailable} from '@/components/bom/BomUI';
+import {DashboardPage,OversightPage,FacilitiesPage} from '@/pages/bom/OverviewPages';
+import BusinessRecordsPage from '@/pages/bom/BusinessRecordsPage';
+import {ReportsPage,AuditPage} from '@/pages/bom/ReportsPages';
+const records=[['pricing','pricing'],['policies','policy'],['policies/discounts','discount'],['policies/item-categories','category']];
+export default function BomRoutes(){return <Routes><Route element={<BomLayout/>}><Route index element={<Navigate to="dashboard" replace/>}/><Route path="dashboard" element={<DashboardPage/>}/><Route path="oversight" element={<OversightPage/>}/><Route path="facilities" element={<FacilitiesPage/>}/><Route path="facilities/new" element={<FacilitiesPage mode="new"/>}/><Route path="facilities/:id" element={<FacilitiesPage mode="detail"/>}/><Route path="facilities/:id/edit" element={<FacilitiesPage mode="edit"/>}/>{records.flatMap(([path,kind])=>[<Route key={path} path={path} element={<BusinessRecordsPage kind={kind}/>}/>,...(kind==='policy'?[]:[<Route key={path+'/new'} path={path+'/new'} element={<BusinessRecordsPage kind={kind} mode="new"/>}/>]),<Route key={path+'/detail'} path={path+'/:id'} element={<BusinessRecordsPage kind={kind} mode="detail"/>}/>,<Route key={path+'/edit'} path={path+'/:id/edit'} element={<BusinessRecordsPage kind={kind} mode="edit"/>}/>])}<Route path="reports" element={<ReportsPage/>}/>{['revenue','utilization','rentals'].map(kind=><Route key={kind} path={'reports/'+kind} element={<ReportsPage kind={kind}/>}/>)}<Route path="audit" element={<AuditPage/>}/><Route path="*" element={<BomUnavailable/>}/></Route></Routes>;}

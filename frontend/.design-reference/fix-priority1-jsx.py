@@ -1,0 +1,5 @@
+from pathlib import Path
+p=Path('src/pages/customer/InventoryDetailPage.jsx');t=p.read_text(encoding='utf-8').replace('Not assigned (null)"]])]]}','Not assigned (null)"]])]}');p.write_text(t,encoding='utf-8')
+p=Path('src/mocks/customerData.js');t=p.read_text(encoding='utf-8');t=t.replace("  movements: [", "  movements: [\n    { id:'MOV-004', itemId:'INV-004', type:'INBOUND', from:null, to:{zone:'Z-A',rack:'R-03',shelf:'S-01'}, performer:'Facility staff · Le Thi Mai', timestamp:'2026-08-12T10:00:00+07:00', notes:'Received two sample cartons.' },\n    { id:'MOV-005', itemId:'INV-004', type:'OUTBOUND', from:{zone:'Z-A',rack:'R-03',shelf:'S-01'}, to:null, performer:'Facility staff · Le Thi Mai', timestamp:'2026-09-10T15:00:00+07:00', notes:'Released to the registered customer.' },")
+t=t.replace("  ],\n  movements:","    { id:'INV-004', code:'VS-INV-004', name:'Collected samples', description:'Previously released goods.', category:'Business stock', quantity:2, unit:'carton', length:.5, width:.5, height:.5, weight:2, volume_m3:.125, rentalId:'RNT-MANAGED-001', status:'Outside', current_location:null },\n  ],\n  movements:")
+p.write_text(t,encoding='utf-8')

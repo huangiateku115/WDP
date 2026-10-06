@@ -1,0 +1,1 @@
+import AppRoutes from './routes/AppRoutes';import {ReservationProvider} from './contexts/ReservationContext';export default function App(){return <ReservationProvider><AppRoutes/></ReservationProvider>}

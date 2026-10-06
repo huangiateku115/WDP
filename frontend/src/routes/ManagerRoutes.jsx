@@ -1,0 +1,14 @@
+import {Navigate,Route,Routes} from 'react-router-dom';
+import ManagerLayout from '@/layouts/ManagerLayout';
+import DashboardPage from '@/pages/manager/DashboardPage';
+import ReservationsPage from '@/pages/manager/ReservationsPage';
+import CustomersPage from '@/pages/manager/CustomersPage';
+import StorageUnitsPage from '@/pages/manager/StorageUnitsPage';
+import StorageLocationsPage from '@/pages/manager/StorageLocationsPage';
+import OperationsPage from '@/pages/manager/OperationsPage';
+import ExtensionsPage from '@/pages/manager/ExtensionsPage';
+import ServiceDeskPage from '@/pages/manager/ServiceDeskPage';
+import FinancePage from '@/pages/manager/FinancePage';
+import ReportsPage from '@/pages/manager/ReportsPage';
+import {Screen,NotFound} from '@/components/manager/ManagerUI';
+export default function ManagerRoutes(){return <Routes><Route element={<ManagerLayout/>}><Route index element={<Navigate to="dashboard" replace/>}/><Route path="dashboard" element={<DashboardPage/>}/><Route path="reservations" element={<ReservationsPage/>}/><Route path="reservations/:id" element={<ReservationsPage/>}/><Route path="customers" element={<CustomersPage/>}/><Route path="customers/:id" element={<CustomersPage/>}/><Route path="storage-units" element={<StorageUnitsPage/>}/><Route path="storage-units/:id" element={<StorageUnitsPage/>}/><Route path="storage-locations" element={<StorageLocationsPage/>}/><Route path="storage-locations/zones/:id" element={<StorageLocationsPage level="zones"/>}/><Route path="storage-locations/racks/:id" element={<StorageLocationsPage level="racks"/>}/><Route path="storage-locations/shelves/:id" element={<StorageLocationsPage level="shelves"/>}/><Route path="operations" element={<OperationsPage/>}/><Route path="operations/:id" element={<OperationsPage/>}/><Route path="tasks" element={<OperationsPage key="assignment" assignment/>}/><Route path="extensions" element={<ExtensionsPage/>}/><Route path="maintenance" element={<ServiceDeskPage key="maintenance" kind="maintenance"/>}/><Route path="maintenance/:id" element={<ServiceDeskPage key="maintenance" kind="maintenance"/>}/><Route path="support" element={<ServiceDeskPage key="support" kind="support"/>}/><Route path="support/:id" element={<ServiceDeskPage key="support" kind="support"/>}/><Route path="refunds" element={<FinancePage key="refunds" kind="refunds"/>}/><Route path="refunds/:id" element={<FinancePage key="refunds" kind="refunds"/>}/><Route path="charges" element={<FinancePage key="charges" kind="charges"/>}/><Route path="reports/revenue" element={<ReportsPage key="revenue" kind="revenue"/>}/><Route path="reports/utilization" element={<ReportsPage key="utilization" kind="utilization"/>}/><Route path="reports/rentals" element={<ReportsPage key="rentals" kind="rentals"/>}/><Route path="*" element={<Screen title="Manager page unavailable"><NotFound/></Screen>}/></Route></Routes>;}
