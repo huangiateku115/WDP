@@ -33,10 +33,16 @@ function loadEnvironment() {
     throw new ConfigurationError('NODE_ENV must be development, test, or production');
   }
   const baseUrl = httpUrl('KEYCLOAK_BASE_URL', required('KEYCLOAK_BASE_URL')).replace(/\/$/, '');
+  const corsOrigins = (process.env.CORS_ORIGINS ?? (nodeEnv === 'development'
+    ? 'http://localhost:5173,http://127.0.0.1:5173' : '')).split(',').map(s => s.trim()).filter(Boolean);
+  for (const origin of corsOrigins) {
+    httpUrl('CORS_ORIGINS', origin);
+    if (new URL(origin).origin !== origin) throw new ConfigurationError('CORS_ORIGINS must contain origins without paths or trailing slashes');
+  }
   const realm = process.env.KEYCLOAK_REALM?.trim() || 'wdp-realm';
   const issuer = httpUrl('KEYCLOAK_ISSUER', process.env.KEYCLOAK_ISSUER || `${baseUrl}/realms/${realm}`);
   return {
-    port, mongoUrl, nodeEnv,
+    port, mongoUrl, nodeEnv, corsOrigins,
     keycloak: {
       baseUrl, realm, issuer,
       jwksUri: httpUrl('KEYCLOAK_JWKS_URI', process.env.KEYCLOAK_JWKS_URI || `${issuer}/protocol/openid-connect/certs`),
