@@ -22,5 +22,6 @@ router.get('/', UserController.adminGetUsers);
 router.put('/:id', UserController.adminUpdateUser);
 router.patch('/:id/role', UserController.adminUpdateRole);
 router.delete('/:id', UserController.adminSoftDelete);
+router.patch('/:id/reactivate', UserController.adminReactivateUser);
 
 export default router;
