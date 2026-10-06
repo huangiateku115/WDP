@@ -1,8 +1,22 @@
 import { RequestHandler } from 'express';
 import { StorageUnitService as service } from '../../services/storage-units/storage-unit.service';
+import { AuditService } from '../../services/audit/audit.service';
+import { ActionType } from '../../types/audit.type';
 
 export const createStorageUnit: RequestHandler = async (req, res, next) => {
-  try { res.status(201).json({ success: true, data: await service.createStorageUnit(req.params.facilityId, req.body, req.user) }); }
+  try { 
+    const result = await service.createStorageUnit(req.params.facilityId, req.body, req.user);
+    const actor = req.user as any;
+    AuditService.logAction({
+      actorId: actor._id.toString(),
+      actorRole: actor.role,
+      action: ActionType.CREATE_STORAGE_UNIT,
+      entityType: 'StorageUnit',
+      entityId: (result as any)._id.toString(),
+      after: result
+    });
+    res.status(201).json({ success: true, data: result }); 
+  }
   catch (error) { next(error); }
 };
 export const getStorageUnits: RequestHandler = async (req, res, next) => {
@@ -14,10 +28,34 @@ export const getStorageUnitById: RequestHandler = async (req, res, next) => {
   catch (error) { next(error); }
 };
 export const updateStorageUnit: RequestHandler = async (req, res, next) => {
-  try { res.json({ success: true, data: await service.updateStorageUnit(req.params.id, req.body, req.user) }); }
+  try { 
+    const result = await service.updateStorageUnit(req.params.id, req.body, req.user);
+    const actor = req.user as any;
+    AuditService.logAction({
+      actorId: actor._id.toString(),
+      actorRole: actor.role,
+      action: ActionType.UPDATE_STORAGE_UNIT,
+      entityType: 'StorageUnit',
+      entityId: req.params.id as string,
+      after: req.body
+    });
+    res.json({ success: true, data: result }); 
+  }
   catch (error) { next(error); }
 };
 export const updateStorageUnitStatus: RequestHandler = async (req, res, next) => {
-  try { res.json({ success: true, data: await service.updateStorageUnitStatus(req.params.id, req.body, req.user) }); }
+  try { 
+    const result = await service.updateStorageUnitStatus(req.params.id, req.body, req.user);
+    const actor = req.user as any;
+    AuditService.logAction({
+      actorId: actor._id.toString(),
+      actorRole: actor.role,
+      action: ActionType.UPDATE_STORAGE_UNIT_STATUS,
+      entityType: 'StorageUnit',
+      entityId: req.params.id as string,
+      after: { status: req.body.status }
+    });
+    res.json({ success: true, data: result }); 
+  }
   catch (error) { next(error); }
 };
