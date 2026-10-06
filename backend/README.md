@@ -211,3 +211,21 @@ node --test tests/facility.test.cjs tests/infrastructure.test.cjs tests/storage-
 ```
 
 Tests never connect to shared Atlas or reset data.
+
+## Pricing & Policy API (BE-15)
+
+Facility-scoped, effective-dated pricing rules and opaque policy configuration are
+available under `/api/v1/pricing-rules` and `/api/v1/policies`. BOM/ADMIN can write;
+authenticated users can read. No Swagger or pricing/payment calculations are added.
+See [Postman requests and effective-date rules](docs/phase-3-postman.md) for exact
+bodies, query parameters, status codes, versioning and remaining SRS decisions.
+
+Writes require Atlas multi-document transactions. A shared scope document serializes
+overlap checks; there is no unsafe nontransactional fallback. Already-effective
+content is immutable, with prospective end-date closure supported for replacement.
+
+Run `npm run build`, then:
+
+```sh
+node --test tests/pricing-policy.test.cjs tests/facility.test.cjs tests/storage-unit.test.cjs tests/infrastructure.test.cjs tests/cors.test.cjs
+```
