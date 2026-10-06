@@ -1,3 +1,4 @@
+import { env } from '../../config/env';
 import UserModel from '../../models/users/user.model';
 import { OtpModel } from '../../models/auth/otp.model';
 import { EmailService } from '../email/email.service';
@@ -8,10 +9,10 @@ const JWKS = createRemoteJWKSet(new URL(keycloakConfig.jwksUri));
 
 export class AuthService {
   static async login(email: string, password: string) {
-    const KC_TOKEN_URL = `${process.env.KEYCLOAK_BASE_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`;
+    const KC_TOKEN_URL = `${env.keycloak.baseUrl}/realms/${env.keycloak.realm}/protocol/openid-connect/token`;
     const params = new URLSearchParams();
-    params.append('client_id', process.env.KEYCLOAK_CLIENT_ID || 'wdp-backend');
-    params.append('client_secret', process.env.KEYCLOAK_CLIENT_SECRET || '');
+    params.append('client_id', env.keycloak.clientId);
+    params.append('client_secret', env.keycloak.clientSecret);
     params.append('grant_type', 'password');
     params.append('username', email);
     params.append('password', password);
@@ -53,10 +54,10 @@ export class AuthService {
   }
 
   static async logout(refreshToken: string) {
-    const KC_LOGOUT_URL = `${process.env.KEYCLOAK_BASE_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/logout`;
+    const KC_LOGOUT_URL = `${env.keycloak.baseUrl}/realms/${env.keycloak.realm}/protocol/openid-connect/logout`;
     const params = new URLSearchParams();
-    params.append('client_id', process.env.KEYCLOAK_CLIENT_ID || 'wdp-backend');
-    params.append('client_secret', process.env.KEYCLOAK_CLIENT_SECRET || '');
+    params.append('client_id', env.keycloak.clientId);
+    params.append('client_secret', env.keycloak.clientSecret);
     params.append('refresh_token', refreshToken);
 
     const response = await fetch(KC_LOGOUT_URL, {
