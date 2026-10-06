@@ -59,6 +59,17 @@ export class KeycloakService {
   }
 
   /**
+   * Kích hoạt lại tài khoản (Mở khóa)
+   */
+  static async enableUser(id: string) {
+    await authKeycloakAdmin();
+    await kcAdminClient.users.update(
+      { id },
+      { enabled: true }
+    );
+  }
+
+  /**
    * Đổi mật khẩu (Admin ép đổi)
    */
   static async resetPasswordAdmin(id: string, newPassword: string) {

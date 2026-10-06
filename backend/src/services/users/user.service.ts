@@ -151,6 +151,19 @@ export class UserService {
     return user;
   }
 
+  // 8. ADMIN: Restore User (Reactivate)
+  static async adminReactivateUser(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error('ID tài khoản không hợp lệ');
+    const user = await UserModel.findById(userId);
+    if (!user) throw new Error('Không tìm thấy tài khoản');
+
+    user.isActive = true;
+    await user.save();
+
+    await KeycloakService.enableUser(user.keycloakSub);
+    return user;
+  }
+
   // 8. ADMIN: Get Users
   static async adminGetUsers() {
     return await UserModel.find({}).select('-__v');
