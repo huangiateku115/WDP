@@ -1,0 +1,20 @@
+import { Router } from 'express';
+import * as controller from '../controllers/maintenance-tickets/maintenance-ticket.controller';
+import { requireAuth } from '../middlewares/auth/requireAuth';
+import { requireRole } from '../middlewares/auth/requireRole';
+import { UserRole } from '../types/user.type';
+
+const router = Router();
+const management = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER]);
+const authenticated = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]);
+router.use(requireAuth);
+router.get('/', authenticated, controller.list);
+router.get('/:id', authenticated, controller.get);
+router.post('/', authenticated, controller.create);
+router.patch('/:id', management, controller.update);
+router.post('/:id/assign', management, controller.assign);
+router.post('/:id/unassign', management, controller.unassign);
+router.patch('/:id/status', authenticated, controller.updateStatus);
+router.delete('/:id', management, controller.softDelete);
+router.post('/:id/restore', management, controller.restore);
+export default router;

@@ -7,6 +7,8 @@ import auditRoutes from './audit.routes';
 import facilityRoutes from './facility.routes';
 import storageUnitRoutes from './storage-unit.routes';
 import pricingPolicyRoutes from './pricing-policy.routes';
+import publicRoutes from './public.routes';
+import maintenanceTicketRoutes from './maintenance-ticket.routes';
 
 const router = Router();
 
@@ -18,6 +20,9 @@ router.get('/health', (_req, res) => {
     database: connected ? 'connected' : 'disconnected',
   });
 });
+
+router.use('/public', publicRoutes);
+router.use('/maintenance-tickets', maintenanceTicketRoutes);
 
 /* GET home page. */
 router.get('/', (req: Request, res: Response, next: NextFunction) => {

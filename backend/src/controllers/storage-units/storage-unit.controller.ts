@@ -59,3 +59,11 @@ export const updateStorageUnitStatus: RequestHandler = async (req, res, next) =>
   }
   catch (error) { next(error); }
 };
+export const deleteStorageUnit: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.deleteStorageUnit(req.params.id, req.user) }); }
+  catch (error) { next(error); }
+};
+export const restoreStorageUnit: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.restoreStorageUnit(req.params.id, req.user) }); }
+  catch (error) { next(error); }
+};

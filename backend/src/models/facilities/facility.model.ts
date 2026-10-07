@@ -29,7 +29,10 @@ const facilitySchema = new Schema<IFacility>({
   status: { type: String, enum: Object.values(FacilityStatus), default: FacilityStatus.ACTIVE, index: true },
   description: { type: String, trim: true },
   operatingHours: { type: String, trim: true },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 facilitySchema.index({ serviceTypes: 1 });
+facilitySchema.index({ deletedAt: 1 });
 
 export default mongoose.model<IFacility>('Facility', facilitySchema);

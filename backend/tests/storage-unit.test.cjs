@@ -22,7 +22,7 @@ const manager = { role: 'FACILITY_MANAGER', assignedFacilityId: new mongoose.Typ
 const valid = () => ({ unitCode: ' a-01 ', size: 'SMALL', dimensions: { lengthM: 2, widthM: 3, heightM: 4 } });
 const query = value => ({ exec: async () => value });
 const parent = (extra = {}) => ({ status: 'ACTIVE', serviceTypes: ['SELF_STORAGE'], ...extra });
-function mockParent(t, value = parent()) { t.mock.method(Facility, 'findById', () => query(value)); }
+function mockParent(t, value = parent()) { t.mock.method(Facility, 'findOne', () => query(value)); }
 function document(extra = {}) {
   return Model.hydrate({ _id: id, __v: 0, facilityId, ...valid(), volumeM3: 24, status: 'AVAILABLE', ...extra });
 }
@@ -101,14 +101,14 @@ test('validation rejects unsafe dimensions, invalid size, supplied volume and im
 
 test('get by ID and not found/invalid IDs', async t => {
   const doc = document();
-  t.mock.method(Model, 'findById', () => query(doc));
+  t.mock.method(Model, 'findOne', () => query(doc));
   assert.equal(await service.getStorageUnitById(id, customer), doc);
   for (const operation of [
     () => service.getStorageUnitById('bad', admin),
     () => service.updateStorageUnit('bad', { description: 'x' }, admin),
     () => service.updateStorageUnitStatus('bad', { status: 'INACTIVE' }, admin),
   ]) await assert.rejects(operation, { status: 400 });
-  t.mock.method(Model, 'findById', () => query(null));
+  t.mock.method(Model, 'findOne', () => query(null));
   await assert.rejects(() => service.getStorageUnitById(id, admin), { status: 404 });
   await assert.rejects(() => service.updateStorageUnit(id, { description: 'x' }, admin), { status: 404 });
 });
@@ -146,7 +146,7 @@ test('list scopes query to facility and applies status/size/pagination/literal s
 test('update recalculates volume and preserves facility; real save uses version check', async t => {
   mockParent(t);
   const doc = document();
-  t.mock.method(Model, 'findById', () => query(doc));
+  t.mock.method(Model, 'findOne', () => query(doc));
   t.mock.method(Model.collection, 'updateOne', async (filter, update) => {
     assert.equal(filter.__v, 0);
     assert.equal(update.$inc.__v, 1);
@@ -162,7 +162,7 @@ test('update recalculates volume and preserves facility; real save uses version 
 
 test('concurrent write returns 409 from actual optimistic save', async t => {
   mockParent(t);
-  t.mock.method(Model, 'findById', () => query(document()));
+  t.mock.method(Model, 'findOne', () => query(document()));
   t.mock.method(Model.collection, 'updateOne', async () => ({ acknowledged: true, matchedCount: 0 }));
   await assert.rejects(() => service.updateStorageUnit(id, { description: 'Conflict' }, admin), { status: 409 });
 });
@@ -172,14 +172,14 @@ test('resource status transitions work; inactive parents cannot become AVAILABLE
   t.mock.method(Model.collection, 'updateOne', async () => ({ acknowledged: true, matchedCount: 1 }));
   for (const current of ['AVAILABLE', 'MAINTENANCE', 'INACTIVE']) {
     for (const next of ['AVAILABLE', 'MAINTENANCE', 'INACTIVE']) {
-      t.mock.method(Model, 'findById', () => query(document({ status: current })));
+      t.mock.method(Model, 'findOne', () => query(document({ status: current })));
       // A no-op status save uses findOne to verify existence.
       t.mock.method(Model.collection, 'findOne', async () => ({ _id: new mongoose.Types.ObjectId(id), __v: 0 }));
       assert.equal((await service.updateStorageUnitStatus(id, { status: next }, admin)).status, next);
     }
   }
   mockParent(t, parent({ status: 'INACTIVE' }));
-  t.mock.method(Model, 'findById', () => query(document({ status: 'INACTIVE' })));
+  t.mock.method(Model, 'findOne', () => query(document({ status: 'INACTIVE' })));
   await assert.rejects(() => service.updateStorageUnitStatus(id, { status: 'AVAILABLE' }, admin), { status: 409 });
   assert.equal((await service.updateStorageUnitStatus(id, { status: 'MAINTENANCE' }, admin)).status, 'MAINTENANCE');
 });
@@ -188,14 +188,14 @@ test('administrative APIs cannot enter or modify HELD/OCCUPIED', async t => {
   for (const status of ['HELD', 'OCCUPIED']) {
     await assert.rejects(() => service.createStorageUnit(facilityId, { ...valid(), status }, admin), { status: 409 });
     await assert.rejects(() => service.updateStorageUnitStatus(id, { status }, admin), { status: 409 });
-    t.mock.method(Model, 'findById', () => query(document({ status })));
+    t.mock.method(Model, 'findOne', () => query(document({ status })));
     await assert.rejects(() => service.updateStorageUnit(id, { description: 'unsafe' }, admin), { status: 409 });
     await assert.rejects(() => service.updateStorageUnitStatus(id, { status: 'AVAILABLE' }, admin), { status: 409 });
   }
 });
 
 test('scope denies unassigned and other-facility staff/managers; customers cannot write', async t => {
-  t.mock.method(Model, 'findById', () => query(document()));
+  t.mock.method(Model, 'findOne', () => query(document()));
   for (const role of ['FACILITY_MANAGER', 'FACILITY_STAFF']) {
     for (const assignedFacilityId of [undefined, new mongoose.Types.ObjectId(otherId)]) {
       const actor = { role, assignedFacilityId };
@@ -215,7 +215,71 @@ test('persistence failures are sanitized', async t => {
   await assert.rejects(() => service.createStorageUnit(facilityId, valid(), admin), { status: 500, message: 'Internal Server Error' });
 });
 
-test('HTTP routes apply real role middleware and service scope; no DELETE', async t => {
+test('soft delete permits only AVAILABLE/MAINTENANCE/INACTIVE and never physically deletes', async t => {
+  const physicalDelete = t.mock.method(Model, 'deleteOne', async () => ({}));
+  const physicalDeleteMany = t.mock.method(Model, 'deleteMany', async () => ({}));
+  for (const status of ['AVAILABLE', 'MAINTENANCE', 'INACTIVE']) {
+    const unit = document({ status });
+    t.mock.method(Model, 'findOne', filter => {
+      assert.deepEqual(filter.deletedAt, { $exists: false });
+      return query(unit);
+    });
+    const saved = t.mock.method(unit, 'save', async () => unit);
+    const result = await service.deleteStorageUnit(id, admin);
+    assert.ok(result.deletedAt instanceof Date);
+    assert.equal(saved.mock.callCount(), 1);
+  }
+  for (const status of ['HELD', 'OCCUPIED']) {
+    t.mock.method(Model, 'findOne', () => query(document({ status })));
+    await assert.rejects(service.deleteStorageUnit(id, admin), { status: 409 });
+  }
+  assert.equal(physicalDelete.mock.callCount(), 0);
+  assert.equal(physicalDeleteMany.mock.callCount(), 0);
+});
+
+test('deleted Storage Unit is hidden, restore requires a valid parent and code stays reserved', async t => {
+  t.mock.method(Model, 'findOne', filter => {
+    assert.deepEqual(filter.deletedAt, { $exists: false });
+    return query(null);
+  });
+  await assert.rejects(service.getStorageUnitById(id, customer), { status: 404 });
+  mockParent(t);
+  let listFilter;
+  t.mock.method(Model, 'find', filter => {
+    listFilter = filter;
+    return { sort() { return this; }, skip() { return this; }, limit() { return this; }, lean() { return this; }, ...query([]) };
+  });
+  t.mock.method(Model, 'countDocuments', filter => { assert.deepEqual(filter.deletedAt, { $exists: false }); return query(0); });
+  await service.getStorageUnits(facilityId, {}, customer);
+  assert.deepEqual(listFilter.deletedAt, { $exists: false });
+
+  const deleted = document({ deletedAt: new Date(), status: 'AVAILABLE' });
+  t.mock.method(Model, 'findById', () => query(deleted));
+  t.mock.method(Facility, 'findOne', () => query(parent({ status: 'INACTIVE' })));
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
+    assert.deepEqual(filter.deletedAt, { $exists: true });
+    assert.deepEqual(update, { $unset: { deletedAt: 1, deletedBy: 1 } });
+    return query(document());
+  });
+  assert.equal((await service.restoreStorageUnit(id, admin)).deletedAt, undefined);
+
+  t.mock.method(Model, 'findById', () => query(document()));
+  await assert.rejects(service.restoreStorageUnit(id, admin), { status: 404 });
+  t.mock.method(Model, 'findById', () => query(deleted));
+  t.mock.method(Facility, 'findOne', () => query(null));
+  await assert.rejects(service.restoreStorageUnit(id, admin), { status: 404 });
+
+  const codes = new Set(['A-01']);
+  t.mock.method(Model, 'create', async data => {
+    if (codes.has(data.unitCode)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+    codes.add(data.unitCode); return new Model(data);
+  });
+  mockParent(t);
+  await assert.rejects(service.createStorageUnit(facilityId, valid(), admin), { status: 409 });
+  assert.equal(Model.schema.indexes().some(([keys, options]) => keys.facilityId === 1 && keys.unitCode === 1 && options.unique), true);
+});
+
+test('HTTP routes apply real role middleware and service scope; restore/delete are management-only', async t => {
   const auth = require('../dist/middlewares/auth/requireAuth');
   t.mock.method(auth, 'requireAuth', (req, res, next) => {
     if (!req.headers['x-test-role']) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -224,7 +288,7 @@ test('HTTP routes apply real role middleware and service scope; no DELETE', asyn
   });
   mockParent(t);
   t.mock.method(Model, 'create', async data => { const doc = new Model(data); await doc.validate(); return doc; });
-  t.mock.method(Model, 'findById', () => query(document()));
+  t.mock.method(Model, 'findOne', () => query(document()));
   t.mock.method(Model.collection, 'updateOne', async () => ({ acknowledged: true, matchedCount: 1 }));
   t.mock.method(Model, 'find', () => ({
     sort() { return this; }, skip() { return this; }, limit() { return this; }, lean() { return this; },
@@ -261,6 +325,7 @@ test('HTTP routes apply real role middleware and service scope; no DELETE', asyn
   assert.equal((await request('GET', single, 'CUSTOMER')).status, 200);
   assert.equal((await request('PATCH', single, 'FACILITY_MANAGER', { description: 'x' })).status, 200);
   assert.equal((await request('PATCH', single + '/status', 'FACILITY_MANAGER', { status: 'INACTIVE' })).status, 200);
-  assert.equal((await request('DELETE', single, 'ADMIN')).status, 404);
+  assert.equal((await request('DELETE', single, 'CUSTOMER')).status, 403);
+  assert.equal((await request('POST', single + '/restore', 'CUSTOMER')).status, 403);
 });
 

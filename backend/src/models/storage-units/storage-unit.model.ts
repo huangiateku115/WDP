@@ -13,9 +13,12 @@ const schema = new Schema<IStorageUnit>({
   volumeM3: positive,
   status: { type: String, enum: Object.values(StorageUnitStatus), default: StorageUnitStatus.AVAILABLE, required: true },
   description: { type: String, trim: true },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true, optimisticConcurrency: true });
 schema.index({ facilityId: 1, unitCode: 1 }, { unique: true });
 schema.index({ facilityId: 1, status: 1, size: 1 });
+schema.index({ facilityId: 1, deletedAt: 1 });
 schema.pre('validate', function () {
   if (this.dimensions) {
     this.volumeM3 = this.dimensions.lengthM * this.dimensions.widthM * this.dimensions.heightM;

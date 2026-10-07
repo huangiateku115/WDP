@@ -20,7 +20,15 @@ export const createFacility: RequestHandler = async (req, res, next) => {
   catch (error) { next(error); }
 };
 export const getFacilities: RequestHandler = async (req, res, next) => {
-  try { res.json({ success: true, ...await FacilityService.getFacilities(req.query) }); }
+  try { res.json({ success: true, ...await FacilityService.getFacilities(req.query, req.user) }); }
+  catch (error) { next(error); }
+};
+export const deleteFacility: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await FacilityService.deleteFacility(req.params.id, req.user) }); }
+  catch (error) { next(error); }
+};
+export const restoreFacility: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await FacilityService.restoreFacility(req.params.id, req.user) }); }
   catch (error) { next(error); }
 };
 export const getFacilityById: RequestHandler = async (req, res, next) => {
