@@ -243,3 +243,7 @@ note, and lifecycle timestamps are server-managed. Deletes are soft deletes and
 are limited to OPEN tickets. Ticket operations never mutate StorageUnit status.
 See [Phase 5 Postman requests](docs/phase-5-maintenance-postman.md) for request
 bodies, roles, scope rules, and the transition matrix.
+
+# Support API (Phase 6)
+
+Support endpoints are mounted at `/api/v1/support-requests` and require a Keycloak bearer token. Request examples, roles, lifecycle rules, and Postman checks are in [`docs/phase-6-support-postman.md`](docs/phase-6-support-postman.md). Customer ownership is derived from the authenticated user; internal messages are never returned to customers. Manual escalation targets an active Facility Manager assigned to the ticket facility. No SLA duration or automated SLA job is configured.
