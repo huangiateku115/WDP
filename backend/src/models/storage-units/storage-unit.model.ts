@@ -12,6 +12,7 @@ const schema = new Schema<IStorageUnit>({
   dimensions: { type: dimensionsSchema, required: true },
   volumeM3: positive,
   status: { type: String, enum: Object.values(StorageUnitStatus), default: StorageUnitStatus.AVAILABLE, required: true },
+  bookingVersion: { type: Number, default: 0 },
   description: { type: String, trim: true },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },

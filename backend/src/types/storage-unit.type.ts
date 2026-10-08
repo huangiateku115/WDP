@@ -19,6 +19,7 @@ export interface IStorageUnit extends Document {
   dimensions: UnitDimensions;
   volumeM3: number;
   status: StorageUnitStatus;
+  bookingVersion: number;
   description?: string;
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;
