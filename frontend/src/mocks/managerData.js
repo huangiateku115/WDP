@@ -25,6 +25,15 @@ export const managerSeed = {
  charges:scoped([{id:'CHG-M001',customerId:'CUS-003',rentalId:'RENT-003',reason:'Late checkout',amount:80000,status:'PENDING',date:today,policy:'Demo daily charge: monthly rental / 30 days.'},{id:'CHG-M002',customerId:'CUS-002',rentalId:'RENT-002',reason:'Additional handling',amount:120000,status:'PAID',date:shift(-4),policy:'Demo handling tariff: 120,000 VND.'}])
 };
 
+// Additional M4 review cases; independent IDs keep the original walkthrough intact.
+managerSeed.customers.push(...scoped([{id:'CUS-DEMO-004',name:'Tran Minh Chau',email:'chau.demo@example.test',phone:'090 456 7890',address:'District 5, Ho Chi Minh City',verification:'PENDING',created:today}]));
+managerSeed.reservations.push(...scoped([
+ {id:'RES-DEMO-APPROVE',customerId:'CUS-001',service:'MANAGED_INVENTORY',allocated_capacity_m3:2,start:shift(5),end:shift(35),status:'PENDING',created:today,timeline:initialTimeline},
+ {id:'RES-DEMO-REJECT',customerId:'CUS-001',service:'MANAGED_INVENTORY',allocated_capacity_m3:1,start:shift(7),end:shift(37),status:'PENDING',created:today,timeline:initialTimeline},
+ {id:'RES-DEMO-BLOCKED',customerId:'CUS-001',service:'SELF_STORAGE',unitId:'UNIT-A102',size:'Small',start:shift(4),end:shift(34),status:'PENDING',created:today,timeline:initialTimeline},
+]));
+managerSeed.refunds.push(...scoped([{id:'REF-DEMO-REJECT',paymentId:'PAY-M002',customerId:'CUS-002',reason:'Demo review: insufficient evidence for unused prepaid days',unusedDays:2,periodDays:30,status:'PENDING',policy:'Demo: payment × unused days / billing days; Manager must review the evidence.',timeline:initialTimeline}]));
+
 managerSeed.tasks.push(...scoped(['CHECK_IN','INSPECTION','CHECKOUT'].map((type,i)=>({id:`TASK-0${10+i}`,type,date:today,status:'PENDING',staffId:null,service:'MANAGED_INVENTORY',rentalId:'RENT-002',resource:'Allocated capacity · 10 m³',notes:'',timeline:initialTimeline}))));
 
 managerSeed.tasks.push(...scoped([{id:'TASK-013',type:'SUPPORT',deskId:'SUP-002',date:today,status:'IN_PROGRESS',staffId:'STAFF-002',resource:'Archive box collection support',notes:'',timeline:initialTimeline},{id:'TASK-014',type:'MAINTENANCE',deskId:'MNT-002',date:today,status:'PENDING',staffId:null,resource:'Shelf A-02 / S-01',notes:'',timeline:initialTimeline},{id:'TASK-015',type:'MAINTENANCE',deskId:'MNT-003',date:today,status:'PENDING',staffId:null,resource:'Zone B lighting',notes:'',timeline:initialTimeline}]));
