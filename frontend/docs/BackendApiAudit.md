@@ -117,3 +117,11 @@ The collection has no saved User-list response DTO example. The adapter supports
 Validation: intercepted four-method contract tests, loading/errors/empty/retry/duplicate/password/401 behavior, session isolation/late response tests, VITE_USE_MOCK=false behavior and 28 Admin desktop/mobile route checks passed. Public/Customer/Manager/Staff/BOM/Auth regressions and npm run build passed. Existing non-fatal main-bundle >500 kB warning remains.
 
 Full report: `docs/AdminPriority5.md`.
+
+## Auth recovery / registration consent addendum — 2026-10-06
+
+User-supplied Auth controller contract confirms POST `/api/v1/auth/forgot-password` with `{email}` and POST `/api/v1/auth/reset-password` with `{email,otp,newPassword}`. Both public methods now use the existing Axios client with skipAuth; confirmed-request allowlist extended only for these paths. No OTP/password/token storage changes and no invented endpoints.
+
+Registration still sends only email/password/displayName/phone to `/users/register`. Terms/Privacy agreement is explicit frontend dialog consent only; server persistence/versioning requires a future contract. Existing Login/Profile/Logout integrations preserved.
+
+Recovery/consent responsive tests and existing Auth/Profile contract regression passed; build passed. Backend localhost:5000 responds (unauthenticated Users probe: 401); real email delivery and password mutation were not performed. Full scope, gaps and validation: `docs/AuthRecoveryConsent.md`.
