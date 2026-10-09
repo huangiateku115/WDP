@@ -11,4 +11,6 @@ router.get('/facilities/:facilityId/storage-units', requireAuth, controller.getS
 router.get('/storage-units/:id', requireAuth, controller.getStorageUnitById);
 router.patch('/storage-units/:id', requireAuth, manage, controller.updateStorageUnit);
 router.patch('/storage-units/:id/status', requireAuth, manage, controller.updateStorageUnitStatus);
+router.delete('/storage-units/:id', requireAuth, manage, controller.deleteStorageUnit);
+router.post('/storage-units/:id/restore', requireAuth, manage, controller.restoreStorageUnit);
 export default router;

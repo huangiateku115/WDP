@@ -85,12 +85,16 @@ Unknown/immutable fields and MongoDB update operators are rejected.
 List query: `page=1&limit=20&status=ACTIVE&serviceType=SELF_STORAGE&search=HCM`.
 Limit is 1–100; page is 1–1000000. Search is a literal case-insensitive match on
 code, name, or address.city. Without status, both ACTIVE and INACTIVE are included.
+Deleted rows are hidden from normal list/detail reads. ADMIN/BOM may request
+`includeDeleted=true`; `DELETE /api/v1/facilities/:id` soft-deletes and
+`POST /api/v1/facilities/:id/restore` restores. Neither operation cascades, and
+the unique code remains reserved while deleted.
 Responses use `{success:true,data:...}`; list additionally returns
 `pagination: {page,limit,total,totalPages}`. Invalid input/ID returns 400,
 missing records 404, duplicate codes 409. Production error messages follow
 Phase 0's generic safe messages.
 
-Deactivation only changes status: no delete/cascade or booking behavior exists here.
+Deactivation only changes status; soft deletion records `deletedAt` and `deletedBy` without cascading.
 Future booking modules must explicitly enforce ACTIVE status. Atlas index creation
 must succeed for database-level uniqueness; these isolated tests do not verify live indexes.
 Run `npm run build` then `node --test tests/facility.test.cjs tests/infrastructure.test.cjs`.
@@ -99,13 +103,14 @@ Facility tests mock persistence/authentication boundaries and never connect to A
 ## Storage Unit API (BE-03)
 
 All endpoints require a Keycloak bearer token and an active backend user.
-No inventory items, pricing, reservation/rental flows or DELETE endpoint are implemented.
+No inventory items, pricing, reservation/rental flows or physical DELETE are implemented.
 
 | Method | Path |
 | --- | --- |
 | POST / GET | `/api/v1/facilities/:facilityId/storage-units` |
-| GET / PATCH | `/api/v1/storage-units/:id` |
+| GET / PATCH / DELETE | `/api/v1/storage-units/:id` |
 | PATCH | `/api/v1/storage-units/:id/status` |
+| POST | `/api/v1/storage-units/:id/restore` |
 
 Create example:
 
@@ -229,3 +234,16 @@ Run `npm run build`, then:
 ```sh
 node --test tests/pricing-policy.test.cjs tests/facility.test.cjs tests/storage-unit.test.cjs tests/infrastructure.test.cjs tests/cors.test.cjs
 ```
+
+## Maintenance Ticket API (BE-12)
+
+Facility-scoped maintenance tickets use `/api/v1/maintenance-tickets`. Tickets
+follow `OPEN → ASSIGNED → IN_PROGRESS → RESOLVED → CLOSED`; resolving requires a
+note, and lifecycle timestamps are server-managed. Deletes are soft deletes and
+are limited to OPEN tickets. Ticket operations never mutate StorageUnit status.
+See [Phase 5 Postman requests](docs/phase-5-maintenance-postman.md) for request
+bodies, roles, scope rules, and the transition matrix.
+
+# Support API (Phase 6)
+
+Support endpoints are mounted at `/api/v1/support-requests` and require a Keycloak bearer token. Request examples, roles, lifecycle rules, and Postman checks are in [`docs/phase-6-support-postman.md`](docs/phase-6-support-postman.md). Customer ownership is derived from the authenticated user; internal messages are never returned to customers. Manual escalation targets an active Facility Manager assigned to the ticket facility. No SLA duration or automated SLA job is configured.

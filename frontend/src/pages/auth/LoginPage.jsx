@@ -20,7 +20,7 @@ export default function LoginPage() {
     saveAuthSession({accessToken:tokens?.accessToken,refreshToken:tokens?.refreshToken,user:tokens?.user});
     let user=tokens?.user||null;
     try{user=profileFromResponse(await authApi.me());if(getAccessToken()!==tokens.accessToken)return;saveSessionUser(user);}catch(err){if(!getAccessToken())throw err;}
-    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':'/portal');
+    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':user?.role==='BOM'?'/bom/dashboard':user?.role==='ADMIN'?'/admin/dashboard':'/portal');
   }catch(err){setError(apiErrorMessage(err,'Unable to sign in. Please try again.'));}finally{busy.current=false;setPending(false);}};
   return (
     <div className="mx-auto max-w-5xl px-5 py-14">

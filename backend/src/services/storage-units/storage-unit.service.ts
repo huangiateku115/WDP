@@ -6,7 +6,7 @@ import { IUser, UserRole } from '../../types/user.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { managementStatuses, parseList, parseStatusBody, parseUnit, StorageUnitError, validateId } from './storage-unit.validation';
 
-type Actor = Pick<IUser, 'role' | 'assignedFacilityId'> | undefined;
+type Actor = Pick<IUser, 'role' | 'assignedFacilityId' | '_id'> | undefined;
 function scope(actor: Actor, facilityId: string, write = false) {
   if (!actor) throw new StorageUnitError(401, 'Authentication required');
   if (!Object.values(UserRole).includes(actor.role)) throw new StorageUnitError(403, 'Forbidden');
@@ -19,13 +19,22 @@ function scope(actor: Actor, facilityId: string, write = false) {
   }
 }
 function activeSelfStorage(facility: IFacility) {
-  if (facility.status !== FacilityStatus.ACTIVE ||
-      !facility.serviceTypes.includes(FacilityServiceType.SELF_STORAGE)) {
-    throw new StorageUnitError(409, 'An ACTIVE SELF_STORAGE facility is required');
+  if (facility.status !== FacilityStatus.ACTIVE) {
+    throw new StorageUnitError(
+      409,
+      'Facility must be ACTIVE to manage storage units'
+    );
+  }
+
+  if (!facility.serviceTypes.includes(FacilityServiceType.SELF_STORAGE)) {
+    throw new StorageUnitError(
+      409,
+      'Facility does not support SELF_STORAGE'
+    );
   }
 }
 async function facilityById(id: string) {
-  const facility = await FacilityModel.findById(id).exec();
+  const facility = await FacilityModel.findOne({ _id: id, deletedAt: { $exists: false } }).exec();
   if (!facility) throw new StorageUnitError(404, 'Facility not found');
   return facility;
 }
@@ -41,7 +50,7 @@ async function execute<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 async function unitById(id: string, actor: Actor, write = false) {
-  const unit = await StorageUnitModel.findById(id).exec();
+  const unit = await StorageUnitModel.findOne({ _id: id, deletedAt: { $exists: false } }).exec();
   if (!unit) throw new StorageUnitError(404, 'Storage unit not found');
   scope(actor, unit.facilityId.toString(), write);
   return unit;
@@ -63,7 +72,7 @@ export class StorageUnitService {
     const { page, limit, filter } = parseList(input);
     return execute(async () => {
       await facilityById(facilityId);
-      const scopedFilter = { ...filter, facilityId: new Types.ObjectId(facilityId) };
+      const scopedFilter = { ...filter, deletedAt: { $exists: false }, facilityId: new Types.ObjectId(facilityId) };
       const [data, total] = await Promise.all([
         StorageUnitModel.find(scopedFilter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
         StorageUnitModel.countDocuments(scopedFilter).exec(),
@@ -96,6 +105,36 @@ export class StorageUnitService {
       if (status === StorageUnitStatus.AVAILABLE) activeSelfStorage(facility);
       unit.status = status;
       return unit.save();
+    });
+  }
+  static async deleteStorageUnit(id: unknown, actor: Actor) {
+    validateId(id);
+    return execute(async () => {
+      const unit = await unitById(id, actor, true);
+      if (!managementStatuses.includes(unit.status)) throw new StorageUnitError(409, 'HELD and OCCUPIED units cannot be deleted');
+      unit.deletedAt = new Date();
+      if (actor && '_id' in actor && actor._id) unit.deletedBy = new Types.ObjectId(actor._id);
+      return unit.save();
+    });
+  }
+  static async restoreStorageUnit(id: unknown, actor: Actor) {
+    validateId(id);
+    if (!actor) throw new StorageUnitError(401, 'Authentication required');
+    return execute(async () => {
+      const unit = await StorageUnitModel.findById(id).exec();
+      if (!unit || !unit.deletedAt) throw new StorageUnitError(404, 'Deleted storage unit not found');
+      scope(actor, unit.facilityId.toString(), true);
+      const facility = await facilityById(unit.facilityId.toString());
+      if (!facility.serviceTypes.includes(FacilityServiceType.SELF_STORAGE)) {
+        throw new StorageUnitError(409, 'Facility does not support SELF_STORAGE');
+      }
+      const restored = await StorageUnitModel.findOneAndUpdate(
+        { _id: id, deletedAt: { $exists: true } },
+        { $unset: { deletedAt: 1, deletedBy: 1 } },
+        { new: true, runValidators: true },
+      ).exec();
+      if (!restored) throw new StorageUnitError(404, 'Deleted storage unit not found');
+      return restored;
     });
   }
 }

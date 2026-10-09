@@ -20,6 +20,8 @@ export interface IStorageUnit extends Document {
   volumeM3: number;
   status: StorageUnitStatus;
   description?: string;
+  deletedAt?: Date;
+  deletedBy?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }

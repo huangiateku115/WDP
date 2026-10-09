@@ -6,6 +6,8 @@ const userApi={
  getUsers:config=>axiosClient.get('/users',config),
  createUser:({email,password,displayName,phone,role})=>axiosClient.post('/users',{email,password,displayName,phone,role}),
  changeUserRole:(userId,role)=>axiosClient.patch(`/users/${encodeURIComponent(userId)}/role`,{role}),
+ updateUser:(userId,{displayName,phone,email})=>axiosClient.put(`/users/${encodeURIComponent(userId)}`,{displayName,phone,email}),
+ reactivateUser:userId=>axiosClient.patch(`/users/${encodeURIComponent(userId)}/reactivate`),
  deactivateUser:userId=>axiosClient.delete(`/users/${encodeURIComponent(userId)}`),
 };
 export default userApi;

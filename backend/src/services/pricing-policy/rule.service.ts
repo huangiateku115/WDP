@@ -51,7 +51,7 @@ export class RuleService {
   }
   private async parent(record: Rule | Record<string, unknown>, session: ClientSession) {
     const facility = await FacilityModel.findById(record.facilityId).session(session).exec();
-    if (!facility) throw new RuleError(404, 'Facility not found');
+    if (!facility || facility.deletedAt) throw new RuleError(404, 'Facility not found');
     if (facility.status !== FacilityStatus.ACTIVE) throw new RuleError(409, 'ACTIVE Facility required');
     if (record.serviceType && !facility.serviceTypes.includes(record.serviceType as FacilityServiceType)) throw new RuleError(409, 'Facility does not support serviceType');
   }
@@ -117,12 +117,35 @@ export class RuleService {
     authorize(actor);
     const { key, at } = validation.resolver(this.kind, input);
     return safe(async () => {
-      const results = await this.model.find({ ...keyFilter(this.kind, key), isActive: true,
-        effectiveFrom: { $lte: at }, $or: [{ effectiveTo: { $exists: false } }, { effectiveTo: { $gt: at } }],
-      }).limit(2).lean().exec();
+      const results = await this.model.find({ ...keyFilter(this.kind, key), ...RuleService.effectiveFilter(at) }).limit(2).lean().exec();
       if (!results.length) throw new RuleError(404, 'No effective rule');
       if (results.length !== 1) throw new RuleError(409, 'Ambiguous effective rules');
       return results[0];
+    });
+  }
+  private static effectiveFilter(at: Date) {
+    return { isActive: true, effectiveFrom: { $lte: at }, $or: [{ effectiveTo: { $exists: false } }, { effectiveTo: { $gt: at } }] };
+  }
+  async currentPublicPricing(facilityId: string, at = new Date()) {
+    if (this.kind !== 'pricing') throw new RuleError(500, 'Pricing resolver unavailable');
+    return safe(async () => {
+      const records = await this.model.find({ facilityId: new Types.ObjectId(facilityId), ...RuleService.effectiveFilter(at) }).lean().exec();
+      const keys = new Set<string>();
+      return records.map(record => {
+        const rule = record as PricingRule;
+        const key = JSON.stringify([rule.serviceType, rule.unitSize ?? null, rule.term.value, rule.term.unit]);
+        if (keys.has(key)) throw new RuleError(409, 'Ambiguous effective pricing rules');
+        keys.add(key);
+        return {
+          serviceType: rule.serviceType,
+          ...(rule.unitSize ? { unitSize: rule.unitSize } : {}),
+          term: { value: rule.term.value, unit: rule.term.unit },
+          price: rule.price,
+          currency: rule.currency,
+          effectiveFrom: rule.effectiveFrom,
+          ...(rule.effectiveTo ? { effectiveTo: rule.effectiveTo } : {}),
+        };
+      });
     });
   }
   async update(resourceId: unknown, input: unknown, actor: Actor, statusOnly = false) {

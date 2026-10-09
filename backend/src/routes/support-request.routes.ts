@@ -1,0 +1,23 @@
+import { Router } from 'express';
+import * as controller from '../controllers/support-requests/support-request.controller';
+import { requireAuth } from '../middlewares/auth/requireAuth';
+import { requireRole } from '../middlewares/auth/requireRole';
+import { UserRole } from '../types/user.type';
+
+const router = Router();
+const manager = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER]);
+const all = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.CUSTOMER]);
+router.use(requireAuth);
+router.get('/', all, controller.list);
+router.post('/', all, controller.create);
+router.get('/:id/messages', all, controller.listMessages);
+router.post('/:id/messages', all, controller.addMessage);
+router.post('/:id/assign', manager, controller.assign);
+router.post('/:id/unassign', manager, controller.unassign);
+router.patch('/:id/status', all, controller.updateStatus);
+router.post('/:id/escalate', manager, controller.escalate);
+router.post('/:id/restore', manager, controller.restore);
+router.get('/:id', all, controller.get);
+router.patch('/:id', all, controller.update);
+router.delete('/:id', manager, controller.softDelete);
+export default router;

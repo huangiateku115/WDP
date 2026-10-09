@@ -12,6 +12,9 @@ const mongoose = require('mongoose');
 // No database connection is opened. All persistence calls below are mocked.
 mongoose.set('bufferCommands', false);
 const Model = require('../dist/models/facilities/facility.model').default;
+const StorageUnit = require('../dist/models/storage-units/storage-unit.model').default;
+const Pricing = require('../dist/models/pricing-policy/pricing-rule.model').default;
+const Policy = require('../dist/models/pricing-policy/policy.model').default;
 const { FacilityService: service } = require('../dist/services/facilities/facility.service');
 const { parseList } = require('../dist/services/facilities/facility.validation');
 const id = '507f1f77bcf86cd799439011';
@@ -53,7 +56,7 @@ test('create valid facility passes normalized allowlisted data', async t => {
 test('duplicate code translates to 409 on create and update', async t => {
   const duplicate = () => { throw Object.assign(new Error('private Mongo details'), { code: 11000 }); };
   t.mock.method(Model, 'create', duplicate);
-  t.mock.method(Model, 'findByIdAndUpdate', duplicate);
+  t.mock.method(Model, 'findOneAndUpdate', duplicate);
   for (const op of [
     () => service.createFacility(valid()), () => service.updateFacility(id, { code: 'hcm-01' }),
   ]) {
@@ -84,10 +87,10 @@ test('invalid ObjectId is rejected before model access', async t => {
 
 test('get and not-found responses', async t => {
   const doc = new Model(valid());
-  t.mock.method(Model, 'findById', requested => { assert.equal(requested, id); return query(doc); });
+  t.mock.method(Model, 'findOne', filter => { assert.equal(filter._id, id); assert.deepEqual(filter.deletedAt, { $exists: false }); return query(doc); });
   assert.equal(await service.getFacilityById(id), doc);
-  t.mock.method(Model, 'findById', () => query(null));
-  t.mock.method(Model, 'findByIdAndUpdate', () => query(null));
+  t.mock.method(Model, 'findOne', () => query(null));
+  t.mock.method(Model, 'findOneAndUpdate', () => query(null));
   await assert.rejects(() => service.getFacilityById(id), { status: 404 });
   await assert.rejects(() => service.updateFacility(id, { name: 'New' }), { status: 404 });
   await assert.rejects(() => service.updateFacilityStatus(id, { status: 'INACTIVE' }), { status: 404 });
@@ -122,9 +125,72 @@ test('list pagination, status/service filters and literal search reach model', a
   }
 });
 
+test('soft delete/restore filters, authorization, reserved code and no child cascade', async t => {
+  const deletedAt = new Date();
+  const deleted = new Model({ ...valid(), deletedAt, deletedBy: new mongoose.Types.ObjectId() });
+  for (const role of ['ADMIN', 'BOM']) {
+    t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
+      assert.deepEqual(filter.deletedAt, { $exists: false });
+      assert.ok(update.$set.deletedAt instanceof Date);
+      return query(deleted);
+    });
+    assert.equal(await service.deleteFacility(id, { role, _id: new mongoose.Types.ObjectId() }), deleted);
+  }
+  t.mock.method(Model, 'find', filter => {
+    assert.deepEqual(filter.deletedAt, { $exists: false });
+    return { sort() { return this; }, skip() { return this; }, limit() { return this; }, lean() { return this; }, ...query([]) };
+  });
+  t.mock.method(Model, 'countDocuments', filter => { assert.deepEqual(filter.deletedAt, { $exists: false }); return query(0); });
+  await service.getFacilities({}, { role: 'CUSTOMER' });
+  t.mock.method(Model, 'findOne', filter => { assert.deepEqual(filter.deletedAt, { $exists: false }); return query(null); });
+  await assert.rejects(service.getFacilityById(id), { status: 404 });
+
+  t.mock.method(Model, 'find', filter => {
+    assert.equal(filter.deletedAt, undefined);
+    return { sort() { return this; }, skip() { return this; }, limit() { return this; }, lean() { return this; }, ...query([deleted]) };
+  });
+  t.mock.method(Model, 'countDocuments', filter => { assert.equal(filter.deletedAt, undefined); return query(1); });
+  assert.equal((await service.getFacilities({ includeDeleted: 'true' }, { role: 'ADMIN' })).data[0], deleted);
+  assert.equal((await service.getFacilities({ includeDeleted: 'true' }, { role: 'BOM' })).data[0], deleted);
+  await assert.rejects(service.getFacilities({ includeDeleted: 'true' }, { role: 'CUSTOMER' }), { status: 403 });
+
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
+    assert.deepEqual(filter.deletedAt, { $exists: true });
+    assert.deepEqual(update, { $unset: { deletedAt: 1, deletedBy: 1 } });
+    return query(new Model(valid()));
+  });
+  const restored = await service.restoreFacility(id, { role: 'ADMIN', _id: new mongoose.Types.ObjectId() });
+  assert.equal(restored.deletedAt, undefined);
+  t.mock.method(Model, 'find', filter => {
+    assert.deepEqual(filter.deletedAt, { $exists: false });
+    return { sort() { return this; }, skip() { return this; }, limit() { return this; }, lean() { return this; }, ...query([restored]) };
+  });
+  t.mock.method(Model, 'countDocuments', () => query(1));
+  assert.equal((await service.getFacilities({}, { role: 'ADMIN' })).data[0], restored);
+  t.mock.method(Model, 'findOneAndUpdate', () => query(null));
+  await assert.rejects(service.restoreFacility(id, { role: 'BOM', _id: new mongoose.Types.ObjectId() }), { status: 404 });
+  await assert.rejects(service.deleteFacility(id, { role: 'ADMIN', _id: new mongoose.Types.ObjectId() }), { status: 404 });
+
+  const existing = new Set(['HCM-01']);
+  t.mock.method(Model, 'create', async data => {
+    if (existing.has(data.code)) throw Object.assign(new Error('duplicate'), { code: 11000 });
+    existing.add(data.code); return new Model(data);
+  });
+  await assert.rejects(service.createFacility(valid()), { status: 409 });
+  // A soft delete must not invoke destructive writes on child collections.
+  const destructive = [
+    t.mock.method(StorageUnit, 'deleteMany', async () => ({})),
+    t.mock.method(Pricing, 'deleteMany', async () => ({})),
+    t.mock.method(Policy, 'deleteMany', async () => ({})),
+  ];
+  assert.deepEqual(destructive.map(method => method.mock.callCount()), [0, 0, 0]);
+  assert.deepEqual(Model.schema.indexes().find(([keys, options]) => keys.code && options.unique)[0], { code: 1 });
+});
+
 test('update uses dotted nested fields and validation without upsert', async t => {
-  t.mock.method(Model, 'findByIdAndUpdate', (requested, update, options) => {
-    assert.equal(requested, id);
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(filter._id, id);
+    assert.deepEqual(filter.deletedAt, { $exists: false });
     assert.deepEqual(update, { $set: { name: 'Updated', 'address.city': 'Da Nang' } });
     assert.deepEqual(options, { new: true, runValidators: true });
     return query({ name: 'Updated' });
@@ -133,7 +199,8 @@ test('update uses dotted nested fields and validation without upsert', async t =
 });
 
 test('activate/deactivate updates only status; no cascade/delete', async t => {
-  t.mock.method(Model, 'findByIdAndUpdate', (_id, update) => {
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
+    assert.deepEqual(filter.deletedAt, { $exists: false });
     assert.deepEqual(Object.keys(update.$set), ['status']);
     return query({ status: update.$set.status });
   });
@@ -186,15 +253,15 @@ test('HTTP endpoints: auth roles, success envelopes and global error statuses', 
     assert.equal(response.status, 201);
     assert.equal((await response.json()).data.code, 'HCM-01');
   }
-  t.mock.method(Model, 'findById', () => query(new Model(valid())));
+  t.mock.method(Model, 'findOne', () => query(new Model(valid())));
   let response = await request('GET', '/' + id, 'CUSTOMER');
   assert.equal(response.status, 200);
   assert.equal((await response.json()).success, true);
-  t.mock.method(Model, 'findByIdAndUpdate', (_id, update) => query(update.$set));
+  t.mock.method(Model, 'findOneAndUpdate', (_filter, update) => query(update.$set));
   assert.equal((await request('PATCH', '/' + id, 'ADMIN', { name: 'New' })).status, 200);
   assert.equal((await request('PATCH', '/' + id + '/status', 'BOM', { status: 'INACTIVE' })).status, 200);
   assert.equal((await request('GET', '/invalid', 'CUSTOMER')).status, 400);
-  t.mock.method(Model, 'findById', () => query(null));
+  t.mock.method(Model, 'findOne', () => query(null));
   assert.equal((await request('GET', '/' + id, 'CUSTOMER')).status, 404);
   t.mock.method(Model, 'create', () => { throw { code: 11000, message: 'private Mongo' }; });
   response = await request('POST', '', 'ADMIN', valid());
@@ -204,6 +271,12 @@ test('HTTP endpoints: auth roles, success envelopes and global error statuses', 
   response = await request('POST', '', 'ADMIN', valid());
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { success: false, message: 'Internal Server Error' });
-  assert.equal((await request('DELETE', '/' + id, 'ADMIN')).status, 404);
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
+    assert.deepEqual(filter.deletedAt, { $exists: false });
+    assert.ok(update.$set.deletedAt instanceof Date);
+    return query({ _id: id, deletedAt: update.$set.deletedAt });
+  });
+  assert.equal((await request('DELETE', '/' + id, 'ADMIN')).status, 200);
+  assert.equal((await request('POST', '/' + id + '/restore', 'CUSTOMER')).status, 403);
 });
 
