@@ -1,3 +1,4 @@
+import {ContractDetailIntegration} from '@/components/customer/RentalLifecycleIntegration';
 import Steps from '@/components/common/Steps';
 import { useEffect, useState, useRef } from 'react';
 import { useReservation } from '@/contexts/ReservationContext';
@@ -8,7 +9,7 @@ import PortalHero from "@/components/common/PortalHero";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-export default function ContractPage() {
+function ContractPage() {
   const nav = useNavigate();
   const { reservationId } = useParams();
   const { contracts, confirmContract } = useReservation();
@@ -145,3 +146,6 @@ export default function ContractPage() {
   );
 }
 
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default ContractDetailIntegration;

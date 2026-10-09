@@ -1,3 +1,4 @@
+import {ContractsIntegration} from '@/components/customer/RentalLifecycleIntegration';
 import { Link } from 'react-router-dom';
 import { FileSignature, ArrowRight, CircleCheck } from 'lucide-react';
 import { useReservation } from '@/contexts/ReservationContext';
@@ -6,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import SpotlightCard from '@/components/reactbits/SpotlightCard';
-export default function ContractsPage() {
+function ContractsPage() {
   const { contracts } = useReservation();
   const pending = contracts.filter(item => item.contractStatus !== 'SIGNED');
   return <div className="mx-auto max-w-6xl p-5 md:p-8">
@@ -22,3 +23,6 @@ export default function ContractsPage() {
     {!pending.length && <Card className="mt-5"><CardContent className="py-14 text-center"><CircleCheck className="mx-auto text-sky-700" size={44}/><h2 className="mt-5 text-xl font-bold">No contracts awaiting confirmation</h2><p className="mt-2 text-sm text-slate-500">New contracts appear here after you submit a reservation.</p><Button asChild className="mt-6"><Link to="/portal/rent">Book storage</Link></Button></CardContent></Card>}
   </div>;
 }
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default ContractsIntegration;

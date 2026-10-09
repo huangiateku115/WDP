@@ -1,3 +1,4 @@
+import {ReservationDetailIntegration} from '@/components/customer/RentalLifecycleIntegration';
 import { useReservation } from '@/contexts/ReservationContext';
 import { formatMoney, formatDate } from '@/lib/booking';
 import { useNavigate, useParams } from "react-router-dom";
@@ -5,7 +6,7 @@ import Steps from "@/components/common/Steps";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-export default function ReservationStatusPage() {
+function ReservationStatusPage() {
   const nav = useNavigate();
   const { id } = useParams();
   const { contracts } = useReservation();
@@ -101,3 +102,6 @@ export default function ReservationStatusPage() {
     </div>
   );
 }
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default ReservationDetailIntegration;

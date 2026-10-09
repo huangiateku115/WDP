@@ -1,3 +1,4 @@
+import {ReservationReviewIntegration} from '@/components/customer/RentalBookingIntegration';
 import { useState, useRef } from 'react';
 import { useReservation } from '@/contexts/ReservationContext';
 import reservationApi from '@/api/reservationApi';
@@ -8,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-export default function ReviewReservationPage() {
+function ReviewReservationPage() {
   const nav = useNavigate();
   const { reservation, addContract } = useReservation();
   const [confirmed, setConfirmed] = useState(false);
@@ -118,3 +119,6 @@ export default function ReviewReservationPage() {
     </div>
   );
 }
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default ReservationReviewIntegration;

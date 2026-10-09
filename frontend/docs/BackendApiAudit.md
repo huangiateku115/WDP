@@ -125,3 +125,13 @@ User-supplied Auth controller contract confirms POST `/api/v1/auth/forgot-passwo
 Registration still sends only email/password/displayName/phone to `/users/register`. Terms/Privacy agreement is explicit frontend dialog consent only; server persistence/versioning requires a future contract. Existing Login/Profile/Logout integrations preserved.
 
 Recovery/consent responsive tests and existing Auth/Profile contract regression passed; build passed. Backend localhost:5000 responds (unauthenticated Users probe: 401); real email delivery and password mutation were not performed. Full scope, gaps and validation: `docs/AuthRecoveryConsent.md`.
+
+## Customer Core Rental addendum — 2026-10-08
+
+Source: supplied Customer integration request, WDP.postman_collectionV2.json and docs_rental_workflow.md; local storage/pricing/facility backend source inspected read-only. Existing Auth/User integrations are preserved. Customer core reads and identity/access writes use the existing client/session without mock fallback. Existing Customer URLs are unchanged and now have an authenticated Customer gate.
+
+Public facilities/options/pricing, authenticated units, pricing/policy resolve, reservations/me/detail, contracts/me, support list/detail, identity PUT and simulated-access POST are wired. Exact create-reservation and mock-pay request methods are API-ready but production UI remains disabled pending amount/policy and payment-eligibility contracts. Signing is not allowlisted or sent because V2 POST/body conflicts with workflow PATCH/no-body. Support creation/reply and message visibility remain contract-blocked. No Manager/Staff approval/inspection actions or invented payment/extension/cancellation APIs.
+
+Strict new response reading requires success:true and data; unsupported envelopes fail visibly. Actual newer DTOs, DRAFT contracts, unlock outcome mapping, Customer verification retrieval and pricingPolicyId/deposit semantics still require backend confirmation. Existing checkout source lacks these new controllers; localhost:5000 public/health probes were unreachable. No real authenticated E2E/mutations were performed.
+
+Executed: synthetic Customer contract/guard/lifecycle/security tests, 36 responsive views, other-role route smoke tests and Auth/Profile regression. Build passed. Full implementation matrix, changed files and blockers: docs/CustomerCoreRentalIntegration.md.

@@ -1,3 +1,4 @@
+import {RentalsIntegration} from '@/components/customer/RentalLifecycleIntegration';
 import { useNavigate } from 'react-router-dom';
 import CustomerRentalTools from '@/components/common/CustomerRentalTools';
 import referenceImages from '@/components/common/referenceImages';
@@ -6,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { KeyRound, Headphones, PlusCircle } from "lucide-react";
-export default function MyStoragePage() {
+function MyStoragePage() {
   const nav = useNavigate();
   return (
     <div className="mx-auto max-w-6xl p-5 md:p-8">
@@ -109,3 +110,6 @@ function Portal() {
 
 
 
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default RentalsIntegration;

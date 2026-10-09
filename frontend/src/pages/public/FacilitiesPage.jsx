@@ -1,3 +1,4 @@
+import {FacilityBrowser} from '@/components/customer/RentalBookingIntegration';
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -53,7 +54,7 @@ const facilities = [
   },
 ];
 
-export default function FacilitiesPage() {
+function FacilitiesPage() {
   const [district, setDistrict] = useState("All Districts");
   const [type, setType] = useState("All Solutions");
   const [size, setSize] = useState("Any Size");
@@ -341,3 +342,6 @@ function Feature({ icon: Icon, title, text }) {
     </div>
   );
 }
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default FacilityBrowser;

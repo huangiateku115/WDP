@@ -5,6 +5,8 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
 const storageApi = {
+  listUnits: (facilityId,config)=>axiosClient.get(`/facilities/${encodeURIComponent(facilityId)}/storage-units`,config),
+  unitDetail: (id,config)=>axiosClient.get(`/storage-units/${encodeURIComponent(id)}`,config),
   getAvailable: async ({ facilityId, serviceType } = {}) => {
     if (USE_MOCK) {
       await delay();

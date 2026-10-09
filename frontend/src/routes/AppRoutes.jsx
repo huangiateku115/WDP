@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import PublicLayout from "@/layouts/PublicLayout";
 import AuthLayout from "@/layouts/AuthLayout";
 import CustomerLayout from "@/layouts/CustomerLayout";
+import CustomerGate from '@/components/customer/CustomerGate';
 import HomePage from "@/pages/public/HomePage";
 import FacilitiesPage from "@/pages/public/FacilitiesPage";
 import HowItWorksPage from "@/pages/public/HowItWorksPage";
@@ -54,7 +55,7 @@ export default function AppRoutes() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>
-      <Route path="/portal" element={<CustomerLayout />}>
+      <Route path="/portal" element={<CustomerGate><CustomerLayout /></CustomerGate>}>
         <Route index element={<MyStoragePage />} />
         <Route path="inventory" element={<MyInventoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
