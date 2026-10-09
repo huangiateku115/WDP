@@ -4,6 +4,7 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const paymentApi = {
+  mockPayReal: reservationId=>axiosClient.post(`/reservations/${encodeURIComponent(reservationId)}/mock-pay`),
   createPayment: async (payload) => {
     if (USE_MOCK) {
       await delay();

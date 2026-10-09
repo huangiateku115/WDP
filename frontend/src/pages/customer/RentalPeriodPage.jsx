@@ -1,3 +1,4 @@
+import {RentalPeriodIntegration} from '@/components/customer/RentalBookingIntegration';
 import { useReservation } from '@/contexts/ReservationContext';
 import { Input } from '@/components/ui/input';
 import { calculatePricing, durationOptions, localToday, formatMoney, defaultStorage, defaultFacility } from '@/lib/booking';
@@ -12,7 +13,7 @@ const plans = [
   ["6 MONTHS", "1,350,000", "Recommended"],
   ["12 MONTHS", "1,275,000", "Best Value"],
 ];
-export default function RentalPeriodPage() {
+function RentalPeriodPage() {
   const nav = useNavigate();
   const { reservation, updateReservation } = useReservation();
   const storage = reservation.storage || defaultStorage;
@@ -107,3 +108,6 @@ export default function RentalPeriodPage() {
     </div>
   );
 }
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default RentalPeriodIntegration;

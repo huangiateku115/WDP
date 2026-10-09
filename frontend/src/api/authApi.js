@@ -2,6 +2,8 @@ import axiosClient from "./axiosClient";
 import userApi from "./userApi";
 
 const authApi = {
+  forgotPassword: ({email}) => axiosClient.post('/auth/forgot-password', {email}, {skipAuth:true}),
+  resetPassword: ({email,otp,newPassword}) => axiosClient.post('/auth/reset-password', {email,otp,newPassword}, {skipAuth:true}),
   login: async ({ email, password }) => {
     return axiosClient.post("/auth/login", { email, password }, {skipAuth:true});
   },

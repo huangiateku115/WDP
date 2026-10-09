@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import {useAuthSession} from '@/lib/authSession';
 
 const ReservationContext = createContext(null);
 const initialReservation = {
@@ -11,6 +12,10 @@ const initialReservation = {
 };
 
 export function ReservationProvider({ children }) {
+  const {accessToken}=useAuthSession();
+  const [liveDraft,setLiveDraft]=useState({token:null,value:{}});
+  const rentalDraft=liveDraft.token===accessToken?liveDraft.value:{};
+  const updateRentalDraft=patch=>setLiveDraft(current=>({token:accessToken,value:{...(current.token===accessToken?current.value:{}),...patch}}));
   const [contracts, setContracts] = useState(() => {
     try { return JSON.parse(localStorage.getItem('SelfStorage_pendingContracts') || sessionStorage.getItem('SelfStorage_pendingContracts')) || []; }
     catch { return []; }
@@ -60,7 +65,7 @@ export function ReservationProvider({ children }) {
 
   return (
     <ReservationContext.Provider
-      value={{ reservation, updateReservation, clearReservation, contracts, addContract, confirmContract }}
+      value={{ reservation, updateReservation, clearReservation, contracts, addContract, confirmContract, rentalDraft, updateRentalDraft }}
     >
       {children}
     </ReservationContext.Provider>

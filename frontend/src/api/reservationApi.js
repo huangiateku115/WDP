@@ -13,6 +13,9 @@ const saveOne = (item) => {
 };
 
 const reservationApi = {
+  createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount})=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount}),
+  mineReal: config=>axiosClient.get('/reservations/me',config),
+  detailReal: (id,config)=>axiosClient.get(`/reservations/${encodeURIComponent(id)}`,config),
   create: async (payload) => {
     if (USE_MOCK) {
       await delay(700);

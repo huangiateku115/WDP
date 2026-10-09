@@ -1,3 +1,4 @@
+import {StorageSelection} from '@/components/customer/RentalBookingIntegration';
 import { useReservation } from '@/contexts/ReservationContext';
 import { calculatePricing, defaultStorage, defaultFacility } from '@/lib/booking';
 import referenceImages from '@/components/common/referenceImages';
@@ -27,7 +28,7 @@ const units = [
     "LARGE CAPACITY",
   ],
 ];
-export default function SelectStoragePage() {
+function SelectStoragePage() {
   const nav = useNavigate();
   const { reservation, updateReservation } = useReservation();
   const selected = reservation.storage || defaultStorage;
@@ -139,3 +140,6 @@ export default function SelectStoragePage() {
 }
 
 
+
+// Core rental route uses backend data; the existing isolated preview implementation is preserved above.
+export default StorageSelection;

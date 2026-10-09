@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldCheck, KeyRound, ClipboardCheck } from "lucide-react";
+import TermsPrivacyDialog from '@/components/auth/TermsPrivacyDialog';
 export default function RegisterPage() {
   const nav = useNavigate();
+  const [policySection,setPolicySection]=useState(null);
   const busy=useRef(false),[values,setValues]=useState({email:'',password:'',displayName:'',phone:''}),[accepted,setAccepted]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState('');
   const change=(field,value)=>setValues(current=>({...current,[field]:value}));
   const register=async event=>{event.preventDefault();if(busy.current)return;setError('');if(!accepted){setError('Please accept the terms before creating your account.');return;}if(!values.displayName.trim()||!values.phone.trim()){setError('Name and phone are required.');return;}busy.current=true;setPending(true);try{await authApi.register({...values,email:values.email.trim(),displayName:values.displayName.trim(),phone:values.phone.trim()});nav('/login',{replace:true,state:{registered:true}});}catch(err){setError(apiErrorMessage(err,'Unable to create your account.'));}finally{busy.current=false;setPending(false);}};
@@ -73,10 +75,9 @@ export default function RegisterPage() {
             <div className="field-label">Create Password</div>
             <Input aria-label="Create password" type="password" autoComplete="new-password" placeholder="Minimum 8 characters" minLength={8} required value={values.password} onChange={e=>change('password',e.target.value)} disabled={pending}/>
           </div>
-          <label className="flex items-start gap-3 text-sm">
-            <Checkbox aria-label="Accept terms and privacy policy" checked={accepted} onCheckedChange={value=>setAccepted(value===true)} disabled={pending}/>I agree to the SelfStorage Terms of Service and Privacy
-            Policy.
-          </label>
+          <div className="flex items-start gap-3 text-sm">
+            <Checkbox aria-label="Accept terms and privacy policy" checked={accepted} onCheckedChange={value=>{if(value===true)setPolicySection('terms');else setAccepted(false);}} disabled={pending}/><span>I agree to the SelfStorage <button type="button" disabled={pending} className="font-semibold text-brand underline" onClick={()=>setPolicySection('terms')}>Terms of Service</button> and <button type="button" disabled={pending} className="font-semibold text-brand underline" onClick={()=>setPolicySection('privacy')}>Privacy Policy</button>.</span>
+          </div>
           {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
           <Button size="lg" type="submit" disabled={pending||!accepted}>
             {pending?'Creating account…':'Create Account & Get Started →'}
@@ -89,6 +90,7 @@ export default function RegisterPage() {
           </p>
         </form>
       </Card>
+      {policySection&&<TermsPrivacyDialog section={policySection} onClose={()=>setPolicySection(null)} onAgree={()=>{setAccepted(true);setPolicySection(null);}}/>}
     </div>
   );
 }

@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { LockKeyhole, Eye, ShieldCheck, AtSign } from "lucide-react";
+import { LockKeyhole, Eye, EyeOff, ShieldCheck, AtSign } from "lucide-react";
 export default function LoginPage() {
   const nav = useNavigate();
   const location=useLocation(),busy=useRef(false);
+  const [showPassword,setShowPassword]=useState(false);
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState('');
   const signIn=async event=>{event.preventDefault();if(busy.current)return;busy.current=true;setPending(true);setError('');try{
     const response=await authApi.login({email:email.trim(),password});
@@ -58,18 +59,18 @@ export default function LoginPage() {
             <div>
               <div className="flex justify-between">
                 <span className="field-label">Password</span>
-                <a className="text-xs text-blue-700">Forgot password?</a>
+                <Link to="/forgot-password" className="text-xs text-blue-700">Forgot password?</Link>
               </div>
               <div className="relative">
-                <Input aria-label="Password" type="password" autoComplete="current-password" placeholder="••••••••••••" required value={password} onChange={event=>setPassword(event.target.value)} disabled={pending} />
-                <Eye className="absolute right-4 top-3.5" size={18} />
+                <Input aria-label="Password" type={showPassword?'text':'password'} className="pr-12" autoComplete="current-password" placeholder="••••••••••••" required value={password} onChange={event=>setPassword(event.target.value)} disabled={pending} />
+                <button type="button" aria-label={showPassword?'Hide password':'Show password'} aria-pressed={showPassword} onClick={()=>setShowPassword(value=>!value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#176B3A]">{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button>
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <Checkbox defaultChecked disabled aria-label="Session stored on this device" />
               Stay signed in on this device until you sign out
             </div>
-            {location.state?.registered&&<p role="status" className="text-sm text-emerald-700">Account created. Sign in with your new credentials.</p>}
+            {location.state?.passwordReset?<p role="status" className="text-sm text-emerald-700">Password reset successfully. Sign in with your new password.</p>:location.state?.registered&&<p role="status" className="text-sm text-emerald-700">Account created. Sign in with your new credentials.</p>}
             {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
             <Button className="w-full" size="lg" type="submit" disabled={pending}>
               {pending?'Signing in…':'Sign In to My Storage →'}

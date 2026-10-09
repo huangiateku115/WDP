@@ -10,6 +10,12 @@ import pricingPolicyRoutes from './pricing-policy.routes';
 import publicRoutes from './public.routes';
 import maintenanceTicketRoutes from './maintenance-ticket.routes';
 import supportRequestRoutes from './support-request.routes';
+import customerProfileRoutes from './customer-profile.routes';
+import reservationRoutes from './reservation.routes';
+import contractRoutes from './contract.routes';
+import inspectionRoutes from './inspection.routes';
+import accessRoutes from './access.routes';
+import notificationRoutes from './notification.routes';
 
 const router = Router();
 
@@ -34,6 +40,12 @@ router.get('/', (req: Request, res: Response, next: NextFunction) => {
 // Gắn các Routes con vào
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
+router.use('/customers', customerProfileRoutes);
+router.use('/reservations', reservationRoutes);
+router.use('/contracts', contractRoutes);
+router.use('/inspections', inspectionRoutes);
+router.use('/access', accessRoutes);
+router.use('/notifications', notificationRoutes);
 router.use('/audit', auditRoutes);
 router.use('/facilities', facilityRoutes);
 router.use(storageUnitRoutes);
