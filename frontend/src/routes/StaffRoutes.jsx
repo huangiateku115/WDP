@@ -1,0 +1,11 @@
+import FacilityOperationsPage from '@/pages/staff/FacilityOperationsPage';
+import {Routes,Route,Navigate} from 'react-router-dom';
+import StaffLayout from '@/layouts/StaffLayout';
+import {StaffUnavailable} from '@/components/staff/StaffUI';
+import {DashboardPage,TasksPage,OperationsPage,MovementHistoryPage,RefundsPage} from '@/pages/staff/StaffPages';
+import CustomersPage from '@/pages/manager/CustomersPage';
+import ReservationsPage from '@/pages/manager/ReservationsPage';
+import {useStaffData,operator} from '@/lib/staffDemoStore';
+function ReviewPage({kind}){const actor=operator(useStaffData());const Page=kind==='customers'?CustomersPage:ReservationsPage;return <Page key={actor?.id} workspace="staff" actor={actor||{id:null}}/>;}
+const operations=[['check-ins','CHECK_IN'],['handovers','HANDOVER'],['inspections','INSPECTION'],['checkouts','CHECKOUT'],['inventory/inbound','INBOUND'],['inventory/relocation','RELOCATION'],['inventory/outbound','OUTBOUND'],['support','SUPPORT'],['maintenance','MAINTENANCE']];
+export default function StaffRoutes(){return <Routes><Route element={<StaffLayout/>}><Route index element={<Navigate to="dashboard" replace/>}/><Route path="facility-operations" element={<FacilityOperationsPage />}/><Route path="dashboard" element={<DashboardPage/>}/><Route path="customers" element={<ReviewPage kind="customers"/>}/><Route path="customers/:id" element={<ReviewPage kind="customers"/>}/><Route path="reservations" element={<ReviewPage kind="reservations"/>}/><Route path="reservations/:id" element={<ReviewPage kind="reservations"/>}/><Route path="tasks" element={<TasksPage/>}/><Route path="tasks/:id" element={<TasksPage/>}/>{operations.flatMap(([path,type])=>[<Route key={path} path={path} element={<OperationsPage type={type}/>}/>,<Route key={path+'/detail'} path={path+'/:id'} element={<OperationsPage type={type}/>}/>])}<Route path="inventory/history" element={<MovementHistoryPage/>}/><Route path="inventory/items/:id/history" element={<MovementHistoryPage/>}/><Route path="refunds" element={<RefundsPage/>}/><Route path="refunds/:id" element={<RefundsPage/>}/><Route path="*" element={<StaffUnavailable title="Staff page unavailable"/>}/></Route></Routes>;}

@@ -1,0 +1,2 @@
+export default function Steps({current=1,labels=['Storage','Rental Period','Review','Submitted']}){return <div className="portal-steps">{labels.map((x,i)=><div key={x} className={`portal-step ${i+1<current?"complete":i+1===current?"active":""} text-xs font-bold ${i+1<=current?'text-sky-700':'text-slate-400'}`}><div className={`portal-step-circle ${i+1<=current?'bg-sky-700 text-white':'bg-slate-100'}`}>{i+1<current?'✓':i+1}</div><span className="portal-step-text"><small>STEP {i+1}</small>{x}</span></div>)}</div>}
+

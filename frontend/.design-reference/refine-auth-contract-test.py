@@ -1,0 +1,2 @@
+from pathlib import Path
+s=Path('.design-reference/check-confirmed-auth.cjs').read_text(encoding='utf-8-sig');line=s.splitlines()[4];print(line[790:1040]);s=s.replace("assert(await page.getByRole('status').filter({hasText:'Account created'}).isVisible());","await page.getByRole('status').filter({hasText:'Account created'}).waitFor();");p=Path('.design-reference/check-confirmed-auth.cjs');p.write_text(s,encoding='utf-8')

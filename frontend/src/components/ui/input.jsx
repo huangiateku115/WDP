@@ -1,0 +1,1 @@
+import { cn } from '@/lib/utils'; export function Input({className,...p}){return <input className={cn('flex h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none placeholder:text-slate-400 focus:border-brand focus:ring-2 focus:ring-blue-100',className)} {...p}/>}
