@@ -2,6 +2,8 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import ReservationModel from '../../models/reservations/reservation.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
+import PricingRuleModel from '../../models/pricing-policy/pricing-rule.model';
+import PolicyModel from '../../models/pricing-policy/policy.model';
 import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
@@ -57,6 +59,49 @@ export class ReservationService {
   }
 
   /**
+   * Tính toán tiền thuê và tiền cọc dựa trên Pricing Policy và thời hạn thuê
+   */
+  static async calculatePricing(
+    pricingPolicyId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    estimatedRent: number;
+    depositAmount: number;
+    durationDays: number;
+    basePrice: number;
+  }> {
+    if (!pricingPolicyId) {
+      throw new ReservationError(400, 'pricingPolicyId là bắt buộc.');
+    }
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+      throw new ReservationError(400, 'Khoảng thời gian thuê không hợp lệ.');
+    }
+
+    let basePrice = 0;
+    const pricingRule = await PricingRuleModel.findById(pricingPolicyId).exec();
+    if (pricingRule) {
+      basePrice = pricingRule.price;
+    } else {
+      const policy = await PolicyModel.findById(pricingPolicyId).exec();
+      if (policy && typeof policy.config?.price === 'number') {
+        basePrice = policy.config.price as number;
+      } else {
+        throw new ReservationError(400, 'Không tìm thấy chính sách giá (Pricing Policy) hợp lệ.');
+      }
+    }
+
+    const diffMs = end.getTime() - start.getTime();
+    const durationDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    const estimatedRent = Math.round((durationDays / 30) * basePrice);
+    const depositAmount = durationDays < 30 ? Math.round(basePrice * 0.5) : basePrice;
+
+    return { estimatedRent, depositAmount, durationDays, basePrice };
+  }
+
+  /**
    * Tạo Đơn đặt chỗ mới (Áp dụng Transaction & Write-Conflict)
    */
   static async createReservation(data: {
@@ -65,9 +110,7 @@ export class ReservationService {
     storageUnitId: string;
     startDate: Date;
     endDate: Date;
-    pricingPolicyId?: string;
-    estimatedRent: number;
-    depositAmount: number;
+    pricingPolicyId: string;
   }): Promise<IReservation> {
     
     // 1. Kiểm tra Gate Verification (Bắt buộc KH phải VERIFIED)
@@ -76,20 +119,34 @@ export class ReservationService {
       throw new ReservationError(403, 'Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt.');
     }
 
-    if (data.startDate <= new Date()) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new ReservationError(400, 'Ngày bắt đầu hoặc ngày kết thúc không hợp lệ.');
+    }
+
+    if (startDate <= new Date()) {
       throw new ReservationError(400, 'Ngày bắt đầu thuê phải nằm trong tương lai.');
     }
 
-    if (data.endDate <= data.startDate) {
+    if (endDate <= startDate) {
       throw new ReservationError(400, 'Ngày kết thúc phải lớn hơn ngày bắt đầu.');
     }
+
+    // 2. Tự tính toán tiền thuê và tiền cọc từ Pricing Policy
+    const { estimatedRent, depositAmount } = await this.calculatePricing(
+      data.pricingPolicyId,
+      startDate,
+      endDate
+    );
 
     const session = await mongoose.startSession();
     try {
       let createdReservation: IReservation | null = null;
       
       await session.withTransaction(async () => {
-        // 2. KHÓA KHO BẰNG WRITE-CONFLICT (Kỹ thuật ép tăng version)
+        // 3. KHÓA KHO BẰNG WRITE-CONFLICT (Kỹ thuật ép tăng version)
         // Nếu 2 người cùng đặt kho này, lệnh $inc sẽ khiến Mongo lock document này lại.
         // Người đến sau sẽ phải đợi, hoặc bị văng lỗi WriteConflict và retry.
         const unit = await StorageUnitModel.findOneAndUpdate(
@@ -107,11 +164,11 @@ export class ReservationService {
           throw new ReservationError(400, 'Kho này đang bị khóa hoặc bảo trì, không thể đặt.');
         }
 
-        // 3. THUẬT TOÁN KIỂM TRA OVERLAP
+        // 4. THUẬT TOÁN KIỂM TRA OVERLAP
         const isOverlapping = await this.checkOverlap(
           unit._id as Types.ObjectId, 
-          data.startDate, 
-          data.endDate, 
+          startDate, 
+          endDate, 
           session
         );
 
@@ -119,7 +176,7 @@ export class ReservationService {
           throw new ReservationError(409, 'Kho này đã có người đặt trong khoảng thời gian bạn chọn. Vui lòng chọn ngày hoặc kho khác.');
         }
 
-        // 4. TẠO ĐƠN ĐẶT CHỖ
+        // 5. TẠO ĐƠN ĐẶT CHỖ
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24); // Hold 24 tiếng theo chuẩn SRS V2
 
@@ -135,14 +192,14 @@ export class ReservationService {
           serviceType: FacilityServiceType.SELF_STORAGE,
           storageUnitId: unit._id,
           
-          startDate: data.startDate,
-          endDate: data.endDate,
+          startDate,
+          endDate,
           
           status: ReservationStatus.RESERVED,
           
-          pricingPolicyId: data.pricingPolicyId,
-          estimatedRent: data.estimatedRent,
-          depositAmount: data.depositAmount,
+          pricingPolicyId: new Types.ObjectId(data.pricingPolicyId),
+          estimatedRent,
+          depositAmount,
           
           expiresAt, // Đồng hồ đếm ngược 24h
           

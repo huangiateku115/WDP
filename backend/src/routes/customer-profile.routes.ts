@@ -10,11 +10,11 @@ const router = Router();
 router.use(requireAuth);
 
 // Khách hàng tự quản lý Profile
-router.get('/me/profile', CustomerProfileController.getMyProfile);
-router.put('/me/profile', CustomerProfileController.updateMyProfile);
+router.get('/me/profile', requireRole([UserRole.CUSTOMER]), CustomerProfileController.getMyProfile);
+router.put('/me/profile', requireRole([UserRole.CUSTOMER]), CustomerProfileController.updateMyProfile);
 
 // Nhân viên/Quản lý duyệt Profile khách
-router.use(requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]));
+router.use(requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]));
 router.get('/', CustomerProfileController.getCustomers);
 router.get('/:id', CustomerProfileController.getCustomerById);
 router.patch('/:id/verify', CustomerProfileController.verifyProfile);

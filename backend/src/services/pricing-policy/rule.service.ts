@@ -14,7 +14,7 @@ type Rule = PricingRule | Policy;
 function authorize(actor: Actor, write = false) {
   if (!actor) throw new RuleError(401, 'Authentication required');
   if (!Object.values(UserRole).includes(actor.role) ||
-      (write && ![UserRole.BOM, UserRole.ADMIN].includes(actor.role))) throw new RuleError(403, 'Forbidden');
+      (write && ![UserRole.BOM, UserRole.ADMIN].includes(actor.role))) throw new RuleError(403, 'Bạn không có đủ quyền truy cập!');
 }
 async function safe<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
@@ -137,6 +137,7 @@ export class RuleService {
         if (keys.has(key)) throw new RuleError(409, 'Ambiguous effective pricing rules');
         keys.add(key);
         return {
+          _id: (record as any)._id,
           serviceType: rule.serviceType,
           ...(rule.unitSize ? { unitSize: rule.unitSize } : {}),
           term: { value: rule.term.value, unit: rule.term.unit },

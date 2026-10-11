@@ -26,7 +26,7 @@ export const getContractById = async (req: Request, res: Response) => {
     const isOwner = contract.customerId.toString() === req.user!._id.toString();
     const isStaff = ['ADMIN', 'FACILITY_MANAGER', 'BOM'].includes(req.user!.role);
     if (!isOwner && !isStaff) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
+      return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
     
     return res.json({ success: true, data: contract });

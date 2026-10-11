@@ -31,8 +31,8 @@ async function execute<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 function assertManagerScope(actor: Actor, facilityId?: string) {
-  if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
-  if (actor.role === UserRole.FACILITY_MANAGER && (!facilityId || actor.assignedFacilityId?.toString() !== facilityId.toLowerCase())) throw new SupportError(403, 'Facility is outside assigned scope');
+  if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
+  if (actor.role === UserRole.FACILITY_MANAGER && (!facilityId || actor.assignedFacilityId?.toString() !== facilityId.toLowerCase())) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
 }
 async function activeFacility(id: string) {
   const facility = await FacilityModel.findOne({ _id: id, deletedAt: { $exists: false } }).exec();
@@ -50,14 +50,14 @@ function assertCanAccess(actor: Actor, request: ISupportRequest) {
     return;
   }
   if (actor.role === UserRole.FACILITY_STAFF) {
-    if (request.assignedTo?.toString() !== actor._id.toString()) throw new SupportError(403, 'Staff may only access assigned requests');
-    if (request.facilityId && request.facilityId.toString() !== actor.assignedFacilityId?.toString()) throw new SupportError(403, 'Facility is outside assigned scope');
+    if (request.assignedTo?.toString() !== actor._id.toString()) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
+    if (request.facilityId && request.facilityId.toString() !== actor.assignedFacilityId?.toString()) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return;
   }
   if (actor.role === UserRole.FACILITY_MANAGER) {
     assertManagerScope(actor, request.facilityId?.toString()); return;
   }
-  if (!management.includes(actor.role)) throw new SupportError(403, 'Forbidden');
+  if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
 }
 function escapeRegex(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -65,9 +65,9 @@ export class SupportRequestService {
   static async create(input: unknown, actor: Actor) {
     const data = parseCreate(input);
     if (actor.role === UserRole.CUSTOMER && data.customerId) throw new SupportError(400, 'customerId is derived from the authenticated user');
-    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Forbidden');
-    if (actor.role === UserRole.FACILITY_STAFF) throw new SupportError(403, 'Staff cannot create customer requests');
-    if (actor.role === UserRole.FACILITY_MANAGER && (!data.facilityId || actor.assignedFacilityId?.toString() !== data.facilityId)) throw new SupportError(403, 'Facility is outside assigned scope');
+    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
+    if (actor.role === UserRole.FACILITY_STAFF) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
+    if (actor.role === UserRole.FACILITY_MANAGER && (!data.facilityId || actor.assignedFacilityId?.toString() !== data.facilityId)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const customerId = actor.role === UserRole.CUSTOMER ? actor._id : data.customerId;
       if (!customerId) throw new SupportError(400, 'customerId is required when creating a request for a customer');
@@ -93,7 +93,7 @@ export class SupportRequestService {
   }
 
   static async list(input: unknown, actor: Actor) {
-    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Forbidden');
+    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     const q = parseList(input);
     const filter: Record<string, unknown> = { deletedAt: { $exists: false } };
     for (const key of ['facilityId', 'customerId', 'assignedTo', 'category', 'priority', 'status'] as const) if (q[key] !== undefined) filter[key] = q[key];
@@ -101,7 +101,7 @@ export class SupportRequestService {
     const clauses: Record<string, unknown>[] = [];
     if (q.search) { const regex = new RegExp(escapeRegex(q.search), 'i'); clauses.push({ $or: [{ subject: regex }, { description: regex }] }); }
     if (actor.role === UserRole.CUSTOMER) {
-      if (q.customerId && q.customerId !== actor._id.toString()) throw new SupportError(403, 'Cannot query another customer');
+      if (q.customerId && q.customerId !== actor._id.toString()) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
       filter.customerId = actor._id;
     } else if (actor.role === UserRole.FACILITY_MANAGER) {
       const facilityId = actor.assignedFacilityId?.toString(); if (!facilityId) throw new SupportError(403, 'Manager has no assigned facility');
@@ -131,7 +131,7 @@ export class SupportRequestService {
 
   static async update(idInput: unknown, input: unknown, actor: Actor) {
     const id = validateId(idInput, 'support request ID');
-    if (actor.role !== UserRole.CUSTOMER && !management.includes(actor.role)) throw new SupportError(403, 'Forbidden');
+    if (actor.role !== UserRole.CUSTOMER && !management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     const data = parseUpdate(input, management.includes(actor.role));
     return execute(async () => {
       const request = await activeRequest(id); assertCanAccess(actor, request);
@@ -144,7 +144,7 @@ export class SupportRequestService {
 
   static async assign(idInput: unknown, input: unknown, actor: Actor) {
     const id = validateId(idInput, 'support request ID'); const { staffId } = parseAssignment(input);
-    if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
+    if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertManagerScope(actor, request.facilityId?.toString());
       if (request.status !== SupportStatus.OPEN && request.status !== SupportStatus.ASSIGNED) throw new SupportError(409, 'Only OPEN or ASSIGNED requests can be assigned');
@@ -159,7 +159,7 @@ export class SupportRequestService {
   }
 
   static async unassign(idInput: unknown, actor: Actor) {
-    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
+    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertManagerScope(actor, request.facilityId?.toString());
       if (request.status !== SupportStatus.ASSIGNED) throw new SupportError(409, 'Only ASSIGNED requests can be unassigned');
@@ -171,7 +171,7 @@ export class SupportRequestService {
 
   static async updateStatus(idInput: unknown, input: unknown, actor: Actor) {
     const id = validateId(idInput, 'support request ID'); const change = parseStatus(input);
-    if (!staffRoles.includes(actor.role)) throw new SupportError(403, 'Forbidden');
+    if (!staffRoles.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertCanAccess(actor, request);
       const transitions: Record<string, string[]> = { OPEN: ['ASSIGNED'], ASSIGNED: ['IN_PROGRESS'], IN_PROGRESS: ['RESOLVED'], RESOLVED: ['CLOSED'], CLOSED: [] };
@@ -187,7 +187,7 @@ export class SupportRequestService {
 
   static async addMessage(idInput: unknown, input: unknown, actor: Actor) {
     const id = validateId(idInput, 'support request ID'); const customer = actor.role === UserRole.CUSTOMER; const data = parseMessage(input, customer);
-    if (!staffRoles.includes(actor.role) && !customer) throw new SupportError(403, 'Forbidden');
+    if (!staffRoles.includes(actor.role) && !customer) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertCanAccess(actor, request);
       const message = await SupportMessageModel.create({ supportRequestId: request._id, authorId: actor._id, authorRole: actor.role, ...data });
@@ -197,7 +197,7 @@ export class SupportRequestService {
 
   static async listMessages(idInput: unknown, actor: Actor) {
     const id = validateId(idInput, 'support request ID');
-    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Forbidden');
+    if (!staffRoles.includes(actor.role) && actor.role !== UserRole.CUSTOMER) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertCanAccess(actor, request);
       return SupportMessageModel.find({ supportRequestId: request._id, ...(actor.role === UserRole.CUSTOMER ? { isInternal: false } : {}) }).sort({ createdAt: 1, _id: 1 }).lean().exec();
@@ -205,7 +205,7 @@ export class SupportRequestService {
   }
 
   static async escalate(idInput: unknown, actor: Actor) {
-    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
+    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertManagerScope(actor, request.facilityId?.toString());
       if (!request.facilityId) throw new SupportError(409, 'Facility-less requests cannot be escalated automatically to a Facility Manager');
@@ -221,7 +221,7 @@ export class SupportRequestService {
   }
 
   static async softDelete(idInput: unknown, actor: Actor) {
-    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
+    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await activeRequest(id); assertManagerScope(actor, request.facilityId?.toString());
       if (request.status !== SupportStatus.OPEN) throw new SupportError(409, 'Only OPEN requests can be deleted');
@@ -231,7 +231,7 @@ export class SupportRequestService {
   }
 
   static async restore(idInput: unknown, actor: Actor) {
-    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Management role required');
+    const id = validateId(idInput, 'support request ID'); if (!management.includes(actor.role)) throw new SupportError(403, 'Bạn không có đủ quyền truy cập!');
     return execute(async () => {
       const request = await SupportRequestModel.findOne({ _id: id, deletedAt: { $exists: true } }).exec();
       if (!request) throw new SupportError(404, 'Deleted support request not found');

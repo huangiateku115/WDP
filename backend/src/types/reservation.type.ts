@@ -34,7 +34,7 @@ export interface IReservation extends Document {
   
   status: ReservationStatus;
   
-  pricingPolicyId?: Types.ObjectId;
+  pricingPolicyId: Types.ObjectId;
   estimatedRent: number;
   depositAmount: number;
   taxAmount: number;

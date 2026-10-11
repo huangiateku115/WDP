@@ -28,7 +28,7 @@ const reservationSchema = new Schema<IReservation>({
     default: ReservationStatus.RESERVED 
   },
   
-  pricingPolicyId: { type: Schema.Types.ObjectId, ref: 'Policy' }, 
+  pricingPolicyId: { type: Schema.Types.ObjectId, ref: 'PricingRule', required: true }, 
   estimatedRent: { type: Number, required: true }, 
   depositAmount: { type: Number, required: true }, 
   taxAmount: { type: Number, default: 0 },         
