@@ -1,30 +1,11 @@
+import {LoadState,recordId,addressText} from '@/components/customer/RentalBackendUI';
 import { Link } from "react-router-dom";
 import { ArrowRight, Clock3, MapPin } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-const facilities = [
-  {
-    district: "DISTRICT 1",
-    title: "Central Urban Vault",
-    address: "128 Nguyen Thi Minh Khai, District 1",
-    available: "8 units available",
-  },
-  {
-    district: "DISTRICT 7",
-    title: "Phu My Hung Logistics Annex",
-    address: "45 Nguyen Van Linh, District 7",
-    available: "5 units available",
-  },
-  {
-    district: "THU DUC CITY",
-    title: "SelfStorage East Hub",
-    address: "88 Vo Van Ngan, Thu Duc City",
-    available: "12 units available",
-  },
-];
-
-export default function FacilitiesSection() {
+export default function FacilitiesSection({resource}) {
+  const facilities=resource.data||[];
   return (
     <section className="border-y border-[#e7eaf4] bg-[#F5F7F2] py-20">
       <div className="page-container">
@@ -42,41 +23,41 @@ export default function FacilitiesSection() {
         </div>
 
         <div className="mt-11 grid gap-5 lg:grid-cols-3">
-          {facilities.map((facility) => (
+          <LoadState resource={resource}/>{resource.data?.length===0&&<p>No active facilities available.</p>}{facilities.map((facility) => (
             <article
-              key={facility.title}
+              key={recordId(facility)}
               className="overflow-hidden rounded-2xl border border-[#e2e6f0] bg-white"
             >
               <div className="h-1.5 bg-[#176B3A]" />
 
               <div className="p-6">
                 <span className="text-[10px] font-bold tracking-[0.13em] text-[#176B3A]">
-                  {facility.district}
+                  {facility.address?.city}
                 </span>
 
                 <h3 className="mt-2 font-heading text-xl font-semibold">
-                  {facility.title}
+                  {facility.name}
                 </h3>
 
                 <div className="mt-5 flex gap-2 text-sm text-[#697386]">
                   <MapPin size={16} className="shrink-0 text-[#176B3A]" />
-                  {facility.address}
+                  {addressText(facility.address)}
                 </div>
 
                 <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-600">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  {facility.available}
+                  {facility.serviceTypes?.join(' · ')}
                 </div>
 
                 <div className="mt-6 flex items-center justify-between border-t pt-5">
                   <span className="flex items-center gap-2 text-xs text-[#697386]">
                     <Clock3 size={14} />
-                    24/7 access
+                    Facility information
                   </span>
 
-                  <Button asChild size="sm">
-                    <Link to="/facilities">
-                      View Units
+                  <Button asChild size="sm" className="bg-[#176B3A] hover:bg-[#125830]">
+                    <Link to={`/facilities/${recordId(facility)}`}>
+                      View Facility
                       <ArrowRight size={14} className="ml-1" />
                     </Link>
                   </Button>

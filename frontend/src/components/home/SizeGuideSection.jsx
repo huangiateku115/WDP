@@ -49,7 +49,7 @@ export default function SizeGuideSection() {
 
           <p className="section-description mx-auto mt-4 max-w-2xl">
             Start with what you plan to store and compare our most common unit
-            sizes.
+            sizes. These are illustrative size guides; actual unit dimensions are shown during selection.
           </p>
         </div>
 

@@ -5,8 +5,8 @@ const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const contractApi = {
   mineReal: config=>axiosClient.get('/contracts/me',config),
-  // Signing method/body differ between Postman V2 and workflow. No request until resolved.
-  signReal: ()=>Promise.reject(new Error('Contract signing is blocked: confirm POST versus PATCH and its request body with the backend team.')),
+  // Backend contract.routes/controller confirm PATCH, no request body, owner + DRAFT.
+  signReal: id=>axiosClient.patch(`/contracts/${encodeURIComponent(id)}/sign`),
   getByReservation: async (reservationId) => {
     if (USE_MOCK) {
       await delay();

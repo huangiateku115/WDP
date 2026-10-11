@@ -1,3 +1,4 @@
+import {recordId} from '@/components/customer/RentalBackendUI';
 import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle2, MapPin, ShieldCheck } from "lucide-react";
 
@@ -6,7 +7,7 @@ import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import Magnet from "@/components/reactbits/Magnet";
 
-export default function HeroSection() {
+export default function HeroSection({facilities,selected,onSelect}) {
   const benefits = [
     "Flexible monthly rental",
     "24/7 monitored facilities",
@@ -36,6 +37,7 @@ export default function HeroSection() {
             Choose your size, reserve online and move in when you're ready.
           </p>
 
+          <label className="mt-5 block text-sm font-semibold">Choose a facility<select className="customer-select mt-2" aria-label="Home facility" value={selected} onChange={e=>onSelect(e.target.value)} disabled={facilities.loading||!!facilities.error}><option value="">Browse all facilities</option>{facilities.data?.map(f=><option key={recordId(f)} value={recordId(f)}>{f.name}</option>)}</select></label>
           {/* CTA */}
           <div className="mt-7 flex flex-wrap gap-3">
             <Magnet>
@@ -44,7 +46,7 @@ export default function HeroSection() {
                 size="lg"
                 className="h-12 bg-[#F28C28] px-6 font-bold hover:bg-[#D96F12]"
               >
-                <Link to="/facilities">
+                <Link to={selected?`/facilities/${selected}`:"/facilities"}>
                   Find a storage
                   <ArrowRight size={16} className="ml-2" />
                 </Link>
@@ -96,7 +98,7 @@ export default function HeroSection() {
                 </p>
 
                 <p className="mt-1 text-sm font-bold text-[#1F2A22]">
-                  5 locations across HCMC
+                  Browse active facilities
                 </p>
               </div>
 

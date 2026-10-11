@@ -2,6 +2,8 @@ import axiosClient from "./axiosClient";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 
 const supportApi = {
+  createReal: ({category,subject,description})=>axiosClient.post('/support-requests',{category,subject,description}),
+  replyReal: (id,message)=>axiosClient.post(`/support-requests/${encodeURIComponent(id)}/messages`,{message,isInternal:false}),
   listReal: config=>axiosClient.get('/support-requests',config),
   detailReal: (id,config)=>axiosClient.get(`/support-requests/${encodeURIComponent(id)}`,config),
   messagesReal: (id,config)=>axiosClient.get(`/support-requests/${encodeURIComponent(id)}/messages`,config),

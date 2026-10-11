@@ -5,6 +5,7 @@ import AuthLayout from "@/layouts/AuthLayout";
 import CustomerLayout from "@/layouts/CustomerLayout";
 import CustomerGate from '@/components/customer/CustomerGate';
 import HomePage from "@/pages/public/HomePage";
+import {PublicFacilityDetail} from '@/components/customer/PublicFacilityCatalog';
 import FacilitiesPage from "@/pages/public/FacilitiesPage";
 import HowItWorksPage from "@/pages/public/HowItWorksPage";
 import PricingPage from "@/pages/public/PricingPage";
@@ -45,6 +46,7 @@ export default function AppRoutes() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/facilities" element={<FacilitiesPage />} />
+        <Route path="/facilities/:facilityId" element={<PublicFacilityDetail />} />
         <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/support" element={<SupportPublicPage />} />

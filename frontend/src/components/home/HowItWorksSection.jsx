@@ -12,13 +12,13 @@ const steps = [
   ["02", "Select Dates", "Choose your move-in date and rental period."],
   [
     "03",
-    "Digital Sign & Pay",
-    "Review your reservation and complete payment online.",
+    "Approval, Sign & Demo Pay",
+    "Wait for approval, review your contract and make demo payment.",
   ],
   [
     "04",
-    "Move In Anytime",
-    "Receive access credentials and start using your unit.",
+    "Handover & Active Access",
+    "Wait for facility handover before ACTIVE rental access.",
   ],
 ];
 

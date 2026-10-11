@@ -15,7 +15,9 @@ const saveOne = (item) => {
 const reservationApi = {
   createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount})=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount}),
   mineReal: config=>axiosClient.get('/reservations/me',config),
-  detailReal: (id,config)=>axiosClient.get(`/reservations/${encodeURIComponent(id)}`,config),
+  // The ID endpoint is management-only. Customer detail must use the owned collection.
+  detailReal: async (id,config)=>{const response=await axiosClient.get('/reservations/me',config);if(response.data?.success!==true||!Array.isArray(response.data.data))throw Error('Unsupported reservation response.');const item=response.data.data.find(r=>(r._id||r.id)===id);if(!item)throw Error('Reservation is unavailable in your account.');return {...response,data:{success:true,data:item}};},
+  cancelReal: id=>axiosClient.patch(`/reservations/${encodeURIComponent(id)}/cancel`),
   create: async (payload) => {
     if (USE_MOCK) {
       await delay(700);

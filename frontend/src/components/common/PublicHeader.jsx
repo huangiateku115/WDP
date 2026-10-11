@@ -12,8 +12,8 @@ export default function PublicHeader(){
   const [open,setOpen]=useState(false);
   const cls=({isActive})=>`px-3 py-2 text-sm font-semibold transition ${isActive?"text-[#176B3A]":"text-[#425047] hover:text-[#176B3A]"}`;
   return <>
-    <div className="bg-[#173D28] text-white"><div className="page-container flex h-9 items-center justify-between text-[11px]">
-      <span>Secure self-storage across Ho Chi Minh City</span><a href="tel:02877700117" className="flex items-center gap-1.5 font-semibold"><Phone size={12}/>028 7770 0117</a>
+    <div className="bg-[#173D28] text-white"><div className="page-container flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-[11px]">
+      <span>Secure self-storage across Ho Chi Minh City</span><Link to="/facilities" className="flex shrink-0 items-center gap-1.5 font-semibold"><Phone size={12}/>Facility contacts</Link>
     </div></div>
     <header className="sticky top-0 z-50 border-b border-[#E5EAE5] bg-white/95 backdrop-blur">
       <div className="page-container flex h-[74px] items-center justify-between gap-5">
