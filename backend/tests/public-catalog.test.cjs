@@ -97,22 +97,24 @@ test('public pricing returns only current sanitized rules and supports managed-o
   t.mock.method(Facility, 'findOne', () => query({ serviceTypes: ['MANAGED_INVENTORY'] }));
   t.mock.method(Pricing, 'find', seen => {
     filter = seen;
-    const effective = { serviceType: 'MANAGED_INVENTORY', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, createdBy: 'private', __v: 4 };
+    const effective = { serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, createdBy: 'private', __v: 4 };
     const futureRule = { ...effective, effectiveFrom: future };
     const inactiveRule = { ...effective, isActive: false };
     const expiredRule = { ...effective, effectiveTo: new Date(Date.now() - 60_000) };
     // Simulate MongoDB applying the actual effective filter at its captured instant.
-    const at = seen.effectiveFrom.$lte;
+    const effectiveFilter = seen.$and[1];
+    const at = effectiveFilter.effectiveFrom.$lte;
     return query([effective, futureRule, inactiveRule, expiredRule].filter(rule =>
       rule.isActive && rule.effectiveFrom <= at && (!rule.effectiveTo || rule.effectiveTo > at)));
   });
   const result = await service.pricing(facilityId);
   assert.deepEqual(filter.facilityId, new mongoose.Types.ObjectId(facilityId));
-  assert.equal(filter.isActive, true);
-  assert.ok(filter.effectiveFrom.$lte instanceof Date);
-  assert.ok(Array.isArray(filter.$or));
+  assert.equal(filter.$and[1].isActive, true);
+  assert.ok(filter.$and[1].effectiveFrom.$lte instanceof Date);
+  assert.ok(Array.isArray(filter.$and[1].$or));
+  assert.ok(filter.$and[0].$or.some(scope => scope.billingBasis === 'PER_M3'));
   assert.deepEqual(result, { managedInventory: [{
-    serviceType: 'MANAGED_INVENTORY', term: { value: 1, unit: 'MONTH' }, price: 20,
+    serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20,
     currency: 'USD', effectiveFrom: now,
   }] });
   assert.equal(JSON.stringify(result).includes('createdBy'), false);

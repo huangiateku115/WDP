@@ -4,7 +4,7 @@ import PolicyModel from '../../models/pricing-policy/policy.model';
 import ScopeModel from '../../models/pricing-policy/rule-scope.model';
 import FacilityModel from '../../models/facilities/facility.model';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
-import { Policy, PricingRule } from '../../types/pricing-policy.type';
+import { Policy, PricingBasis, PricingRule } from '../../types/pricing-policy.type';
 import { IUser, UserRole } from '../../types/user.type';
 import * as validation from './rule.validation';
 import { Kind, RuleError } from './rule.validation';
@@ -34,6 +34,7 @@ function keyFilter(kind: Kind, record: Rule | Record<string, unknown>) {
   if (kind === 'policy') key.type = (record as Policy).type;
   else {
     const pricing = record as PricingRule;
+    if (pricing.billingBasis) key.billingBasis = pricing.billingBasis;
     key.unitSize = pricing.unitSize ?? { $exists: false };
     key['term.value'] = pricing.term.value;
     key['term.unit'] = pricing.term.unit;
@@ -42,7 +43,7 @@ function keyFilter(kind: Kind, record: Rule | Record<string, unknown>) {
 }
 function scopeId(kind: Kind, key: Record<string, unknown>) {
   return JSON.stringify([kind, String(key.facilityId), key.serviceType,
-    ...(kind === 'policy' ? [key.type] : [key.unitSize, key['term.value'], key['term.unit']])]);
+    ...(kind === 'policy' ? [key.type] : [key.billingBasis, key.unitSize, key['term.value'], key['term.unit']])]);
 }
 export class RuleService {
   private readonly model: Model<Rule>;
@@ -129,7 +130,13 @@ export class RuleService {
   async currentPublicPricing(facilityId: string, at = new Date()) {
     if (this.kind !== 'pricing') throw new RuleError(500, 'Pricing resolver unavailable');
     return safe(async () => {
-      const records = await this.model.find({ facilityId: new Types.ObjectId(facilityId), ...RuleService.effectiveFilter(at) }).lean().exec();
+      const records = await this.model.find({ facilityId: new Types.ObjectId(facilityId), $and: [
+        { $or: [
+          { serviceType: FacilityServiceType.SELF_STORAGE },
+          { serviceType: FacilityServiceType.MANAGED_INVENTORY, billingBasis: PricingBasis.PER_M3 },
+        ] },
+        RuleService.effectiveFilter(at),
+      ] }).lean().exec();
       const keys = new Set<string>();
       return records.map(record => {
         const rule = record as PricingRule;
@@ -139,6 +146,7 @@ export class RuleService {
         return {
           _id: (record as any)._id,
           serviceType: rule.serviceType,
+          ...(rule.billingBasis ? { billingBasis: rule.billingBasis } : {}),
           ...(rule.unitSize ? { unitSize: rule.unitSize } : {}),
           term: { value: rule.term.value, unit: rule.term.unit },
           price: rule.price,
@@ -176,6 +184,9 @@ export class RuleService {
           if (!(statusOnly && changes.isActive === false)) await this.parent(document, session);
         }
         document.set(changes);
+        if (this.kind === 'policy' && (document as Policy).type === 'DEPOSIT' && (document as Policy).serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+          validation.validateManagedDepositConfig((document as Policy).config);
+        }
         validation.range(document);
         document.version = version;
         await this.overlap(document, session, document._id);
