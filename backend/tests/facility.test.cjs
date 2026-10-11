@@ -42,6 +42,27 @@ test('schema normalizes code and defines required unique/filter indexes', async 
   }
 });
 
+test('facility images accept optional HTTP(S) URLs and reject invalid lists', async () => {
+  const doc = new Model({ ...valid(), images: [' https://images.example.test/a.jpg ', 'http://example.test/b.png'] });
+  await doc.validate();
+  assert.deepEqual(doc.images, ['https://images.example.test/a.jpg', 'http://example.test/b.png']);
+  await new Model(valid()).validate();
+  for (const images of [
+    [' '], ['data:image/png;base64,abc'], ['javascript:alert(1)'], ['ftp://example.test/a'],
+    [42], Array.from({ length: 11 }, (_, i) => `https://example.test/${i}.jpg`),
+  ]) await assert.rejects(new Model({ ...valid(), images }).validate());
+});
+
+test('facility create/update image validation rejects operators and malformed URLs', async () => {
+  for (const input of [
+    { ...valid(), images: [''] }, { ...valid(), images: ['data:image/png;base64,x'] },
+    { ...valid(), images: Array(11).fill('https://example.test/x') },
+    { ...valid(), images: { $ne: [] } },
+  ]) await assert.rejects(() => service.createFacility(input), { status: 400 });
+  for (const input of [{ images: ['javascript:alert(1)'] }, { images: { $push: 'x' } }])
+    await assert.rejects(() => service.updateFacility(id, input), { status: 400 });
+});
+
 test('create valid facility passes normalized allowlisted data', async t => {
   t.mock.method(Model, 'create', async data => {
     assert.equal(data.code, 'HCM-01');
@@ -198,6 +219,16 @@ test('update uses dotted nested fields and validation without upsert', async t =
   assert.equal((await service.updateFacility(id, { name: ' Updated ', address: { city: 'Da Nang' } })).name, 'Updated');
 });
 
+test('facility update accepts and stores valid images', async t => {
+  t.mock.method(Model, 'findOneAndUpdate', (filter, update, options) => {
+    assert.deepEqual(update, { $set: { images: ['https://cdn.example.test/updated.jpg'] } });
+    assert.equal(options.runValidators, true);
+    return query({ images: update.$set.images });
+  });
+  const result = await service.updateFacility(id, { images: [' https://cdn.example.test/updated.jpg '] });
+  assert.deepEqual(result.images, ['https://cdn.example.test/updated.jpg']);
+});
+
 test('activate/deactivate updates only status; no cascade/delete', async t => {
   t.mock.method(Model, 'findOneAndUpdate', (filter, update) => {
     assert.deepEqual(filter.deletedAt, { $exists: false });
@@ -227,7 +258,7 @@ test('HTTP endpoints: auth roles, success envelopes and global error statuses', 
   assert.equal(unauthorized, 401);
   t.mock.method(auth, 'requireAuth', (req, res, next) => {
     if (!req.headers['x-test-role']) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    req.user = { role: req.headers['x-test-role'] }; next();
+    req.user = { _id: new mongoose.Types.ObjectId(), role: req.headers['x-test-role'] }; next();
   });
   const app = require('../dist/app').default;
   const server = app.listen(0, '127.0.0.1');
@@ -249,7 +280,7 @@ test('HTTP endpoints: auth roles, success envelopes and global error statuses', 
   }
   t.mock.method(Model, 'create', async data => new Model(data));
   for (const role of ['ADMIN', 'BOM']) {
-    const response = await request('POST', '', role, valid());
+    const response = await request('POST', '', role, { ...valid(), images: ['https://images.example.test/facility.jpg'] });
     assert.equal(response.status, 201);
     assert.equal((await response.json()).data.code, 'HCM-01');
   }

@@ -1,4 +1,5 @@
 import { StorageUnitInput, StorageUnitSize, StorageUnitStatus, UnitDimensions } from '../../types/storage-unit.type';
+import { isHttpImageUrl, MAX_RESOURCE_IMAGES } from '../../utils/image-url';
 
 export class StorageUnitError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -37,8 +38,8 @@ export function volume(dimensions: UnitDimensions): number {
 }
 export function parseUnit(value: unknown, partial = false): Partial<StorageUnitInput> & { status?: StorageUnitStatus } {
   const input = object(value, partial
-    ? ['unitCode', 'size', 'dimensions', 'description']
-    : ['unitCode', 'size', 'dimensions', 'description', 'status']);
+    ? ['unitCode', 'size', 'dimensions', 'description', 'images']
+    : ['unitCode', 'size', 'dimensions', 'description', 'status', 'images']);
   if (!Object.keys(input).length) invalid('At least one field is required');
   if (!partial) {
     for (const key of ['unitCode', 'size', 'dimensions']) if (!(key in input)) invalid(`${key} is required`);
@@ -46,6 +47,12 @@ export function parseUnit(value: unknown, partial = false): Partial<StorageUnitI
   const output: Partial<StorageUnitInput> & { status?: StorageUnitStatus } = {};
   if ('unitCode' in input) output.unitCode = text(input.unitCode, 100).toUpperCase();
   if ('description' in input) output.description = text(input.description, 2000);
+  if ('images' in input) {
+    if (!Array.isArray(input.images) || input.images.length > MAX_RESOURCE_IMAGES || !input.images.every(isHttpImageUrl)) {
+      invalid('images must contain at most 10 non-empty HTTP(S) URLs');
+    }
+    output.images = input.images.map((url: string) => url.trim());
+  }
   if ('size' in input) {
     if (!Object.values(StorageUnitSize).includes(input.size as StorageUnitSize)) invalid('Invalid size');
     output.size = input.size as StorageUnitSize;

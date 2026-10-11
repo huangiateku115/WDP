@@ -27,6 +27,7 @@ test('public facility catalog filters ACTIVE non-deleted rows and serializes an 
     address: { line1: 'Road', city: 'HCM', country: 'VN', internalNotes: 'private' },
     contact: { email: 'x@example.test', phone: '123', secret: 'private' },
     serviceTypes: ['SELF_STORAGE'], description: 'Public', operatingHours: 'Daily',
+    images: ['https://images.example.test/facility.jpg', 'javascript:alert(1)'],
     deletedAt: undefined, deletedBy: 'private', createdBy: 'private', __v: 8,
   };
   t.mock.method(Facility, 'find', filter => { listFilter = filter; return query([facility]); });
@@ -36,7 +37,8 @@ test('public facility catalog filters ACTIVE non-deleted rows and serializes an 
   assert.deepEqual(listFilter.deletedAt, { $exists: false });
   assert.deepEqual(countFilter, listFilter);
   assert.equal(result.data.length, 1);
-  assert.deepEqual(Object.keys(result.data[0]), ['_id', 'code', 'name', 'address', 'contact', 'serviceTypes', 'description', 'operatingHours']);
+  assert.deepEqual(Object.keys(result.data[0]), ['_id', 'code', 'name', 'address', 'contact', 'serviceTypes', 'description', 'operatingHours', 'images']);
+  assert.deepEqual(result.data[0].images, ['https://images.example.test/facility.jpg']);
   assert.deepEqual(result.data[0].address, { line1: 'Road', city: 'HCM', country: 'VN' });
   assert.deepEqual(result.data[0].contact, { phone: '123', email: 'x@example.test' });
   for (const field of ['deletedAt', 'deletedBy', 'version', 'createdBy', '__v']) {
@@ -56,10 +58,23 @@ test('public detail and secondary catalog return 404 for inactive/deleted/non-se
   await assert.rejects(service.storageOptions(facilityId), { status: 404 });
 });
 
+test('public facility detail exposes valid image URLs through the allowlisted DTO only', async t => {
+  const doc = { _id: facilityId, code: 'HCM-01', name: 'Main', status: 'ACTIVE',
+    address: { line1: 'Road', city: 'HCM', country: 'VN', secret: 'hidden' },
+    contact: { email: 'x@example.test', secret: 'hidden' }, serviceTypes: ['SELF_STORAGE'],
+    images: ['https://images.example.test/facility.jpg', 'file:///private.png'], deletedAt: new Date(),
+    deletedBy: 'private', createdBy: 'private', __v: 2 };
+  t.mock.method(Facility, 'findOne', () => query(doc));
+  const result = await service.getFacility(facilityId);
+  assert.deepEqual(result.images, ['https://images.example.test/facility.jpg']);
+  assert.equal(JSON.stringify(result).includes('deletedAt'), false);
+  assert.equal(JSON.stringify(result).includes('secret'), false);
+});
+
 test('public storage availability counts AVAILABLE non-deleted units by size only', async t => {
   let pipeline;
   t.mock.method(Facility, 'findOne', () => query({ serviceTypes: ['SELF_STORAGE'] }));
-  t.mock.method(Unit, 'aggregate', value => { pipeline = value; return { exec: async () => [{ size: 'SMALL', availableCount: 2 }] }; });
+  t.mock.method(Unit, 'aggregate', value => { pipeline = value; return { exec: async () => [{ size: 'SMALL', availableCount: 2, imageUrl: 'https://images.example.test/unit.jpg' }] }; });
   const result = await service.storageOptions(facilityId);
   assert.equal(pipeline[0].$match.status, 'AVAILABLE');
   assert.deepEqual(pipeline[0].$match.deletedAt, { $exists: false });
@@ -67,7 +82,7 @@ test('public storage availability counts AVAILABLE non-deleted units by size onl
   assert.deepEqual(result, {
     availabilityIsInformational: true,
     options: [
-      { size: 'SMALL', availableCount: 2 }, { size: 'MEDIUM', availableCount: 0 }, { size: 'LARGE', availableCount: 0 },
+      { size: 'SMALL', availableCount: 2, imageUrl: 'https://images.example.test/unit.jpg' }, { size: 'MEDIUM', availableCount: 0 }, { size: 'LARGE', availableCount: 0 },
     ],
   });
   for (const field of ['deletedAt', 'deletedBy', 'version', 'createdBy', '__v']) {

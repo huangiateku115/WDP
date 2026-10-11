@@ -1,4 +1,5 @@
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
+import { isHttpImageUrl, MAX_RESOURCE_IMAGES } from '../../utils/image-url';
 
 export class FacilityError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -25,7 +26,7 @@ export function parseStatusBody(value: unknown): FacilityStatus {
   return parseStatus(object(value, ['status']).status);
 }
 export function parseFacility(value: unknown, partial = false): Record<string, unknown> {
-  const input = object(value, ['code', 'name', 'address', 'contact', 'serviceTypes', 'status', 'description', 'operatingHours']);
+  const input = object(value, ['code', 'name', 'address', 'contact', 'serviceTypes', 'status', 'description', 'operatingHours', 'images']);
   if (!Object.keys(input).length) invalid('At least one field is required');
   if (!partial) {
     for (const key of ['code', 'name', 'address', 'serviceTypes']) {
@@ -38,6 +39,12 @@ export function parseFacility(value: unknown, partial = false): Record<string, u
   }
   if (typeof output.code === 'string') output.code = output.code.toUpperCase();
   if ('status' in input) output.status = parseStatus(input.status);
+  if ('images' in input) {
+    if (!Array.isArray(input.images) || input.images.length > MAX_RESOURCE_IMAGES || !input.images.every(isHttpImageUrl)) {
+      invalid('images must contain at most 10 non-empty HTTP(S) URLs');
+    }
+    output.images = input.images.map((url: string) => url.trim());
+  }
   if ('serviceTypes' in input) {
     const values = input.serviceTypes;
     if (!Array.isArray(values) || values.length < 1 || values.length > 2 ||

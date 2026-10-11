@@ -5,6 +5,7 @@ import { FacilityError } from '../facilities/facility.validation';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus, StorageUnitSize } from '../../types/storage-unit.type';
 import { pricingService } from '../pricing-policy/rule.service';
+import { isHttpImageUrl } from '../../utils/image-url';
 
 function id(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) throw new FacilityError(400, 'Invalid facility ID');
@@ -19,6 +20,7 @@ function publicFacility(f: Record<string, unknown>) {
     ...(Object.keys(contact).length ? { contact: Object.fromEntries(['phone', 'email'].filter(k => contact[k] !== undefined).map(k => [k, contact[k]])) } : {}),
     serviceTypes: f.serviceTypes, ...(f.description ? { description: f.description } : {}),
     ...(f.operatingHours ? { operatingHours: f.operatingHours } : {}),
+    images: Array.isArray(f.images) ? f.images.filter(isHttpImageUrl).slice(0, 10) : [],
   };
 }
 function pagination(query: Record<string, unknown>) {
@@ -47,7 +49,7 @@ export class PublicCatalogService {
       filter.$or = ['code', 'name', 'address.city'].map(field => ({ [field]: { $regex: literal, $options: 'i' } }));
     }
     const [records, total] = await Promise.all([
-      FacilityModel.find(filter).select('code name address contact serviceTypes description operatingHours').sort({ name: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
+      FacilityModel.find(filter).select('code name address contact serviceTypes description operatingHours images').sort({ name: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
       FacilityModel.countDocuments(filter).exec(),
     ]);
     return { data: records.map(f => publicFacility(f as unknown as Record<string, unknown>)), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
@@ -55,7 +57,7 @@ export class PublicCatalogService {
   static async getFacility(resourceId: unknown) {
     const _id = id(resourceId);
     const f = await FacilityModel.findOne({ _id, status: FacilityStatus.ACTIVE, deletedAt: { $exists: false } })
-      .select('code name address contact serviceTypes description operatingHours').lean().exec();
+      .select('code name address contact serviceTypes description operatingHours images').lean().exec();
     if (!f) throw new FacilityError(404, 'Facility not found');
     return publicFacility(f as unknown as Record<string, unknown>);
   }
@@ -74,12 +76,16 @@ export class PublicCatalogService {
     const facilityId = await this.selfStorageFacility(resourceId);
     const rows = await StorageUnitModel.aggregate([
       { $match: { facilityId, status: StorageUnitStatus.AVAILABLE, deletedAt: { $exists: false } } },
-      { $group: { _id: '$size', availableCount: { $sum: 1 } } },
-      { $project: { _id: 0, size: '$_id', availableCount: 1 } },
+      { $sort: { 'images.0': -1, createdAt: 1, _id: 1 } },
+      { $group: { _id: '$size', availableCount: { $sum: 1 }, imageUrl: { $first: { $arrayElemAt: ['$images', 0] } } } },
+      { $project: { _id: 0, size: '$_id', availableCount: 1, imageUrl: 1 } },
       { $sort: { size: 1 } },
     ]).exec();
-    const bySize = new Map(rows.map((r: { size: StorageUnitSize; availableCount: number }) => [r.size, r.availableCount]));
-    return { availabilityIsInformational: true, options: Object.values(StorageUnitSize).map(size => ({ size, availableCount: bySize.get(size) || 0 })) };
+    const bySize = new Map(rows.map((r: { size: StorageUnitSize; availableCount: number; imageUrl?: string }) => [r.size, r]));
+    return { availabilityIsInformational: true, options: Object.values(StorageUnitSize).map(size => {
+      const row = bySize.get(size);
+      return { size, availableCount: row?.availableCount || 0, ...(row?.imageUrl && isHttpImageUrl(row.imageUrl) ? { imageUrl: row.imageUrl } : {}) };
+    }) };
   }
   static async pricing(resourceId: unknown) {
     const { facilityId, serviceTypes } = await this.activeFacility(resourceId);

@@ -43,6 +43,30 @@ test('schema compound uniqueness and server-derived volume', async () => {
   ]) await assert.rejects(new Model({ ...valid(), facilityId, dimensions }).validate());
 });
 
+test('storage-unit images accept optional HTTP(S) URLs and reject invalid lists', async () => {
+  const doc = new Model({ ...valid(), facilityId, images: ['https://cdn.example.test/unit.jpg'] });
+  await doc.validate();
+  assert.deepEqual(doc.images, ['https://cdn.example.test/unit.jpg']);
+  await new Model({ ...valid(), facilityId }).validate();
+  for (const images of [
+    [' '], ['data:image/jpeg;base64,abc'], ['javascript:alert(1)'], ['ftp://example.test/a'],
+    [42], Array.from({ length: 11 }, (_, i) => `https://example.test/${i}.jpg`),
+  ]) await assert.rejects(new Model({ ...valid(), facilityId, images }).validate());
+});
+
+test('storage-unit create/update validation accepts images and rejects malformed values', async t => {
+  mockParent(t);
+  t.mock.method(Model, 'create', async data => { const doc = new Model(data); await doc.validate(); return doc; });
+  const created = await service.createStorageUnit(facilityId, { ...valid(), images: ['https://cdn.example.test/unit.jpg'] }, admin);
+  assert.deepEqual(created.images, ['https://cdn.example.test/unit.jpg']);
+  for (const data of [
+    { ...valid(), images: [''] }, { ...valid(), images: ['data:image/png;base64,x'] },
+    { ...valid(), images: Array(11).fill('https://example.test/x') }, { ...valid(), images: { $ne: [] } },
+  ]) await assert.rejects(() => service.createStorageUnit(facilityId, data, admin), { status: 400 });
+  for (const data of [{ images: ['javascript:alert(1)'] }, { images: { $push: 'x' } }])
+    await assert.rejects(() => service.updateStorageUnit(id, data, admin), { status: 400 });
+});
+
 test('create validates active SELF_STORAGE parent and calculates volume', async t => {
   mockParent(t);
   t.mock.method(Model, 'create', async data => {
@@ -158,6 +182,19 @@ test('update recalculates volume and preserves facility; real save uses version 
   }, manager);
   assert.equal(updated.volumeM3, 60);
   assert.equal(updated.facilityId.toString(), facilityId);
+});
+
+test('storage-unit update accepts valid image URLs', async t => {
+  mockParent(t);
+  const doc = document();
+  t.mock.method(Model, 'findOne', () => query(doc));
+  t.mock.method(Model.collection, 'updateOne', async (filter, update) => {
+    assert.equal(filter.__v, 0);
+    assert.deepEqual(update.$set.images, ['https://cdn.example.test/updated-unit.jpg']);
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
+  });
+  const result = await service.updateStorageUnit(id, { images: [' https://cdn.example.test/updated-unit.jpg '] }, manager);
+  assert.deepEqual(result.images, ['https://cdn.example.test/updated-unit.jpg']);
 });
 
 test('concurrent write returns 409 from actual optimistic save', async t => {
@@ -283,7 +320,7 @@ test('HTTP routes apply real role middleware and service scope; restore/delete a
   const auth = require('../dist/middlewares/auth/requireAuth');
   t.mock.method(auth, 'requireAuth', (req, res, next) => {
     if (!req.headers['x-test-role']) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    req.user = { role: req.headers['x-test-role'], assignedFacilityId: req.headers['x-test-facility'] };
+    req.user = { _id: new mongoose.Types.ObjectId(), role: req.headers['x-test-role'], assignedFacilityId: req.headers['x-test-facility'] };
     next();
   });
   mockParent(t);
@@ -315,9 +352,11 @@ test('HTTP routes apply real role middleware and service scope; restore/delete a
     assert.equal((await request('PATCH', single + '/status', role, { status: 'INACTIVE' })).status, 403);
   }
   for (const role of ['ADMIN', 'BOM', 'FACILITY_MANAGER']) {
-    const response = await request('POST', list, role, valid());
+    const response = await request('POST', list, role, { ...valid(), images: ['https://cdn.example.test/unit.jpg'] });
     assert.equal(response.status, 201);
-    assert.equal((await response.json()).data.volumeM3, 24);
+    const body = await response.json();
+    assert.equal(body.data.volumeM3, 24);
+    assert.deepEqual(body.data.images, ['https://cdn.example.test/unit.jpg']);
   }
   assert.equal((await request('POST', list, 'FACILITY_MANAGER', valid(), otherId)).status, 403);
   assert.equal((await request('GET', single, 'FACILITY_STAFF', undefined, otherId)).status, 403);
