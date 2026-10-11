@@ -28,6 +28,7 @@ export interface FacilityFields {
   status: FacilityStatus;
   description?: string;
   operatingHours?: string;
+  images?: string[];
   deletedAt?: Date;
   deletedBy?: import('mongoose').Types.ObjectId;
 }

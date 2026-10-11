@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IStorageUnit, StorageUnitSize, StorageUnitStatus, UnitDimensions } from '../../types/storage-unit.type';
+import { isValidImageList } from '../../utils/image-url';
 
 const positive = { type: Number, required: true, min: Number.MIN_VALUE, validate: Number.isFinite };
 const dimensionsSchema = new Schema<UnitDimensions>({
@@ -14,6 +15,11 @@ const schema = new Schema<IStorageUnit>({
   status: { type: String, enum: Object.values(StorageUnitStatus), default: StorageUnitStatus.AVAILABLE, required: true },
   bookingVersion: { type: Number, default: 0 },
   description: { type: String, trim: true },
+  images: {
+    type: [{ type: String, trim: true }],
+    default: [],
+    validate: { validator: isValidImageList, message: 'images must contain at most 10 valid HTTP(S) URLs' },
+  },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true, optimisticConcurrency: true });

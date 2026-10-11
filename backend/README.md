@@ -49,6 +49,14 @@ Tests simulate dependencies and readiness; they do not prove a live MongoDB/Keyc
 Development uses the shared MongoDB Atlas cluster. No local MongoDB service is required
 or provided by Compose. Compose retains only the existing Keycloak service and volume.
 
+## Frontend demo data
+
+`npm run seed:fe -- --dry-run` previews a non-destructive demo seed. A write run
+requires `FE_SEED_CONFIRM=YES`, a development-mode process, and the database name
+`wdp`; set existing account emails as documented in [FE_DEMO_SEED.md](docs/FE_DEMO_SEED.md).
+The script creates only missing `FE-DEMO` records and never resets or deletes data.
+Review the guide's lifecycle omissions and effective-date behavior before running it.
+
 ## Facility API (BE-02)
 
 All `/api/v1/facilities` endpoints require existing Keycloak authentication.
@@ -76,7 +84,8 @@ Example create body:
 ```
 
 Optional fields: `address.ward`, `address.district`, `contact.phone`, `contact.email`,
-`description`, `operatingHours` (plain descriptive string), and `status` (default ACTIVE).
+`description`, `operatingHours` (plain descriptive string), `images` (up to 10 HTTP(S)
+URL references, max 2048 characters each), and `status` (default ACTIVE).
 Code is trimmed/uppercased and protected by a unique index; status and serviceTypes
 have separate indexes. Partial address/contact updates preserve sibling fields.
 Provided strings must be non-empty; null/unset operations are not supported.
@@ -129,6 +138,8 @@ Dimensions are finite positive meters; their product must be finite and positive
 The server derives `volumeM3` (24 above). Client-supplied volume or facility reassignment
 is rejected. Updating dimensions requires all three values, to keep volume consistent.
 Optional description is a non-empty string (max 2000 characters).
+Optional `images` accepts up to 10 HTTP(S) URL references (max 2048 characters each);
+it does not upload or store image data.
 
 List query: `page=1&limit=20&status=AVAILABLE&size=SMALL&search=A-01`.
 Limit is 1–100, page 1–1000000. Search matches literal unitCode text, case-insensitively.
