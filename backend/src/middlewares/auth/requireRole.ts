@@ -17,7 +17,7 @@ export const requireRole = (allowedRoles: UserRole[]) => {
     if (!allowedRoles.includes(user.role)) {
       res.status(403).json({ 
         success: false, 
-        message: `Forbidden: Requires one of these roles: ${allowedRoles.join(', ')}` 
+        message: 'Bạn không có đủ quyền truy cập!'
       });
       return;
     }

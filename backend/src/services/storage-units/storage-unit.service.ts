@@ -9,13 +9,13 @@ import { managementStatuses, parseList, parseStatusBody, parseUnit, StorageUnitE
 type Actor = Pick<IUser, 'role' | 'assignedFacilityId' | '_id'> | undefined;
 function scope(actor: Actor, facilityId: string, write = false) {
   if (!actor) throw new StorageUnitError(401, 'Authentication required');
-  if (!Object.values(UserRole).includes(actor.role)) throw new StorageUnitError(403, 'Forbidden');
+  if (!Object.values(UserRole).includes(actor.role)) throw new StorageUnitError(403, 'Bạn không có đủ quyền truy cập!');
   if (write && ![UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER].includes(actor.role)) {
-    throw new StorageUnitError(403, 'Management role required');
+    throw new StorageUnitError(403, 'Bạn không có đủ quyền truy cập!');
   }
   if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(actor.role) &&
       actor.assignedFacilityId?.toString() !== facilityId.toLowerCase()) {
-    throw new StorageUnitError(403, 'Facility is outside assigned scope');
+    throw new StorageUnitError(403, 'Bạn không có đủ quyền truy cập!');
   }
 }
 function activeSelfStorage(facility: IFacility) {
