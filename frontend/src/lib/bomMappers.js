@@ -249,3 +249,32 @@ export function categoryBody(form) {
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
+
+/* ---------------------------- Reservations ---------------------------- */
+export const BOM_RESERVATION_STATUSES = [
+  "RESERVED", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED",
+];
+
+export function reservationFromDto(d) {
+  const customer = d?.customerId;
+  const unit = d?.storageUnitId;
+  const facility = d?.facilityId;
+  return {
+    id: d?._id,
+    code: d?.reservationCode || "",
+    facilityId: facility && typeof facility === "object" ? facility._id : facility,
+    service: d?.serviceType,
+    customerName: (customer && typeof customer === "object"
+      ? customer.displayName || customer.fullName || customer.email
+      : null) || "Customer",
+    unitCode: unit && typeof unit === "object" ? unit.unitCode : undefined,
+    unitSize: unit && typeof unit === "object" ? unit.size : undefined,
+    allocatedCapacity: d?.allocatedCapacity ?? null,
+    startDate: fromInstant(d?.startDate),
+    endDate: fromInstant(d?.endDate),
+    status: d?.status || "RESERVED",
+    estimatedRent: d?.estimatedRent ?? 0,
+    depositAmount: d?.depositAmount ?? 0,
+    createdAt: d?.createdAt || "",
+  };
+}

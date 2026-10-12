@@ -7,7 +7,7 @@ import axiosClient from "./axiosClient";
 const encode = (id) => encodeURIComponent(id);
 
 export const bomFacilityApi = {
-  list: (params) => axiosClient.get("/facilities", { params }),
+  list: (params, config) => axiosClient.get("/facilities", { ...config, params }),
   get: (id) => axiosClient.get(`/facilities/${encode(id)}`),
   create: (body) => axiosClient.post("/facilities", body),
   update: (id, body) => axiosClient.patch(`/facilities/${encode(id)}`, body),
@@ -17,7 +17,7 @@ export const bomFacilityApi = {
 };
 
 export const bomPricingApi = {
-  list: (params) => axiosClient.get("/pricing-rules", { params }),
+  list: (params, config) => axiosClient.get("/pricing-rules", { ...config, params }),
   get: (id) => axiosClient.get(`/pricing-rules/${encode(id)}`),
   create: (body) => axiosClient.post("/pricing-rules", body),
   update: (id, body) => axiosClient.patch(`/pricing-rules/${encode(id)}`, body),
@@ -26,7 +26,7 @@ export const bomPricingApi = {
 };
 
 export const bomPolicyApi = {
-  list: (params) => axiosClient.get("/policies", { params }),
+  list: (params, config) => axiosClient.get("/policies", { ...config, params }),
   get: (id) => axiosClient.get(`/policies/${encode(id)}`),
   create: (body) => axiosClient.post("/policies", body),
   update: (id, body) => axiosClient.patch(`/policies/${encode(id)}`, body),
@@ -34,4 +34,9 @@ export const bomPolicyApi = {
   resolve: (params) => axiosClient.get("/policies/resolve", { params }),
 };
 
-export default { bomFacilityApi, bomPricingApi, bomPolicyApi };
+export const bomReservationApi = {
+  listByFacility: (facilityId, config) => axiosClient.get(`/reservations/facility/${encode(facilityId)}`, config),
+  get: (id, config) => axiosClient.get(`/reservations/${encode(id)}`, config),
+};
+
+export default { bomFacilityApi, bomPricingApi, bomPolicyApi, bomReservationApi };

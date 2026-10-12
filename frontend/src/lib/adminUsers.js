@@ -3,7 +3,7 @@ import userApi from '@/api/userApi';
 import {getAccessToken,useAuthSession} from '@/lib/authSession';
 import {apiErrorMessage} from '@/lib/apiError';
 // Only the two literal roles supplied in Postman are defaults. Other roles must be observed in real user data.
-export const confirmedAdminUserRoles=['FACILITY_MANAGER','FACILITY_STAFF'];
+export const confirmedAdminUserRoles=['FACILITY_MANAGER','FACILITY_STAFF','BOM'];
 const empty=()=>({users:[],roles:[...confirmedAdminUserRoles],status:'idle',error:'',notice:'',sessionToken:null});
 let state=empty(),generation=0,controller=null,inflight=null;
 const listeners=new Set(),publish=next=>{state=next;listeners.forEach(fn=>fn())};

@@ -21,6 +21,14 @@ export function AsyncBoundary({ state, render }) {
   return render(state.data);
 }
 
+export function TruncatedNotice({ total, shown }) {
+  return (
+    <p role="status" className="bom-warning mb-4">
+      Showing the first {shown} of {total} records. Refine the filters to narrow the result set.
+    </p>
+  );
+}
+
 export function ConfirmDialog({ title, summary, confirmLabel = "Confirm", onConfirm, onClose, children }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");

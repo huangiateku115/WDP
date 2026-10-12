@@ -58,9 +58,17 @@ function UserDirectory({ state }) {
           action={<Button variant="outline" onClick={() => loadAdminUsers(true)}>Refresh users</Button>}
         >
           <div className="manager-filters">
-            <Field label="User search"><Input aria-label="User search" value={search} onChange={(e) => setSearch(e.target.value)} /></Field>
-            <Select label="User role filter" value={role} onChange={setRole} options={[["", "All returned roles"], ...state.roles]} />
-            {hasStatus && <Select label="User status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />}
+            <Field label="Search">
+              <Input aria-label="User search" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </Field>
+            <Field label="Role">
+              <Select label="User role filter" value={role} onChange={setRole} options={[["", "All returned roles"], ...state.roles]} />
+            </Field>
+            {hasStatus && (
+              <Field label="Status">
+                <Select label="User status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+              </Field>
+            )}
           </div>
           <Table label="Backend users" rows={rows} columns={columns} />
         </Panel>

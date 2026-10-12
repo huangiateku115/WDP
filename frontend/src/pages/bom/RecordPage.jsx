@@ -4,14 +4,14 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, facilityName } from "@/lib/bomApiData";
+import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
-  bomFutureDate, responseData, responseList,
+  bomFutureDate, responseData,
   pricingFromDto, pricingLabel, pricingBody,
   policyFromDto, policyBody,
 } from "@/lib/bomMappers";
@@ -32,19 +32,18 @@ const CONFIGS = {
   },
   policy: {
     api: bomPolicyApi, root: "/bom/policies", title: "Business policies", code: "P052",
+    policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
     fromDto: policyFromDto, body: policyBody, blank: blankPolicy, hasService: false,
   },
 };
 
-async function loadAll(api) {
-  const first = responseList(await api.list({ page: 1, limit: 100 }));
-  let rows = first.rows;
-  const totalPages = first.pagination?.totalPages || 1;
-  for (let page = 2; page <= totalPages; page += 1) {
-    rows = rows.concat(responseList(await api.list({ page, limit: 100 })).rows);
-  }
-  return rows;
-}
+// Bounded server-paged fetch. Results are narrowed to the configured policy types when present.
+const loadRecords = (config, signal) =>
+  fetchPaged(config.api.list, config.listParams || {}, { signal })
+    .then((page) => ({
+      ...page,
+      rows: config.policyTypes ? page.rows.filter((row) => config.policyTypes.includes(row.type)) : page.rows,
+    }));
 
 export default function RecordPage({ kind, mode = "list" }) {
   const config = CONFIGS[kind];
@@ -57,7 +56,7 @@ export default function RecordPage({ kind, mode = "list" }) {
 
 function RecordList({ kind, config }) {
   const state = useAsyncData(
-    () => Promise.all([loadAll(config.api), loadFacilities()]),
+    ({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]),
     [kind],
   );
   const [status, setStatus] = useState("");
@@ -88,13 +87,15 @@ function RecordList({ kind, config }) {
           )}
         </div>
       </Panel>
-      <AsyncBoundary state={state} render={([records, facilities]) => {
+      <AsyncBoundary state={state} render={([recordPage, facilities]) => {
+        const records = recordPage.rows;
         const rows = records.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
           (kind !== "policy" || !type || row.type === type) &&
           (kind !== "pricing" || !service || row.service === service));
         return (
           <Panel title={config.title} subtitle={`${rows.length} of ${records.length} records`}>
+            {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
             <Table
               label={config.title}
               rows={rows}

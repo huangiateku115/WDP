@@ -3,7 +3,7 @@ import {apiBaseURL, assertConfirmedRequest} from "./confirmedContract";
 import {getAccessToken, clearAuthSession} from "@/lib/authSession";
 
 const axiosClient = axios.create({
-  baseURL: apiBaseURL(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api/v1"),
+  baseURL: apiBaseURL(import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api/v1"),
   timeout: 15000,
   headers: { "Content-Type": "application/json" },
 });

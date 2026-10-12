@@ -7,7 +7,7 @@ import { AdminScreen, UserApiState } from "@/components/admin/AdminUI";
 import { ReadOnlyValues, Kpis } from "@/components/bom/BomUI";
 import { useAdminUsers, userId, userStatus } from "@/lib/adminUsers";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities } from "@/lib/bomApiData";
+import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
 import auditApi from "@/api/auditApi";
 
 // Live Admin system pages. Login History and Audit use the confirmed per-user audit APIs;
@@ -203,11 +203,15 @@ export function FacilitiesPage() {
     <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility from the confirmed Facility API. Management stays in the BOM workspace.">
       <Panel title="Filters">
         <div className="manager-filters">
-          <Field label="Search"><Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} /></Field>
-          <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          <Field label="Search">
+            <Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </Field>
+          <Field label="Status">
+            <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          </Field>
         </div>
       </Panel>
-      <Panel title="Facility snapshot" subtitle={`${rows.length} of ${facilities.length} facilities`} action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}>
+      <Panel title="Facility snapshot" subtitle={`${rows.length} of ${facilities.length} facilities`} action={<Button variant="outline" onClick={() => { invalidateFacilities(); state.reload(); }}>Refresh</Button>}>
         {state.error
           ? <Message error={state.error} />
           : state.loading

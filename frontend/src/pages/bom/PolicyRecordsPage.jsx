@@ -4,14 +4,14 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, facilityName } from "@/lib/bomApiData";
+import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_DISCOUNT_KINDS, BOM_DISCOUNT_VALUE_TYPES, BOM_DISCOUNT_TYPES, BOM_CATEGORY_STATUS,
-  bomFutureDate, responseData, responseList,
+  bomFutureDate, responseData,
   discountFromDto, discountValueLabel, discountBody,
   categoryFromDto, categoryBody,
 } from "@/lib/bomMappers";
@@ -31,23 +31,20 @@ const blankCategory = () => ({
 const CONFIGS = {
   discount: {
     root: "/bom/policies/discounts", title: "Discounts and waivers", single: "discount policy",
-    policyTypes: BOM_DISCOUNT_TYPES, fromDto: discountFromDto, body: discountBody, blank: blankDiscount,
+    policyTypes: BOM_DISCOUNT_TYPES, listParams: {},
+    fromDto: discountFromDto, body: discountBody, blank: blankDiscount,
   },
   category: {
     root: "/bom/policies/item-categories", title: "Item categories", single: "item category",
-    policyTypes: ["CATEGORY"], fromDto: categoryFromDto, body: categoryBody, blank: blankCategory,
+    policyTypes: ["CATEGORY"], listParams: { type: "CATEGORY" },
+    fromDto: categoryFromDto, body: categoryBody, blank: blankCategory,
   },
 };
 
-async function loadPolicies() {
-  const first = responseList(await bomPolicyApi.list({ page: 1, limit: 100 }));
-  let rows = first.rows;
-  const totalPages = first.pagination?.totalPages || 1;
-  for (let page = 2; page <= totalPages; page += 1) {
-    rows = rows.concat(responseList(await bomPolicyApi.list({ page, limit: 100 })).rows);
-  }
-  return rows;
-}
+// Bounded server-paged fetch. Category rows are filtered by the backend; discounts are narrowed by type.
+const loadRecords = (config, signal) =>
+  fetchPaged(bomPolicyApi.list, config.listParams, { signal })
+    .then((page) => ({ ...page, rows: page.rows.filter((row) => config.policyTypes.includes(row.type)) }));
 
 export default function PolicyRecordsPage({ kind, mode = "list" }) {
   const config = CONFIGS[kind];
@@ -59,7 +56,7 @@ export default function PolicyRecordsPage({ kind, mode = "list" }) {
 }
 
 function RecordList({ kind, config }) {
-  const state = useAsyncData(() => Promise.all([loadPolicies(), loadFacilities()]), [kind]);
+  const state = useAsyncData(({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]), [kind]);
   const [status, setStatus] = useState("");
   const [filter, setFilter] = useState("");
   const typeFilter = kind === "discount"
@@ -81,13 +78,14 @@ function RecordList({ kind, config }) {
           <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />
         </div>
       </Panel>
-      <AsyncBoundary state={state} render={([allPolicies, facilities]) => {
-        const records = allPolicies.filter((p) => config.policyTypes.includes(p.type));
+      <AsyncBoundary state={state} render={([recordPage, facilities]) => {
+        const records = recordPage.rows;
         const rows = records.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
           (!filter || (kind === "discount" ? row.kind === filter : row.allowedStatus === filter)));
         return (
           <Panel title={config.title} subtitle={`${rows.length} of ${records.length} records`}>
+            {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
             <Table
               label={config.title}
               rows={rows}

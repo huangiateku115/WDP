@@ -4,20 +4,43 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button,
 } from "@/components/manager/ManagerUI";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities } from "@/lib/bomApiData";
+import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData,
 } from "@/lib/bomMappers";
+import { COUNTRIES, CUSTOM_WARD, citiesFor, wardsFor } from "@/lib/addressData";
 
 const EMPTY_FORM = {
-  code: "", name: "", line1: "", ward: "", district: "", city: "", country: "Vietnam",
-  openingHours: "", description: "", serviceTypes: ["SELF_STORAGE"], status: "ACTIVE",
+  code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
+  openingHours: "", allDay: false,
+  description: "", serviceTypes: ["SELF_STORAGE"], status: "ACTIVE",
 };
+
+// Single "opening hours" field: validates a `HH:MM - HH:MM` range (en-dash accepted).
+const HOURS_PATTERN = /^\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*$/;
+const toMinutes = (hours, minutes) => Number(hours) * 60 + Number(minutes);
+function hoursError(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = HOURS_PATTERN.exec(raw);
+  if (!match) return "Use the HH:MM - HH:MM format (for example 08:00 - 18:00).";
+  const [h1, m1, h2, m2] = match.slice(1).map(Number);
+  if (h1 > 23 || m1 > 59 || h2 > 23 || m2 > 59) return "Hour or minute is out of range.";
+  if (toMinutes(h2, m2) <= toMinutes(h1, m1)) return "Closing time must be later than opening time.";
+  return "";
+}
+function formatHours(value) {
+  const match = HOURS_PATTERN.exec(String(value || ""));
+  if (!match) return String(value || "").trim();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(match[1])}:${match[2]} - ${pad(match[3])}:${match[4]}`;
+}
 
 export default function FacilityPage({ mode = "list" }) {
   if (mode === "new") return <FacilityForm mode="new" />;
@@ -30,13 +53,13 @@ function FacilityList() {
   const state = useAsyncData(loadFacilities, []);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const [district, setDistrict] = useState("");
+  const [city, setCity] = useState("");
   const facilities = state.data || [];
-  const districts = [...new Set(facilities.map((f) => f.district).filter(Boolean))];
+  const cities = [...new Set(facilities.map((f) => f.city).filter(Boolean))];
   const rows = facilities.filter((f) =>
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())) &&
     (!status || f.status === status) &&
-    (!district || f.district === district));
+    (!city || f.city === city));
 
   return (
     <Screen
@@ -47,9 +70,15 @@ function FacilityList() {
     >
       <Panel title="Facility filters">
         <div className="manager-filters">
-          <Field label="Search"><Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} /></Field>
-          <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
-          <Select label="District filter" value={district} onChange={setDistrict} options={[["", "All districts"], ...districts]} />
+          <Field label="Search">
+            <Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </Field>
+          <Field label="Status">
+            <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          </Field>
+          <Field label="City">
+            <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
+          </Field>
         </div>
       </Panel>
       <AsyncBoundary state={state} render={() => (
@@ -61,7 +90,7 @@ function FacilityList() {
               { key: "name", label: "Facility", render: (f) => <OpenLink to={`/bom/facilities/${f.id}`}>{f.name}</OpenLink> },
               { key: "code", label: "Code" },
               { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
-              { key: "district", label: "District/location" },
+              { key: "city", label: "City / Province" },
               { key: "address", label: "Address" },
               { key: "services", label: "Service models", render: (f) => f.serviceTypes.join(", ") || "—" },
               { key: "openingHours", label: "Opening hours" },
@@ -78,7 +107,7 @@ function FacilityDetail() {
   const state = useAsyncData(() => bomFacilityApi.get(id).then(responseData).then(facilityFromDto), [id]);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error)) return <BomUnavailable />;
+  if (!state.loading && state.error && /not found|unavailable|invalid|404/i.test(state.error)) return <BomUnavailable />;
 
   return (
     <Screen
@@ -97,7 +126,10 @@ function FacilityDetail() {
             >
               <Details values={[
                 ["Facility code", facility.code],
-                ["District/location", facility.district],
+                ["Country", facility.country],
+                ["City / Province", facility.city],
+                ["Ward / Commune", facility.ward],
+                ["Street / area", facility.district],
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],
@@ -122,6 +154,7 @@ function FacilityDetail() {
                 onClose={() => setConfirmOpen(false)}
                 onConfirm={async () => {
                   await bomFacilityApi.setStatus(id, nextStatus);
+                  invalidateFacilities();
                   state.reload();
                 }}
               >
@@ -150,10 +183,20 @@ function FacilityForm({ mode }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setForm(state.data || EMPTY_FORM);
+    const next = state.data || EMPTY_FORM;
+    const stored = String(next.openingHours || "").trim();
+    const allDay = stored.toLowerCase() === "24/7";
+    setForm({
+      ...next,
+      allDay,
+      openingHours: allDay ? "" : stored,
+      wardCustom: Boolean(next.ward) && !wardsFor(next.city).includes(next.ward),
+    });
   }, [state.data]);
 
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const wards = wardsFor(form.city);
+  const wardChosen = form.wardCustom ? Boolean(form.ward.trim()) : Boolean(form.ward);
   const toggleService = (service) => setForm((f) => ({
     ...f,
     serviceTypes: f.serviceTypes.includes(service)
@@ -167,9 +210,21 @@ function FacilityForm({ mode }) {
     setError("");
     setPending(true);
     try {
-      const body = facilityBody(form, { includeCode: !isEdit });
+      if (!form.country) throw new Error("Select a country.");
+      if (!form.city) throw new Error("Select a city / province.");
+      if (!form.ward.trim()) throw new Error("Select or enter a ward / commune.");
+      if (!form.district.trim()) throw new Error("Enter the street / area.");
+      if (!form.line1.trim()) throw new Error("Enter the address / house number.");
+      const hours = form.allDay ? "" : form.openingHours.trim();
+      if (hours) {
+        const message = hoursError(hours);
+        if (message) throw new Error(message);
+      }
+      const openingHours = form.allDay ? "24/7" : (hours ? formatHours(hours) : "");
+      const body = facilityBody({ ...form, openingHours }, { includeCode: !isEdit });
       if (isEdit) await bomFacilityApi.update(id, body);
       else await bomFacilityApi.create(body);
+      invalidateFacilities();
       nav("/bom/facilities");
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -197,24 +252,79 @@ function FacilityForm({ mode }) {
               <Field label="Facility name">
                 <Input aria-label="Facility name" required value={form.name} onChange={(e) => change("name", e.target.value)} />
               </Field>
-              <Field label="Address line">
-                <Input aria-label="Address line" required value={form.line1} onChange={(e) => change("line1", e.target.value)} />
+              <Field label="Country" hint="Country where the facility is located.">
+                <Select
+                  label="Country"
+                  value={form.country}
+                  onChange={(v) => setForm((f) => ({ ...f, country: v, city: "", ward: "", wardCustom: false, district: "", line1: "" }))}
+                  options={[["", "Select a country"], ...COUNTRIES]}
+                />
               </Field>
-              <Field label="Ward">
-                <Input aria-label="Ward" value={form.ward} onChange={(e) => change("ward", e.target.value)} />
+              <Field label="City / Province" hint="Select the city or province.">
+                <Select
+                  label="City / Province"
+                  value={form.city}
+                  disabled={!form.country}
+                  onChange={(v) => setForm((f) => ({ ...f, city: v, ward: "", wardCustom: false, district: "", line1: "" }))}
+                  options={[["", form.country ? "Select a city / province" : "Select a country first"], ...citiesFor(form.country)]}
+                />
               </Field>
-              <Field label="District/location">
-                <Input aria-label="District/location" value={form.district} onChange={(e) => change("district", e.target.value)} />
+              <Field label="Ward / Commune" hint="Select the ward or commune.">
+                <Select
+                  label="Ward / Commune"
+                  value={form.wardCustom ? CUSTOM_WARD : form.ward}
+                  disabled={!form.city}
+                  onChange={(v) => setForm((f) => ({ ...f, wardCustom: v === CUSTOM_WARD, ward: v === CUSTOM_WARD ? "" : v, district: "", line1: "" }))}
+                  options={[["", form.city ? "Select a ward / commune" : "Select a city / province first"], ...wards, [CUSTOM_WARD, "Other (enter manually)"]]}
+                />
               </Field>
-              <Field label="City">
-                <Input aria-label="City" required value={form.city} onChange={(e) => change("city", e.target.value)} />
+              {form.wardCustom && (
+                <Field label="Ward / Commune (manual)" hint="Enter the ward or commune.">
+                  <Input aria-label="Ward / Commune" required value={form.ward} onChange={(e) => change("ward", e.target.value)} />
+                </Field>
+              )}
+              <Field label="Street / Area" hint="Street name or area.">
+                <Input
+                  aria-label="Street / Area"
+                  required
+                  disabled={!wardChosen}
+                  value={form.district}
+                  onChange={(e) => change("district", e.target.value)}
+                />
               </Field>
-              <Field label="Country">
-                <Input aria-label="Country" required value={form.country} onChange={(e) => change("country", e.target.value)} />
+              <Field label="Address / House number" hint="House number and detail address.">
+                <Input
+                  aria-label="Address / House number"
+                  required
+                  disabled={!form.district.trim()}
+                  value={form.line1}
+                  onChange={(e) => change("line1", e.target.value)}
+                />
               </Field>
-              <Field label="Opening hours">
-                <Input aria-label="Opening hours" placeholder="08:00 - 18:00" value={form.openingHours} onChange={(e) => change("openingHours", e.target.value)} />
-              </Field>
+              {/* Not <Field/>: a <label> would forward clicks from the custom trigger
+                  to the first labelable child (the 24/7 checkbox input). */}
+              <div className="manager-field">
+                <span>Opening hours</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-[240px] flex-1">
+                    <TimeRangePicker
+                      ariaLabel="Opening hours"
+                      placeholder="08:00 - 18:00"
+                      disabled={form.allDay}
+                      value={form.openingHours}
+                      onChange={(next) => setForm((f) => ({ ...f, openingHours: next }))}
+                    />
+                  </div>
+                  <span className="flex items-center gap-2 text-sm">
+                    <Checkbox aria-label="Open 24/7" checked={form.allDay} onCheckedChange={(v) => setForm((f) => ({ ...f, allDay: v === true }))} />
+                    Open 24/7
+                  </span>
+                </div>
+                <small>Pick the opening and closing time, or mark the facility as open 24/7.</small>
+                {!form.allDay && hoursError(form.openingHours) && (
+                  <small role="alert" className="text-xs text-red-700">{hoursError(form.openingHours)}</small>
+                )}
+              </div>
               <Field label="Business status">
                 <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
               </Field>
