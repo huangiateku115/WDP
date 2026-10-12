@@ -16,6 +16,8 @@ import contractRoutes from './contract.routes';
 import inspectionRoutes from './inspection.routes';
 import accessRoutes from './access.routes';
 import notificationRoutes from './notification.routes';
+import warehouseMapRoutes from './warehouse-map.routes';
+import inventoryItemRoutes from './inventory-item.routes';
 
 const router = Router();
 
@@ -31,6 +33,8 @@ router.get('/health', (_req, res) => {
 router.use('/public', publicRoutes);
 router.use('/maintenance-tickets', maintenanceTicketRoutes);
 router.use('/support-requests', supportRequestRoutes);
+router.use(warehouseMapRoutes);
+router.use('/inventory-items', inventoryItemRoutes);
 
 /* GET home page. */
 router.get('/', (req: Request, res: Response, next: NextFunction) => {

@@ -1,0 +1,43 @@
+{
+  "success": true,
+  "data": {
+    "facilityId": "507f1f77bcf86cd799439011",
+    "zones": [
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "code": "HCM-A",
+        "name": "Khu A",
+        "color": "#2563EB",
+        "aisles": [
+          {
+            "aisleCode": "A01",
+            "racks": [
+              {
+                "_id": "507f1f77bcf86cd799439013",
+                "rackCode": "A01-R01",
+                "mapX": 0,
+                "mapY": 0,
+                "orientation": 0,
+                "dimensions": {
+                  "widthM": 2,
+                  "depthM": 0.6,
+                  "heightM": 2
+                },
+                "operationalStatus": "AVAILABLE",
+                "utilization": {
+                  "usedWeightKg": 0,
+                  "maxWeightKg": 2000,
+                  "remainingWeightKg": 2000,
+                  "ratio": 0,
+                  "status": "EMPTY"
+                },
+                "cellCount": 16,
+                "availableCellCount": 16
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -4,6 +4,11 @@ import ReservationModel from '../../models/reservations/reservation.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import { ContractStatus } from '../../types/contract.type';
 import { ReservationStatus } from '../../types/reservation.type';
+import mongoose from 'mongoose';
+import { FacilityServiceType } from '../../types/facility.type';
+import ManagedFacilityCapacityModel from '../../models/reservations/managed-facility-capacity.model';
+import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
+import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 
 export const getMyContracts = async (req: Request, res: Response) => {
   try {
@@ -19,14 +24,20 @@ export const getMyContracts = async (req: Request, res: Response) => {
 export const getContractById = async (req: Request, res: Response) => {
   try {
     const contract = await ContractModel.findById(req.params.id)
-      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status');
+      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType');
     if (!contract) return res.status(404).json({ success: false, message: 'Contract not found' });
     
     // Check permission: FM, Admin, BOM or the owner
     const isOwner = contract.customerId.toString() === req.user!._id.toString();
     const isStaff = ['ADMIN', 'FACILITY_MANAGER', 'BOM'].includes(req.user!.role);
     if (!isOwner && !isStaff) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
+      return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
+    }
+    if (req.user!.role === 'FACILITY_MANAGER') {
+      const reservation: any = contract.reservationId;
+      if (!req.user!.assignedFacilityId || String(reservation?.facilityId?._id ?? reservation?.facilityId) !== req.user!.assignedFacilityId.toString()) {
+        return res.status(404).json({ success: false, message: 'Contract not found' });
+      }
     }
     
     return res.json({ success: true, data: contract });
@@ -37,6 +48,38 @@ export const getContractById = async (req: Request, res: Response) => {
 
 export const signContract = async (req: Request, res: Response) => {
   try {
+    const contracts: any = ContractModel;
+    const reservations: any = ReservationModel;
+    const existing: any = await contracts.findOne({ _id: req.params.id, customerId: req.user!._id });
+    if (existing) {
+      const linkedReservation = await reservations.findById(existing.reservationId).select('serviceType facilityId').exec();
+      if (linkedReservation?.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+        const session = await mongoose.startSession();
+        try {
+          let signed: any = null;
+          await session.withTransaction(async () => {
+            const capacityLock = await ManagedFacilityCapacityModel.findOneAndUpdate(
+              { facilityId: linkedReservation.facilityId }, { $inc: { bookingVersion: 1 } }, { new: true, session },
+            ).exec();
+            if (!capacityLock) return;
+            const managedContract = await contracts.findOne({ _id: existing._id, customerId: req.user!._id, status: ContractStatus.DRAFT }).session(session).exec();
+            if (!managedContract) return;
+            const reservation = await reservations.findOne({ _id: managedContract.reservationId, customerId: req.user!._id, serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.CONTRACTED, expiresAt: { $gt: new Date() } }).session(session).exec();
+            if (!reservation) return;
+            managedContract.status = ContractStatus.SIGNED;
+            managedContract.signedByCustomerAt = new Date();
+            await managedContract.save({ session });
+            await new ManagedReservationAuditModel({
+              facilityId: reservation.facilityId, reservationId: reservation._id, actorId: req.user!._id,
+              action: ManagedReservationAction.CONTRACT_SIGNED, fromStatus: ContractStatus.DRAFT, toStatus: ContractStatus.SIGNED,
+            }).save({ session });
+            signed = managedContract;
+          }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+          if (!signed) return res.status(409).json({ success: false, message: 'Managed contract requires an active, held CONTRACTED reservation.' });
+          return res.json({ success: true, data: signed });
+        } finally { await session.endSession(); }
+      }
+    }
     const contract = await ContractModel.findOneAndUpdate(
       { _id: req.params.id, customerId: req.user!._id, status: ContractStatus.DRAFT } as any,
       { 

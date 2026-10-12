@@ -32,14 +32,14 @@ async function execute<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 function assertFacilityScope(actor: Actor, facilityId: string) {
-  if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Forbidden');
+  if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
   if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(actor.role) &&
       actor.assignedFacilityId?.toString() !== facilityId.toLowerCase()) {
-    throw new MaintenanceTicketError(403, 'Facility is outside assigned scope');
+    throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
   }
 }
 function assertManager(actor: Actor, facilityId: string) {
-  if (!managers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Management role required');
+  if (!managers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
   assertFacilityScope(actor, facilityId);
 }
 async function activeFacility(facilityId: string) {
@@ -53,10 +53,10 @@ async function ticketById(id: string) {
   return ticket;
 }
 function assertRead(actor: Actor, ticket: IMaintenanceTicket) {
-  if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Forbidden');
+  if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
   assertFacilityScope(actor, ticket.facilityId.toString());
   if (actor.role === UserRole.FACILITY_STAFF && ticket.assignedTo?.toString() !== actor._id.toString()) {
-    throw new MaintenanceTicketError(403, 'Staff may only access assigned tickets');
+    throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
   }
 }
 async function assignableStaff(userId: string, facilityId: string) {
@@ -87,16 +87,16 @@ export class MaintenanceTicketService {
     });
   }
   static async list(query: unknown, actor: Actor) {
-    if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Forbidden');
+    if (!readers.includes(actor.role)) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
     const { page, limit, filter } = parseList(query);
     const requestedFacility = filter.facilityId as string | undefined;
     if (requestedFacility) assertFacilityScope(actor, requestedFacility);
     if (actor.role === UserRole.FACILITY_MANAGER || actor.role === UserRole.FACILITY_STAFF) {
-      if (!actor.assignedFacilityId) throw new MaintenanceTicketError(403, 'Facility assignment is required');
+      if (!actor.assignedFacilityId) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
       filter.facilityId = actor.assignedFacilityId;
     }
     if (actor.role === UserRole.FACILITY_STAFF) {
-      if (filter.assignedTo && String(filter.assignedTo) !== actor._id.toString()) throw new MaintenanceTicketError(403, 'Staff may only list assigned tickets');
+      if (filter.assignedTo && String(filter.assignedTo) !== actor._id.toString()) throw new MaintenanceTicketError(403, 'Bạn không có đủ quyền truy cập!');
       filter.assignedTo = actor._id;
     }
     filter.deletedAt = { $exists: false };

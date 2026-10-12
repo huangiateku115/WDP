@@ -3,6 +3,7 @@ import { FacilityServiceType } from './facility.type';
 import { StorageUnitSize } from './storage-unit.type';
 
 export enum TermUnit { DAY = 'DAY', MONTH = 'MONTH', YEAR = 'YEAR' }
+export enum PricingBasis { PER_STORAGE_UNIT = 'PER_STORAGE_UNIT', PER_M3 = 'PER_M3' }
 export enum PolicyType {
   DEPOSIT = 'DEPOSIT', CANCELLATION = 'CANCELLATION', REFUND = 'REFUND',
   OVERDUE = 'OVERDUE', DISCOUNT = 'DISCOUNT', WAIVER = 'WAIVER',
@@ -21,6 +22,7 @@ export interface EffectiveRecord {
 }
 export interface PricingRule extends EffectiveRecord {
   serviceType: FacilityServiceType;
+  billingBasis?: PricingBasis;
   unitSize?: StorageUnitSize;
   term: { value: number; unit: TermUnit };
   price: number;

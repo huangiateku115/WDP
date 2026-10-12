@@ -11,6 +11,7 @@ export interface StorageUnitInput {
   size: StorageUnitSize;
   dimensions: UnitDimensions;
   description?: string;
+  images?: string[];
 }
 export interface IStorageUnit extends Document {
   facilityId: Types.ObjectId;
@@ -21,6 +22,7 @@ export interface IStorageUnit extends Document {
   status: StorageUnitStatus;
   bookingVersion: number;
   description?: string;
+  images?: string[];
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;
   createdAt: Date;

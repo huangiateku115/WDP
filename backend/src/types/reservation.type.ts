@@ -27,6 +27,8 @@ export interface IReservation extends Document {
   serviceType: FacilityServiceType;
   storageUnitId?: Types.ObjectId;
   allocatedCapacity?: number;
+  managedPricingSnapshot?: Record<string, unknown>;
+  paymentSimulation?: { simulated: boolean; provider: 'MOCK'; paidAt: Date; actorId: Types.ObjectId };
   storageCondition?: string;
   
   startDate: Date;
@@ -34,7 +36,7 @@ export interface IReservation extends Document {
   
   status: ReservationStatus;
   
-  pricingPolicyId?: Types.ObjectId;
+  pricingPolicyId: Types.ObjectId;
   estimatedRent: number;
   depositAmount: number;
   taxAmount: number;

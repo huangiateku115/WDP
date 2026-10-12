@@ -92,9 +92,9 @@ function store(t) {
 test('pricing creates typed SELF_STORAGE and per-m3 MANAGED_INVENTORY rules with server versions', async t => {
   const state = store(t);
   const a = await pricingService.create(price(), admin);
-  const managed = price({ serviceType: 'MANAGED_INVENTORY' }); delete managed.unitSize;
+  const managed = price({ serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3' }); delete managed.unitSize;
   const b = await pricingService.create(managed, { ...admin, role: 'BOM' });
-  assert.equal(a.currency, 'VND'); assert.equal(a.version, 1); assert.equal(b.unitSize, undefined);
+  assert.equal(a.currency, 'VND'); assert.equal(a.billingBasis, undefined); assert.equal(a.version, 1); assert.equal(b.unitSize, undefined); assert.equal(b.billingBasis, 'PER_M3');
   assert.equal(a.createdBy.toString(), admin._id.toString());
   assert.deepEqual(state.events, ['lock', 'save', 'end', 'lock', 'save', 'end']);
   assert.ok(Price.schema.indexes().some(([k]) => k.facilityId && k.effectiveFrom && k['term.value']));
@@ -113,6 +113,14 @@ test('pricing rejects invalid scope, amounts, term, dates and immutable fields',
     { version: 2 }, { _id: facilityId }, { __v: 1 }, { createdAt: from }, { createdBy: facilityId }, { $set: {} },
   ]) await assert.rejects(pricingService.create(price(extra), admin), status(400));
   await assert.rejects(pricingService.create(price({ effectiveFrom: '2000-01-01T00:00:00Z' }), admin), status(409));
+});
+test('Managed DEPOSIT policy requires the explicit percentage-of-rent schema', async t => {
+  store(t);
+  for (const config of [{ amount: 500 }, { calculation: 'FIXED', amount: 500 }, { calculation: 'PERCENT_OF_RENT', percentage: -1 }, { calculation: 'PERCENT_OF_RENT', percentage: Infinity }]) {
+    await assert.rejects(policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config }), admin), status(400));
+  }
+  const accepted = await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 20 } }), admin);
+  assert.equal(accepted.config.percentage, 20);
 });
 test('pricing and policies require existing ACTIVE supporting facilities', async t => {
   const s = store(t);
@@ -204,7 +212,7 @@ test('policy config defensive validation and isolated service scopes', async t =
   for (const type of ['DEPOSIT', 'CANCELLATION', 'REFUND', 'OVERDUE', 'DISCOUNT', 'WAIVER', 'CATEGORY', 'SHELF_CONSTRAINT'])
     await policyService.create(policy({ type, config: { nested: [{ note: 'Uninterpreted', enabled: true, value: null }] } }), admin);
   await policyService.create(policy({ serviceType: 'SELF_STORAGE' }), admin);
-  await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY' }), admin);
+  await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 0 } }), admin);
   for (const config of [null, [], 'x', 3, { x: NaN }, { x: Infinity }, { x: () => {} }, { nested: { $where: 'x' } },
     JSON.parse('{"__proto__":{"polluted":true}}'), { nested: { constructor: {} } }, { 'a.b': 1 },
     { x: 'a'.repeat(17000) }, { x: Array(2001).fill(1) }, { x: new Date() }]) {

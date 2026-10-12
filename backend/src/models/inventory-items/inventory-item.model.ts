@@ -1,0 +1,45 @@
+import mongoose, { Schema } from 'mongoose';
+import { IInventoryItem, InventoryItemStatus } from '../../types/inventory-item.type';
+import { isValidImageList } from '../../utils/image-url';
+
+const dimensionsSchema = new Schema({
+  widthM: { type: Number, required: true, min: Number.MIN_VALUE },
+  depthM: { type: Number, required: true, min: Number.MIN_VALUE },
+  heightM: { type: Number, required: true, min: Number.MIN_VALUE },
+}, { _id: false });
+
+const schema = new Schema<IInventoryItem>({
+  facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
+  customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  managedReservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },
+  itemCode: { type: String, required: true, trim: true, uppercase: true },
+  name: { type: String, required: true, trim: true, maxlength: 160 },
+  category: { type: String, required: true, trim: true, maxlength: 80 },
+  description: { type: String, trim: true, maxlength: 2000 },
+  quantity: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+  quantityUnit: { type: String, required: true, trim: true, maxlength: 32 },
+  unitWeightKg: { type: Number, required: true, min: Number.MIN_VALUE },
+  unitDimensionsM: { type: dimensionsSchema, required: true },
+  unitVolumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
+  totalWeightKg: { type: Number, required: true, min: Number.MIN_VALUE },
+  totalVolumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
+  preferredCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell' },
+  currentCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', default: null },
+  status: { type: String, enum: Object.values(InventoryItemStatus), default: InventoryItemStatus.REGISTERED, required: true },
+  images: {
+    type: [{ type: String, trim: true }],
+    default: [],
+    validate: { validator: isValidImageList, message: 'images must contain at most 10 valid HTTP(S) URLs' },
+  },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  deletedAt: { type: Date },
+}, { timestamps: true, strict: 'throw' });
+
+// Item identifiers remain reserved in their Facility, including after soft deletion.
+schema.index({ facilityId: 1, itemCode: 1 }, { unique: true });
+schema.index({ facilityId: 1, status: 1, createdAt: -1 });
+schema.index({ customerId: 1, managedReservationId: 1, createdAt: -1 });
+schema.index({ preferredCellId: 1 });
+schema.index({ deletedAt: 1 });
+
+export default mongoose.model<IInventoryItem>('InventoryItem', schema);

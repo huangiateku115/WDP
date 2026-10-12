@@ -8,7 +8,7 @@ const router = Router();
 router.use(requireAuth);
 
 // Chỉ Staff mới được tạo/hoàn tất Biên bản Bàn giao
-const staffRoles = [UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM];
+const staffRoles = [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM];
 
 router.post('/', requireRole(staffRoles), InspectionController.createInspection);
 router.get('/', requireRole(staffRoles), InspectionController.getInspections);

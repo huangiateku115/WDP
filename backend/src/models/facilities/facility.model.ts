@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { FacilityAddress, FacilityContact, FacilityServiceType, FacilityStatus, IFacility } from '../../types/facility.type';
+import { isValidImageList } from '../../utils/image-url';
 
 const addressSchema = new Schema<FacilityAddress>({
   line1: { type: String, required: true, trim: true },
@@ -29,6 +30,11 @@ const facilitySchema = new Schema<IFacility>({
   status: { type: String, enum: Object.values(FacilityStatus), default: FacilityStatus.ACTIVE, index: true },
   description: { type: String, trim: true },
   operatingHours: { type: String, trim: true },
+  images: {
+    type: [{ type: String, trim: true }],
+    default: [],
+    validate: { validator: isValidImageList, message: 'images must contain at most 10 valid HTTP(S) URLs' },
+  },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });

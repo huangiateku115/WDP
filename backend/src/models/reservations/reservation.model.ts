@@ -16,7 +16,14 @@ const reservationSchema = new Schema<IReservation>({
   
   serviceType: { type: String, enum: Object.values(FacilityServiceType), required: true },
   storageUnitId: { type: Schema.Types.ObjectId, ref: 'StorageUnit' }, 
-  allocatedCapacity: { type: Number }, 
+  allocatedCapacity: { type: Number },
+  managedPricingSnapshot: { type: Schema.Types.Mixed },
+  paymentSimulation: {
+    simulated: { type: Boolean },
+    provider: { type: String, enum: ['MOCK'] },
+    paidAt: { type: Date },
+    actorId: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
   storageCondition: { type: String },  
   
   startDate: { type: Date, required: true },
@@ -28,7 +35,7 @@ const reservationSchema = new Schema<IReservation>({
     default: ReservationStatus.RESERVED 
   },
   
-  pricingPolicyId: { type: Schema.Types.ObjectId, ref: 'Policy' }, 
+  pricingPolicyId: { type: Schema.Types.ObjectId, ref: 'PricingRule', required: true }, 
   estimatedRent: { type: Number, required: true }, 
   depositAmount: { type: Number, required: true }, 
   taxAmount: { type: Number, default: 0 },         
@@ -46,5 +53,6 @@ const reservationSchema = new Schema<IReservation>({
 reservationSchema.index({ facilityId: 1, status: 1 });
 reservationSchema.index({ customerId: 1, status: 1 });
 reservationSchema.index({ storageUnitId: 1, startDate: 1, endDate: 1 });
+reservationSchema.index({ facilityId: 1, serviceType: 1, status: 1, startDate: 1, endDate: 1 });
 
 export default mongoose.model<IReservation>('Reservation', reservationSchema);

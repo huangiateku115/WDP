@@ -39,6 +39,13 @@ export const getInspections = async (req: Request, res: Response) => {
 
 export const completeInspection = async (req: Request, res: Response) => {
   try {
+    const before = await InspectionModel.findById(req.params.id);
+    if (before) {
+      const linkedReservation = await ReservationModel.findById(before.reservationId).select('serviceType').exec();
+      if (linkedReservation?.serviceType === 'MANAGED_INVENTORY') {
+        return res.status(409).json({ success: false, message: 'Managed Inventory quota activation does not use Self Storage inspections.' });
+      }
+    }
     const inspection = await InspectionModel.findOneAndUpdate(
       { _id: req.params.id, status: InspectionStatus.DRAFT } as any,
       { status: InspectionStatus.COMPLETED },

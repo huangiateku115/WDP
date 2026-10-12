@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { FacilityServiceType } from '../../types/facility.type';
 import { StorageUnitSize } from '../../types/storage-unit.type';
-import { JsonValue, PolicyType, TermUnit } from '../../types/pricing-policy.type';
+import { JsonValue, PolicyType, PricingBasis, TermUnit } from '../../types/pricing-policy.type';
 
 export type Kind = 'pricing' | 'policy';
 export class RuleError extends Error {
@@ -55,6 +55,12 @@ export function config(value: unknown): { [key: string]: JsonValue } {
   if (Buffer.byteLength(json) > 16384) invalid('Config exceeds 16 KiB');
   return JSON.parse(json);
 }
+export function validateManagedDepositConfig(value: unknown) {
+  const input = object(value, ['calculation', 'percentage']);
+  if (input.calculation !== 'PERCENT_OF_RENT' || typeof input.percentage !== 'number' || !Number.isFinite(input.percentage) || input.percentage < 0) {
+    invalid('Managed DEPOSIT config requires PERCENT_OF_RENT and a non-negative percentage');
+  }
+}
 export function scope(kind: Kind, input: Record<string, unknown>, query = false) {
   const result: Record<string, unknown> = { facilityId: new Types.ObjectId(id(input.facilityId)) };
   if (kind === 'pricing' || input.serviceType !== undefined) result.serviceType = enumeration(input.serviceType, Object.values(FacilityServiceType));
@@ -63,6 +69,11 @@ export function scope(kind: Kind, input: Record<string, unknown>, query = false)
   } else {
     if (result.serviceType === FacilityServiceType.SELF_STORAGE) result.unitSize = enumeration(input.unitSize, Object.values(StorageUnitSize));
     else if (input.unitSize !== undefined) invalid('MANAGED_INVENTORY cannot contain unitSize');
+    if (result.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+      if (input.billingBasis !== undefined || !query) result.billingBasis = enumeration(input.billingBasis, [PricingBasis.PER_M3]);
+    } else if (input.billingBasis !== undefined) {
+      result.billingBasis = enumeration(input.billingBasis, [PricingBasis.PER_STORAGE_UNIT]);
+    }
     const term = query ? { value: input.termValue, unit: input.termUnit } : object(input.term, ['value', 'unit']);
     const value = query && typeof term.value === 'string' && /^[1-9]\d*$/.test(term.value) ? Number(term.value) : term.value;
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) invalid('Term value must be a positive integer');
@@ -71,10 +82,10 @@ export function scope(kind: Kind, input: Record<string, unknown>, query = false)
   return result;
 }
 export const scopeKeys = (kind: Kind) => kind === 'pricing'
-  ? ['facilityId', 'serviceType', 'unitSize', 'termValue', 'termUnit'] : ['facilityId', 'serviceType', 'type'];
+  ? ['facilityId', 'serviceType', 'billingBasis', 'unitSize', 'termValue', 'termUnit'] : ['facilityId', 'serviceType', 'type'];
 export function body(kind: Kind, value: unknown, partial = false) {
   const mutable = ['effectiveFrom', 'effectiveTo', ...(kind === 'pricing' ? ['price', 'currency'] : ['config'])];
-  const input = object(value, partial ? mutable : [...mutable, 'isActive', 'facilityId', 'serviceType', ...(kind === 'pricing' ? ['unitSize', 'term'] : ['type'])]);
+  const input = object(value, partial ? mutable : [...mutable, 'isActive', 'facilityId', 'serviceType', ...(kind === 'pricing' ? ['billingBasis', 'unitSize', 'term'] : ['type'])]);
   if (!Object.keys(input).length) invalid('At least one field is required');
   const output: Record<string, unknown> = partial ? {} : scope(kind, input);
   for (const field of ['effectiveFrom', 'effectiveTo']) if (field in input) output[field] = date(input[field]);
@@ -89,7 +100,10 @@ export function body(kind: Kind, value: unknown, partial = false) {
       if (typeof input.currency !== 'string' || !/^[A-Za-z]{3}$/.test(input.currency)) invalid('Currency must be three letters');
       output.currency = input.currency.toUpperCase();
     }
-  } else if (!partial || 'config' in input) output.config = config(input.config);
+  } else if (!partial || 'config' in input) {
+    output.config = config(input.config);
+    if (!partial && input.type === PolicyType.DEPOSIT && input.serviceType === FacilityServiceType.MANAGED_INVENTORY) validateManagedDepositConfig(output.config);
+  }
   if (output.effectiveFrom && output.effectiveTo) range(output as unknown as Period);
   return output;
 }
@@ -116,6 +130,7 @@ export function list(kind: Kind, value: unknown) {
   const filter: Record<string, unknown> = {};
   if (input.facilityId !== undefined) filter.facilityId = new Types.ObjectId(id(input.facilityId));
   if (input.serviceType !== undefined) filter.serviceType = enumeration(input.serviceType, Object.values(FacilityServiceType));
+  if (input.billingBasis !== undefined) filter.billingBasis = enumeration(input.billingBasis, Object.values(PricingBasis));
   if (input.unitSize !== undefined) filter.unitSize = enumeration(input.unitSize, Object.values(StorageUnitSize));
   if (input.type !== undefined) filter.type = enumeration(input.type, Object.values(PolicyType));
   if (input.termValue !== undefined) filter['term.value'] = integer('termValue', 1, Number.MAX_SAFE_INTEGER);

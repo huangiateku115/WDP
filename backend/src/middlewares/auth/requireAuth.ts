@@ -52,7 +52,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     }
 
     if (!user.isActive) {
-      res.status(403).json({ success: false, message: 'Forbidden: User account is inactive' });
+      res.status(403).json({ success: false, message: 'Tài khoản của bạn đã bị khóa hoặc vô hiệu hóa.' });
       return;
     }
 

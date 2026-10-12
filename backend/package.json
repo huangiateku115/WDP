@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "seed:fe": "tsx src/scripts/seed-fe-demo.ts"
   },
   "dependencies": {
     "@keycloak/keycloak-admin-client": "^26.8.0",
