@@ -38,7 +38,7 @@
 .experience-theme .ring-2{background:#f4faf4}
 .experience-theme .auth-showcase .grid.grid-cols-3>div{border-radius:8px;background:#f1f7f1;padding:10px 4px;font-size:12px}
 @media(max-width:640px){.experience-theme .grid.grid-cols-3:has(>button){grid-template-columns:1fr}.experience-theme .auth-shell .flex.justify-between{gap:12px;flex-wrap:wrap}}
-.portal-navigation{position:sticky;top:64px;z-index:29;display:flex;justify-content:center;gap:8px;overflow-x:auto;padding:12px 20px;background:#fffffff5;backdrop-filter:blur(16px);border-bottom:1px solid #e1e8e2}
+.portal-navigation{position:sticky;top:64px;z-index:29;display:flex;justify-content:safe center;gap:8px;overflow-x:auto;padding:12px 20px;background:#fffffff5;backdrop-filter:blur(16px);border-bottom:1px solid #e1e8e2}
 .portal-navigation a{display:flex;align-items:center;gap:8px;white-space:nowrap;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;color:#526554;transition:background .2s,color .2s}
 .portal-navigation a:hover{background:#f1f7f1}.portal-navigation a[aria-current=page]{background:#176b3a;color:#fff;box-shadow:0 4px 12px #176b3a22}
 .experience-theme :is(.text-blue-100,.text-blue-200){color:#dcebdd}.experience-theme :is(.bg-sky-50,.bg-blue-100,.bg-sky-100){background:#eaf5ee}.experience-theme :is(.text-sky-800,.text-blue-800){color:#176b3a}.experience-theme .border-sky-200{border-color:#c6dfcc}.experience-theme .from-sky-100{--tw-gradient-from:#eaf5ee}.experience-theme .to-blue-200{--tw-gradient-to:#c6dfcc}

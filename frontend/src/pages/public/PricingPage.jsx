@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import facilityApi from '@/api/facilityApi';
+import {useReservation} from '@/contexts/ReservationContext';
+import {useBackend,LoadState,rows,responseData,recordId,validId} from '@/components/customer/RentalBackendUI';
 import {
   ArrowRight,
   Box,
@@ -19,7 +22,6 @@ const plans = [
     icon: Box,
     name: "Smart Locker",
     size: "XS – L",
-    monthly: 250000,
     description: "For luggage, parcels, documents and smaller belongings.",
     features: ["Digital access", "24/7 CCTV", "Flexible rental"],
   },
@@ -27,7 +29,6 @@ const plans = [
     icon: Warehouse,
     name: "Private Vault",
     size: "3 – 9 m²",
-    monthly: 1500000,
     popular: true,
     description: "Private storage for homes, moving and business inventory.",
     features: ["Private room", "PIN access", "Elevator access"],
@@ -45,24 +46,24 @@ const faqs = [
   ],
   [
     "How does long-term pricing work?",
-    "This demo applies a 15% illustration discount to the displayed monthly rate when Long-Term is selected.",
+    "Long-term rates depend on the selected facility's returned pricing rules. No promotional discount is assumed.",
   ],
 ];
 
 export default function PricingPage() {
   const [longTerm, setLongTerm] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
-
-  const price = (value) => {
-    const finalPrice = longTerm ? Math.round(value * 0.85) : value;
-
-    return new Intl.NumberFormat("vi-VN").format(finalPrice);
-  };
+  const [query]=useSearchParams(),{rentalDraft}=useReservation();
+  const [facilityId,setFacilityId]=useState(query.get('facility')||recordId(rentalDraft.facility)||'');
+  const locations=useBackend(config=>facilityApi.publicList(config).then(rows),[],true);
+  const rates=useBackend(async config=>{if(!validId(facilityId))return null;const grouped=responseData(await facilityApi.publicPricing(facilityId,config));if(!grouped||typeof grouped!=='object'||Array.isArray(grouped)||(!Object.hasOwn(grouped,'selfStorage')&&!Object.hasOwn(grouped,'managedInventory'))||['selfStorage','managedInventory'].some(key=>Object.hasOwn(grouped,key)&&!Array.isArray(grouped[key])))throw Error('The facility pricing response cannot be displayed safely yet. Its grouped pricing contract requires backend confirmation.');const data=[...(grouped.selfStorage||[]),...(grouped.managedInventory||[])];if(data.some(rule=>typeof rule.price!=='number'||!Number.isFinite(rule.price)||rule.price<0||typeof rule.currency!=='string'||!/^[A-Z]{3}$/.test(rule.currency)||!Number.isInteger(rule.term?.value)||rule.term.value<1||!['DAY','MONTH','YEAR'].includes(rule.term.unit)))throw Error('The facility pricing response cannot be displayed safely yet. Its price, currency and term fields require backend confirmation.');return data;},[facilityId],true);
+  const selectedLocation=locations.data?.find(f=>recordId(f)===facilityId);
+  const visibleRates=rates.data?.filter(rule=>longTerm?rule.term.unit==='MONTH'&&[6,12].includes(rule.term.value):!(rule.term.unit==='MONTH'&&[6,12].includes(rule.term.value)))||[];
 
   return (
     <div className="bg-[#FAFAF7]">
       {/* HERO */}
-      <section className="blueprint-dark relative overflow-hidden bg-gradient-to-b from-[#176B3A] via-[#0638a8] to-[#173D28] py-20 ">
+      <section style={{backgroundColor:'#0E4F2B'}} className="blueprint-dark relative overflow-hidden bg-gradient-to-b from-[#176B3A] via-[#0E4F2B] to-[#173D28] py-14 text-white md:py-20">
         <div className="page-container text-center">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2">
             <span className="h-2 w-2 rounded-full bg-[#F28C28]" />
@@ -76,17 +77,19 @@ export default function PricingPage() {
             Transparent Storage Pricing, Zero Hidden Fees
           </h1>
 
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-blue">
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-7" style={{color:'#EDF5EE'}}>
             Choose the exact space you need with flexible monthly terms and
             secure digital access.
           </p>
 
-          <div className="mt-8 inline-flex rounded-xl bg-white/15 p-1.5">
+          <div className="mx-auto mt-8 grid max-w-xl gap-2 rounded-xl border border-white/30 bg-white/10 p-2 sm:grid-cols-2" role="group" aria-label="Pricing duration">
             <button
               type="button"
               onClick={() => setLongTerm(false)}
+              aria-pressed={!longTerm}
+              style={{color:!longTerm?'#176B3A':'#FFFFFF',background:!longTerm?'#FFFFFF':'#0E4F2B'}}
               className={`rounded-lg px-6 py-2.5 text-sm font-semibold ${
-                !longTerm ? "bg-white text-[#176B3A] shadow" : "text"
+                !longTerm ? "bg-white text-[#176B3A] shadow" : "text-white"
               }`}
             >
               Monthly Flexible
@@ -95,18 +98,17 @@ export default function PricingPage() {
             <button
               type="button"
               onClick={() => setLongTerm(true)}
+              aria-pressed={longTerm}
+              style={{color:longTerm?'#176B3A':'#FFFFFF',background:longTerm?'#FFFFFF':'#0E4F2B'}}
               className={`rounded-lg px-6 py-2.5 text-sm font-semibold ${
                 longTerm ? "bg-white text-[#176B3A] shadow" : "text-white"
               }`}
             >
-              Long-Term (6–12 Mo)
-              <span className="ml-2 rounded-full bg-orange-600 px-2 py-0.5 text-[9px] text-white">
-                SAVE 15%
-              </span>
+              Long Term (6–12 Months)
             </button>
           </div>
 
-          <div className="mt-7 flex flex-wrap justify-center gap-5 text-xs text-blue-100">
+          <div className="mt-7 flex flex-wrap justify-center gap-x-5 gap-y-3 text-sm" style={{color:'#EDF5EE'}}>
             <span>✓ No hidden administration fees</span>
             <span>•</span>
             <span>⚡ Fast digital access setup</span>
@@ -119,7 +121,7 @@ export default function PricingPage() {
       {/* LOCATION */}
       <section className="page-container relative z-10 -mt-7">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 rounded-2xl border bg-white p-5 shadow-xl sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EAF5EE] text-[#176B3A]">
               <MapPin size={20} />
             </div>
@@ -128,7 +130,7 @@ export default function PricingPage() {
               <p className="text-[10px] font-bold uppercase text-[#7b8495]">
                 Selected Location
               </p>
-              <strong className="text-sm">Ho Chi Minh City Network</strong>
+              <strong className="break-words text-sm">{selectedLocation?.name||'Choose a facility'}</strong>
             </div>
           </div>
 
@@ -136,6 +138,7 @@ export default function PricingPage() {
             <Link to="/facilities">Change Location</Link>
           </Button>
         </div>
+        <div className="mx-auto mt-5 max-w-3xl space-y-3"><LoadState resource={locations}/><label className="block text-sm font-semibold text-[#173D28]">Facility<select aria-label="Pricing facility" className="customer-select mt-2" value={facilityId} onChange={event=>setFacilityId(event.target.value)}><option value="">Choose a facility</option>{locations.data?.filter(f=>validId(recordId(f))).map(f=><option key={recordId(f)} value={recordId(f)}>{f.name}</option>)}</select></label><LoadState resource={rates}/>{!facilityId&&<p className="text-sm text-slate-700">Choose a facility to view backend pricing.</p>}{rates.data&&<><h2 className="text-lg font-bold text-[#173D28]">Facility rates</h2>{visibleRates.length?visibleRates.map((rule,index)=><div key={recordId(rule)||index} className="rounded-xl border bg-white p-5"><p className="font-semibold text-[#176B3A]">{rule.serviceType}{rule.unitSize?` · ${rule.unitSize}`:''}</p><p className="mt-2 text-xl font-bold text-[#173D28]">{new Intl.NumberFormat('vi-VN').format(rule.price)} <span className="text-sm">{rule.currency} / {rule.term.value} {rule.term.unit.toLowerCase()}{rule.term.value===1?'':'s'}</span></p></div>):<p className="text-sm text-slate-700">No {longTerm?'6–12 month':'monthly'} rates returned for this facility.</p>}<p className="text-xs text-slate-600">Returned rule prices are shown for their exact term; deposits and total booking amounts require confirmed policies.</p></>}</div>
       </section>
 
       {/* PLANS */}
@@ -151,8 +154,8 @@ export default function PricingPage() {
 
           <p className="section-description mx-auto mt-4 max-w-2xl">
             {longTerm
-              ? "Long-term example rates currently show a 15% discount."
-              : "Stay flexible with simple monthly storage pricing."}
+              ? "Long-term availability and prices depend on the selected facility. No discount is assumed."
+              : "Review the selected facility's monthly rates above before booking."}
           </p>
         </div>
 
@@ -192,12 +195,8 @@ export default function PricingPage() {
                 </p>
 
                 <div className="mt-6">
-                  <span className="font-heading text-3xl font-semibold">
-                    {price(plan.monthly)}
-                  </span>
-                  <span className="ml-2 text-xs text-[#697386]">
-                    VND / month
-                  </span>
+                  <span className="font-heading text-lg font-semibold text-[#173D28]">Check facility pricing</span>
+                  <p className="mt-2 text-sm text-slate-600">Category pricing is not confirmed. No illustrative rate is presented as a live offer.</p>
                 </div>
 
                 <div className="mt-6 space-y-3 border-t pt-5">
@@ -220,7 +219,7 @@ export default function PricingPage() {
                       : "bg-[#EAF5EE] text-[#176B3A] hover:bg-[#EAF5EE]"
                   }`}
                 >
-                  <Link to="/facilities">Check Availability</Link>
+                  <Link to={validId(facilityId)?`/portal/rent?facility=${facilityId}`:'/facilities'}>Check Availability</Link>
                 </Button>
               </article>
             );

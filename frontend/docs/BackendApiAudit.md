@@ -1,3 +1,85 @@
+# Frontend integration check — 13/10/2026
+
+Integrated Staff/Manager changes onto origin/Frontend e10a702, which already includes dev 1b1dbbd. Preserved upstream Customer UI, Cloudinary settings and Customer/warehouse/inventory API permissions. Resolved overlaps in .env.example, confirmedContract.js and CustomersPage.jsx; no backend source changes.
+
+Validation: Staff/Manager review and inspection browser fixtures PASS; Self Storage, Inventory and Managed contract checks PASS. Customer login/logout/pricing regression PASS (local runtime/port and missing profile response adapted in memory; 15 responsive checks). These tests use synthetic API responses, not live business writes. Maintenance/Support adapters remain preparatory; their live UI is not complete.
+
+The shared allowlist test now includes Manager approve/reject and existing Customer inventory registration; backend remains responsible for role authorization. Local environment files and secrets are excluded from Git.
+
+---
+
+# Phase 2 — Inspection + Check-in (12/10/2026)
+
+Chỉ triển khai React Web P030/P025 trên các route nghiệp vụ hiện có. Không sửa backend, không seed, không chạy API ghi database thật, không commit/push/merge/deploy. Các thay đổi Iteration 1–2 chưa commit từ lượt trước được giữ nguyên.
+
+| Iteration | Task ID | Feature | Frontend | Backend | API | Test | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 3 | P030 | Unit Inspection Checklist | List/detail theo facility; lọc reservation/unit; tạo CHECK_IN DRAFT; checklist lưu trong notes, condition enum thật, URL ảnh; loading/error/empty và khóa gửi | Có list/create/complete, thiếu scope/validation server, thiếu GET detail và PATCH sửa draft; không có field checklist/upload | GET/POST /inspections, PATCH /inspections/:inspectionId/complete | PASS fixture và responsive; live NOT TESTED | PARTIAL: frontend Manager triển khai; Staff tạo/hoàn tất chờ quyền kiểm tra dữ liệu |
+| 3 | P025 | Check-in Rental | Kiểm tra lại PAID, hợp đồng SIGNED đúng đơn/khách, đúng unit/facility, biên bản DRAFT; confirm; đọc lại ACTIVE/OCCUPIED; chặn trùng và lỗi 400/401/403/404/409 | complete CHECK_IN tự kích hoạt đơn/tủ, thiếu kiểm tra trạng thái/thanh toán/hợp đồng/scope và transaction server | GET reservation/contract/unit và inspections; PATCH complete | PASS fixture, gồm response hoàn tất nhưng đơn/tủ chưa đổi; live NOT TESTED | PARTIAL: tích hợp frontend sẵn, blocker backend còn High |
+
+## Files và endpoint
+
+Thêm `src/api/inspectionApi.js`, `src/lib/inspectionReview.js`, `src/pages/staff/InspectionApiView.jsx`, `.design-reference/check-inspection-api.cjs`. Sửa tối thiểu `StaffPages.jsx` để dùng live view cho INSPECTION/CHECK_IN; mở allowlist GET/POST inspections, PATCH complete, GET contracts/:id; thêm link Inspection/Check-in vào Manager sidebar ở chế độ API thật. Không thay route cũ và không đổi luồng demo.
+
+Endpoint đã nối: GET `/inspections?reservationId=...&storageUnitId=...`; POST `/inspections`; PATCH `/inspections/:inspectionId/complete`; GET `/reservations/facility/:facilityId`, `/reservations/:id`, `/contracts/:id`, `/storage-units/:id`.
+
+Không có GET `/inspections/:id`: detail được tìm từ danh sách API rồi giới hạn facility. Không có endpoint check-in riêng: hoàn tất CHECK_IN là thao tác check-in. CHECK_OUT chỉ hiển thị read-only trong phase này.
+
+## Blocker và bảo vệ phía frontend
+
+- Staff được route inspections cho phép, nhưng reservation detail/list và contract detail không cho Staff. UI không gọi các API bị cấm và không tạo/hoàn tất khi chưa xác minh điều kiện.
+- Manager cần assignedFacilityId thật. Không hiển thị biên bản ngoài facility; backend phải bổ sung scope server vì GET inspections hiện có thể trả dữ liệu toàn hệ thống.
+- Backend cần kiểm tra PAID, hợp đồng SIGNED, liên kết unit/facility, điều kiện unit, chống nhiều inspection check-in trùng và transaction khi complete. Frontend preflight không khắc phục được race hoặc người gọi API trực tiếp.
+- Checklist hiện lưu bằng nội dung notes trong POST, ảnh là URL HTTP/HTTPS. Không invent trường checklist, API upload hoặc audit; inspectedBy do backend ghi.
+- Hợp đồng Manager mở bằng Contract ID thật; chưa có lookup contract theo reservation. Không dùng /contracts/me của Customer. Chưa có sửa draft, nên biên bản DAMAGED/NEEDS_CLEANING không thể check-in và cần backend hỗ trợ xử lý tiếp.
+- Các mã P034/P035/P038... ở Iteration 4 trong prompt được dùng như mô tả đề xuất; chưa xác nhận chúng là mã/owner Excel tương ứng. Chưa triển khai các task này trong Phase 2.
+
+## Kiểm thử và thao tác thủ công
+
+`node .design-reference/check-inspection-api.cjs`: PASS với API fixture, không ghi DB thật. Kiểm tra payload đúng ID, điều kiện/checklist/URL, PAID/SIGNED, duplicate, lỗi HTTP, sai facility, Staff read-only, phản hồi không nhất quán, desktop/mobile. Build frontend PASS; lint chưa có script/config. Backend local/Keycloak/MongoDB và authenticated E2E: NOT TESTED. Không sửa hoặc build backend trong phase frontend này.
+
+1. Chạy backend do nhóm backend chuẩn bị; frontend dùng VITE_USE_MOCK=false và API base /api/v1.
+2. Đăng nhập FACILITY_MANAGER có assignedFacilityId. Mở `/manager/work/INSPECTION` hoặc link Inspection trên sidebar. Chọn đơn Self Storage PAID trong cơ sở; nhập Contract ID SIGNED đúng đơn/khách.
+3. Chọn condition GOOD/EXCELLENT, tick checklist, ghi notes, URL ảnh nếu có; Lưu biên bản nháp. Sau response thật, trang chuyển đến `/manager/work/INSPECTION/<InspectionID>`.
+4. Nhập lại Contract ID khi mở detail; tick xác nhận, Kiểm tra và nhận kho → Xác nhận nhận kho. Mỗi lần hoàn tất frontend đọc lại điều kiện. Chỉ thông báo thành công khi backend trả COMPLETED và GET xác nhận ACTIVE/OCCUPIED.
+5. `/manager/work/CHECK_IN` dùng cùng biên bản/lifecycle. `/staff/inspections` và `/staff/check-ins` cho Staff xem dữ liệu trong cơ sở, ghi rõ blocker quyền.
+6. Postman trên bản ghi test được phép: đọc reservation PAID, contract SIGNED, unit cùng facility; GET inspections; POST inspection với reservationId/facilityId/storageUnitId/type CHECK_IN/condition/notes/images; lấy inspection._id và PATCH `/inspections/<InspectionID>/complete`; GET lại reservation/unit để xác nhận. Không truyền Reservation ID vào đường dẫn complete. Không thực hiện trên dữ liệu thật khi chưa được phép.
+
+Dừng sau Phase 2 và chờ người dùng xác nhận trước Phase 3 — Maintenance + Support. Không tự đánh dấu toàn bộ Phase 2 DONE khi blocker backend còn tồn tại.
+
+---
+
+# Staff / Facility Manager — cập nhật 12/10/2026
+
+Đã fast-forward nhánh dev tới `1b1dbbd`. Chỉ sửa frontend; không thay đổi backend, seed, database, commit, push hay merge. Những nhận định cũ về role khách hàng/Managed Reservation bên dưới cần đọc cùng cập nhật này.
+
+## Chế độ chạy
+
+- `VITE_USE_MOCK=false`: API thật, dùng `.env.example` với base `http://localhost:5000/api/v1`. File `.env.local` trên máy chọn cấu hình này và được Git ignore. Không đưa MongoDB, JWT secret hoặc Keycloak client secret vào frontend.
+- `VITE_USE_MOCK=true`: dữ liệu browser demo riêng vẫn được giữ. Các kết quả fixture không phải giao dịch backend.
+- Staff/Manager trong chế độ API thật được xác minh qua GET `/users/me/`, kiểm tra role trước khi mở workspace. Giữ `assignedFacilityId` từ response, không dùng FAC001 làm cơ sở thật.
+
+## Iteration 1–2
+
+| Task | Frontend đã triển khai | Phần chờ backend / kiểm chứng |
+| --- | --- | --- |
+| P010 | GET `/customers`, GET `/customers/:profileId`; mapping userId/profileId, tìm tên/email/SĐT, loading/empty/error/retry; không hiển thị CCCD/tài liệu định danh | Customer API chưa có scope cơ sở và dùng fullName thay vì displayName. Lịch sử thuê chỉ đọc được Self Storage trong cơ sở Manager qua GET `/reservations/facility/:facilityId`; lịch sử đầy đủ và lịch sử cho Staff chưa có API |
+| P011 | PATCH `/customers/:profileId/verify` với status/note, ghi chú bắt buộc, khóa gửi trùng, đọc lại dữ liệu sau response xác nhận và báo thay đổi giữa các tab; Staff đã được route backend mới cho phép | Backend chưa có lịch sử đầy đủ, validation/scope vẫn còn thiếu. UI chỉ ghi lần xác minh gần nhất có trong response, không dựng audit giả |
+| P013 | Manager đọc danh sách/chi tiết Self Storage, approve/reject, dùng RESERVED/CONTRACTED/CANCELLED, reason bắt buộc; response Managed approve `{data:{reservation,contract}}` được map riêng; xử lý 400/401/403/404/409, khóa gửi, refetch | Staff chưa có quyền reservation. Chưa có Managed list theo facility, nên Managed dùng mở theo ID thật. Thông báo khách, tính nhất quán approve/contract và phạm vi backend cần backend xác nhận/sửa; frontend không sửa backend |
+| P064/P065 | Giữ giao diện demo riêng; chế độ API thật hiển thị chờ backend, chặn cả đường dẫn refund legacy, không gửi API đoán tên và không đổi Payment thành REFUNDED | Chưa có model/route/service/API refund hoặc policy được chốt trong source/collection hiện tại |
+
+API allowlist được mở đúng các endpoint đọc/xác minh khách, đọc danh sách đặt chỗ theo cơ sở và đọc/duyệt/từ chối Self/Managed Reservation. Không mở wildcard cho refund/payment.
+
+## Kiểm thử
+
+**PASS:** `node .design-reference/check-facility-review-api.cjs` dùng Playwright với response API giả lập, không gọi hoặc ghi vào database thật. Kiểm tra: search/empty, verification, ID/assignment mapping, refetch hai tab, contract response, gửi trùng, reason, 400/401/403/404/409, response không xác nhận chuyển trạng thái, retry, thiếu facility, sai role, chưa đăng nhập, thiếu API Staff/refund, Managed theo ID và responsive.
+
+Kiểm tra hồi quy demo dùng server riêng `VITE_USE_MOCK=true` ở cổng 5174, bỏ bước ghi screenshot và cung cấp phiên Customer giả lập trong bộ nhớ cho receipt. Không chỉnh sửa backend hoặc dùng secret để chạy database/Keycloak.
+
+API end-to-end, phiên Keycloak thật và persistence MongoDB: **NOT TESTED** vì backend local chưa chạy. Không đánh dấu DONE toàn bộ Iteration 1–2 chỉ từ fixture. **Chưa bắt đầu phát triển Iteration 3–4 trong lượt này**; chờ các phụ thuộc Iteration 1–2 nêu trên. Các màn hình Iteration 3 đã có từ trước vẫn giữ nguyên.
+
+---
+
 # Priority 1 + Priority 2 backend API audit
 
 ## Contract and scope

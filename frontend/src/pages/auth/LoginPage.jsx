@@ -2,6 +2,7 @@ import {useRef, useState} from 'react';
 import {useLocation} from 'react-router-dom';
 import authApi from '@/api/authApi';
 import {saveAuthSession, saveSessionUser, profileFromResponse, getAccessToken} from '@/lib/authSession';
+import {customerWarehouseDestination} from '@/lib/customerRedirect';
 import {apiErrorMessage} from '@/lib/apiError';
 import referenceImages from '@/components/common/referenceImages';
 import { Link, useNavigate } from "react-router-dom";
@@ -21,7 +22,7 @@ export default function LoginPage() {
     saveAuthSession({accessToken:tokens?.accessToken,refreshToken:tokens?.refreshToken,user:tokens?.user});
     let user=tokens?.user||null;
     try{user=profileFromResponse(await authApi.me());if(getAccessToken()!==tokens.accessToken)return;saveSessionUser(user);}catch(err){if(!getAccessToken())throw err;}
-    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':'/portal');
+    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':customerWarehouseDestination(user?.role,location.state?.from));
   }catch(err){setError(apiErrorMessage(err,'Unable to sign in. Please try again.'));}finally{busy.current=false;setPending(false);}};
   return (
     <div className="mx-auto max-w-5xl px-5 py-14">
@@ -43,15 +44,7 @@ export default function LoginPage() {
             Sign in to manage your active storage units, check gate PINs, and
             view contracts.
           </p>
-          <div className="mt-6 grid grid-cols-3 gap-3">
-            <Button variant="outline" disabled title="Provider API unavailable">Google</Button>
-            <Button variant="outline" disabled title="Provider API unavailable">Apple</Button>
-            <Button variant="outline" disabled title="Provider API unavailable">Zalo / OTP</Button>
-          </div>
-          <div className="my-6 text-center text-xs text-slate-500">
-            OR SIGN IN WITH EMAIL
-          </div>
-          <form className="space-y-4" onSubmit={signIn}>
+          <form className="mt-6 space-y-4" onSubmit={signIn}>
             <div>
               <div className="field-label">Email Address</div>
               <Input aria-label="Email address" type="email" autoComplete="username" placeholder="name@domain.com" required value={email} onChange={event=>setEmail(event.target.value)} disabled={pending} />

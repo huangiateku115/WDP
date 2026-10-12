@@ -16,26 +16,26 @@ const steps = [
   {
     number: "01",
     icon: Building2,
-    title: "Select Your Space Online with 3D Spatial Clarity",
-    text: "Browse live unit availability by location and size. Compare spaces and reserve the exact unit you need.",
+    title: "Browse Facilities & Choose Storage",
+    text: "Browse facilities and published storage options, then sign in to select a real storage unit and rental period. Availability is checked before booking.",
   },
   {
     number: "02",
     icon: FileCheck2,
-    title: "Instant Digital Verification & Paperless E-Lease",
-    text: "Complete renter information, verify your details and review your digital storage agreement online.",
+    title: "Create a Reservation & Wait for Approval",
+    text: "Submit identity information and wait for verification. Reservation creation requires confirmed pricing and deposit values. The Facility Manager approves a reservation and creates its draft contract.",
   },
   {
     number: "03",
     icon: Smartphone,
-    title: "Instant Smartphone Key & Automated Gate Pass",
-    text: "After confirmation, your account receives secure digital facility and unit access without traditional physical keys.",
+    title: "Sign Your Contract & Make Demo Payment",
+    text: "Review and sign the backend draft contract. Demo payment is available for approved reservations; real PayOS payments are not available in this application.",
   },
   {
     number: "04",
     icon: MoveRight,
-    title: "Move In Seamlessly On Your Own Schedule",
-    text: "Arrive when it suits you and access your SelfStorage using the credentials provided to your account.",
+    title: "Wait for Handover & Access Your Active Rental",
+    text: "Coordinate handover and check-in with the facility team. Only ACTIVE rentals can use the simulated unlock feature with a user-entered PIN.",
   },
 ];
 
@@ -58,20 +58,19 @@ export default function HowItWorksPage() {
           <div className="mt-6 grid items-center gap-10 lg:grid-cols-[1.5fr_.7fr]">
             <div>
               <h1 className="max-w-4xl font-heading text-4xl font-semibold leading-[1.08] tracking-[-0.05em] md:text-5xl">
-                How SelfStorage Works — From Booking to Move-In in Minutes
+                How SelfStorage Works — From Booking to Active Rental
               </h1>
 
               <p className="mt-5 max-w-2xl text-base leading-7 text-blue-100">
-                Simple, digital, and flexible. Reserve online, complete your
-                agreement, receive secure access and move in on your schedule.
+                Browse, reserve, wait for approval, sign, make demo payment, and arrange handover before your rental becomes active.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-2">
                 {[
                   "Choose Space & Reserve",
-                  "Digital Verification",
-                  "Instant Smart Access",
-                  "Move-In Anytime",
+                  "Reserve & Wait for Approval",
+                  "Sign & Demo Payment",
+                  "Handover & Active Access",
                 ].map((item, index) => (
                   <a
                     key={item}
@@ -93,11 +92,11 @@ export default function HowItWorksPage() {
               <div className="flex items-center justify-between border-b pb-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase text-[#697386]">
-                    Active Facilities
+                    Rental workflow
                   </p>
 
                   <p className="mt-1 font-heading text-xl font-semibold text-[#176B3A]">
-                    5 Flagship Hubs
+                    Approval before handover
                   </p>
                 </div>
 
@@ -105,9 +104,9 @@ export default function HowItWorksPage() {
               </div>
 
               <div className="space-y-4 py-5 text-sm">
-                <Info label="Average Booking Speed" value="3 mins 40 secs" />
-                <Info label="Digital Access" value="24 / 7" />
-                <Info label="Physical Keys" value="Not Required" />
+                <Info label="Verification" value="Facility team review" />
+                <Info label="Payment" value="Demo only" />
+                <Info label="Simulated access" value="ACTIVE rentals only" />
               </div>
 
               <Button asChild className="w-full bg-[#176B3A]">
@@ -152,9 +151,9 @@ export default function HowItWorksPage() {
 
                   <div className="mt-6 space-y-3">
                     {[
-                      "Fully digital process",
+                      "Backend status controls next actions",
                       "Secure renter verification",
-                      "Designed for fast self-service",
+                      "Facility team approval and handover",
                     ].map((item) => (
                       <div
                         key={item}

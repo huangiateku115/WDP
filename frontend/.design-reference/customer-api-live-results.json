@@ -1,0 +1,104 @@
+[
+  {
+    "path": "/health",
+    "status": 200,
+    "success": true,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/public/facilities?page=1&limit=6",
+    "status": 200,
+    "success": true,
+    "dataShape": "list"
+  },
+  {
+    "path": "/public/facilities/6ac29e8c72e5062a4e646ccd",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities/6ac29e8c72e5062a4e646ccd/pricing",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities/6ac29e8c72e5062a4e646ccd/storage-options",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities/6ac4561b9a1f0501dfd90243",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities/6ac4561b9a1f0501dfd90243/pricing",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities/6ac4561b9a1f0501dfd90243/storage-options",
+    "status": 200,
+    "success": true,
+    "dataShape": "dict"
+  },
+  {
+    "path": "/public/facilities?search=nonexistent-audit-facility&page=1&limit=6",
+    "status": 200,
+    "success": true,
+    "dataShape": "list"
+  },
+  {
+    "path": "/public/facilities/not-an-id",
+    "status": 400,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/public/facilities?serviceType=SELF_STORAGE&page=1&limit=6",
+    "status": 200,
+    "success": true,
+    "dataShape": "list"
+  },
+  {
+    "path": "/customers/me/profile",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/notifications/me",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/contracts/me",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/reservations/me",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/support-requests",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  },
+  {
+    "path": "/access/me",
+    "status": 401,
+    "success": false,
+    "dataShape": "NoneType"
+  }
+]

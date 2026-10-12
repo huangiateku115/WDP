@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 export default function CTASection() {
   return (
     <section className="page-container pb-20">
-      <div className="vault-gradient blueprint-dark overflow-hidden rounded-2xl px-7 py-12 text-white md:px-12">
+      <div style={{backgroundColor:"#0E4F2B"}} className="vault-gradient blueprint-dark overflow-hidden rounded-2xl px-7 py-12 text-white md:px-12">
         <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100">
