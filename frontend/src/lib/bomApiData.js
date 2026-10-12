@@ -1,5 +1,7 @@
-import { bomFacilityApi, bomReservationApi } from "@/api/bomApi";
-import { facilityFromDto, reservationFromDto, responseList } from "@/lib/bomMappers";
+import { bomFacilityApi, bomInventoryApi, bomReservationApi, bomUnitApi, bomWarehouseApi } from "@/api/bomApi";
+import {
+  facilityFromDto, inventoryItemFromDto, reservationFromDto, responseData, responseList, unitFromDto, warehouseFromDto,
+} from "@/lib/bomMappers";
 
 const PAGE_LIMIT = 100;
 // Hard bound on sequential page round-trips so a large collection never stalls the client.
@@ -63,4 +65,29 @@ export async function loadReservations(facilities, { signal } = {}) {
     ),
   );
   return { rows: chunks.flat(), truncated: facilities.length > targets.length };
+}
+
+/* ---------------------- Facility-scoped oversight reads ---------------------- */
+// The backend exposes no cross-facility aggregate endpoint, so oversight loads one
+// facility at a time and fires its four scoped reads in parallel (no N+1 fan-out).
+
+export async function loadWarehouseStructure(facilityId, { signal } = {}) {
+  const dto = responseData(await bomWarehouseApi.map(facilityId, { signal }));
+  return warehouseFromDto(dto);
+}
+
+export async function loadFacilityUnits(facilityId, { signal } = {}) {
+  const list = (params, config) => bomUnitApi.listByFacility(facilityId, params, config);
+  const { rows, total, truncated } = await fetchPaged(list, {}, { signal });
+  return { rows: rows.map(unitFromDto), total, truncated };
+}
+
+export async function loadFacilityInventory(facilityId, { signal } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, { facilityId }, { signal });
+  return { rows: rows.map(inventoryItemFromDto), total, truncated };
+}
+
+export async function loadFacilityReservations(facilityId, { signal } = {}) {
+  const response = await bomReservationApi.listByFacility(facilityId, { signal });
+  return responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }));
 }

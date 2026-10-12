@@ -36,6 +36,61 @@ export function fromInstant(value) {
   return value ? String(value).slice(0, 10) : "";
 }
 
+/* ------------------- Warehouse map, units, managed inventory ------------------- */
+// Flattens the /warehouse-map read model (zones -> aisles -> racks) into rack rows.
+export function warehouseFromDto(dto) {
+  const zones = Array.isArray(dto?.zones) ? dto.zones : [];
+  const racks = [];
+  zones.forEach((zone) => {
+    (zone.aisles || []).forEach((aisle) => {
+      (aisle.racks || []).forEach((rack) => {
+        const utilization = rack.utilization || {};
+        racks.push({
+          id: rack._id,
+          zoneCode: zone.code || "—",
+          zoneName: zone.name || zone.code || "—",
+          aisleCode: aisle.aisleCode || "—",
+          rackCode: rack.rackCode || "—",
+          operationalStatus: rack.operationalStatus || "—",
+          cellCount: rack.cellCount ?? 0,
+          availableCellCount: rack.availableCellCount ?? 0,
+          ratedCapacityKg: utilization.ratedCapacityKg ?? utilization.maxWeightKg ?? 0,
+          allocatableCapacityKg: utilization.allocatableCapacityKg ?? 0,
+          usedWeightKg: utilization.usedWeightKg ?? 0,
+          utilizationStatus: utilization.status || "EMPTY",
+        });
+      });
+    });
+  });
+  return { zones, racks };
+}
+
+export function unitFromDto(d) {
+  return {
+    id: d?._id,
+    code: d?.unitCode || "",
+    size: d?.size || "",
+    status: d?.status || "",
+    volumeM3: d?.volumeM3 ?? 0,
+    dimensions: d?.dimensions || {},
+  };
+}
+
+export function inventoryItemFromDto(d) {
+  return {
+    id: d?._id,
+    code: d?.itemCode || "",
+    name: d?.name || "",
+    category: d?.category || "",
+    quantity: d?.quantity ?? 0,
+    quantityUnit: d?.quantityUnit || "",
+    totalVolumeM3: d?.totalVolumeM3 ?? 0,
+    totalWeightKg: d?.totalWeightKg ?? 0,
+    status: d?.status || "",
+    placed: Boolean(d?.currentCellId),
+  };
+}
+
 /* ----------------------------- Facilities ----------------------------- */
 export function facilityFromDto(d) {
   const a = d?.address || {};

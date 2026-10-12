@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button,
 } from "@/components/manager/ManagerUI";
@@ -102,10 +102,31 @@ function FacilityList() {
   );
 }
 
+// Navigation context comes from the ROUTE first, so the sidebar, the back action and the
+// edit flow stay correct on reload, bookmark or shared link. `location.state` is only a
+// fallback for entry points that have no dedicated route yet (e.g. the dashboard).
+const OVERSIGHT_ROOT = "/bom/oversight";
+const OVERSIGHT_FACILITIES = `${OVERSIGHT_ROOT}/facilities`;
+const BACK_LABELS = {
+  [OVERSIGHT_ROOT]: "Back to oversight",
+  "/bom/dashboard": "Back to dashboard",
+};
+
+function facilityNav(location) {
+  const pathname = location?.pathname || "";
+  if (pathname === OVERSIGHT_ROOT || pathname.startsWith(`${OVERSIGHT_ROOT}/`)) {
+    return { base: OVERSIGHT_FACILITIES, backTo: OVERSIGHT_ROOT, backLabel: BACK_LABELS[OVERSIGHT_ROOT] };
+  }
+  const backTo = location?.state?.from || "/bom/facilities";
+  return { base: "/bom/facilities", backTo, backLabel: BACK_LABELS[backTo] || "Back to facilities" };
+}
+
 function FacilityDetail() {
   const { id } = useParams();
+  const location = useLocation();
   const state = useAsyncData(() => bomFacilityApi.get(id).then(responseData).then(facilityFromDto), [id]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { base, backTo, backLabel } = facilityNav(location);
 
   if (!state.loading && state.error && /not found|unavailable|invalid|404/i.test(state.error)) return <BomUnavailable />;
 
@@ -114,7 +135,7 @@ function FacilityDetail() {
       title="Facility detail"
       description="Live facility record from the backend."
       notice={LIVE_NOTICE}
-      action={<Button asChild variant="outline"><Link to="/bom/facilities">Back to facilities</Link></Button>}
+      action={<Button asChild variant="outline"><Link to={backTo}>{backLabel}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(facility) => {
         const nextStatus = facility.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
@@ -122,7 +143,7 @@ function FacilityDetail() {
           <>
             <Panel
               title="Facility information"
-              action={<Button asChild variant="outline"><Link to={`/bom/facilities/${id}/edit`}>Edit facility</Link></Button>}
+              action={<Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Edit facility</Link></Button>}
             >
               <Details values={[
                 ["Facility code", facility.code],
@@ -172,7 +193,9 @@ function FacilityDetail() {
 
 function FacilityForm({ mode }) {
   const { id } = useParams();
+  const location = useLocation();
   const nav = useNavigate();
+  const { backTo } = facilityNav(location);
   const isEdit = mode === "edit";
   const state = useAsyncData(
     () => (isEdit ? bomFacilityApi.get(id).then(responseData).then(facilityForm) : Promise.resolve(null)),
@@ -225,7 +248,7 @@ function FacilityForm({ mode }) {
       if (isEdit) await bomFacilityApi.update(id, body);
       else await bomFacilityApi.create(body);
       invalidateFacilities();
-      nav("/bom/facilities");
+      nav(backTo);
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -348,7 +371,7 @@ function FacilityForm({ mode }) {
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>
-                  <Button type="button" variant="outline" onClick={() => nav("/bom/facilities")}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => nav(backTo)}>Cancel</Button>
                 </div>
               </div>
             </form>

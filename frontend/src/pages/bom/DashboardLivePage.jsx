@@ -59,7 +59,7 @@ export default function DashboardLivePage() {
                 label="Reservations by facility"
                 rows={byFacility}
                 columns={[
-                  { key: "name", label: "Facility", render: (r) => <Link className="manager-link" to={`/bom/facilities/${r.id}`}>{r.name}</Link> },
+                  { key: "name", label: "Facility", render: (r) => <Link className="manager-link" to={`/bom/facilities/${r.id}`} state={{ from: "/bom/dashboard" }}>{r.name}</Link> },
                   { key: "status", label: "Business status", render: (r) => <Status value={r.status} /> },
                   { key: "total", label: "Reservations" },
                   { key: "reserved", label: "Reserved" },
@@ -89,11 +89,11 @@ export default function DashboardLivePage() {
             <Panel title="Still demo (backend contract pending)">
               <Details values={[
                 ["Revenue reports", "Demo — no payment/report API yet"],
-                ["Utilization reports", "Demo — no inventory/location API yet"],
+                ["Inventory placement", "Warehouse structure is live in oversight; used weight is still an empty baseline"],
                 ["Business audit", "Demo — backend audit endpoints are per-user only"],
               ]} />
               <div className="mt-5 flex flex-wrap gap-3">
-                <Button asChild variant="outline"><Link to="/bom/oversight">Open oversight (demo)</Link></Button>
+                <Button asChild variant="outline"><Link to="/bom/oversight">Open oversight</Link></Button>
                 <Button asChild variant="outline"><Link to="/bom/reports">Open reports (demo)</Link></Button>
               </div>
             </Panel>

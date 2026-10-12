@@ -39,4 +39,27 @@ export const bomReservationApi = {
   get: (id, config) => axiosClient.get(`/reservations/${encode(id)}`, config),
 };
 
-export default { bomFacilityApi, bomPricingApi, bomPolicyApi, bomReservationApi };
+// Read-only cross-facility oversight. Warehouse map / racks / cells accept the BOM
+// role as a reader; inventory items are readable by ADMIN/BOM/MANAGER/STAFF.
+export const bomWarehouseApi = {
+  map: (facilityId, config) => axiosClient.get("/warehouse-map", { ...config, params: { facilityId } }),
+  zones: (params, config) => axiosClient.get("/warehouse-zones", { ...config, params }),
+  racks: (params, config) => axiosClient.get("/racks", { ...config, params }),
+  rackDetail: (id, config) => axiosClient.get(`/racks/${encode(id)}/detail-map`, config),
+  cells: (params, config) => axiosClient.get("/rack-cells", { ...config, params }),
+};
+
+export const bomInventoryApi = {
+  list: (params, config) => axiosClient.get("/inventory-items", { ...config, params }),
+  get: (id, config) => axiosClient.get(`/inventory-items/${encode(id)}`, config),
+};
+
+export const bomUnitApi = {
+  listByFacility: (facilityId, params, config) =>
+    axiosClient.get(`/facilities/${encode(facilityId)}/storage-units`, { ...config, params }),
+  get: (id, config) => axiosClient.get(`/storage-units/${encode(id)}`, config),
+};
+
+export default {
+  bomFacilityApi, bomPricingApi, bomPolicyApi, bomReservationApi, bomWarehouseApi, bomInventoryApi, bomUnitApi,
+};
