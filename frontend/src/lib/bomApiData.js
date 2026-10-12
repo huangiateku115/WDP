@@ -91,3 +91,15 @@ export async function loadFacilityReservations(facilityId, { signal } = {}) {
   const response = await bomReservationApi.listByFacility(facilityId, { signal });
   return responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }));
 }
+
+// Managed capacity configuration. The endpoint answers 404 for facilities that are not
+// active Managed Inventory or have no capacity configured, which is a valid "not
+// configured" state rather than an error.
+export async function loadManagedCapacity(facilityId, { startDate, endDate, signal } = {}) {
+  try {
+    return responseData(await bomReservationApi.managedCapacity(facilityId, { startDate, endDate }, { signal }));
+  } catch (error) {
+    if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") throw error;
+    return null;
+  }
+}

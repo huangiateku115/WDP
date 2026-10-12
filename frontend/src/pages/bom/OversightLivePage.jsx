@@ -10,11 +10,7 @@ import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservations, loadFacilityUnits, loadWarehouseStructure,
 } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES } from "@/lib/bomMappers";
-
-const countBy = (rows, key, value) => rows.filter((row) => row[key] === value).length;
-const sumBy = (rows, key) => rows.reduce((total, row) => total + (Number(row[key]) || 0), 0);
-const kg = (value) => `${Number(value || 0).toLocaleString("en-GB")} kg`;
-const m3 = (value) => `${Number(value || 0).toFixed(2)} m³`;
+import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 // Cross-facility oversight rebuilt on live reads.
 //

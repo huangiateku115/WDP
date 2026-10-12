@@ -6,15 +6,16 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
+import { loadFacilities, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData,
 } from "@/lib/bomMappers";
 import { COUNTRIES, CUSTOM_WARD, citiesFor, wardsFor } from "@/lib/addressData";
+import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 const EMPTY_FORM = {
   code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
@@ -125,6 +126,8 @@ function FacilityDetail() {
   const { id } = useParams();
   const location = useLocation();
   const state = useAsyncData(() => bomFacilityApi.get(id).then(responseData).then(facilityFromDto), [id]);
+  const warehouse = useAsyncData(({ signal }) => loadWarehouseStructure(id, { signal }), [id]);
+  const units = useAsyncData(({ signal }) => loadFacilityUnits(id, { signal }), [id]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const { base, backTo, backLabel } = facilityNav(location);
 
@@ -168,6 +171,59 @@ function FacilityDetail() {
                 </Button>
               </div>
             </Panel>
+            <AsyncBoundary state={warehouse} render={({ zones, racks }) => {
+              const cells = sumBy(racks, "cellCount");
+              const availableCells = sumBy(racks, "availableCellCount");
+              return (
+                <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones → aisles → racks → cells).">
+                  <Details values={[
+                    ["Zones", zones.length],
+                    ["Racks", racks.length],
+                    ["Cells", cells ? `${availableCells} of ${cells} available` : "—"],
+                    ["Rated / allocatable weight", `${kg(sumBy(racks, "ratedCapacityKg"))} / ${kg(sumBy(racks, "allocatableCapacityKg"))}`],
+                  ]} />
+                  <div className="mt-5">
+                    <Table
+                      label="Facility racks"
+                      rows={racks}
+                      columns={[
+                        { key: "rackCode", label: "Rack" },
+                        { key: "zone", label: "Zone", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
+                        { key: "aisleCode", label: "Aisle" },
+                        { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
+                        { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} available` },
+                        { key: "ratedCapacityKg", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
+                      ]}
+                      empty="No warehouse zone, rack or cell is configured for this facility."
+                    />
+                  </div>
+                </Panel>
+              );
+            }} />
+            <AsyncBoundary state={units} render={({ rows, total, truncated }) => (
+              <Panel title="Private storage units" subtitle={`${rows.length} of ${total} units`}>
+                {truncated && <TruncatedNotice total={total} shown={rows.length} />}
+                <Details values={[
+                  ["Occupied", countBy(rows, "status", "OCCUPIED")],
+                  ["Available", countBy(rows, "status", "AVAILABLE")],
+                  ["Blocked", countBy(rows, "status", "HELD") + countBy(rows, "status", "MAINTENANCE") + countBy(rows, "status", "INACTIVE")],
+                  ["Registered volume", m3(sumBy(rows, "volumeM3"))],
+                ]} />
+                <div className="mt-5">
+                  <Table
+                    label="Facility storage units"
+                    rows={rows}
+                    columns={[
+                      { key: "code", label: "Unit" },
+                      { key: "size", label: "Size" },
+                      { key: "volumeM3", label: "Volume", render: (r) => m3(r.volumeM3) },
+                      { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
+                    ]}
+                    empty="No storage unit is registered for this facility."
+                  />
+                </div>
+              </Panel>
+            )} />
             {confirmOpen && (
               <ConfirmDialog
                 title="Confirm facility status"

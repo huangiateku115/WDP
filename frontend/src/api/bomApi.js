@@ -37,6 +37,8 @@ export const bomPolicyApi = {
 export const bomReservationApi = {
   listByFacility: (facilityId, config) => axiosClient.get(`/reservations/facility/${encode(facilityId)}`, config),
   get: (id, config) => axiosClient.get(`/reservations/${encode(id)}`, config),
+  managedCapacity: (facilityId, params, config) =>
+    axiosClient.get(`/reservations/managed/capacity/${encode(facilityId)}`, { ...config, params }),
 };
 
 // Read-only cross-facility oversight. Warehouse map / racks / cells accept the BOM

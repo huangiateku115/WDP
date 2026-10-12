@@ -45,6 +45,8 @@ export function warehouseFromDto(dto) {
     (zone.aisles || []).forEach((aisle) => {
       (aisle.racks || []).forEach((rack) => {
         const utilization = rack.utilization || {};
+        const dims = rack.dimensions || {};
+        const envelopeM3 = (Number(dims.widthM) || 0) * (Number(dims.depthM) || 0) * (Number(dims.heightM) || 0);
         racks.push({
           id: rack._id,
           zoneCode: zone.code || "—",
@@ -54,6 +56,7 @@ export function warehouseFromDto(dto) {
           operationalStatus: rack.operationalStatus || "—",
           cellCount: rack.cellCount ?? 0,
           availableCellCount: rack.availableCellCount ?? 0,
+          envelopeM3,
           ratedCapacityKg: utilization.ratedCapacityKg ?? utilization.maxWeightKg ?? 0,
           allocatableCapacityKg: utilization.allocatableCapacityKg ?? 0,
           usedWeightKg: utilization.usedWeightKg ?? 0,

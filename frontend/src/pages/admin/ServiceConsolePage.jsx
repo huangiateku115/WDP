@@ -1,12 +1,17 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field, Select, Input } from "@/components/manager/ManagerUI";
+import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { useAdminUsers, userId } from "@/lib/adminUsers";
 import supportApi from "@/api/supportApi";
 import maintenanceApi from "@/api/maintenanceApi";
 
-// Read-only Admin console for support requests and maintenance tickets.
-// Actions (assign / status) are deferred until their UI is designed.
+// Admin console for support requests and maintenance tickets.
+// Reads are live; assign / unassign / status / escalate write through the confirmed
+// ADMIN/BOM/FACILITY_MANAGER endpoints (assign, unassign and escalate are manager-only).
+const SERVICE_STATUSES = ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED"];
+const ASSIGNEE_ROLES = ["FACILITY_STAFF", "FACILITY_MANAGER"];
 
 const unwrap = (response) => response?.data?.data ?? null;
 const unwrapList = (response) => (Array.isArray(response?.data?.data) ? response.data.data : []);
@@ -24,6 +29,7 @@ function supportRow(d) {
     priority: d?.priority || "",
     status: d?.status || "",
     assignedTo: accountName(d?.assignedTo),
+    assigneeId: refId(d?.assignedTo),
     relatedEntity: d?.relatedEntity ? `${d.relatedEntity.type} · ${d.relatedEntity.id}` : "",
     description: d?.description || "",
     resolutionNote: d?.resolutionNote || "",
@@ -41,6 +47,7 @@ function maintenanceRow(d) {
     priority: d?.priority || "",
     status: d?.status || "",
     assignedTo: accountName(d?.assignedTo),
+    assigneeId: refId(d?.assignedTo),
     relatedEntity: refId(d?.storageUnitId) ? `Storage unit · ${refId(d.storageUnitId)}` : "",
     description: d?.description || "",
     resolutionNote: d?.resolutionNote || "",
@@ -56,6 +63,11 @@ const CONFIGS = {
     list: (config) => supportApi.listReal(config).then(unwrapList),
     get: (id, config) => supportApi.detailReal(id, config).then(unwrap),
     messages: (id, config) => supportApi.messagesReal(id, config).then(unwrapList),
+    assigneeLabel: "Staff",
+    assign: (id, assignee) => supportApi.assign(id, assignee),
+    unassign: (id) => supportApi.unassign(id),
+    setStatus: (id, payload) => supportApi.setStatus(id, payload),
+    escalate: (id) => supportApi.escalate(id),
     toRow: supportRow,
   },
   maintenance: {
@@ -64,6 +76,10 @@ const CONFIGS = {
     label: "Title",
     list: (config) => maintenanceApi.list(config).then(unwrapList),
     get: (id, config) => maintenanceApi.get(id, config).then(unwrap),
+    assigneeLabel: "Assignee",
+    assign: (id, assignee) => maintenanceApi.assign(id, assignee),
+    unassign: (id) => maintenanceApi.unassign(id),
+    setStatus: (id, payload) => maintenanceApi.setStatus(id, payload),
     toRow: maintenanceRow,
   },
 };
@@ -80,8 +96,9 @@ function ServiceList({ config }) {
   return (
     <Screen
       title={config.title}
-      description={`Read-only list from the confirmed ${config.title.toLowerCase()} API.`}
+      description={`Live list from the confirmed ${config.title.toLowerCase()} API.`}
       notice={LIVE_NOTICE}
+      action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
         const rows = records.map(config.toRow);
@@ -126,7 +143,7 @@ function ServiceDetail({ config }) {
   return (
     <Screen
       title={config.title.replace(/s$/, "") + " detail"}
-      description={`Read-only detail from the confirmed ${config.title.toLowerCase()} API.`}
+      description={`Live detail from the confirmed ${config.title.toLowerCase()} API.`}
       notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Button>}
     >
@@ -149,6 +166,7 @@ function ServiceDetail({ config }) {
                 ["Resolution note", row.resolutionNote || "—"],
               ]} />
             </Panel>
+            <ServiceActions config={config} row={row} onDone={state.reload} />
             {config.messages && (
               <Panel title="Conversation" subtitle="Internal messages are hidden from customers by the backend.">
                 {messages.loading && <p role="status" className="text-sm text-slate-500">Loading messages…</p>}
@@ -174,5 +192,129 @@ function ServiceDetail({ config }) {
         );
       }} />
     </Screen>
+  );
+}
+
+function ServiceActions({ config, row, onDone }) {
+  const directory = useAdminUsers();
+  const assignees = directory.users
+    .filter((user) => userId(user) && ASSIGNEE_ROLES.includes(user.role))
+    .map((user) => [userId(user), user.displayName || user.email || userId(user)]);
+  const [assignee, setAssignee] = useState("");
+  const [status, setStatus] = useState("");
+  const [note, setNote] = useState("");
+  const [dialog, setDialog] = useState(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // Assignees come from the Admin user collection; the backend has no staff-list endpoint.
+  const open = (next) => { setError(""); setNotice(""); setDialog(next); };
+  const confirmed = (execute, message) => async () => {
+    await execute();
+    setNotice(message);
+    onDone?.();
+  };
+  const assigneeName = assignees.find(([id]) => id === assignee)?.[1] || assignee;
+
+  return (
+    <Panel title="Actions" subtitle="Every change is sent to the backend API. The backend authorizes the action and validates the transition.">
+      <Message error={error} success={notice} />
+      <div className="manager-filters mt-4">
+        <Field
+          label={config.assigneeLabel}
+          hint={assignees.length ? undefined : "The user collection returned no FACILITY_STAFF or FACILITY_MANAGER account."}
+        >
+          <Select
+            label={`${config.assigneeLabel} to assign`}
+            value={assignee}
+            onChange={setAssignee}
+            disabled={!assignees.length}
+            options={assignees.length ? [["", `Select a ${config.assigneeLabel.toLowerCase()}`], ...assignees] : [["", "No assignable account"]]}
+          />
+        </Field>
+        <Field label="New status">
+          <Select label="New status" value={status} onChange={setStatus} options={[["", "Select a status"], ...SERVICE_STATUSES]} />
+        </Field>
+        <Field label="Resolution note" hint="Sent only when the new status is RESOLVED.">
+          <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+        </Field>
+      </div>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <Button
+          variant="outline"
+          disabled={!assignees.length}
+          onClick={() => (assignee
+            ? open({
+              title: `Assign ${config.assigneeLabel.toLowerCase()}`,
+              confirmLabel: "Assign",
+              summary: <Details values={[["Record", row.subject || row.title], [config.assigneeLabel, assigneeName]]} />,
+              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved through the backend API."),
+            })
+            : setError(`Select a ${config.assigneeLabel.toLowerCase()} first.`))}
+        >
+          Assign
+        </Button>
+        <Button
+          variant="outline"
+          disabled={!row.assigneeId}
+          onClick={() => open({
+            title: "Remove assignment",
+            confirmLabel: "Unassign",
+            summary: <Details values={[["Record", row.subject || row.title], ["Currently assigned to", row.assignedTo]]} />,
+            execute: confirmed(() => config.unassign(row.id), "Assignment removed through the backend API."),
+          })}
+        >
+          Unassign
+        </Button>
+        {config.escalate && (
+          <Button
+            variant="outline"
+            onClick={() => open({
+              title: "Escalate request",
+              confirmLabel: "Escalate",
+              summary: <Details values={[["Record", row.subject || row.title], ["Current status", row.status]]} />,
+              execute: confirmed(() => config.escalate(row.id), "Request escalated through the backend API."),
+            })}
+          >
+            Escalate
+          </Button>
+        )}
+        <Button
+          variant="orange"
+          onClick={() => (status
+            ? open({
+              title: "Change status",
+              confirmLabel: "Save status",
+              summary: <Details values={[
+                ["Record", row.subject || row.title],
+                ["From", row.status],
+                ["To", status],
+                ["Resolution note", status === "RESOLVED" ? note.trim() || "—" : "Not sent"],
+              ]} />,
+              execute: confirmed(
+                () => config.setStatus(row.id, {
+                  status,
+                  ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
+                }),
+                "Status saved through the backend API.",
+              ),
+            })
+            : setError("Select the new status first."))}
+        >
+          Save status
+        </Button>
+      </div>
+      {dialog && (
+        <ConfirmDialog
+          title={dialog.title}
+          confirmLabel={dialog.confirmLabel}
+          summary={dialog.summary}
+          onConfirm={dialog.execute}
+          onClose={() => setDialog(null)}
+        >
+          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+        </ConfirmDialog>
+      )}
+    </Panel>
   );
 }
