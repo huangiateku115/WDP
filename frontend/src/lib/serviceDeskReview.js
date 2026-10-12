@@ -1,0 +1,11 @@
+import {apiRows,recordId,objectId} from './facilityReview';
+export const deskStatuses=['OPEN','ASSIGNED','IN_PROGRESS','RESOLVED','CLOSED'];
+export const deskPriorities=['LOW','MEDIUM','HIGH','URGENT'];
+export const deskCategories={maintenance:['GENERAL','CLEANING','SECURITY','ELECTRICAL','STRUCTURAL','ACCESS','EQUIPMENT','OTHER'],support:['RENTAL','ACCESS','PAYMENT','ITEM','LOCATION','OTHER']};
+export const nextDeskStatus=status=>({ASSIGNED:'IN_PROGRESS',IN_PROGRESS:'RESOLVED',RESOLVED:'CLOSED'}[status]);
+export function deskRecord(row){if(!objectId(recordId(row))||!deskStatuses.includes(row.status))throw Error('Backend trả về ticket/enum không hợp lệ.');return {...row,id:recordId(row),facility:recordId(row.facilityId),assignee:recordId(row.assignedTo),unit:recordId(row.storageUnitId),customer:recordId(row.customerId)};}
+export function deskScope(row,user){return row.facility===user?.assignedFacilityId&&(user?.role==='FACILITY_MANAGER'||user?.role==='FACILITY_STAFF'&&row.assignee===user?.id);}
+export function deskList(response,user){const rows=apiRows(response).map(deskRecord).filter(row=>deskScope(row,user));const p=response?.data?.pagination;if(!p||!Number.isInteger(p.page)||p.page<1||!Number.isInteger(p.total)||p.total<0||!Number.isInteger(p.totalPages)||p.totalPages<0)throw Error('Backend chưa cung cấp phân trang hợp lệ.');return {rows,pagination:p};}
+export function textField(value,max,label){if(typeof value!=='string'||!value.trim()||value.trim().length>max)throw Error(`${label} bắt buộc, tối đa ${max} ký tự.`);return value.trim();}
+export function deskFields(kind,fields){if(!deskCategories[kind]?.includes(fields.category)||!deskPriorities.includes(fields.priority))throw Error('Category/priority không hợp lệ.');return {[kind==='maintenance'?'title':'subject']:textField(fields.title,200,'Tiêu đề'),description:textField(fields.description,5000,'Mô tả'),category:fields.category,priority:fields.priority};}
+export function deskMessage(row,ticketId){if(!objectId(recordId(row))||recordId(row.supportRequestId)!==ticketId||typeof row.message!=='string'||typeof row.isInternal!=='boolean')throw Error('Backend chưa xác nhận quyền hiển thị/nội dung tin nhắn.');return {...row,id:recordId(row),author:row.authorId?.displayName||recordId(row.authorId)};}

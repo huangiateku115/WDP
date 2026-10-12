@@ -1,3 +1,4 @@
+import CustomerApiView from './CustomerApiView';
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -28,6 +29,7 @@ import {
 } from "@/components/manager/ManagerUI";
 export default function CustomersPage(props) {
   const { id } = useParams();
+  if (!managerDemoEnabled) return <CustomerApiView key={id || "directory"} workspace={props.workspace || "manager"} />;
   return (
     <CustomerView
       key={(id || "directory") + props.workspace + props.actor?.id}
