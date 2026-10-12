@@ -1,9 +1,12 @@
+import managedReservationApi from './managedReservationApi';
+import {serviceType,MANAGED_INVENTORY,SELF_STORAGE,managedMockEnabled} from '@/lib/customerReservationService';
 import axiosClient from "./axiosClient";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const paymentApi = {
+  mockPayForService: item=>{const type=serviceType(item);if(type===MANAGED_INVENTORY){if(!managedMockEnabled(import.meta.env))throw Error('Managed mock payment is disabled in this frontend environment.');return managedReservationApi.mockPay(item._id||item.id);}if(type===SELF_STORAGE)return paymentApi.mockPayReal(item._id||item.id);throw Error('Unsupported service. Payment is unavailable.');},
   mockPayReal: reservationId=>axiosClient.post(`/reservations/${encodeURIComponent(reservationId)}/mock-pay`),
   createPayment: async (payload) => {
     if (USE_MOCK) {

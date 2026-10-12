@@ -3,7 +3,7 @@ import { useCustomerData, formatVolume, locationLabel, timestampLabel } from '@/
 import { CustomerScreen, StatusBadge, Details, CapacitySummary, EmptyState } from '@/components/common/CustomerScreen';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-export default function InventoryDetailPage(){
+function InventoryDetailPage(){
  const {id}=useParams();const data=useCustomerData();const item=data.items.find(item=>item.id===id);const rental=data.rentals.find(rental=>rental.id===item?.rentalId);const requests=data.requests.filter(request=>request.itemId===id);const pending=requests.some(request=>request.status==='PENDING');
  if(!item||!rental||rental.model!=='MANAGED_INVENTORY')return <CustomerScreen title="Inventory item" description="Your staff-managed item details."><EmptyState title="Item not found" description="Choose an inventory item belonging to your Managed Inventory rental." to="/portal/inventory" label="My Inventory"/></CustomerScreen>;
  return <CustomerScreen title={item.name} description={`${item.code} · ${item.category}`} action={<Button asChild variant="outline"><Link to="/portal/inventory">My Inventory</Link></Button>}>
@@ -12,3 +12,5 @@ export default function InventoryDetailPage(){
   {requests.length>0&&<Card><CardContent><h2 className="text-xl font-bold">Item requests</h2><div className="mt-4 space-y-4">{requests.map(request=><div className="soft-panel p-4" key={request.id}><div className="flex flex-wrap justify-between gap-2"><b>{request.type}</b><StatusBadge status={request.status}/></div><p className="mt-2 text-xs text-slate-500">{timestampLabel(request.createdAt)} · {request.id}</p>{request.notes&&<p className="mt-2 text-sm">{request.notes}</p>}</div>)}</div></CardContent></Card>}
  </CustomerScreen>;
 }
+
+export {InventoryDetailIntegration as default} from '@/components/customer/inventory/InventoryIntegration';

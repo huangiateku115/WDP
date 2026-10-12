@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+(async()=>{
+ const h=await import('../src/lib/customerReservationService.js'),{assertConfirmedRequest}=await import('../src/api/confirmedContract.js');
+ const id='a'.repeat(24),now=Date.parse('2030-01-01T00:00:00Z'),managed={_id:id,serviceType:h.MANAGED_INVENTORY,status:'CONTRACTED',expiresAt:'2030-01-02T00:00:00Z'},self={...managed,serviceType:h.SELF_STORAGE};
+ assert(h.canCancel(managed));assert(h.canCancel({...managed,expiresAt:'2029-01-01T00:00:00Z'}),'Backend permits unpaid cancellation after hold expiry');assert(!h.canCancel({...managed,status:'PAID'}));assert(!h.canCancel({...managed,serviceType:undefined}));
+ assert(h.canSign({status:'DRAFT'},managed,now));assert(!h.canSign({status:'DRAFT'},{...managed,expiresAt:'2029-01-01T00:00:00Z'},now));assert(h.canSign({status:'DRAFT'},self,now));
+ const signed={status:'SIGNED',signedByCustomerAt:'2030-01-01T00:00:00Z'};
+ assert(h.canMockPay(managed,signed,true,now));assert(!h.canMockPay(managed,signed,false,now));assert(!h.canMockPay(managed,{status:'SIGNED'},true,now));assert(!h.canMockPay(managed,{status:'DRAFT'},true,now));assert(h.canMockPay(self,null,false,now));assert(!h.canMockPay({...managed,serviceType:'UNKNOWN'},signed,true,now));
+ assert(!h.managedMockEnabled({DEV:false,VITE_MI_MOCK_PAYMENT_ENABLED:'true'}));assert(!h.managedMockEnabled({DEV:true}));assert(h.managedMockEnabled({DEV:true,VITE_MI_MOCK_PAYMENT_ENABLED:'true'}));
+ const contract={pricingSnapshot:{estimatedRent:9,depositAmount:2,amountBreakdown:{estimatedRent:150,depositAmount:30,totalDue:180}}};assert.equal(h.contractAmounts(contract,managed).estimatedRent,150);assert.equal(h.contractAmounts(contract,self).estimatedRent,9);assert.deepEqual(h.contractAmounts(contract,{}),{});
+ const payload={facilityId:id,allocatedCapacityM3:1.5,startDate:'2035-01-31T00:00:00.000Z',term:{value:1,unit:'MONTH'}};
+ assert.deepEqual(h.managedRequest({...payload,storageUnitId:id,ownerId:id,status:'ACTIVE'}),payload);
+ for(const change of [{allocatedCapacityM3:0},{allocatedCapacityM3:Infinity},{allocatedCapacityM3:'1.5'},{facilityId:'fake'},{startDate:'2035-02-30T00:00:00Z'},{startDate:'2020-01-01T00:00:00Z'},{term:{value:1.5,unit:'MONTH'}},{term:{value:1,unit:'WEEK'}}])assert.throws(()=>h.managedRequest({...payload,...change}));
+ const rule={facilityId:id,serviceType:h.MANAGED_INVENTORY,billingBasis:'PER_M3',isActive:true,term:{value:1,unit:'MONTH'},effectiveFrom:'2030-01-01T00:00:00Z'};
+ assert.deepEqual(h.managedTerms([rule,rule,{...rule,billingBasis:undefined},{...rule,effectiveTo:'2035-01-31T00:00:00Z'}],id,'2035-01-31'),[{value:1,unit:'MONTH'}]);
+ assert.deepEqual(h.managedTerms([rule],id,'2029-01-01'),[]);
+ assert.equal(h.managedCreation({data:{success:true,data:{reservation:{...managed,status:'RESERVED'},quote:{}}}}).reservation._id,id);assert.throws(()=>h.managedCreation({data:{success:true,data:managed}}));
+ for(const [method,url] of [['POST','/reservations/managed'],['POST','/reservations/managed/quote'],['GET',`/reservations/managed/${id}`],['GET',`/reservations/managed/capacity/${id}`],['PATCH',`/reservations/managed/${id}/cancel`],['POST',`/reservations/managed/${id}/mock-pay`],['GET',`/contracts/${id}`]])assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
+ for(const [method,url] of [['PATCH',`/reservations/managed/${id}/approve`],['PATCH',`/reservations/managed/${id}/activate`],['PATCH',`/reservations/managed/${id}/reject`],['PUT',`/reservations/managed/capacity/${id}`],['GET','/reservations/managed/me'],['POST','/inventory-items'],['DELETE',`/reservations/managed/${id}`]])assert.throws(()=>assertConfirmedRequest({method,url}));
+ console.log(JSON.stringify({result:'PASS',checks:'service safety, owner-only API allowlist, request allowlist/validation, creation envelope, effective PER_M3 terms, deadline/signature guards, production/default mock gate, both snapshot schemas'}));
+})().catch(e=>{console.error(e);process.exitCode=1;});

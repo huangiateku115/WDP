@@ -4,6 +4,7 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const contractApi = {
+  detailReal: (id,config)=>axiosClient.get(`/contracts/${encodeURIComponent(id)}`,config),
   mineReal: config=>axiosClient.get('/contracts/me',config),
   // Backend contract.routes/controller confirm PATCH, no request body, owner + DRAFT.
   signReal: id=>axiosClient.patch(`/contracts/${encodeURIComponent(id)}/sign`),

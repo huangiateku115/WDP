@@ -1,5 +1,17 @@
+import {
+  serviceType,
+  serviceLabel,
+  SELF_STORAGE,
+  MANAGED_INVENTORY,
+  liveHold,
+  canCancel,
+  canSign,
+  canMockPay,
+  contractAmounts,
+  managedMockEnabled,
+} from "@/lib/customerReservationService";
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
 import contractApi from "@/api/contractApi";
@@ -26,13 +38,63 @@ import {
   rentalError,
   ConfirmAction,
 } from "./RentalBackendUI";
+function useCurrentTime() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+async function contractContext(reservationId, config) {
+  if (!validId(reservationId)) throw Error("Invalid reservation ID.");
+  const [contracts, reservation] = await Promise.all([
+    contractApi.mineReal(config).then(rows),
+    reservationApi.detailForCustomer(reservationId, config).then(record),
+  ]);
+  const owned = contracts.find(
+    (c) => recordId(c.reservationId) === reservationId,
+  );
+  if (!owned) return { contract: null, reservation };
+  const contract = record(
+    await contractApi.detailReal(recordId(owned), config),
+  );
+  if (
+    recordId(contract) !== recordId(owned) ||
+    recordId(contract.reservationId) !== reservationId
+  )
+    throw Error("Contract does not match this reservation.");
+  return { contract, reservation };
+}
+const managedLifecycle = {
+  RESERVED: "Managed quota is held while awaiting Manager/Admin approval.",
+  CONTRACTED:
+    "A Managed contract has been created. Sign it while the hold is valid.",
+  PAID: "Payment has been recorded. Authorized management must activate the Managed quota; no unit handover is required.",
+  ACTIVE:
+    "Managed quota is activated. Inventory registration is a separate future integration; no cell or physical stock is assigned.",
+  OVERDUE:
+    "Managed rental is overdue. Unresolved obligations may continue to hold commercial quota.",
+  CANCELLED:
+    "Managed reservation is cancelled. Payment and activation are unavailable.",
+  CHECKED_OUT: "The backend reports CHECKED_OUT for this Managed reservation.",
+  CLOSED: "The backend reports this Managed reservation as closed.",
+};
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
       reservationApi.mineReal(config).then(rows),
     ),
-    [filter, setFilter] = useState("");
+    [filter, setFilter] = useState(""),
+    [service, setService] = useState("");
   const records =
-    resource.data?.filter((r) => !filter || r.status === filter) || [];
+    resource.data?.filter(
+      (r) =>
+        (!filter || r.status === filter) &&
+        (!service ||
+          (service === "UNKNOWN"
+            ? !serviceType(r)
+            : serviceType(r) === service)),
+    ) || [];
   return (
     <BackendScreen
       title="My Storage"
@@ -44,6 +106,20 @@ export function RentalsIntegration() {
       }
     >
       <LoadState resource={resource} />
+      <label className="block field-label">
+        Storage service
+        <select
+          aria-label="Storage service"
+          className="customer-select mt-2"
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+        >
+          <option value="">All services</option>
+          <option value={SELF_STORAGE}>Self Storage</option>
+          <option value={MANAGED_INVENTORY}>Managed Inventory</option>
+          <option value="UNKNOWN">Unsupported / unknown</option>
+        </select>
+      </label>
       <label className="block field-label">
         Reservation status
         <select
@@ -66,9 +142,27 @@ export function RentalsIntegration() {
       </label>
       {[
         ["Active Rentals", ["ACTIVE", "OVERDUE"]],
-        ["Awaiting Handover", ["PAID"]],
+        ["Awaiting activation / handover", ["PAID"]],
         ["Rental History", ["CHECKED_OUT", "CLOSED"]],
         ["Reservations", ["RESERVED", "CONTRACTED", "CANCELLED"]],
+        [
+          "Other returned statuses",
+          records
+            .map((r) => r.status)
+            .filter(
+              (status) =>
+                ![
+                  "ACTIVE",
+                  "OVERDUE",
+                  "PAID",
+                  "CHECKED_OUT",
+                  "CLOSED",
+                  "RESERVED",
+                  "CONTRACTED",
+                  "CANCELLED",
+                ].includes(status),
+            ),
+        ],
       ].map(([title, statuses]) => {
         const group = records.filter((r) => statuses.includes(r.status));
         return (
@@ -116,11 +210,14 @@ const lifecycleInfo = {
   CANCELLED: "Reservation cancelled. Payment and access are unavailable.",
 };
 export function ReservationDetailIntegration() {
-  const params = useParams(), id=params.id||params.reservationId,
+  const location = useLocation(),
+    now = useCurrentTime();
+  const params = useParams(),
+    id = params.id || params.reservationId,
     resource = useBackend(
       (config) =>
         validId(id)
-          ? reservationApi.detailReal(id, config).then(record)
+          ? reservationApi.detailForCustomer(id, config).then(record)
           : Promise.reject(Error("Invalid reservation ID.")),
       [id],
     );
@@ -130,39 +227,94 @@ export function ReservationDetailIntegration() {
       description="Current backend status is the source of truth."
     >
       <LoadState resource={resource} />
+      {location.state?.selfStorageCreated && (
+        <Message success=" Waiting for management approval." />
+      )}
+      {location.state?.managedCreated && (
+        <Message success="Waiting for management approval." />
+      )}
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
           <p>
-            {lifecycleInfo[resource.data.status] ||
+            {(serviceType(resource.data) === MANAGED_INVENTORY
+              ? managedLifecycle[resource.data.status]
+              : serviceType(resource.data) === SELF_STORAGE
+                ? lifecycleInfo[resource.data.status]
+                : "Unsupported service. Service-specific actions are unavailable.") ||
               "Status information is not available."}
           </p>
+          {serviceType(resource.data) === MANAGED_INVENTORY &&
+            ["RESERVED", "CONTRACTED"].includes(resource.data.status) &&
+            !liveHold(resource.data, now) && (
+              <p className="text-sm text-orange-700">
+                The hold has expired or cannot be verified. Signing/payment are
+                unavailable; the displayed backend status is unchanged.
+              </p>
+            )}
           <div className="flex flex-wrap gap-4">
-            {['RESERVED','CONTRACTED'].includes(resource.data.status)&&<ConfirmAction label="Cancel reservation" onAction={async()=>{const token=getAccessToken();const result=record(await reservationApi.cancelReal(id));if(getAccessToken()!==token)return;if(result.status!=='CANCELLED')throw Error('Cancellation was not confirmed by the backend.');resource.retry();}}/>}
+            {canCancel(resource.data) && (
+              <ConfirmAction
+                label="Cancel reservation"
+                onAction={async () => {
+                  const token = getAccessToken();
+                  const latest = record(
+                    await reservationApi.detailForCustomer(id),
+                  );
+                  if (getAccessToken() !== token) return;
+                  if (
+                    !canCancel(latest) ||
+                    serviceType(latest) !== serviceType(resource.data)
+                  )
+                    throw Error(
+                      "Reservation status or service changed. Refresh before cancelling.",
+                    );
+                  const result = record(
+                    await reservationApi.cancelForService(latest),
+                  );
+                  if (getAccessToken() !== token) return;
+                  if (result.status !== "CANCELLED" || recordId(result) !== id)
+                    throw Error(
+                      "Cancellation was not confirmed by the backend.",
+                    );
+                  resource.retry();
+                }}
+              />
+            )}
             <Button variant="outline" onClick={resource.retry}>
               Refresh status
             </Button>
-            {resource.data.status === "CONTRACTED" && (
-              <Button asChild>
-                <Link to={`/portal/contracts/${id}`}>
-                  View reservation contract
-                </Link>
-              </Button>
-            )}
-            {resource.data.status === "CONTRACTED" && (
-              <Button asChild variant="outline">
-                <Link to={`/portal/payments/${id}`}>
-                  Review simulated payment
-                </Link>
-              </Button>
-            )}
-            {resource.data.status === "ACTIVE" && (
-              <Button asChild>
-                <Link to={`/portal/rentals/${id}/access`}>
-                  Simulated unit access
-                </Link>
-              </Button>
-            )}
+            {serviceType(resource.data) &&
+              [
+                "CONTRACTED",
+                "PAID",
+                "ACTIVE",
+                "OVERDUE",
+                "CHECKED_OUT",
+                "CLOSED",
+              ].includes(resource.data.status) && (
+                <Button asChild>
+                  <Link to={`/portal/contracts/${id}`}>
+                    View reservation contract
+                  </Link>
+                </Button>
+              )}
+            {serviceType(resource.data) &&
+              ["CONTRACTED", "PAID"].includes(resource.data.status) && (
+                <Button asChild variant="outline">
+                  <Link to={`/portal/payments/${id}`}>
+                    Review simulated payment
+                  </Link>
+                </Button>
+              )}
+            {serviceType(resource.data) === SELF_STORAGE &&
+              resource.data.status === "ACTIVE" && (
+                <Button asChild>
+                  <Link to={`/portal/rentals/${id}/access`}>
+                    Simulated unit access
+                  </Link>
+                </Button>
+              )}
           </div>
         </>
       )}
@@ -197,19 +349,23 @@ export function ContractsIntegration() {
         </Card>
       ))}
       {resource.data?.length === 0 && <p>No contracts returned.</p>}
-      <p className="text-sm text-slate-500">The backend returns DRAFT and signed contracts. Facility Manager approval creates the draft.</p>
+      <p className="text-sm text-slate-500">
+        The backend returns DRAFT and signed contracts. Facility Manager
+        approval creates the draft.
+      </p>
     </BackendScreen>
   );
 }
 export function ContractDetailIntegration() {
   const { reservationId } = useParams(),
-    resource = useBackend(
-      (config) => contractApi.mineReal(config).then(rows),
-      [reservationId],
-    );
-  const contract = resource.data?.find(
-    (c) => recordId(c.reservationId) === reservationId,
+    now = useCurrentTime();
+  const resource = useBackend(
+    (config) => contractContext(reservationId, config),
+    [reservationId],
   );
+  const contract = resource.data?.contract,
+    reservation = resource.data?.reservation,
+    amounts = contractAmounts(contract, reservation);
   return (
     <BackendScreen
       title="Review rental contract"
@@ -224,10 +380,19 @@ export function ContractDetailIntegration() {
               values={[
                 ["Contract number", contract.contractCode],
                 ["Signed at", contract.signedByCustomerAt],
-                ["Estimated rent",contract.pricingSnapshot?.estimatedRent],
-                ["Deposit",contract.pricingSnapshot?.depositAmount],
-                ["Terms version",contract.termsVersion],
-              ]}
+                ["Service", serviceLabel(reservation)],
+                ["Estimated rent", amounts.estimatedRent],
+                ["Deposit", amounts.depositAmount],
+                ["Total due", amounts.totalDue],
+                [
+                  "Currency",
+                  serviceType(reservation) === MANAGED_INVENTORY
+                    ? contract.pricingSnapshot?.pricingRule?.currency
+                    : undefined,
+                ],
+                ["Hold deadline", reservation?.expiresAt],
+                ["Terms version", contract.termsVersion],
+              ].filter(([, value]) => value != null)}
             />
             {typeof contract.content === "string" && (
               <p className="mt-5 whitespace-pre-wrap break-words text-sm">
@@ -243,7 +408,52 @@ export function ContractDetailIntegration() {
                   ))}
               </ul>
             )}
-            {contract.status==='DRAFT'&&validId(recordId(contract))&&<ConfirmAction label="Sign Contract" onAction={async()=>{const token=getAccessToken();const result=record(await contractApi.signReal(recordId(contract)));if(getAccessToken()!==token)return;if(result.status!=='SIGNED'||recordId(result)!==recordId(contract))throw Error('Backend did not confirm this contract signature.');resource.retry();}}/>}
+            {canSign(contract, reservation, now) &&
+              validId(recordId(contract)) && (
+                <ConfirmAction
+                  label="Sign Contract"
+                  onAction={async () => {
+                    const token = getAccessToken();
+                    const latest = await contractContext(reservationId);
+                    if (getAccessToken() !== token) return;
+                    if (
+                      recordId(latest.contract) !== recordId(contract) ||
+                      !canSign(latest.contract, latest.reservation)
+                    )
+                      throw Error(
+                        "Contract or hold changed. Refresh before signing.",
+                      );
+                    const result = record(
+                      await contractApi.signReal(recordId(contract)),
+                    );
+                    if (getAccessToken() !== token) return;
+                    if (
+                      result.status !== "SIGNED" ||
+                      recordId(result) !== recordId(contract)
+                    )
+                      throw Error(
+                        "Backend did not confirm this contract signature.",
+                      );
+                    resource.retry();
+                  }}
+                />
+              )}
+            {contract.status === "DRAFT" &&
+              !canSign(contract, reservation, now) && (
+                <p className="mt-4 text-sm text-orange-700">
+                  Signing unavailable: service, reservation status or Managed
+                  hold could not be confirmed.
+                </p>
+              )}
+            <Button variant="outline" className="mt-4" onClick={resource.retry}>
+              Refresh contract and reservation
+            </Button>
+            <Link
+              className="mt-4 block text-brand"
+              to={`/portal/reservations/${reservationId}`}
+            >
+              View reservation
+            </Link>
           </CardContent>
         </Card>
       ) : (
@@ -260,13 +470,24 @@ export function ContractDetailIntegration() {
 }
 export function PaymentIntegration() {
   const { reservationId } = useParams(),
-    resource = useBackend(
-      (config) =>
-        validId(reservationId)
-          ? reservationApi.detailReal(reservationId, config).then(record)
-          : Promise.reject(Error("Invalid reservation ID.")),
-      [reservationId],
-    );
+    now = useCurrentTime(),
+    enabled = managedMockEnabled(import.meta.env);
+  const resource = useBackend(
+    (config) =>
+      validId(reservationId)
+        ? reservationApi.detailForCustomer(reservationId, config).then(record)
+        : Promise.reject(Error("Invalid reservation ID.")),
+    [reservationId],
+  );
+  const managed = serviceType(resource.data) === MANAGED_INVENTORY;
+  const contracts = useBackend(
+    (config) =>
+      managed ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
+    [reservationId, managed, resource.data?.status],
+  );
+  const contract = contracts.data?.find(
+    (c) => recordId(c.reservationId) === reservationId,
+  );
   return (
     <BackendScreen
       title="Simulated Payment"
@@ -279,9 +500,67 @@ export function PaymentIntegration() {
           {resource.data.status === "PAID" ? (
             <Message success="Backend reservation status: Đã thanh toán." />
           ) : (
-            <p className="text-sm text-slate-500">Demo payment is available for an owned CONTRACTED reservation. The current backend does not require a SIGNED contract; this lifecycle gap is recorded in the audit.</p>
+            <p className="text-sm text-slate-500">
+              {managed
+                ? "Managed payment is simulated only. It requires a signed contract, a live hold, explicit frontend development opt-in and backend MI_MOCK_PAYMENT_ENABLED=true."
+                : "Demo payment is available for an owned Self Storage CONTRACTED reservation."}
+            </p>
           )}
-          {resource.data.status==='CONTRACTED'&&<ConfirmAction label="Simulate Payment (Demo)" onAction={async()=>{const token=getAccessToken();const latest=record(await reservationApi.detailReal(reservationId));if(getAccessToken()!==token)return;if(latest.status!=='CONTRACTED')throw Error('Reservation status changed. Refresh before payment.');const result=record(await paymentApi.mockPayReal(reservationId));if(getAccessToken()!==token)return;if(result.status!=='PAID'||recordId(result)!==reservationId)throw Error('Backend did not confirm payment.');resource.retry();}}/>}
+          {managed && <LoadState resource={contracts} />}
+          {managed && !enabled && (
+            <p className="mt-4 text-sm text-orange-700">
+              Managed mock payment is unavailable in this environment. No
+              production payment API is provided.
+            </p>
+          )}
+          {managed &&
+            enabled &&
+            !canMockPay(resource.data, contract, enabled, now) && (
+              <p className="mt-4 text-sm text-orange-700">
+                Managed simulation unavailable: a signed contract and an
+                unexpired CONTRACTED hold are required.
+              </p>
+            )}
+          {!serviceType(resource.data) && (
+            <Message error="Unsupported service. Payment is unavailable." />
+          )}
+          {canMockPay(resource.data, contract, enabled, now) && (
+            <ConfirmAction
+              label="Simulate Payment (Demo)"
+              onAction={async () => {
+                const token = getAccessToken();
+                const latest = record(
+                  await reservationApi.detailForCustomer(reservationId),
+                );
+                if (getAccessToken() !== token) return;
+                let latestContract = null;
+                if (serviceType(latest) === MANAGED_INVENTORY) {
+                  latestContract = (
+                    await contractApi.mineReal().then(rows)
+                  ).find((c) => recordId(c.reservationId) === reservationId);
+                  if (getAccessToken() !== token) return;
+                }
+                if (
+                  serviceType(latest) !== serviceType(resource.data) ||
+                  !canMockPay(latest, latestContract, enabled)
+                )
+                  throw Error(
+                    "Reservation, signature or hold changed. Refresh before payment.",
+                  );
+                const result = record(
+                  await paymentApi.mockPayForService(latest),
+                );
+                if (getAccessToken() !== token) return;
+                if (
+                  result.status !== "PAID" ||
+                  recordId(result) !== reservationId
+                )
+                  throw Error("Backend did not confirm payment.");
+                resource.retry();
+                contracts.retry();
+              }}
+            />
+          )}
           <Button variant="outline" onClick={resource.retry}>
             Refresh payment status
           </Button>
@@ -296,11 +575,11 @@ export function AccessIntegration() {
   return <AccessForm key={`${session.accessToken}:${id}`} id={id} />;
 }
 function AccessForm({ id }) {
-  const logs=useBackend(config=>accessApi.logs(config).then(rows),[id]);
+  const logs = useBackend((config) => accessApi.logs(config).then(rows), [id]);
   const resource = useBackend(
       (config) =>
         validId(id)
-          ? reservationApi.detailReal(id, config).then(record)
+          ? reservationApi.detailForCustomer(id, config).then(record)
           : Promise.reject(Error("Invalid reservation ID.")),
       [id],
     ),
@@ -313,6 +592,7 @@ function AccessForm({ id }) {
     setPin("");
   }, [resource.data?.status]);
   const allowed =
+    serviceType(resource.data) === SELF_STORAGE &&
     resource.data?.status === "ACTIVE" &&
     typeof resource.data.reservationCode === "string" &&
     !!resource.data.reservationCode.trim();
@@ -328,6 +608,7 @@ function AccessForm({ id }) {
       const latest = record(await reservationApi.detailReal(id));
       if (getAccessToken() !== token) return;
       if (
+        serviceType(latest) !== SELF_STORAGE ||
         latest.status !== "ACTIVE" ||
         latest.reservationCode !== resource.data.reservationCode
       )
@@ -340,7 +621,11 @@ function AccessForm({ id }) {
       });
       if (getAccessToken() !== token) return;
       const body = response.data;
-      if (body?.success !== true || body.data?.action!=='UNLOCK_SUCCESS' || recordId(body.data?.reservationId)!==id)
+      if (
+        body?.success !== true ||
+        body.data?.action !== "UNLOCK_SUCCESS" ||
+        recordId(body.data?.reservationId) !== id
+      )
         throw Error("Backend did not confirm the simulated access request.");
       setMessage(
         "Backend confirmed UNLOCK_SUCCESS for this reservation. Simulated access only.",
@@ -348,7 +633,13 @@ function AccessForm({ id }) {
       resource.retry();
       logs.retry();
     } catch (e) {
-      if (getAccessToken() === token) setError(e.response?.status===401&&e.response?.data?.data?.action==='UNLOCK_FAILED'?'The backend rejected the PIN. Please try again.':rentalError(e));
+      if (getAccessToken() === token)
+        setError(
+          e.response?.status === 401 &&
+            e.response?.data?.data?.action === "UNLOCK_FAILED"
+            ? "The backend rejected the PIN. Please try again."
+            : rentalError(e),
+        );
     } finally {
       setPin("");
       busy.current = false;
@@ -387,7 +678,19 @@ function AccessForm({ id }) {
           {pending ? "Submitting…" : "Simulate Unlock"}
         </Button>
       </form>
-      <h2 className="text-xl font-bold">My simulated access history</h2><LoadState resource={logs}/>{logs.data?.filter(log=>recordId(log.reservationId)===id).map(log=><Card key={recordId(log)}><CardContent><p>{log.action} · {log.createdAt}</p></CardContent></Card>)}
+      <h2 className="text-xl font-bold">My simulated access history</h2>
+      <LoadState resource={logs} />
+      {logs.data
+        ?.filter((log) => recordId(log.reservationId) === id)
+        .map((log) => (
+          <Card key={recordId(log)}>
+            <CardContent>
+              <p>
+                {log.action} · {log.createdAt}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
     </BackendScreen>
   );
 }

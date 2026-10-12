@@ -2,6 +2,7 @@ import {useRef, useState} from 'react';
 import {useLocation} from 'react-router-dom';
 import authApi from '@/api/authApi';
 import {saveAuthSession, saveSessionUser, profileFromResponse, getAccessToken} from '@/lib/authSession';
+import {customerWarehouseDestination} from '@/lib/customerRedirect';
 import {apiErrorMessage} from '@/lib/apiError';
 import referenceImages from '@/components/common/referenceImages';
 import { Link, useNavigate } from "react-router-dom";
@@ -21,7 +22,7 @@ export default function LoginPage() {
     saveAuthSession({accessToken:tokens?.accessToken,refreshToken:tokens?.refreshToken,user:tokens?.user});
     let user=tokens?.user||null;
     try{user=profileFromResponse(await authApi.me());if(getAccessToken()!==tokens.accessToken)return;saveSessionUser(user);}catch(err){if(!getAccessToken())throw err;}
-    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':'/portal');
+    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':customerWarehouseDestination(user?.role,location.state?.from));
   }catch(err){setError(apiErrorMessage(err,'Unable to sign in. Please try again.'));}finally{busy.current=false;setPending(false);}};
   return (
     <div className="mx-auto max-w-5xl px-5 py-14">

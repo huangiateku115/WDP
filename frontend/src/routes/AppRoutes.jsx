@@ -25,6 +25,8 @@ import ContractPage from "@/pages/customer/ContractPage";
 import PaymentPage from "@/pages/customer/PaymentPage";
 import HandoverPage from "@/pages/customer/HandoverPage";
 import ContractsPage from '@/pages/customer/ContractsPage';
+import WarehouseFacilitySelectionPage from '@/pages/customer/WarehouseFacilitySelectionPage';
+import WarehouseMapPage, {InteractiveWarehouseRackDetailPage as WarehouseRackDetailPage} from '@/pages/customer/WarehouseMapPage';
 import ProfilePage from '@/pages/customer/ProfilePage';
 import PaymentHistoryPage from '@/pages/customer/PaymentHistoryPage';
 import NotificationsPage from '@/pages/customer/NotificationsPage';
@@ -61,6 +63,9 @@ export default function AppRoutes() {
         <Route index element={<MyStoragePage />} />
         <Route path="inventory" element={<MyInventoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="warehouse-map" element={<WarehouseFacilitySelectionPage />} />
+        <Route path="warehouse-map/:facilityId" element={<WarehouseMapPage />} />
+        <Route path="warehouse-map/:facilityId/racks/:rackId" element={<WarehouseRackDetailPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="rentals/:id/extend" element={<RentalExtensionPage />} />
         <Route path="rentals/:id/access" element={<RentalAccessPage />} />
