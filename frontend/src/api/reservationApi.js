@@ -1,5 +1,9 @@
-import managedReservationApi from './managedReservationApi';
-import {serviceType,MANAGED_INVENTORY,SELF_STORAGE} from '@/lib/customerReservationService';
+import managedReservationApi from "./managedReservationApi";
+import {
+  serviceType,
+  MANAGED_INVENTORY,
+  SELF_STORAGE,
+} from "@/lib/customerReservationService";
 import axiosClient from "./axiosClient";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
@@ -15,19 +19,64 @@ const saveOne = (item) => {
 };
 
 const reservationApi = {
-<<<<<<< Updated upstream
-  estimateReal: ({startDate,endDate,pricingPolicyId},config)=>axiosClient.post('/reservations/estimate',{startDate,endDate,pricingPolicyId},config),
-  createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId},config)=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId},config),
-=======
-  createManaged: payload => axiosClient.post('/reservations/managed', payload),
-  createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount})=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount}),
->>>>>>> Stashed changes
-  mineReal: config=>axiosClient.get('/reservations/me',config),
+  estimateReal: ({ startDate, endDate, pricingPolicyId }, config) =>
+    axiosClient.post(
+      "/reservations/estimate",
+      { startDate, endDate, pricingPolicyId },
+      config,
+    ),
+  createReal: (
+    { facilityId, storageUnitId, startDate, endDate, pricingPolicyId },
+    config,
+  ) =>
+    axiosClient.post(
+      "/reservations",
+      { facilityId, storageUnitId, startDate, endDate, pricingPolicyId },
+      config,
+    ),
+  mineReal: (config) => axiosClient.get("/reservations/me", config),
   // Generic Backend detail lacks a Customer ownership check; use the owned collection.
-  detailReal: async (id,config)=>{const response=await axiosClient.get('/reservations/me',config);if(response.data?.success!==true||!Array.isArray(response.data.data))throw Error('Unsupported reservation response.');const item=response.data.data.find(r=>(r._id||r.id)===id);if(!item)throw Error('Reservation is unavailable in your account.');return {...response,data:{success:true,data:item}};},
-  detailForCustomer: async (id,config)=>{const owned=await reservationApi.detailReal(id,config);const item=owned.data.data;if(serviceType(item)!==MANAGED_INVENTORY)return owned;const detail=await managedReservationApi.detail(id,config);if(detail.data?.success!==true||detail.data.data?._id!==id||detail.data.data?.serviceType!==MANAGED_INVENTORY)throw Error('Unsupported Managed reservation response.');return {...detail,data:{success:true,data:{...item,...detail.data.data,facilityId:item.facilityId||detail.data.data.facilityId}}};},
-  cancelForService: item=>{const type=serviceType(item);if(type===MANAGED_INVENTORY)return managedReservationApi.cancel(item._id||item.id);if(type===SELF_STORAGE)return reservationApi.cancelReal(item._id||item.id);throw Error('Unsupported service. Cancellation is unavailable.');},
-  cancelReal: id=>axiosClient.patch(`/reservations/${encodeURIComponent(id)}/cancel`),
+  detailReal: async (id, config) => {
+    const response = await axiosClient.get("/reservations/me", config);
+    if (response.data?.success !== true || !Array.isArray(response.data.data))
+      throw Error("Unsupported reservation response.");
+    const item = response.data.data.find((r) => (r._id || r.id) === id);
+    if (!item) throw Error("Reservation is unavailable in your account.");
+    return { ...response, data: { success: true, data: item } };
+  },
+  detailForCustomer: async (id, config) => {
+    const owned = await reservationApi.detailReal(id, config);
+    const item = owned.data.data;
+    if (serviceType(item) !== MANAGED_INVENTORY) return owned;
+    const detail = await managedReservationApi.detail(id, config);
+    if (
+      detail.data?.success !== true ||
+      detail.data.data?._id !== id ||
+      detail.data.data?.serviceType !== MANAGED_INVENTORY
+    )
+      throw Error("Unsupported Managed reservation response.");
+    return {
+      ...detail,
+      data: {
+        success: true,
+        data: {
+          ...item,
+          ...detail.data.data,
+          facilityId: item.facilityId || detail.data.data.facilityId,
+        },
+      },
+    };
+  },
+  cancelForService: (item) => {
+    const type = serviceType(item);
+    if (type === MANAGED_INVENTORY)
+      return managedReservationApi.cancel(item._id || item.id);
+    if (type === SELF_STORAGE)
+      return reservationApi.cancelReal(item._id || item.id);
+    throw Error("Unsupported service. Cancellation is unavailable.");
+  },
+  cancelReal: (id) =>
+    axiosClient.patch(`/reservations/${encodeURIComponent(id)}/cancel`),
   create: async (payload) => {
     if (USE_MOCK) {
       await delay(700);
