@@ -8,7 +8,7 @@ const faqs = [
   },
   {
     q: "Can I access my unit outside normal business hours?",
-    a: "Selected SelfStorage facilities provide 24/7 digital access. Access conditions are displayed for each facility.",
+    a: "Check the published facility hours and coordinate with the facility team. Simulated unit access is available only for ACTIVE rentals.",
   },
   {
     q: "Are my items protected while stored?",
@@ -16,7 +16,7 @@ const faqs = [
   },
   {
     q: "Do I need to pay a deposit?",
-    a: "Any required deposit or mandatory charge is displayed before reservation confirmation.",
+    a: "Deposit and total amounts require a confirmed backend quote. Reservation submission is unavailable until those calculations are confirmed.",
   },
 ];
 

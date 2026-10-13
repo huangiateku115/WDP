@@ -209,7 +209,7 @@ for (const [name, service, model, make] of [['pricing', pricingService, Price, p
 }
 test('policy config defensive validation and isolated service scopes', async t => {
   store(t);
-  for (const type of ['DEPOSIT', 'CANCELLATION', 'REFUND', 'OVERDUE', 'DISCOUNT', 'WAIVER', 'CATEGORY', 'SHELF_CONSTRAINT'])
+  for (const type of ['DEPOSIT', 'CANCELLATION', 'REFUND', 'OVERDUE', 'DISCOUNT', 'WAIVER', 'SHELF_CONSTRAINT'])
     await policyService.create(policy({ type, config: { nested: [{ note: 'Uninterpreted', enabled: true, value: null }] } }), admin);
   await policyService.create(policy({ serviceType: 'SELF_STORAGE' }), admin);
   await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 0 } }), admin);
@@ -259,4 +259,22 @@ test('HTTP pricing/policy routes use real role middleware; resolve precedes ID; 
     assert.equal((await request('PATCH',path+'/'+id+'/status','ADMIN',{isActive:false})).status,200);
     assert.equal((await request('DELETE',path+'/'+id,'ADMIN')).status,404);
   }
+});
+test('CATEGORY policy requires the approved strict allow/block schema and Managed Inventory scope', async t => {
+  store(t);
+  for (const input of [
+    { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: ['DOCUMENTS'] } },
+    { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: [], blockedCategories: [] } },
+    { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: ['DOCUMENTS', 'documents'], blockedCategories: [] } },
+    { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: ['DOCUMENTS'], blockedCategories: ['HAZARDOUS'], extra: true } },
+    { serviceType: 'SELF_STORAGE', config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } },
+    { config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } },
+  ]) await assert.rejects(policyService.create(policy({ type: 'CATEGORY', ...input }), admin), status(400));
+  const accepted = await policyService.create(policy({ type: 'CATEGORY', serviceType: 'MANAGED_INVENTORY', config: {
+    allowedCategories: [' documents ', 'FURNITURE'], blockedCategories: ['HAZARDOUS'],
+  } }), admin);
+  assert.deepEqual(accepted.config, { allowedCategories: ['DOCUMENTS', 'FURNITURE'], blockedCategories: ['HAZARDOUS'] });
+  await assert.rejects(policyService.update(String(accepted._id), { config: { allowedCategories: ['DOCUMENTS'] } }, admin), status(400));
+  const updated = await policyService.update(String(accepted._id), { config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } }, admin);
+  assert.deepEqual(updated.config, { allowedCategories: ['DOCUMENTS'], blockedCategories: [] });
 });

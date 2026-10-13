@@ -2,7 +2,7 @@ import {useSyncExternalStore} from 'react';
 // Reuse the existing access-token/user keys. Business demo stores are independent.
 const keys={access:'SelfStorage_token',refresh:'SelfStorage_refreshToken',user:'SelfStorage_user'};
 const listeners=new Set();
-const identity=user=>Object.fromEntries(['id','displayName','email','phone','role'].filter(key=>typeof user?.[key]==='string').map(key=>[key,user[key]]));
+const identity=user=>{const value={...user,id:user?.id||user?._id,assignedFacilityId:typeof user?.assignedFacilityId==='object'?user.assignedFacilityId?._id:user?.assignedFacilityId};return Object.fromEntries(['id','displayName','email','phone','role','assignedFacilityId'].filter(key=>typeof value?.[key]==='string').map(key=>[key,value[key]]));};
 function read(){let user=null;try{const value=JSON.parse(localStorage.getItem(keys.user));if(value&&typeof value==='object'&&!Array.isArray(value))user=value;}catch{/* Ignore invalid cached identity. */}return {accessToken:localStorage.getItem(keys.access),refreshToken:localStorage.getItem(keys.refresh),user};}
 let snapshot=read();
 function publish(){snapshot=read();listeners.forEach(fn=>fn());}

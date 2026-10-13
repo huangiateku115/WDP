@@ -1,3 +1,4 @@
+import {ReservationDetailIntegration} from '@/components/customer/RentalLifecycleIntegration';
 import { useParams } from 'react-router-dom';
 import { useReservation } from '@/contexts/ReservationContext';
 import Steps from '@/components/common/Steps';
@@ -5,7 +6,7 @@ import PortalHero from "@/components/common/PortalHero";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-export default function HandoverPage() {
+function HandoverPreview() {
   const { reservationId } = useParams();
   const { contracts } = useReservation();
   const booking = contracts.find(item => item.id === reservationId);
@@ -135,3 +136,5 @@ export default function HandoverPage() {
   );
 }
 
+
+export default ReservationDetailIntegration;

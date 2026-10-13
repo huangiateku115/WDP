@@ -8,6 +8,10 @@ import PricingModel from '../../models/pricing-policy/pricing-rule.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
 import ContractModel from '../../models/contracts/contract.model';
 import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
+import WarehouseCellModel from '../../models/warehouse-map/warehouse-cell.model';
+import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
+import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model';
+import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import { ContractStatus } from '../../types/contract.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { PricingBasis, PolicyType, TermUnit } from '../../types/pricing-policy.type';
@@ -15,6 +19,7 @@ import { VerificationStatus } from '../../types/customer-profile.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { IUser, UserRole } from '../../types/user.type';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
+import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const occupying = [ReservationStatus.RESERVED, ReservationStatus.CONTRACTED, ReservationStatus.PAID, ReservationStatus.ACTIVE, ReservationStatus.OVERDUE];
@@ -48,7 +53,7 @@ function term(value: unknown) {
   return { value: Number(input.value), unit: input.unit as TermUnit };
 }
 function parseRequest(value: unknown) {
-  const input = object(value, ['facilityId', 'allocatedCapacityM3', 'startDate', 'term'], 'request');
+  const input = object(value, ['facilityId', 'allocatedCapacityM3', 'startDate', 'term', 'cellIds'], 'request');
   const facilityId = id(input.facilityId, 'facilityId');
   const allocatedCapacityM3 = positive(input.allocatedCapacityM3, 'allocatedCapacityM3');
   const startDate = utc(input.startDate, 'startDate');
@@ -65,7 +70,13 @@ function parseRequest(value: unknown) {
     endDate.setUTCDate(Math.min(day, lastDay));
   }
   if (!Number.isFinite(endDate.getTime()) || endDate <= startDate) fail(400, 'Computed rental endDate is invalid');
-  return { facilityId, allocatedCapacityM3, startDate, endDate, term: duration };
+  let cellIds: Types.ObjectId[] | undefined;
+  if (input.cellIds !== undefined) {
+    if (!Array.isArray(input.cellIds) || !input.cellIds.length || input.cellIds.length > 100) fail(400, 'cellIds must contain 1 to 100 Cells');
+    cellIds = input.cellIds.map((value, index) => id(value, `cellIds[${index}]`));
+    if (new Set(cellIds.map(String)).size !== cellIds.length) fail(400, 'cellIds must be unique');
+  }
+  return { facilityId, allocatedCapacityM3, startDate, endDate, term: duration, cellIds };
 }
 function requireManagement(actor: Actor) {
   if (![UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Facility management role required');
@@ -172,6 +183,60 @@ async function lockCapacity(facilityId: Types.ObjectId, session: ClientSession, 
   if (!capacity) fail(409, 'Managed capacity configuration is missing or inactive');
   return capacity;
 }
+const allocationVolume = (cell: { dimensions: { widthM: number; depthM: number; usableHeightM?: number } }) => {
+  if (!Number.isFinite(cell.dimensions.usableHeightM) || Number(cell.dimensions.usableHeightM) <= 0) fail(409, 'Selected Cell usable dimensions must be configured before booking');
+  return cell.dimensions.widthM * cell.dimensions.depthM * Number(cell.dimensions.usableHeightM);
+};
+async function lockSelectedCells(cellIds: Types.ObjectId[], facilityId: Types.ObjectId, session: ClientSession) {
+  const cells = [] as any[];
+  for (const cellId of [...cellIds].sort((a, b) => a.toString().localeCompare(b.toString()))) {
+    const cell = await WarehouseCellModel.findOne({ _id: cellId, facilityId, deletedAt: { $exists: false } }).session(session).exec();
+    if (!cell) fail(409, 'Every selected Cell must be active in the selected Managed Facility');
+    cells.push(cell);
+  }
+  const zoneIds = [...new Set(cells.map(cell => cell.zoneId.toString()))].sort();
+  for (const zoneId of zoneIds) {
+    const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId, isActive: true, deletedAt: { $exists: false } },
+      { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
+    if (!zone) fail(409, 'Selected Cell parent Zone must be active');
+  }
+  const rackIds = [...new Set(cells.map(cell => cell.rackId.toString()))].sort();
+  for (const rackId of rackIds) {
+    const source = cells.find(cell => cell.rackId.toString() === rackId);
+    const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId: source.zoneId, deletedAt: { $exists: false } },
+      { $inc: { layoutVersion: 1 } }, { new: true, session }).exec();
+    if (!rack) fail(409, 'Selected Cell parent Rack must be active');
+  }
+  const locked = [] as any[];
+  for (const cell of cells) {
+    const row = await WarehouseCellModel.findOneAndUpdate({ _id: cell._id, facilityId, operationalStatus: WarehouseOperationalStatus.AVAILABLE,
+      deletedAt: { $exists: false }, usedWeightKg: 0, usedVolumeM3: 0 },
+      { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+    if (!row) fail(409, 'Selected Cell is not physically available for a new reservation');
+    locked.push(row);
+  }
+  return locked;
+}
+async function assertCellIntervalsAvailable(cells: any[], startDate: Date, endDate: Date, now: Date, session: ClientSession) {
+  for (const cell of cells) {
+    const conflict = await CellAllocationModel.findOne({ $or: [
+      { cellId: cell._id, status: CellAllocationStatus.OCCUPIED },
+      { cellId: cell._id, status: CellAllocationStatus.RESERVED, startDate: { $lt: endDate }, endDate: { $gt: startDate } },
+      { cellId: cell._id, status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, startDate: { $lt: endDate }, endDate: { $gt: startDate } },
+    ],
+    }).session(session).exec();
+    if (conflict) fail(409, `Cell ${cell.code} is already allocated for an overlapping rental period`);
+  }
+}
+async function releaseReservationCells(reservationId: Types.ObjectId, session: ClientSession) {
+  const allocations = await CellAllocationModel.find({ reservationId, status: { $in: [CellAllocationStatus.HOLD, CellAllocationStatus.RESERVED] } }).session(session).exec();
+  for (const allocation of allocations) {
+    const cell = await WarehouseCellModel.findOne({ _id: allocation.cellId }).session(session).exec();
+    if (cell && (Number(cell.usedWeightKg ?? 0) > 0 || Number(cell.usedVolumeM3 ?? 0) > 0)) allocation.status = CellAllocationStatus.OCCUPIED;
+    else allocation.status = CellAllocationStatus.RELEASED;
+    await allocation.save({ session });
+  }
+}
 async function audit(session: ClientSession, event: {
   facilityId: Types.ObjectId; reservationId?: Types.ObjectId; actorId: Types.ObjectId;
   action: ManagedReservationAction; fromStatus?: string; toStatus?: string; details?: Record<string, unknown>;
@@ -193,22 +258,33 @@ export class ManagedReservationService {
   static async quote(body: unknown) {
     const input = parseRequest(body);
     if (input.startDate <= new Date()) fail(400, 'startDate must be in the future');
+    if (input.cellIds) {
+      const cells = await WarehouseCellModel.find({ _id: { $in: input.cellIds }, facilityId: input.facilityId, deletedAt: { $exists: false } }).exec();
+      if (cells.length !== input.cellIds.length) fail(409, 'Selected Cells must belong to the selected Managed Facility');
+      const cellCapacity = cells.reduce((sum, cell) => sum + allocationVolume(cell), 0);
+      if (Math.abs(cellCapacity - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must equal the selected Cells total configured volume');
+    }
     return publicQuote(input, await effectiveQuote(input));
   }
   static async create(body: unknown, actor: Actor) {
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'Customer role required');
     const input = parseRequest(body);
+    if (!input.cellIds?.length) fail(400, 'Select one or more Cells before creating a Managed reservation');
     return withTransaction(async session => {
       const now = new Date();
       if (input.startDate <= now) fail(400, 'startDate must be in the future');
       const profile = await CustomerProfileModel.findOne({ userId: actor._id }).session(session).exec();
       if (!profile || profile.verificationStatus !== VerificationStatus.VERIFIED) fail(403, 'Verified Customer Profile required');
       const capacity = await lockCapacity(input.facilityId, session);
+      const selectedCells = await lockSelectedCells(input.cellIds!, input.facilityId, session);
+      await assertCellIntervalsAvailable(selectedCells, input.startDate, input.endDate, now, session);
+      const selectedVolumeM3 = selectedCells.reduce((sum, cell) => sum + allocationVolume(cell), 0);
+      if (Math.abs(selectedVolumeM3 - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must equal the selected Cells total configured volume');
       const result = await effectiveQuote(input, session);
       const created = new ReservationModel({
         reservationCode: `MIR-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${new Types.ObjectId().toString().slice(-6).toUpperCase()}`,
         customerId: actor._id, facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
-        allocatedCapacity: input.allocatedCapacityM3, startDate: input.startDate, endDate: input.endDate,
+        allocatedCapacity: input.allocatedCapacityM3, allocatedCellIds: selectedCells.map(cell => cell._id), startDate: input.startDate, endDate: input.endDate,
         status: ReservationStatus.RESERVED, estimatedRent: result.estimatedRent, depositAmount: result.depositAmount, taxAmount: 0, discountAmount: 0,
         expiresAt: new Date(now.getTime() + capacity.holdDurationMinutes * 60_000),
         pricingPolicyId: result.pricingRule._id,
@@ -218,10 +294,16 @@ export class ManagedReservationService {
           depositPolicy: { id: result.depositPolicy._id, version: result.depositPolicy.version, calculation: 'PERCENT_OF_RENT', percentage: (result.depositPolicy.config as any).percentage },
           amountBreakdown: { estimatedRent: result.estimatedRent, depositAmount: result.depositAmount, taxAmount: 0, discountAmount: 0, totalDue: result.estimatedRent + result.depositAmount },
           capacityBookingVersion: capacity.bookingVersion,
+          selectedCells: selectedCells.map(cell => ({ cellId: cell._id, volumeM3: allocationVolume(cell) })),
         },
         statusHistory: [{ status: ReservationStatus.RESERVED, actorId: actor._id, reason: 'Customer created Managed Inventory quota reservation' }],
       });
       await created.save({ session });
+      await CellAllocationModel.insertMany(selectedCells.map(cell => ({
+        facilityId: input.facilityId, cellId: cell._id, reservationId: created._id, customerId: actor._id,
+        startDate: input.startDate, endDate: input.endDate, status: CellAllocationStatus.HOLD,
+        holdExpiresAt: created.expiresAt,
+      })), { session });
       await audit(session, { facilityId: input.facilityId, reservationId: created._id, actorId: actor._id,
         action: ManagedReservationAction.CREATED, toStatus: ReservationStatus.RESERVED,
         details: { allocatedCapacityM3: input.allocatedCapacityM3, simulatedPayment: false } });
@@ -336,6 +418,7 @@ export class ManagedReservationService {
       reservation.status = ReservationStatus.CANCELLED; reservation.rejectReason = reason;
       reservation.statusHistory.push({ status: ReservationStatus.CANCELLED, actorId: actor._id, reason: `Managed reservation rejected: ${reason}`, createdAt: new Date() } as any);
       await reservation.save({ session });
+      await releaseReservationCells(reservation._id, session);
       await audit(session, { facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id,
         action: ManagedReservationAction.REJECTED, fromStatus: ReservationStatus.RESERVED, toStatus: ReservationStatus.CANCELLED, details: { reason } });
       return reservation;
@@ -354,6 +437,7 @@ export class ManagedReservationService {
       reservation.status = ReservationStatus.CANCELLED;
       reservation.statusHistory.push({ status: ReservationStatus.CANCELLED, actorId: actor._id, reason: 'Customer cancelled Managed quota reservation', createdAt: new Date() } as any);
       await reservation.save({ session });
+      await releaseReservationCells(reservation._id, session);
       await audit(session, { facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id,
         action: ManagedReservationAction.CANCELLED, fromStatus, toStatus: ReservationStatus.CANCELLED });
       return reservation;
@@ -373,6 +457,8 @@ export class ManagedReservationService {
       reservation.paymentSimulation = { simulated: true, provider: 'MOCK', paidAt: new Date(), actorId: actor._id };
       reservation.statusHistory.push({ status: ReservationStatus.PAID, actorId: actor._id, reason: 'SIMULATED DEVELOPMENT MOCK PAYMENT; NO REAL PAYMENT PROVIDER', createdAt: new Date() } as any);
       await reservation.save({ session });
+      await CellAllocationModel.updateMany({ reservationId: reservation._id, status: CellAllocationStatus.HOLD },
+        { $set: { status: CellAllocationStatus.RESERVED }, $unset: { holdExpiresAt: 1 } }, { session }).exec();
       await audit(session, { facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id,
         action: ManagedReservationAction.MOCK_PAYMENT, fromStatus: ReservationStatus.CONTRACTED, toStatus: ReservationStatus.PAID, details: { simulated: true, provider: 'MOCK' } });
       return reservation;
@@ -392,10 +478,10 @@ export class ManagedReservationService {
       const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).session(session).exec();
       if (!facility) fail(409, 'Managed Facility is not active');
       reservation.status = ReservationStatus.ACTIVE;
-      reservation.statusHistory.push({ status: ReservationStatus.ACTIVE, actorId: actor._id, reason: 'Managed quota activated; no physical Cell allocated', createdAt: new Date() } as any);
+      reservation.statusHistory.push({ status: ReservationStatus.ACTIVE, actorId: actor._id, reason: 'Managed quota activated; selected Cells remain allocated and physical occupancy awaits Staff-confirmed inbound', createdAt: new Date() } as any);
       await reservation.save({ session });
       await audit(session, { facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id,
-        action: ManagedReservationAction.ACTIVATED, fromStatus: ReservationStatus.PAID, toStatus: ReservationStatus.ACTIVE, details: { physicalCellAllocated: false } });
+        action: ManagedReservationAction.ACTIVATED, fromStatus: ReservationStatus.PAID, toStatus: ReservationStatus.ACTIVE, details: { selectedCellsRemainAllocated: true, physicalOccupancyRecorded: false } });
       return reservation;
     });
   }

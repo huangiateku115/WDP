@@ -26,7 +26,13 @@ export interface IReservation extends Document {
   
   serviceType: FacilityServiceType;
   storageUnitId?: Types.ObjectId;
+  /** Cells exclusively allocated to this Managed Inventory reservation. */
+  allocatedCellIds?: Types.ObjectId[];
   allocatedCapacity?: number;
+  /** Actual inbound volume consumed from this rental's quota. */
+  usedCapacityM3?: number;
+  /** Write token serializing inbound usage changes for this rental. */
+  inventoryVersion?: number;
   managedPricingSnapshot?: Record<string, unknown>;
   paymentSimulation?: { simulated: boolean; provider: 'MOCK'; paidAt: Date; actorId: Types.ObjectId };
   storageCondition?: string;

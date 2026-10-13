@@ -20,7 +20,6 @@ const solutions = [
       "Ground-level & elevator access",
       "24/7 CCTV and digital entry",
     ],
-    price: "1,500,000",
     image:
       "https://removalistsnorthernbeaches.com.au/wp-content/uploads/2026/06/Modern-self-storage-solution-providing-secure-space-for-furniture-and-household-belongings.jpg",
   },
@@ -36,7 +35,6 @@ const solutions = [
       "Flexible short-term rental",
       "Secure monitored facility",
     ],
-    price: "250,000",
     image:
       "https://images.unsplash.com/photo-1565793298595-6a879b1d9492?auto=format&fit=crop&w=1200&q=85",
   },
@@ -121,16 +119,8 @@ export default function StorageSolutionsSection() {
 
                   <div className="mt-7 flex flex-wrap items-end justify-between gap-5 border-t border-[#edf0f6] pt-6">
                     <div>
-                      <p className="text-xs text-[#7b8495]">Starting from</p>
-
-                      <div className="mt-1 flex items-end gap-1.5">
-                        <strong className="font-heading text-2xl">
-                          {item.price}
-                        </strong>
-                        <span className="pb-1 text-xs text-[#7b8495]">
-                          VND / mo
-                        </span>
-                      </div>
+                      <p className="text-xs text-[#7b8495]">Pricing varies by facility and term</p>
+                      <Link to="/pricing" className="mt-2 inline-block font-semibold text-[#176B3A]">View published facility rates</Link>
                     </div>
 
                     <Button asChild variant="outline">

@@ -1,6 +1,8 @@
 # MI-01 — Warehouse Map Foundation
 
-MI-01 adds structural map data for Managed Inventory. It does not track items, receipts, movements, reservations of cells, or real stored weight. All usage fields currently come from the explicit empty baseline (`source: MI_01_EMPTY`); no inventory values are persisted.
+MI-01 adds structural map data for Managed Inventory. MI-02B now tracks actual Staff-confirmed inbound through transactional Cell usage counters and immutable ItemMovement records. Only confirmed physical inventory contributes; REGISTERED and PENDING_INBOUND items do not. See [MI-02B](MI_02B_STAFF_INBOUND.md) for lifecycle and transaction details.
+
+MI-02C adds customer-selected, date-range Cell holds during Managed reservation creation. See [MI-02C](MI_02C_CELL_RESERVATION.md) for allocation/display statuses, multi-Cell quota calculation and customer map behavior.
 
 ## Architecture and data relationships
 
@@ -24,7 +26,7 @@ allocatableCapacityKg = sum(all non-deleted cell.maxWeightKg)
 cell.remainingWeightKg = max(0, cell.maxWeightKg - usedWeightKg)
 ```
 
-The existing `maxWeightKg` DTO fields remain the rated structural limits for frontend compatibility. New `ratedCapacityKg` and `allocatableCapacityKg` fields distinguish the rack/tier rating from the sum of configured cell limits. For example, if one of sixteen cells is configured at 100 kg and the other fifteen remain at 125 kg, the rack reports 2,000 kg rated capacity and 1,975 kg allocatable capacity; the affected level reports 500 kg rated and 475 kg allocatable. MI-01 has no source for actual weight, so `usedWeightKg` is zero and existing remaining-weight fields continue to use their legacy rated/cell limit. The `WarehouseUsageSnapshot` adapter is the extension point for MI-02 inventory aggregation.
+The existing `maxWeightKg` DTO fields remain the rated structural limits for frontend compatibility. New `ratedCapacityKg` and `allocatableCapacityKg` fields distinguish the rack/tier rating from the sum of configured cell limits. For example, if one of sixteen cells is configured at 100 kg and the other fifteen remain at 125 kg, the rack reports 2,000 kg rated capacity and 1,975 kg allocatable capacity; the affected level reports 500 kg rated and 475 kg allocatable. Actual `usedWeightKg` and `usedVolumeM3` now sum persisted Cell counters, remaining weight clamps to zero, and the map reports `source: WAREHOUSE_CELL_COUNTERS`. Pre-inbound Cells default to zero; missing/failed usage reads are not represented as fabricated occupancy.
 
 ## API
 
@@ -127,7 +129,8 @@ An overview response is an allowlisted read model. A Rack entry includes `_id`, 
       "usedWeightKg": 0,
       "remainingWeightKg": 2000,
       "utilizationStatus": "EMPTY",
-      "source": "MI_01_EMPTY"
+      "usedVolumeM3": 0,
+      "source": "WAREHOUSE_CELL_COUNTERS"
     },
     "levels": [
       {
@@ -163,7 +166,7 @@ The abbreviated JSON shows one Cell in the first level; production responses inc
 
 - `mapX` increases left to right; `mapY` increases top to bottom. Coordinates are grid units, not meters. The FE positions Rack cards by these values and rotates them by `orientation` (0/90/180/270 degrees).
 - `operationalStatus` is `AVAILABLE`, `BLOCKED`, or `MAINTENANCE` and describes whether a physical Rack/Cell may be used.
-- `utilization.status` is computed separately: `EMPTY`, `PARTIAL`, `NEAR_FULL` (at least 90%), or `FULL`. It is `EMPTY` throughout MI-01.
+- `utilization.status` is computed separately: `EMPTY`, `PARTIAL`, `NEAR_FULL` (at least 90%), or `FULL`, based on actual Cell counter totals.
 - Zone `isActive=false` hides it from the map but does not delete its structure.
 
 ## Authorization and lifecycle
@@ -193,7 +196,7 @@ Creating/restoring a Rack, generating/restoring all Cells, changing Cell limits,
 
 ## MI-01 limitations
 
-There are no InventoryItem, InventoryStock, Location, Movement, or reservation-of-cell models in this phase. There are no actual occupancy or item counts, no kg reconciliation, and no image/upload service. Customer map access is pre-booking structural browsing only and does not create a reservation. The FE must not imply that items are stored. MI-02/MI-03 must add real, transactional inventory aggregates before usage changes from zero.
+There are no separate InventoryStock, Location, or reservation-of-cell models, no outbound/relocation reconciliation yet, and no image/upload service. Customer map access is pre-booking structural browsing only and does not create a reservation. Actual usage changes only after assigned Staff confirm inbound; the FE must distinguish empty cells from unconfirmed registrations. Category-policy config remains undefined, so inbound confirmation currently fails closed until the business decision is made. Customer map responses remain sanitized and never include items or movement history.
 
 ## Deterministic FE fixture
 

@@ -93,11 +93,12 @@ test('public storage availability counts AVAILABLE non-deleted units by size onl
 test('public pricing returns only current sanitized rules and supports managed-only facilities', async t => {
   const now = new Date();
   const future = new Date(Date.now() + 60_000);
+  const expectedRuleId = new mongoose.Types.ObjectId();
   let filter;
   t.mock.method(Facility, 'findOne', () => query({ serviceTypes: ['MANAGED_INVENTORY'] }));
   t.mock.method(Pricing, 'find', seen => {
     filter = seen;
-    const effective = { serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, createdBy: 'private', __v: 4 };
+    const effective = { _id: expectedRuleId, serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, createdBy: 'private', __v: 4 };
     const futureRule = { ...effective, effectiveFrom: future };
     const inactiveRule = { ...effective, isActive: false };
     const expiredRule = { ...effective, effectiveTo: new Date(Date.now() - 60_000) };
@@ -114,7 +115,7 @@ test('public pricing returns only current sanitized rules and supports managed-o
   assert.ok(Array.isArray(filter.$and[1].$or));
   assert.ok(filter.$and[0].$or.some(scope => scope.billingBasis === 'PER_M3'));
   assert.deepEqual(result, { managedInventory: [{
-    serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20,
+    _id: expectedRuleId, serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20,
     currency: 'USD', effectiveFrom: now,
   }] });
   assert.equal(JSON.stringify(result).includes('createdBy'), false);

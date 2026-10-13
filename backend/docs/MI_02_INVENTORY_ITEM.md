@@ -12,7 +12,7 @@ InventoryItem ── preferredCellId? ── WarehouseCell
 InventoryItem ── currentCellId=null until a later confirmed inbound
 ```
 
-`InventoryItem` stores stable `itemCode` (unique per Facility, reserved after deletion), customer and Facility ownership, the Managed Inventory reservation reference, item metadata, quantity, per-unit physical values, server-derived totals, optional URL images, a preferred Cell, and status `REGISTERED`. A unique Facility/itemCode index arbitrates duplicates. `currentCellId` is always null in this phase. No stock count, reservation, movement, or Cell usage is created.
+`InventoryItem` stores stable `itemCode` (unique per Facility, reserved after deletion), customer and Facility ownership, the Managed Inventory reservation reference, item metadata, quantity, per-unit physical values, server-derived totals, optional URL images, a preferred Cell, and status `REGISTERED`, `PENDING_INBOUND`, or `IN_STORAGE`. A unique Facility/itemCode index arbitrates duplicates. Registration and inbound request leave `currentCellId` null. Only staff-confirmed inbound can place the entire lot and create actual usage; see [MI-02B Staff Inbound](MI_02B_STAFF_INBOUND.md).
 
 `quantity` means a count of identical handling units in one registered lot. For example, quantity 2, quantityUnit `carton`, and unitWeightKg 20 means two identical cartons, 40 kg total. Partial handling of the lot is not supported by MI-02A.
 
@@ -172,9 +172,9 @@ The backend defines `PolicyType.CATEGORY`, but `Policy.config` is a generic JSON
 
 ## Lifecycle and boundaries
 
-MI-02A has exactly one item status: `REGISTERED`. No registration operation changes WarehouseCell, WarehouseRack, Reservation, physical usage, or location. `preferredCellId` is only a customer preference, is validated against the current active structure, and is not a reservation. A preferred Cell may become unavailable later.
+Registration still starts at `REGISTERED`; an owner may request physical inbound to move the item to `PENDING_INBOUND`, and only assigned Staff may confirm it into `IN_STORAGE`. Customer metadata edits remain limited to unplaced `REGISTERED` items. `preferredCellId` is only a customer preference, is validated against the current active structure, and is not a reservation. A preferred Cell may become unavailable later.
 
-Future inbound must atomically verify the active Managed rental and remaining `m3` quota; confirm actual item weight/dimensions; validate Cell geometry and `m3`/kg capacity plus level/Rack structural limits; write the actual location and item lifecycle state; append immutable movement history; and update quota/usage aggregates. Relocation/outbound must preserve the same transactional invariants. Those flows belong to later phases and are not shortcuts in this implementation.
+Inbound atomically verifies the active in-term Managed rental and remaining `m3` quota, staff-verified measurements, Cell geometry and `m3`/kg capacity plus level/Rack structural limits, actual location and lifecycle state, immutable movement history, and usage aggregates. Confirmation currently fails closed before writes because CATEGORY policy has no defined configuration schema; see MI-02B. Relocation/outbound must preserve equivalent transactional invariants and remain out of scope.
 
 ## SRS alignment and deviations
 
@@ -191,6 +191,6 @@ Future inbound must atomically verify the active Managed rental and remaining `m
 2. Register the lot; use returned `totalWeightKg`, `totalVolumeM3`, `status`, and `currentCellId` as descriptive data.
 3. Show the preferred Cell as a preference only. List own records with `/me`.
 4. Call placement preview for a candidate Cell and display advisory/uncertainty prominently. Never show it as booked or placed.
-5. Allow Staff to review the item separately; no confirmation action exists in this phase.
+5. Owner may request inbound and assigned Staff may review/reject. Physical confirmation routes are present, but successful confirmation remains blocked until the CATEGORY policy configuration decision is approved.
 
 Postman coverage should include: no active Managed rental; Self Storage rental ID; inactive Facility/rental; spoofed owner/Facility/totals/status; duplicate itemCode; cross-customer item read; Manager/Staff wrong-Facility list; 100 kg Cell preview; blocked and Maintenance Cell; cross-Facility Cell; missing usable height; and assertions that `currentCellId` remains null and preview creates no writes.

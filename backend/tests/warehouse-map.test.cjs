@@ -14,6 +14,8 @@ const Facility = require('../dist/models/facilities/facility.model').default;
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
+const CellAllocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
+const InventoryItem = require('../dist/models/inventory-items/inventory-item.model').default;
 const { WarehouseMapService: service } = require('../dist/services/warehouse-map/warehouse-map.service');
 const {
   parseRackCreate, parseCellUpdate, parseList, WarehouseMapError,
@@ -50,6 +52,7 @@ class Query {
   constructor(value) { this.value = value; }
   session(session) { this.txSession = session; return this; }
   select() { return this; }
+  distinct() { return this; }
   sort() { return this; }
   skip() { return this; }
   limit() { return this; }
@@ -203,6 +206,8 @@ test('a new customer can browse the sanitized managed map without a reservation'
   t.mock.method(Rack, 'find', () => new Query([rack().toObject()]));
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
   t.mock.method(Cell, 'find', () => new Query(Array.from({ length: 16 }, (_, i) => cell(4 - Math.floor(i / 4), i % 4 + 1, { maxWeightKg: i === 0 ? 100 : 125 }).toObject())));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
   const result = await service.warehouseMap(facilityId, own);
   assert.equal(result.zones[0].aisles[0].racks[0].cellCount, 16);
   assert.equal(result.zones[0].aisles[0].racks[0].utilization.usedWeightKg, 0);
@@ -212,6 +217,32 @@ test('a new customer can browse the sanitized managed map without a reservation'
   for (const forbidden of ['deletedAt', 'deletedBy', 'layoutVersion', '__v', 'createdBy', 'ownerId']) assert.equal(serialized.includes(forbidden), false);
   const detail = await service.rackDetailMap(rackId, own);
   assert.equal(detail.capacity.usedWeightKg, 0);
+  assert.equal(JSON.stringify(detail).includes('customerId'), false);
+});
+
+test('map separates operational/display state from booking state and returns only owner booleans', async t => {
+  const own = actor('CUSTOMER'), cells = [cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 40, usedVolumeM3: .03 }).toObject()];
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Rack, 'find', () => new Query([rack().toObject()]));
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Cell, 'find', () => new Query(cells));
+  t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: cells[0]._id, customerId: userId, status: 'OCCUPIED' }]));
+  t.mock.method(InventoryItem, 'find', () => new Query([{ currentCellId: cells[0]._id }]));
+  const range = { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' };
+  const detail = await service.rackDetailMap(rackId, own, range);
+  const result = detail.levels[3].cells[0];
+  assert.equal(result.bookingStatus, 'OCCUPIED');
+  assert.equal(result.displayStatus, 'OCCUPIED');
+  assert.equal(result.isMine, true);
+  assert.equal(result.hasMyInventory, true);
+  assert.equal(result.usedWeightKg, 40);
+  assert.equal(result.maxWeightKg, 125);
+  assert.equal(result.remainingWeightKg, 85);
+  assert.equal(result.usedVolumeM3, .03);
+  assert.equal(result.maxVolumeM3, .12);
+  assert.equal(JSON.stringify(detail).includes(String(userId)), false);
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
 });
 
@@ -231,8 +262,12 @@ test('customer maps reject inactive, deleted, and non-managed facilities; custom
 test('cell update rejects per-level capacity overflow and uses rack as the transaction lock', async t => {
   const tx = mockTransaction(t);
   t.mock.method(Cell, 'findOne', () => new Query(cell(1, 1)));
+  t.mock.method(Zone, 'findOneAndUpdate', () => new Query(zone({ structureVersion: 1 })));
   const savedRack = rack();
   t.mock.method(Rack, 'findOne', () => new Query(savedRack));
+  t.mock.method(Rack, 'findOneAndUpdate', () => { savedRack.layoutVersion = 1; return new Query(savedRack); });
+  t.mock.method(Cell, 'findOneAndUpdate', () => new Query(cell(1, 1)));
+  t.mock.method(CellAllocation, 'exists', () => new Query(null));
   let aggregateSession;
   t.mock.method(Cell, 'aggregate', () => ({
     session(session) { aggregateSession = session; return this; },
@@ -290,7 +325,15 @@ test('zone deletion is blocked while active racks remain; rack deletion preserve
   assert.equal(tx.aborted, true);
 
   const tx2 = mockTransaction(t);
+  t.mock.method(Zone, 'findOneAndUpdate', (_filter, _update, options) => {
+    assert.equal(options.session, tx2.session);
+    return new Query(zone({ structureVersion: 2 }));
+  });
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Rack, 'findOneAndUpdate', () => new Query(rack({ layoutVersion: 1 })));
+  t.mock.method(Cell, 'find', () => new Query([]));
+  t.mock.method(CellAllocation, 'exists', () => new Query(null));
+  t.mock.method(Cell, 'exists', () => ({ session() { return this; }, exec: async () => null }));
   t.mock.method(Cell, 'countDocuments', () => ({ session() { return this; }, exec: async () => 0 }));
   let softUpdates = 0;
   t.mock.method(Cell, 'updateMany', (filter, update, options) => {
@@ -310,7 +353,11 @@ test('rack deletion is rejected while available cells remain', async t => {
   const tx = mockTransaction(t);
   t.mock.method(Facility, 'findOne', () => new Query(facility()));
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
-  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Zone, 'findOneAndUpdate', () => new Query(zone({ structureVersion: 1 })));
+  t.mock.method(Rack, 'findOneAndUpdate', () => new Query(rack({ layoutVersion: 1 })));
+  t.mock.method(Cell, 'find', () => new Query([]));
+  t.mock.method(CellAllocation, 'exists', () => new Query(null));
+  t.mock.method(Cell, 'exists', () => ({ session() { return this; }, exec: async () => null }));
   t.mock.method(Cell, 'countDocuments', () => ({ session() { return this; }, exec: async () => 1 }));
   t.mock.method(Cell, 'updateMany', () => { assert.fail('available rack cells must not be deleted'); });
   await assert.rejects(service.deleteRack(rackId, actor()), { status: 409 });
@@ -444,7 +491,10 @@ test('restoreRack transaction aborts when Cell restoration fails after Rack writ
 test('rack height update checks the sum of configured usable level heights', async t => {
   const tx = mockTransaction(t);
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
-  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Zone, 'findOneAndUpdate', () => new Query(zone({ structureVersion: 1 })));
+  t.mock.method(Rack, 'findOneAndUpdate', () => new Query(rack({ layoutVersion: 1 })));
+  t.mock.method(Cell, 'find', () => new Query([]));
+  t.mock.method(CellAllocation, 'exists', () => new Query(null));
   t.mock.method(Cell, 'aggregate', () => ({
     session() { return this; }, exec: async () => [{ _id: 1, maxHeightM: 0.55 }, { _id: 2, maxHeightM: 0.55 }, { _id: 3, maxHeightM: 0.55 }, { _id: 4, maxHeightM: 0.55 }],
   }));
@@ -460,6 +510,7 @@ test('detail map returns 16 top-to-bottom empty cells with allowlisted output', 
   t.mock.method(Facility, 'findOne', () => new Query(facility()));
   t.mock.method(Zone, 'findOne', () => new Query(zone()));
   t.mock.method(Cell, 'find', () => Object.assign(new Query(cells.map(doc => doc.toObject())), { sort(spec) { assert.deepEqual(spec, { levelNumber: -1, cellNumber: 1 }); return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
   const result = await service.rackDetailMap(rackId, actor('FACILITY_STAFF'));
   assert.equal(result.capacity.maxWeightKg, 2000);
   assert.equal(result.capacity.ratedCapacityKg, 2000);

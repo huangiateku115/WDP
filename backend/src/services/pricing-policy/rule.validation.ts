@@ -61,6 +61,24 @@ export function validateManagedDepositConfig(value: unknown) {
     invalid('Managed DEPOSIT config requires PERCENT_OF_RENT and a non-negative percentage');
   }
 }
+export function validateCategoryPolicyConfig(value: unknown) {
+  const input = object(value, ['allowedCategories', 'blockedCategories']);
+  const normalize = (candidate: unknown, field: string, required: boolean) => {
+    if (!Array.isArray(candidate) || (required && candidate.length === 0) || candidate.length > 100) {
+      invalid(`${field} must be ${required ? 'a non-empty' : 'an'} array of at most 100 categories`);
+    }
+    const result = candidate.map((entry, index) => {
+      if (typeof entry !== 'string' || !entry.trim() || entry.trim().length > 80) invalid(`${field}[${index}] must be a non-empty category of at most 80 characters`);
+      return entry.trim().toUpperCase();
+    });
+    if (new Set(result).size !== result.length) invalid(`${field} must not contain duplicate categories`);
+    return result;
+  };
+  return {
+    allowedCategories: normalize(input.allowedCategories, 'allowedCategories', true),
+    blockedCategories: normalize(input.blockedCategories, 'blockedCategories', false),
+  };
+}
 export function scope(kind: Kind, input: Record<string, unknown>, query = false) {
   const result: Record<string, unknown> = { facilityId: new Types.ObjectId(id(input.facilityId)) };
   if (kind === 'pricing' || input.serviceType !== undefined) result.serviceType = enumeration(input.serviceType, Object.values(FacilityServiceType));
@@ -103,6 +121,10 @@ export function body(kind: Kind, value: unknown, partial = false) {
   } else if (!partial || 'config' in input) {
     output.config = config(input.config);
     if (!partial && input.type === PolicyType.DEPOSIT && input.serviceType === FacilityServiceType.MANAGED_INVENTORY) validateManagedDepositConfig(output.config);
+    if (!partial && input.type === PolicyType.CATEGORY) {
+      if (input.serviceType !== FacilityServiceType.MANAGED_INVENTORY) invalid('CATEGORY policies require MANAGED_INVENTORY serviceType');
+      output.config = validateCategoryPolicyConfig(output.config);
+    }
   }
   if (output.effectiveFrom && output.effectiveTo) range(output as unknown as Period);
   return output;

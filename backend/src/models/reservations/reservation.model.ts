@@ -16,7 +16,10 @@ const reservationSchema = new Schema<IReservation>({
   
   serviceType: { type: String, enum: Object.values(FacilityServiceType), required: true },
   storageUnitId: { type: Schema.Types.ObjectId, ref: 'StorageUnit' }, 
+  allocatedCellIds: [{ type: Schema.Types.ObjectId, ref: 'WarehouseCell' }],
   allocatedCapacity: { type: Number },
+  usedCapacityM3: { type: Number, min: 0, default: 0 },
+  inventoryVersion: { type: Number, min: 0, default: 0 },
   managedPricingSnapshot: { type: Schema.Types.Mixed },
   paymentSimulation: {
     simulated: { type: Boolean },

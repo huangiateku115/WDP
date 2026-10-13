@@ -65,10 +65,10 @@ export const updateCell: RequestHandler = async (req, res, next) => {
 };
 
 export const warehouseMap: RequestHandler = async (req, res, next) => {
-  try { res.json({ success: true, data: await service.warehouseMap(req.query.facilityId, req.user) }); }
+  try { res.json({ success: true, data: await service.warehouseMap(req.query.facilityId, req.user, req.query) }); }
   catch (error) { next(error); }
 };
 export const rackDetailMap: RequestHandler = async (req, res, next) => {
-  try { res.json({ success: true, data: await service.rackDetailMap(req.params.id, req.user) }); }
+  try { res.json({ success: true, data: await service.rackDetailMap(req.params.id, req.user, req.query) }); }
   catch (error) { next(error); }
 };

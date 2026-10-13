@@ -103,7 +103,7 @@ export default function SupportPublicPage() {
             <span className="h-2 w-2 animate-pulse rounded-full bg-[#F28C28]" />
 
             <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#176B3A]">
-              24/7 Customer Care & Facility Assistance
+              Customer Help & Facility Assistance
             </span>
           </div>
 
@@ -133,23 +133,7 @@ export default function SupportPublicPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
-            <a
-              href="tel:02877700117"
-              className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#176B3A] shadow-sm"
-            >
-              Hotline: 028 7770 0117 (24/7)
-            </a>
-
-            <span className="rounded-full bg-white px-4 py-2 text-xs font-semibold shadow-sm">
-              WhatsApp / Zalo Concierge
-            </span>
-
-            <span className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold shadow-sm">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Live Chat Active
-            </span>
-          </div>
+          <div className="mt-6"><Button asChild className="bg-[#176B3A] hover:bg-[#125830]"><Link to="/portal/support">Sign in to contact support</Link></Button><p className="mt-3 text-sm text-[#697386]">Facility contact details are published on each facility page.</p></div>
         </div>
       </section>
 
@@ -186,9 +170,10 @@ export default function SupportPublicPage() {
 
                 <button
                   type="button"
+                  onClick={()=>document.getElementById("support-faq")?.scrollIntoView({behavior:"smooth"})}
                   className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#176B3A]"
                 >
-                  Explore articles
+                  Read FAQs
                   <ArrowRight
                     size={15}
                     className="transition group-hover:translate-x-1"
@@ -218,16 +203,18 @@ export default function SupportPublicPage() {
           <div className="grid gap-5 lg:grid-cols-3">
             <SupportCard
               icon={Phone}
-              title="Call Support"
+              title="Facility Contacts"
               text="Speak directly with the SelfStorage support team."
-              action="028 7770 0117"
+              action="View Facilities"
+              to="/facilities"
             />
 
             <SupportCard
               icon={MessageCircle}
-              title="Live Assistance"
+              title="Customer Support"
               text="Get help with reservations, access and facility questions."
-              action="Start Conversation"
+              action="Create Support Request"
+              to="/portal/support"
             />
 
             <SupportCard
@@ -235,13 +222,14 @@ export default function SupportPublicPage() {
               title="Self-Service Guides"
               text="Review guides for booking, access and storage management."
               action="Browse Guides"
+              to="/how-it-works"
             />
           </div>
         </div>
       </section>
 
       {/* FAQ */}
-      <section className="page-container py-20">
+      <section id="support-faq" className="page-container py-20">
         <div className="mx-auto max-w-3xl">
           <div className="text-center">
             <p className="section-label justify-center">Common Questions</p>
@@ -284,7 +272,7 @@ export default function SupportPublicPage() {
 
       {/* CONTACT CTA */}
       <section className="page-container pb-20">
-        <div className="vault-gradient blueprint-dark rounded-2xl p-8 text-white md:p-12">
+        <div style={{backgroundColor:"#0E4F2B"}} className="vault-gradient blueprint-dark rounded-2xl p-8 text-white md:p-12">
           <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
             <div>
               <LifeBuoy size={32} />
@@ -300,7 +288,7 @@ export default function SupportPublicPage() {
 
               <div className="mt-5 flex items-center gap-2 text-xs text-blue-100">
                 <Clock3 size={14} />
-                Support available 24/7
+                Sign in to create and follow your support request
               </div>
             </div>
 
@@ -309,10 +297,10 @@ export default function SupportPublicPage() {
                 asChild
                 className="bg-white text-[#176B3A] hover:bg-blue-50"
               >
-                <a href="tel:02877700117">
+                <Link to="/facilities">
                   <Phone size={15} className="mr-2" />
-                  Call Support
-                </a>
+                  Facility Contacts
+                </Link>
               </Button>
 
               <Button
@@ -330,7 +318,7 @@ export default function SupportPublicPage() {
   );
 }
 
-function SupportCard({ icon: Icon, title, text, action }) {
+function SupportCard({ icon: Icon, title, text, action, to }) {
   return (
     <article className="rounded-2xl border bg-white p-6">
       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EAF5EE] text-[#176B3A]">
@@ -341,13 +329,7 @@ function SupportCard({ icon: Icon, title, text, action }) {
 
       <p className="mt-2 text-sm leading-6 text-[#697386]">{text}</p>
 
-      <button
-        type="button"
-        className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#176B3A]"
-      >
-        {action}
-        <ArrowRight size={15} />
-      </button>
+      <Link to={to} className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#176B3A]">{action}<ArrowRight size={15}/></Link>
     </article>
   );
 }

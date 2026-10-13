@@ -1,5 +1,11 @@
 # Kịch bản demo tiếng Việt — M4, Iteration 1–3
 
+> **Cập nhật 12/10/2026:** hướng dẫn phía dưới dành cho dữ liệu demo khi `VITE_USE_MOCK=true`. Frontend hiện có chế độ API thật cho khách hàng/xác minh và đặt chỗ Manager khi `VITE_USE_MOCK=false`. File `.env.local` trên máy đang chọn API thật, base URL `http://localhost:5000/api/v1`; file này không đưa lên Git.
+>
+> Với API thật: đăng nhập đúng Staff/Manager; Manager cần `assignedFacilityId` từ backend. Khách hàng dùng CustomerProfile ID thật. Đơn Self Storage dùng `RESERVED → CONTRACTED/CANCELLED`, không dùng mã CUS/RES/REF mẫu trong hướng dẫn này. Managed Reservation mở theo ID qua mục Managed Inventory vì chưa có API danh sách theo cơ sở. Staff chưa có API đọc/duyệt đơn. Hoàn tiền hiển thị chờ backend, không tạo receipt hoặc đổi Payment thành REFUNDED. Các thiếu sót backend được ghi trong `BackendApiAudit.md`.
+
+> **Phase 2 API thật:** Manager dùng link Inspection/Check-in hoặc `/manager/work/INSPECTION`, `/manager/work/CHECK_IN`. Chọn đơn PAID, nhập Contract ID SIGNED, lưu CHECK_IN DRAFT rồi hoàn tất với Inspection ID. Checklist được lưu trong notes. Chỉ báo nhận kho thành công sau khi backend xác nhận ACTIVE/OCCUPIED. Staff hiện chỉ xem vì thiếu quyền đọc reservation/contract; xem phần Phase 2 trong `BackendApiAudit.md`. Các mã STASK bên dưới vẫn là demo riêng.
+
 **Để thao tác theo từng trang, mở mục 11.** Mục 9 là các case chờ duyệt có sẵn; mục 12 ghi kết quả kiểm thử. Các mục 3–8 là lời trình bày và luồng tổng thể.
 
 ## 1. Phần em phụ trách

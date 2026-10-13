@@ -2,6 +2,8 @@ import { Document, Types } from 'mongoose';
 
 export enum InventoryItemStatus {
   REGISTERED = 'REGISTERED',
+  PENDING_INBOUND = 'PENDING_INBOUND',
+  IN_STORAGE = 'IN_STORAGE',
 }
 
 export interface InventoryItemDimensionsM {
@@ -30,6 +32,14 @@ export interface InventoryItemFields {
   /** Registration is descriptive only; physical placement is Staff-confirmed later. */
   currentCellId: Types.ObjectId | null;
   status: InventoryItemStatus;
+  inboundRequestedAt?: Date;
+  inboundRequestedBy?: Types.ObjectId;
+  inboundConfirmedAt?: Date;
+  inboundConfirmedBy?: Types.ObjectId;
+  inboundMovementId?: Types.ObjectId;
+  inboundRejection?: { reason: string; rejectedAt: Date; rejectedBy: Types.ObjectId };
+  inboundIdempotencyKey?: string;
+  createdAt?: Date;
   images: string[];
   createdBy: Types.ObjectId;
   deletedAt?: Date;

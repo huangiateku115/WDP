@@ -92,11 +92,42 @@ export function parseUpdate(value: unknown) {
   return result;
 }
 
+export interface InboundConfirmationInput {
+  cellId: string;
+  verifiedQuantity: number;
+  actualUnitWeightKg: number;
+  actualUnitDimensionsM: InventoryItemDimensionsM;
+  physicalPackingConfirmed: boolean;
+  inspectionNote: string;
+  idempotencyKey: string;
+}
+
+export function parseInboundConfirmation(value: unknown): InboundConfirmationInput {
+  const input = record(value, ['cellId', 'verifiedQuantity', 'actualUnitWeightKg', 'actualUnitDimensionsM', 'physicalPackingConfirmed', 'inspectionNote', 'idempotencyKey']);
+  if (typeof input.physicalPackingConfirmed !== 'boolean') invalid('physicalPackingConfirmed must be a boolean');
+  const key = text(input.idempotencyKey, 'idempotencyKey', 128);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(key)) invalid('idempotencyKey contains unsupported characters');
+  return {
+    cellId: parseId(input.cellId, 'cellId'),
+    verifiedQuantity: quantity(input.verifiedQuantity),
+    actualUnitWeightKg: positive(input.actualUnitWeightKg, 'actualUnitWeightKg'),
+    actualUnitDimensionsM: dimensions(input.actualUnitDimensionsM),
+    physicalPackingConfirmed: input.physicalPackingConfirmed,
+    inspectionNote: text(input.inspectionNote, 'inspectionNote', 1000),
+    idempotencyKey: key,
+  };
+}
+
+export function parseInboundRejection(value: unknown) {
+  const input = record(value, ['reason']);
+  return { reason: text(input.reason, 'reason', 1000) };
+}
+
 export function parseList(value: unknown) {
   const input = record(value, ['facilityId', 'customerId', 'category', 'status', 'search', 'page', 'limit'], 'query');
   const page = queryInteger(input.page, 'page', 1, 1_000_000, 1);
   const limit = queryInteger(input.limit, 'limit', 1, 100, 20);
-  if (input.status !== undefined && input.status !== InventoryItemStatus.REGISTERED) invalid('Invalid status');
+  if (input.status !== undefined && !Object.values(InventoryItemStatus).includes(input.status as InventoryItemStatus)) invalid('Invalid status');
   const search = input.search === undefined ? undefined : text(input.search, 'search', 100);
   const category = input.category === undefined ? undefined : text(input.category, 'category', 80);
   return {
