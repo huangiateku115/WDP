@@ -1,0 +1,48 @@
+- generic [ref=f3e3]:
+  - banner [ref=f3e4]:
+    - link "VaultSpace Self Storage Vietnam" [ref=f3e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f3e11]:
+        - generic [ref=f3e12]: VaultSpace
+        - generic [ref=f3e13]: Self Storage Vietnam
+    - link "← Return to site" [ref=f3e14] [cursor=pointer]:
+      - /url: /
+  - generic [ref=f3e17]:
+    - generic [ref=f3e18]:
+      - generic [ref=f3e24]:
+        - text: SECURE ACCESS
+        - generic [ref=f3e25]: Client Management & Digital Access Portal
+      - heading "Welcome back to SelfStorage" [level=1] [ref=f3e26]
+      - paragraph [ref=f3e27]: Sign in to manage your active storage units, check gate PINs, and view contracts.
+      - generic [ref=f3e28]:
+        - generic [ref=f3e29]:
+          - generic [ref=f3e30]: Email Address
+          - textbox "Email address" [ref=f3e31]:
+            - /placeholder: name@domain.com
+        - generic [ref=f3e32]:
+          - generic [ref=f3e33]:
+            - generic [ref=f3e34]: Password
+            - link "Forgot password?" [ref=f3e35] [cursor=pointer]:
+              - /url: /forgot-password
+          - generic [ref=f3e36]:
+            - textbox "Password" [ref=f3e37]:
+              - /placeholder: ••••••••••••
+            - button "Show password" [ref=f3e38] [cursor=pointer]
+        - generic [ref=f3e42]:
+          - checkbox "Session stored on this device" [checked] [disabled] [ref=f3e43]
+          - checkbox [checked] [disabled] [aria-hidden]
+          - text: Stay signed in on this device until you sign out
+        - button "Sign In to My Storage →" [ref=f3e44] [cursor=pointer]
+      - paragraph [ref=f3e45]:
+        - text: New to SelfStorage?
+        - link "Create an account →" [ref=f3e46] [cursor=pointer]:
+          - /url: /register
+    - generic [ref=f3e47]:
+      - generic [ref=f3e48]: 24/7 Gate Access Online
+      - img "Storage facility corridor" [ref=f3e51]
+      - generic [ref=f3e52]:
+        - generic [ref=f3e53]: INSTANT DIGITAL KEY
+        - generic [ref=f3e54]: Your storage. Always within reach.
+        - paragraph [ref=f3e55]: Manage facility access and your rental from one secure portal.
+      - generic [ref=f3e56]: 256-bit SSL Encrypted
+  - generic [ref=f3e60]: © 2026 SelfStorage Self-Storage Vietnam. Secured 256-bit SSL Connection.
