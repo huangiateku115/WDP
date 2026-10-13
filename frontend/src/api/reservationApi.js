@@ -15,8 +15,13 @@ const saveOne = (item) => {
 };
 
 const reservationApi = {
+<<<<<<< Updated upstream
   estimateReal: ({startDate,endDate,pricingPolicyId},config)=>axiosClient.post('/reservations/estimate',{startDate,endDate,pricingPolicyId},config),
   createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId},config)=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId},config),
+=======
+  createManaged: payload => axiosClient.post('/reservations/managed', payload),
+  createReal: ({facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount})=>axiosClient.post('/reservations',{facilityId,storageUnitId,startDate,endDate,pricingPolicyId,estimatedRent,depositAmount}),
+>>>>>>> Stashed changes
   mineReal: config=>axiosClient.get('/reservations/me',config),
   // Generic Backend detail lacks a Customer ownership check; use the owned collection.
   detailReal: async (id,config)=>{const response=await axiosClient.get('/reservations/me',config);if(response.data?.success!==true||!Array.isArray(response.data.data))throw Error('Unsupported reservation response.');const item=response.data.data.find(r=>(r._id||r.id)===id);if(!item)throw Error('Reservation is unavailable in your account.');return {...response,data:{success:true,data:item}};},

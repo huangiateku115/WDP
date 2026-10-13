@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../../services/users/user.service';
 import { AuditService } from '../../services/audit/audit.service';
 import { ActionType } from '../../types/audit.type';
+import { FacilityAssignmentService, FacilityAssignmentError } from '../../services/users/facility-assignment.service';
 
 export const registerCustomer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -189,5 +190,25 @@ export const adminGetUsers = async (req: Request, res: Response, next: NextFunct
     res.status(200).json({ success: true, data: users });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const assignFacility = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await FacilityAssignmentService.assign(req.params.userId as string, req.body, req.user);
+    res.status(200).json({ success: true, data: result });
+  } catch (error: unknown) {
+    const status = error instanceof FacilityAssignmentError ? error.status : 500;
+    res.status(status).json({ success: false, message: error instanceof FacilityAssignmentError ? error.message : 'Internal Server Error' });
+  }
+};
+
+export const unassignFacility = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await FacilityAssignmentService.unassign(req.params.userId as string, req.user);
+    res.status(200).json({ success: true, data: result });
+  } catch (error: unknown) {
+    const status = error instanceof FacilityAssignmentError ? error.status : 500;
+    res.status(status).json({ success: false, message: error instanceof FacilityAssignmentError ? error.message : 'Internal Server Error' });
   }
 };

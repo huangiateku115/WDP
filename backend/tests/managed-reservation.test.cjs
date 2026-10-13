@@ -18,6 +18,10 @@ const Price = require('../dist/models/pricing-policy/pricing-rule.model').defaul
 const Policy = require('../dist/models/pricing-policy/policy.model').default;
 const Contract = require('../dist/models/contracts/contract.model').default;
 const ManagedAudit = require('../dist/models/reservations/managed-reservation-audit.model').default;
+const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
+const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
+const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
+const CellAllocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
 const { ManagedReservationService: service, ManagedReservationError } = require('../dist/services/reservations/managed-reservation.service');
 const { UserRole } = require('../dist/types/user.type');
 
@@ -25,6 +29,8 @@ const fid = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
 const cid = new mongoose.Types.ObjectId('507f1f77bcf86cd799439071');
 const mid = new mongoose.Types.ObjectId('507f1f77bcf86cd799439081');
 const oid = value => new mongoose.Types.ObjectId(value);
+const cellA = oid('507f1f77bcf86cd7994390d1');
+const cellB = oid('507f1f77bcf86cd7994390d2');
 const future = '2030-01-01T00:00:00.000Z';
 const request = extra => ({ facilityId: String(fid), allocatedCapacityM3: 1.5, startDate: future, term: { value: 1, unit: 'MONTH' }, ...extra });
 const customer = { _id: cid, role: UserRole.CUSTOMER, assignedFacilityId: null };
@@ -66,10 +72,33 @@ function mockQuote(t, options = {}) {
   });
   return { cap };
 }
+function mockCellLocks(t, ids = [cellA], volume = 1.5, conflict = null) {
+  const cells = ids.map((cellId, index) => ({ _id: cellId, facilityId: fid, zoneId: oid('507f1f77bcf86cd7994390e1'),
+    rackId: oid('507f1f77bcf86cd7994390e2'), code: `CELL-${index + 1}`, operationalStatus: 'AVAILABLE', usedWeightKg: 0, usedVolumeM3: 0,
+    dimensions: { widthM: volume, depthM: 1, usableHeightM: 1 } }));
+  t.mock.method(Cell, 'find', () => new Query(cells));
+  t.mock.method(Cell, 'findOne', filter => new Query(cells.find(cell => String(cell._id) === String(filter._id))));
+  t.mock.method(Zone, 'findOneAndUpdate', () => new Query({ isActive: true }));
+  t.mock.method(Rack, 'findOneAndUpdate', () => new Query({ operationalStatus: 'AVAILABLE' }));
+  t.mock.method(Cell, 'findOneAndUpdate', filter => new Query(cells.find(cell => String(cell._id) === String(filter._id))));
+  t.mock.method(CellAllocation, 'findOne', filter => {
+    if (filter.$or) {
+      assert.equal(filter.$or[1].startDate.$lt.toISOString(), '2030-02-01T00:00:00.000Z');
+      assert.equal(filter.$or[1].endDate.$gt.toISOString(), '2030-01-01T00:00:00.000Z');
+      assert.ok(filter.$or[2].holdExpiresAt.$gt instanceof Date, 'expired temporary holds do not conflict');
+    }
+    return new Query(conflict);
+  });
+  let allocations = [];
+  t.mock.method(CellAllocation, 'insertMany', async rows => { allocations = rows; return rows; });
+  return { cells, allocations: () => allocations };
+}
 
 test('Managed capacity model has one configuration per Facility and lock version', () => {
   assert.ok(Capacity.schema.indexes().some(([keys, opts]) => keys.facilityId === 1 && opts.unique));
   assert.equal(Capacity.schema.path('bookingVersion').instance, 'Number');
+  assert.ok(CellAllocation.schema.indexes().some(([keys, opts]) => keys.reservationId === 1 && keys.cellId === 1 && opts.unique));
+  assert.equal(CellAllocation.schema.path('status').enumValues.includes('HOLD'), true);
 });
 
 test('quote uses explicit per-m3 rate, percentage deposit and calendar term; never selects a Cell', async t => {
@@ -143,12 +172,13 @@ test('quote rejects inactive and non-Managed facilities', async t => {
 test('unverified customer cannot create a Managed quota reservation', async t => {
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'PENDING' }));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
-  await assert.rejects(service.create(request(), customer), { status: 403 });
+  await assert.rejects(service.create(request({ cellIds: [String(cellA)] }), customer), { status: 403 });
 });
 
 test('verified customer creates RESERVED quota with derived snapshot and no StorageUnit', async t => {
   const { cap } = mockQuote(t);
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  const allocationState = mockCellLocks(t);
   t.mock.method(Capacity, 'findOneAndUpdate', (filter, update) => {
     assert.equal(String(filter.facilityId), String(fid));
     assert.deepEqual(update, { $inc: { bookingVersion: 1 } });
@@ -158,7 +188,7 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
   let saved;
   t.mock.method(Reservation.prototype, 'save', async function () { saved = this; return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
-  const result = await service.create(request(), customer);
+  const result = await service.create(request({ cellIds: [String(cellA)] }), customer);
   assert.equal(result.reservation.serviceType, 'MANAGED_INVENTORY');
   assert.equal(result.reservation.status, 'RESERVED');
   assert.equal(result.reservation.allocatedCapacity, 1.5);
@@ -168,6 +198,48 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
   assert.equal(saved.managedPricingSnapshot.pricingRule.billingBasis, 'PER_M3');
   assert.equal(saved.managedPricingSnapshot.capacityBookingVersion, 2);
   assert.ok(saved.expiresAt instanceof Date);
+  assert.deepEqual(saved.allocatedCellIds.map(String), [String(cellA)]);
+  assert.equal(allocationState.allocations().length, 1);
+  assert.equal(allocationState.allocations()[0].status, 'HOLD');
+  assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
+});
+
+test('multi-cell hold derives commercial m3 from configured dimensions and rejects interval conflicts', async t => {
+  mockQuote(t);
+  const state = mockCellLocks(t, [cellA, cellB], 0.12);
+  // Request total is validated against the two selected 0.12m3 Cells before price/booking.
+  await assert.rejects(service.quote(request({ allocatedCapacityM3: 0.23, cellIds: [String(cellA), String(cellB)] })), { status: 400 });
+  t.mock.restoreAll();
+  mockQuote(t);
+  mockCellLocks(t, [cellA, cellB], 0.12, { _id: oid('507f1f77bcf86cd7994390d9') });
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ sellableCapacityM3: 10, holdDurationMinutes: 30, bookingVersion: 2, isActive: true }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  t.mock.method(Reservation.prototype, 'save', async function () { return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer), { status: 409 });
+  assert.equal(state.cells.length, 2);
+});
+
+test('Manager rejection and owner cancellation release empty temporary Cell holds', async t => {
+  for (const mode of ['manager reject', 'customer cancel']) await t.test(mode, async t => {
+    const reservation = new Reservation({ _id: oid('507f1f77bcf86cd7994390f1'), facilityId: fid, customerId: cid,
+      serviceType: 'MANAGED_INVENTORY', status: 'RESERVED', startDate: new Date('2030-01-01Z'), endDate: new Date('2030-02-01Z'),
+      allocatedCapacity: 1.5, statusHistory: [], estimatedRent: 150, depositAmount: 30 });
+    const allocation = { status: 'HOLD', save: async function () { return this; } };
+    const cell = { usedWeightKg: 0, usedVolumeM3: 0 };
+    t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+    t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ _id: oid('507f1f77bcf86cd799439092') }));
+    t.mock.method(Reservation, 'findOne', () => new Query(reservation));
+    t.mock.method(Reservation.prototype, 'save', async function () { return this; });
+    t.mock.method(CellAllocation, 'find', () => new Query([allocation]));
+    t.mock.method(Cell, 'findOne', () => new Query(cell));
+    t.mock.method(CellAllocation.prototype, 'save', async function () { allocation.status = this.status; return this; });
+    t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+    if (mode === 'manager reject') await service.reject(String(reservation._id), { reason: 'No longer available' }, manager);
+    else await service.cancel(String(reservation._id), customer);
+    assert.equal(allocation.status, 'RELEASED');
+  });
 });
 
 test('Facility booking-version lock prevents two concurrent requests from overbooking quota', async t => {
@@ -175,6 +247,7 @@ test('Facility booking-version lock prevents two concurrent requests from overbo
   let version = 1, queue = Promise.resolve();
   mockQuote(t, { commitments: rows });
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  mockCellLocks(t, [cellA, cellB], 6);
   t.mock.method(Capacity, 'findOneAndUpdate', (filter, update) => {
     assert.deepEqual(update, { $inc: { bookingVersion: 1 } });
     return new Query({ facilityId: fid, sellableCapacityM3: 10, holdDurationMinutes: 30, isActive: true, bookingVersion: ++version });
@@ -188,8 +261,8 @@ test('Facility booking-version lock prevents two concurrent requests from overbo
   t.mock.method(Reservation.prototype, 'save', async function () { rows.push(this); return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
   const results = await Promise.allSettled([
-    service.create(request({ allocatedCapacityM3: 6 }), customer),
-    service.create(request({ allocatedCapacityM3: 6 }), customer),
+    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellA)] }), customer),
+    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellB)] }), customer),
   ]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);

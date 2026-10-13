@@ -187,6 +187,11 @@ export class RuleService {
         if (this.kind === 'policy' && (document as Policy).type === 'DEPOSIT' && (document as Policy).serviceType === FacilityServiceType.MANAGED_INVENTORY) {
           validation.validateManagedDepositConfig((document as Policy).config);
         }
+        if (this.kind === 'policy' && (document as Policy).type === 'CATEGORY' && 'config' in changes) {
+          const policy = document as unknown as Policy;
+          if (policy.serviceType !== FacilityServiceType.MANAGED_INVENTORY) throw new RuleError(400, 'CATEGORY policies require MANAGED_INVENTORY serviceType');
+          policy.config = validation.validateCategoryPolicyConfig(policy.config);
+        }
         validation.range(document);
         document.version = version;
         await this.overlap(document, session, document._id);

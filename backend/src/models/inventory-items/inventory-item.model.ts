@@ -26,6 +26,17 @@ const schema = new Schema<IInventoryItem>({
   preferredCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell' },
   currentCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', default: null },
   status: { type: String, enum: Object.values(InventoryItemStatus), default: InventoryItemStatus.REGISTERED, required: true },
+  inboundRequestedAt: { type: Date },
+  inboundRequestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  inboundConfirmedAt: { type: Date },
+  inboundConfirmedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  inboundMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement' },
+  inboundRejection: {
+    reason: { type: String, trim: true, maxlength: 1000 },
+    rejectedAt: { type: Date },
+    rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  inboundIdempotencyKey: { type: String, trim: true, maxlength: 128 },
   images: {
     type: [{ type: String, trim: true }],
     default: [],
@@ -33,7 +44,7 @@ const schema = new Schema<IInventoryItem>({
   },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   deletedAt: { type: Date },
-}, { timestamps: true, strict: 'throw' });
+}, { timestamps: true, strict: 'throw', optimisticConcurrency: true });
 
 // Item identifiers remain reserved in their Facility, including after soft deletion.
 schema.index({ facilityId: 1, itemCode: 1 }, { unique: true });

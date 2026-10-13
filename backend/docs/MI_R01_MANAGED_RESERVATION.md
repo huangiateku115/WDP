@@ -58,7 +58,7 @@ Quote/create JSON:
 }
 ```
 
-The caller cannot provide owner, StorageUnit, price, deposit, status, payment result, or snapshot data. Create verifies the Customer Profile is `VERIFIED`, Facility is active and supports Managed Inventory, capacity is configured, and exactly one effective per-m3 rate and percent deposit policy apply. It returns a `RESERVED` reservation with `allocatedCapacity` in m3 and server snapshots. It never assigns a StorageUnit or Warehouse Cell.
+The caller cannot provide owner, StorageUnit, price, deposit, status, payment result, or snapshot data. Create verifies the Customer Profile is `VERIFIED`, Facility is active and supports Managed Inventory, capacity is configured, and exactly one effective per-m3 rate and percent deposit policy apply. It returns a `RESERVED` reservation with `allocatedCapacity` in m3 and server snapshots. MI-02C additionally reserves customer-selected Warehouse Cells for the same rental interval; actual occupancy still changes only after Staff-confirmed inbound.
 
 Statuses are:
 

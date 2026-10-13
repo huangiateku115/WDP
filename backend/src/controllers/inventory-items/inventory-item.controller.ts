@@ -19,3 +19,15 @@ export const update: RequestHandler = async (req, res, next) => {
 export const placementPreview: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.placementPreview(req.params.id, req.query, req.user!) }); } catch (error) { next(error); }
 };
+export const requestInbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.requestInbound(req.params.id, req.user!) }); } catch (error) { next(error); }
+};
+export const confirmInbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.confirmInbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
+export const rejectInbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.rejectInbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
+export const movements: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.movements(req.params.id, req.user!) }); } catch (error) { next(error); }
+};

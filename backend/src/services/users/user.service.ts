@@ -133,9 +133,11 @@ export class UserService {
     const user = await UserModel.findById(userId);
     if (!user) throw new Error('Không tìm thấy tài khoản');
 
-    user.role = newRole;
-    await user.save();
-    return user;
+    const update: Record<string, unknown> = { role: newRole };
+    if (![UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(newRole)) {
+      update.assignedFacilityId = null;
+    }
+    return UserModel.findByIdAndUpdate(userId, { $set: update }, { new: true, runValidators: true }).exec();
   }
 
   // 7. ADMIN: Soft Delete

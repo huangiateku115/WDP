@@ -333,7 +333,7 @@ test('Suite 5.1: Khách hàng A xem chi tiết đơn của chính mình -> Thàn
     status: 'RESERVED'
   };
 
-  t.mock.method(ReservationModel, 'findById', () => ({
+  t.mock.method(ReservationModel, 'findOne', () => ({
     populate: () => ({
       populate: () => ({
         populate: async () => reservationData
@@ -361,7 +361,7 @@ test('Suite 5.2: Khách hàng B xem trộm đơn của Khách hàng A -> Bị ch
     storageUnitId
   };
 
-  t.mock.method(ReservationModel, 'findById', () => ({
+  t.mock.method(ReservationModel, 'findOne', () => ({
     populate: () => ({
       populate: () => ({
         populate: async () => reservationData
@@ -412,7 +412,7 @@ test('Suite 5.4: Quản lý (FM) xem đơn của Khách hàng bất kỳ -> Thà
     storageUnitId
   };
 
-  t.mock.method(ReservationModel, 'findById', () => ({
+  t.mock.method(ReservationModel, 'findOne', () => ({
     populate: () => ({
       populate: () => ({
         populate: async () => reservationData
@@ -422,7 +422,7 @@ test('Suite 5.4: Quản lý (FM) xem đơn của Khách hàng bất kỳ -> Thà
 
   const req = {
     params: { id: reservationData._id.toString() },
-    user: { _id: fmId, role: 'FACILITY_MANAGER' }
+    user: { _id: fmId, role: 'FACILITY_MANAGER', assignedFacilityId: facilityId }
   };
   const res = mockResponse();
 

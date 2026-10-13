@@ -6,6 +6,26 @@ export enum WarehouseOperationalStatus {
   MAINTENANCE = 'MAINTENANCE',
 }
 
+export enum CellAllocationStatus {
+  HOLD = 'HOLD',
+  RESERVED = 'RESERVED',
+  OCCUPIED = 'OCCUPIED',
+  RELEASED = 'RELEASED',
+}
+
+export interface ICellAllocation extends Document {
+  facilityId: Types.ObjectId;
+  cellId: Types.ObjectId;
+  reservationId: Types.ObjectId;
+  customerId: Types.ObjectId;
+  startDate: Date;
+  endDate: Date;
+  status: CellAllocationStatus;
+  holdExpiresAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export enum RackOrientation {
   DEG_0 = 0,
   DEG_90 = 90,
@@ -78,6 +98,11 @@ export interface WarehouseCellFields {
   code: string;
   dimensions: CellDimensions;
   maxWeightKg: number;
+  /** Transactional materialized occupancy counters, initially zero. */
+  usedWeightKg: number;
+  usedVolumeM3: number;
+  /** Write token serializing booking allocations for this cell. */
+  allocationVersion: number;
   operationalStatus: WarehouseOperationalStatus;
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;
@@ -90,8 +115,9 @@ export interface IWarehouseCell extends Document, WarehouseCellFields {
 
 export type UtilizationStatus = 'EMPTY' | 'PARTIAL' | 'NEAR_FULL' | 'FULL';
 
-/** A read-model contract for MI-02+; MI-01 always reports a real empty baseline. */
+/** Physical occupancy read from transactional WarehouseCell aggregates. */
 export interface WarehouseUsageSnapshot {
   usedWeightKg: number;
-  source: 'MI_01_EMPTY' | 'INVENTORY_AGGREGATE';
+  usedVolumeM3: number;
+  source: 'WAREHOUSE_CELL_COUNTERS';
 }

@@ -15,6 +15,11 @@ router.get('/me', UserController.getMe);
 router.put('/me/profile', UserController.updateMyProfile);
 router.put('/me/password', UserController.changeMyPassword);
 
+// Facility assignment management is available to administrators and facility managers.
+const assignmentManagers = requireRole([UserRole.ADMIN, UserRole.FACILITY_MANAGER]);
+router.patch('/:userId/facility-assignment', assignmentManagers, UserController.assignFacility);
+router.delete('/:userId/facility-assignment', assignmentManagers, UserController.unassignFacility);
+
 // ADMIN ROUTES (Yêu cầu quyền ADMIN)
 router.use(requireRole([UserRole.ADMIN]));
 router.post('/', UserController.adminCreateUser);

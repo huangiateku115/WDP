@@ -213,6 +213,7 @@ function mockPreview(t, options = {}) {
   const selectedCell = {
     _id: oid(cellId), facilityId: oid(facilityId), zoneId: oid(zoneId), rackId: oid(rackId),
     operationalStatus: options.cellStatus ?? 'AVAILABLE', maxWeightKg: options.maxWeightKg ?? 100,
+    usedWeightKg: options.usedWeightKg ?? 0, usedVolumeM3: options.usedVolumeM3 ?? 0,
     dimensions: { widthM: 0.5, depthM: 0.6, ...(options.usableHeightM === undefined ? {} : { usableHeightM: options.usableHeightM }) },
   };
   t.mock.method(Cell, 'findOne', filter => {
@@ -224,6 +225,7 @@ function mockPreview(t, options = {}) {
     _id: oid(rackId), facilityId: oid(facilityId), zoneId: oid(zoneId), operationalStatus: 'AVAILABLE',
     maxWeightKgPerLevel: 500, levelCount: 4,
   }));
+  t.mock.method(Cell, 'aggregate', () => new Query([{ usedWeightKg: 0 }]));
 }
 
 test('placement preview for a 100kg Cell is advisory and writes no reservation, stock, or usage', async t => {
@@ -238,7 +240,7 @@ test('placement preview for a 100kg Cell is advisory and writes no reservation, 
   assert.ok(result.uncertainty.includes('MULTI_UNIT_PACKING_LAYOUT_NOT_CHECKED'));
   assert.equal(result.checks.totalLotWeightWithinCellCapacity, true);
   assert.equal(result.cellCapacity.maxWeightKg, 100);
-  assert.equal(result.actualUsageKnown, false);
+  assert.equal(result.actualUsageKnown, true);
   assert.equal(result.allocationConfirmed, false);
   assert.equal(result.reservationCreated, false);
   assert.equal(result.stockWritten, false);
@@ -263,7 +265,8 @@ test('placement preview reports missing usable height as uncertainty, not measur
   assert.equal(result.estimatedFit, null);
   assert.equal(result.advisoryStatus, 'NEEDS_MEASUREMENT');
   assert.ok(result.uncertainty.includes('USABLE_CELL_HEIGHT_NOT_MEASURED'));
-  assert.ok(result.uncertainty.includes('ACTUAL_CELL_USAGE_NOT_AVAILABLE_IN_MI_01'));
+  assert.equal(result.actualUsageKnown, true);
+  assert.ok(!result.uncertainty.includes('ACTUAL_CELL_USAGE_NOT_AVAILABLE_IN_MI_01'));
   assert.equal(result.cellCapacity.maxVolumeM3, undefined);
 });
 
@@ -287,6 +290,7 @@ test('all inventory-item routes require authentication and role gates match the 
   assert.ok(routes.every(route => route.handlers.length === 2), 'each route has a role gate before its controller');
   for (const expected of [
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
+    'POST /:id/inbound-request', 'POST /:id/confirm-inbound', 'POST /:id/reject-inbound', 'GET /:id/movements',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 6);
+  assert.equal(routes.length, 10);
 });

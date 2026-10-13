@@ -70,6 +70,9 @@ export const getReservationById = async (req: Request, res: Response) => {
       .populate('facilityId', 'name address')
       .populate('storageUnitId', 'unitCode size dimensions status');
     if (!reservation) return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    if (req.user!.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user!._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
+    }
     const reservationFacilityId = (reservation.facilityId as any)?._id ?? reservation.facilityId;
     if (req.user!.role === UserRole.FACILITY_MANAGER && req.user!.assignedFacilityId?.toString() !== String(reservationFacilityId)) {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });

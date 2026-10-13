@@ -14,6 +14,10 @@ router.post('/', customer, controller.create);
 router.get('/me', customer, controller.listMine);
 router.get('/', readers, controller.list);
 router.get('/:id/placement-preview', itemReaders, controller.placementPreview);
+router.post('/:id/inbound-request', customer, controller.requestInbound);
+router.post('/:id/confirm-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmInbound);
+router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
+router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, controller.get);
 router.patch('/:id', customer, controller.update);
 

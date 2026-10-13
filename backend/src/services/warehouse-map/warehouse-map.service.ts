@@ -3,6 +3,9 @@ import FacilityModel from '../../models/facilities/facility.model';
 import WarehouseCellModel from '../../models/warehouse-map/warehouse-cell.model';
 import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model';
 import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
+import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
+import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { IWarehouseCell, IWarehouseRack, IWarehouseZone, RackDimensions, UtilizationStatus, WarehouseOperationalStatus, WarehouseUsageSnapshot } from '../../types/warehouse-map.type';
 import { IUser, UserRole } from '../../types/user.type';
@@ -161,15 +164,78 @@ function utilizationStatus(used: number, capacity: number): UtilizationStatus {
   return 'PARTIAL';
 }
 
-/**
- * MI-01's usage adapter returns an empty baseline. MI-02+ can replace its
- * implementation with an inventory aggregate without changing the DTO shape.
- */
-async function usageForRack(_rack: IWarehouseRack, _cells: IWarehouseCell[]): Promise<WarehouseUsageSnapshot> {
-  return { usedWeightKg: 0, source: 'MI_01_EMPTY' };
+/** Cell counters are transactional materialized aggregates maintained by inbound. */
+async function usageForRack(_rack: IWarehouseRack, cells: IWarehouseCell[]): Promise<WarehouseUsageSnapshot> {
+  const usage = cells.reduce((sum, cell) => ({
+    usedWeightKg: sum.usedWeightKg + Number(cell.usedWeightKg ?? 0),
+    usedVolumeM3: sum.usedVolumeM3 + Number(cell.usedVolumeM3 ?? 0),
+  }), { usedWeightKg: 0, usedVolumeM3: 0 });
+  if (!Number.isFinite(usage.usedWeightKg) || !Number.isFinite(usage.usedVolumeM3) || usage.usedWeightKg < 0 || usage.usedVolumeM3 < 0) {
+    throw new WarehouseMapError(500, 'Warehouse inventory usage counters are invalid');
+  }
+  return { ...usage, source: 'WAREHOUSE_CELL_COUNTERS' };
 }
 
 function validRemaining(capacity: number, used: number) { return Math.max(0, capacity - used); }
+async function hasBlockingAllocation(query: Record<string, unknown>, session: ClientSession) {
+  const now = new Date();
+  return Boolean(await CellAllocationModel.exists({ ...query, $or: [
+    { status: CellAllocationStatus.OCCUPIED },
+    { status: CellAllocationStatus.RESERVED, endDate: { $gt: now } },
+    { status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now } },
+  ] }).session(session).exec());
+}
+
+function parseBookingRange(value: unknown, actor: Actor) {
+  const query = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
+  const start = query.startDate, end = query.endDate;
+  if (start === undefined && end === undefined) {
+    const startDate = new Date(), endDate = new Date(Date.now() + 1);
+    return { startDate, endDate };
+  }
+  if (typeof start !== 'string' || typeof end !== 'string') throw new WarehouseMapError(400, 'startDate and endDate must be provided together');
+  const startDate = new Date(start), endDate = new Date(end);
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || startDate.toISOString() !== start || endDate.toISOString() !== end || endDate <= startDate) {
+    throw new WarehouseMapError(400, 'Invalid booking date range');
+  }
+  return { startDate, endDate };
+}
+
+async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { startDate: Date; endDate: Date }) {
+  const rows = new Map<string, any[]>();
+  if (!cells.length || !range) return { rows, myInventoryCells: new Set<string>() };
+  const ids = cells.map(cell => cell._id);
+  const now = new Date();
+  const allocations = await CellAllocationModel.find({ cellId: { $in: ids },
+    $or: [
+      { status: CellAllocationStatus.OCCUPIED },
+      { status: CellAllocationStatus.RESERVED, startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } },
+      { status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } },
+    ],
+  }).select('cellId reservationId customerId status startDate endDate holdExpiresAt').lean().exec();
+  for (const row of allocations) rows.set(String(row.cellId), [...(rows.get(String(row.cellId)) ?? []), row]);
+  const myInventoryCells = new Set<string>();
+  if (actor?.role === UserRole.CUSTOMER) {
+    const customerId = actor._id as Types.ObjectId;
+    const items = await InventoryItemModel.find({ customerId, currentCellId: { $in: ids }, status: 'IN_STORAGE', deletedAt: { $exists: false } } as any).select('currentCellId').lean().exec();
+    for (const item of items) if (item.currentCellId) myInventoryCells.add(String(item.currentCellId));
+  }
+  return { rows, myInventoryCells };
+}
+
+function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor) {
+  const usedWeightKg = Number(cell.usedWeightKg ?? 0), usedVolumeM3 = Number(cell.usedVolumeM3 ?? 0);
+  const active = allocations.find(allocation => allocation.status === CellAllocationStatus.OCCUPIED || allocation.status === CellAllocationStatus.RESERVED || allocation.status === CellAllocationStatus.HOLD);
+  const isMine = Boolean(actor?.role === UserRole.CUSTOMER && allocations.some(allocation => String(allocation.customerId) === actor._id.toString()));
+  const bookingStatus = usedWeightKg > 0 || usedVolumeM3 > 0 || active?.status === CellAllocationStatus.OCCUPIED
+    ? 'OCCUPIED' : active ? 'RESERVED' : 'AVAILABLE';
+  const displayStatus = cell.operationalStatus === WarehouseOperationalStatus.MAINTENANCE ? 'MAINTENANCE'
+    : cell.operationalStatus === WarehouseOperationalStatus.BLOCKED ? 'BLOCKED' : bookingStatus;
+  const maxVolumeM3 = cell.dimensions.usableHeightM === undefined ? null : cell.dimensions.widthM * cell.dimensions.depthM * cell.dimensions.usableHeightM;
+  return { bookingStatus, displayStatus, isMine, hasMyInventory, usedWeightKg, maxWeightKg: cell.maxWeightKg,
+    remainingWeightKg: validRemaining(cell.maxWeightKg, usedWeightKg), usedVolumeM3, maxVolumeM3,
+    remainingVolumeM3: maxVolumeM3 === null ? null : validRemaining(maxVolumeM3, usedVolumeM3) };
+}
 
 async function assertRecordAccess(actor: Actor, facilityId: Types.ObjectId, write = false, session?: ClientSession) {
   assertFacilityScope(actor, facilityId.toString(), write);
@@ -205,6 +271,14 @@ async function lockZone(zoneId: string, session: ClientSession, options: { facil
   if (options.deleted) query.deletedAt = { $exists: true };
   else query.deletedAt = { $exists: false };
   return WarehouseZoneModel.findOneAndUpdate(query, { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+}
+
+async function lockRack(rackId: string, session: ClientSession, scope: { facilityId: Types.ObjectId; zoneId: Types.ObjectId }) {
+  return WarehouseRackModel.findOneAndUpdate(
+    { _id: rackId, facilityId: scope.facilityId, zoneId: scope.zoneId, ...live },
+    { $inc: { layoutVersion: 1 } },
+    { new: true, session, runValidators: true },
+  ).exec();
 }
 
 export class WarehouseMapService {
@@ -371,13 +445,25 @@ export class WarehouseMapService {
     const rackId = id(idInput, 'rack ID');
     const data = parseRackUpdate(input);
     return execute(async () => withTransaction(async session => {
-      const rack = await rackById(rackId, session);
-      await assertRecordAccess(actor, rack.facilityId, true, session);
-      const zone = await WarehouseZoneModel.findOne({ _id: rack.zoneId, isActive: true, ...live }).session(session).exec();
+      const initial = await rackById(rackId, session);
+      await assertRecordAccess(actor, initial.facilityId, true, session);
+      const zone = await lockZone(initial.zoneId.toString(), session, { facilityId: initial.facilityId.toString(), active: true });
       if (!zone) throw new WarehouseMapError(409, 'Rack zone must be active');
+      const rack = await lockRack(rackId, session, { facilityId: initial.facilityId, zoneId: initial.zoneId });
+      if (!rack) throw new WarehouseMapError(404, 'Rack not found');
+      if (Object.keys(data).length && await hasBlockingAllocation({ facilityId: rack.facilityId, cellId: { $in: await WarehouseCellModel.find({ rackId: rack._id, ...live }).distinct('_id').session(session).exec() } }, session)) {
+        throw new WarehouseMapError(409, 'Rack cannot be structurally changed while Cells are reserved or occupied');
+      }
       const newDimensions = (data.dimensions ?? rack.dimensions) as RackDimensions;
       const newLevelCapacity = Number(data.maxWeightKgPerLevel ?? rack.maxWeightKgPerLevel);
-      rack.layoutVersion += 1;
+      const storedUsage = await WarehouseCellModel.aggregate([
+        { $match: { rackId: rack._id, ...live } },
+        { $group: { _id: '$levelNumber', usedKg: { $sum: { $ifNull: ['$usedWeightKg', 0] } }, usedVolumeM3: { $sum: { $ifNull: ['$usedVolumeM3', 0] } } } },
+      ]).session(session).exec();
+      const occupied = storedUsage.some((row: any) => Number(row.usedKg) > 0 || Number(row.usedVolumeM3) > 0);
+      if (data.dimensions && occupied && (
+        newDimensions.widthM < rack.dimensions.widthM || newDimensions.depthM < rack.dimensions.depthM || newDimensions.heightM < rack.dimensions.heightM
+      )) throw new WarehouseMapError(409, 'Rack dimensions cannot shrink while physical inventory is stored');
       Object.assign(rack, data);
       if (data.dimensions) {
         const heights = await WarehouseCellModel.aggregate([
@@ -393,6 +479,12 @@ export class WarehouseMapService {
         { $match: { totalKg: { $gt: newLevelCapacity } } },
       ]).session(session).exec();
       if (usage.length) throw new WarehouseMapError(409, 'Cell capacity limits exceed the new level capacity');
+      const usedLevel = await WarehouseCellModel.aggregate([
+        { $match: { rackId: rack._id, ...live } },
+        { $group: { _id: '$levelNumber', usedKg: { $sum: { $ifNull: ['$usedWeightKg', 0] } } } },
+        { $match: { usedKg: { $gt: newLevelCapacity } } },
+      ]).session(session).exec();
+      if (usedLevel.length) throw new WarehouseMapError(409, 'Rated level capacity cannot be reduced below actual stored weight');
       await rack.save({ session });
       if (data.dimensions) {
         await WarehouseCellModel.updateMany(
@@ -409,8 +501,17 @@ export class WarehouseMapService {
     assertActor(actor, managers);
     const rackId = id(idInput, 'rack ID');
     return execute(async () => withTransaction(async session => {
-      const rack = await rackById(rackId, session);
-      await assertRecordAccess(actor, rack.facilityId, true, session);
+      const initial = await rackById(rackId, session);
+      await assertRecordAccess(actor, initial.facilityId, true, session);
+      const zone = await lockZone(initial.zoneId.toString(), session, { facilityId: initial.facilityId.toString(), active: true });
+      if (!zone) throw new WarehouseMapError(409, 'Rack parent zone must be active');
+      const rack = await lockRack(rackId, session, { facilityId: initial.facilityId, zoneId: initial.zoneId });
+      if (!rack) throw new WarehouseMapError(404, 'Rack not found');
+      if (await hasBlockingAllocation({ cellId: { $in: await WarehouseCellModel.find({ rackId: rack._id, ...live }).distinct('_id').session(session).exec() } }, session)) {
+        throw new WarehouseMapError(409, 'Rack cannot be deleted while Cells are reserved or occupied');
+      }
+      const occupied = await WarehouseCellModel.exists({ rackId: rack._id, $or: [{ usedWeightKg: { $gt: 0 } }, { usedVolumeM3: { $gt: 0 } }], ...live }).session(session).exec();
+      if (occupied) throw new WarehouseMapError(409, 'Rack cannot be deleted while physical inventory is stored');
       const activeCells = await WarehouseCellModel.countDocuments({ rackId: rack._id, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }).session(session).exec();
       if (activeCells > 0) throw new WarehouseMapError(409, 'Block or place rack cells in maintenance before deleting the rack');
       const deletedAt = new Date();
@@ -483,12 +584,19 @@ export class WarehouseMapService {
     const cellId = id(idInput, 'rack cell ID');
     const data = parseCellUpdate(input);
     return execute(async () => withTransaction(async session => {
-      const cell = await cellById(cellId, session);
-      await assertRecordAccess(actor, cell.facilityId, true, session);
-      const rack = await rackById(cell.rackId.toString(), session);
-      rack.layoutVersion += 1;
-      await rack.save({ session });
+      const initial = await cellById(cellId, session);
+      await assertRecordAccess(actor, initial.facilityId, true, session);
+      const zone = await lockZone(initial.zoneId.toString(), session, { facilityId: initial.facilityId.toString(), active: true });
+      if (!zone) throw new WarehouseMapError(409, 'Cell parent zone must be active');
+      const rack = await lockRack(initial.rackId.toString(), session, { facilityId: initial.facilityId, zoneId: initial.zoneId });
+      if (!rack) throw new WarehouseMapError(404, 'Rack not found');
+      const cell = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, ...live }, { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+      if (!cell) throw new WarehouseMapError(404, 'Rack cell not found');
+      if (Object.keys(data).length && await hasBlockingAllocation({ cellId: cell._id }, session)) {
+        throw new WarehouseMapError(409, 'Cell cannot be structurally changed while it is reserved or occupied');
+      }
       const maxWeightKg = Number(data.maxWeightKg ?? cell.maxWeightKg);
+      if (maxWeightKg < Number(cell.usedWeightKg ?? 0)) throw new WarehouseMapError(409, 'Cell maxWeightKg cannot be reduced below actual stored weight');
       const siblings = await WarehouseCellModel.aggregate([
         { $match: { rackId: rack._id, levelNumber: cell.levelNumber, _id: { $ne: cell._id }, ...live } },
         { $group: { _id: null, totalKg: { $sum: '$maxWeightKg' } } },
@@ -508,6 +616,10 @@ export class WarehouseMapService {
             (merged.usableHeightM !== undefined && merged.usableHeightM > rack.dimensions.heightM)) {
           throw new WarehouseMapError(409, 'Cell dimensions must fit within the rack dimensions');
         }
+        if (Number(cell.usedVolumeM3 ?? 0) > 0 && (
+          merged.widthM < cell.dimensions.widthM || merged.depthM < cell.dimensions.depthM ||
+          (cell.dimensions.usableHeightM !== undefined && merged.usableHeightM! < cell.dimensions.usableHeightM)
+        )) throw new WarehouseMapError(409, 'Cell dimensions cannot shrink while physical inventory is stored');
         if (patchDimensions.usableHeightM !== undefined) {
           const levels = await WarehouseCellModel.aggregate([
             { $match: { rackId: rack._id, _id: { $ne: cell._id }, 'dimensions.usableHeightM': { $exists: true }, ...live } },
@@ -529,8 +641,9 @@ export class WarehouseMapService {
     }));
   }
 
-  static async warehouseMap(facilityIdInput: unknown, actor: Actor) {
+  static async warehouseMap(facilityIdInput: unknown, actor: Actor, query?: unknown) {
     const facilityId = id(facilityIdInput, 'facilityId');
+    const range = parseBookingRange(query, actor);
     return execute(async () => {
       await assertReadFacility(actor, facilityId, true);
       const facilityObjectId = new Types.ObjectId(facilityId);
@@ -541,6 +654,7 @@ export class WarehouseMapService {
       const zoneIds = zones.map(zone => zone._id);
       const rackIds = racks.filter(rack => zoneIds.some(zoneId => zoneId.equals(rack.zoneId))).map(rack => rack._id);
       const cells = rackIds.length ? await WarehouseCellModel.find({ rackId: { $in: rackIds }, ...live }).lean().exec() : [];
+      const bookingData = await cellBookingData(cells as IWarehouseCell[], actor, range);
       const cellsByRack = new Map<string, IWarehouseCell[]>();
       for (const cell of cells) {
         const key = cell.rackId.toString();
@@ -562,6 +676,7 @@ export class WarehouseMapService {
             const ratedCapacityKg = rack.levelCount * rack.maxWeightKgPerLevel;
             const allocatableCapacityKg = rackCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
             const usage = await usageForRack(rack as IWarehouseRack, rackCells);
+            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor));
             return {
               _id: rack._id,
               rackCode: rack.rackCode,
@@ -572,6 +687,8 @@ export class WarehouseMapService {
               operationalStatus: rack.operationalStatus,
               utilization: {
                 usedWeightKg: usage.usedWeightKg,
+                usedVolumeM3: usage.usedVolumeM3,
+                source: usage.source,
                 // Keep maxWeightKg as the legacy rated capacity field.
                 maxWeightKg: ratedCapacityKg,
                 ratedCapacityKg,
@@ -581,7 +698,12 @@ export class WarehouseMapService {
                 status: utilizationStatus(usage.usedWeightKg, ratedCapacityKg),
               },
               cellCount: rackCells.length,
-              availableCellCount: rackCells.filter(cell => cell.operationalStatus === WarehouseOperationalStatus.AVAILABLE).length,
+              availableCellCount: statuses.filter(cell => cell.displayStatus === 'AVAILABLE').length,
+              reservedCellCount: statuses.filter(cell => cell.displayStatus === 'RESERVED').length,
+              occupiedCellCount: statuses.filter(cell => cell.displayStatus === 'OCCUPIED').length,
+              blockedCellCount: statuses.filter(cell => cell.displayStatus === 'BLOCKED').length,
+              maintenanceCellCount: statuses.filter(cell => cell.displayStatus === 'MAINTENANCE').length,
+              myCellCount: statuses.filter(cell => cell.isMine || cell.hasMyInventory).length,
             };
           })),
         })));
@@ -591,38 +713,41 @@ export class WarehouseMapService {
     });
   }
 
-  static async rackDetailMap(idInput: unknown, actor: Actor) {
+  static async rackDetailMap(idInput: unknown, actor: Actor, query?: unknown) {
     const rackId = id(idInput, 'rack ID');
+    const range = parseBookingRange(query, actor);
     return execute(async () => {
       const rack = await rackById(rackId);
       await assertReadFacility(actor, rack.facilityId.toString(), true);
       const zone = await WarehouseZoneModel.findOne({ _id: rack.zoneId, isActive: true, ...live }).exec();
       if (!zone) throw new WarehouseMapError(404, 'Rack zone not found');
       const cells = await WarehouseCellModel.find({ rackId: rack._id, ...live }).sort({ levelNumber: -1, cellNumber: 1 }).lean().exec();
+      const bookingData = await cellBookingData(cells as IWarehouseCell[], actor, range);
       const usage = await usageForRack(rack, cells as IWarehouseCell[]);
       const levels = [];
       for (let levelNumber = rack.levelCount; levelNumber >= 1; levelNumber -= 1) {
         const levelCells = cells.filter(cell => cell.levelNumber === levelNumber);
         const maxWeightKg = rack.maxWeightKgPerLevel;
         const allocatableCapacityKg = levelCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
+        const usedWeightKg = levelCells.reduce((sum, cell) => sum + Number(cell.usedWeightKg ?? 0), 0);
+        const usedVolumeM3 = levelCells.reduce((sum, cell) => sum + Number(cell.usedVolumeM3 ?? 0), 0);
         levels.push({
           levelNumber,
           maxWeightKg,
           ratedCapacityKg: maxWeightKg,
           allocatableCapacityKg,
-          usedWeightKg: 0,
-          remainingWeightKg: maxWeightKg,
-          utilizationStatus: 'EMPTY' as UtilizationStatus,
+          usedWeightKg,
+          usedVolumeM3,
+          remainingWeightKg: validRemaining(maxWeightKg, usedWeightKg),
+          utilizationStatus: utilizationStatus(usedWeightKg, maxWeightKg),
           cells: levelCells.map(cell => ({
             _id: cell._id,
             code: cell.code,
             cellNumber: cell.cellNumber,
             dimensions: cell.dimensions,
-            maxWeightKg: cell.maxWeightKg,
-            usedWeightKg: 0,
-            remainingWeightKg: cell.maxWeightKg,
             operationalStatus: cell.operationalStatus,
-            utilizationStatus: 'EMPTY' as UtilizationStatus,
+            utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg),
+            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor),
           })),
         });
       }
@@ -649,6 +774,7 @@ export class WarehouseMapService {
           ratedCapacityKg: capacityKg,
           allocatableCapacityKg,
           usedWeightKg: usage.usedWeightKg,
+          usedVolumeM3: usage.usedVolumeM3,
           remainingWeightKg: validRemaining(capacityKg, usage.usedWeightKg),
           utilizationStatus: utilizationStatus(usage.usedWeightKg, capacityKg),
           source: usage.source,
