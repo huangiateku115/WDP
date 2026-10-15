@@ -10,7 +10,7 @@ import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/co
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
+import { loadFacilities, loadFacilitiesIncludingDeleted, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData,
 } from "@/lib/bomMappers";
@@ -43,15 +43,25 @@ function formatHours(value) {
   return `${pad(match[1])}:${match[2]} - ${pad(match[3])}:${match[4]}`;
 }
 
-export default function FacilityPage({ mode = "list" }) {
-  if (mode === "new") return <FacilityForm mode="new" />;
-  if (mode === "edit") return <FacilityForm mode="edit" />;
-  if (mode === "detail") return <FacilityDetail />;
-  return <FacilityList />;
+// `basePath` and `oversightRoot` keep the same facility console usable from the BOM and the
+// Admin workspace: every internal link, the breadcrumb back-action and the post-save
+// redirect are derived from them instead of being hard-coded to /bom/*.
+export default function FacilityPage({
+  mode = "list", basePath = "/bom/facilities", oversightRoot = "/bom/oversight",
+}) {
+  if (mode === "new") return <FacilityForm mode="new" basePath={basePath} oversightRoot={oversightRoot} />;
+  if (mode === "edit") return <FacilityForm mode="edit" basePath={basePath} oversightRoot={oversightRoot} />;
+  if (mode === "detail") return <FacilityDetail basePath={basePath} oversightRoot={oversightRoot} />;
+  return <FacilityList basePath={basePath} />;
 }
 
-function FacilityList() {
-  const state = useAsyncData(loadFacilities, []);
+function FacilityList({ basePath }) {
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState(null);
+  const state = useAsyncData(
+    ({ signal }) => (showDeleted ? loadFacilitiesIncludingDeleted({ signal }) : loadFacilities()),
+    [showDeleted],
+  );
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [city, setCity] = useState("");
@@ -65,9 +75,9 @@ function FacilityList() {
   return (
     <Screen
       title="Facilities"
-      description="Live facility records from the backend. Create, edit and activate or deactivate cross-facility resources."
+      description="Live facility records from the backend. Create, edit, activate, deactivate or delete cross-facility resources."
       notice={LIVE_NOTICE}
-      action={<Button asChild variant="orange"><Link to="/bom/facilities/new">Create facility</Link></Button>}
+      action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Create facility</Link></Button>}
     >
       <Panel title="Facility filters">
         <div className="manager-filters">
@@ -80,6 +90,14 @@ function FacilityList() {
           <Field label="City">
             <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
           </Field>
+          <Field label="Records" hint="Soft deleted facilities can only be listed by ADMIN/BOM.">
+            <Select
+              label="Record filter"
+              value={showDeleted ? "deleted" : "live"}
+              onChange={(value) => setShowDeleted(value === "deleted")}
+              options={[["live", "Active facilities"], ["deleted", "Deleted facilities"]]}
+            />
+          </Field>
         </div>
       </Panel>
       <AsyncBoundary state={state} render={() => (
@@ -88,17 +106,43 @@ function FacilityList() {
             label="Facilities"
             rows={rows}
             columns={[
-              { key: "name", label: "Facility", render: (f) => <OpenLink to={`/bom/facilities/${f.id}`}>{f.name}</OpenLink> },
+              { key: "name", label: "Facility", render: (f) => (f.deleted
+                ? f.name
+                : <OpenLink to={`${basePath}/${f.id}`}>{f.name}</OpenLink>) },
               { key: "code", label: "Code" },
               { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
               { key: "city", label: "City / Province" },
               { key: "address", label: "Address" },
               { key: "services", label: "Service models", render: (f) => f.serviceTypes.join(", ") || "—" },
               { key: "openingHours", label: "Opening hours" },
+              {
+                key: "actions",
+                label: "Actions",
+                render: (f) => (f.deleted
+                  ? <Button size="sm" variant="outline" onClick={() => setRestoreTarget(f)}>Restore</Button>
+                  : <OpenLink to={`${basePath}/${f.id}`}>Open</OpenLink>),
+              },
             ]}
+            empty={showDeleted ? "No deleted facility." : "No facility matches the current filters."}
           />
         </Panel>
       )} />
+      {restoreTarget && (
+        <ConfirmDialog
+          title={`Restore ${restoreTarget.code}?`}
+          confirmLabel="Restore facility"
+          onClose={() => setRestoreTarget(null)}
+          onConfirm={async () => {
+            await bomFacilityApi.restore(restoreTarget.id);
+            invalidateFacilities();
+            state.reload();
+          }}
+        >
+          <p className="text-sm text-slate-500">
+            <b>{restoreTarget.name}</b> becomes visible again and can accept reservations once it is ACTIVE.
+          </p>
+        </ConfirmDialog>
+      )}
     </Screen>
   );
 }
@@ -106,30 +150,26 @@ function FacilityList() {
 // Navigation context comes from the ROUTE first, so the sidebar, the back action and the
 // edit flow stay correct on reload, bookmark or shared link. `location.state` is only a
 // fallback for entry points that have no dedicated route yet (e.g. the dashboard).
-const OVERSIGHT_ROOT = "/bom/oversight";
-const OVERSIGHT_FACILITIES = `${OVERSIGHT_ROOT}/facilities`;
-const BACK_LABELS = {
-  [OVERSIGHT_ROOT]: "Back to oversight",
-  "/bom/dashboard": "Back to dashboard",
-};
-
-function facilityNav(location) {
+function facilityNav(location, { basePath = "/bom/facilities", oversightRoot = "/bom/oversight" } = {}) {
   const pathname = location?.pathname || "";
-  if (pathname === OVERSIGHT_ROOT || pathname.startsWith(`${OVERSIGHT_ROOT}/`)) {
-    return { base: OVERSIGHT_FACILITIES, backTo: OVERSIGHT_ROOT, backLabel: BACK_LABELS[OVERSIGHT_ROOT] };
+  if (pathname === oversightRoot || pathname.startsWith(`${oversightRoot}/`)) {
+    return { base: `${oversightRoot}/facilities`, backTo: oversightRoot, backLabel: "Back to oversight" };
   }
-  const backTo = location?.state?.from || "/bom/facilities";
-  return { base: "/bom/facilities", backTo, backLabel: BACK_LABELS[backTo] || "Back to facilities" };
+  const backTo = location?.state?.from || basePath;
+  const backLabel = backTo.endsWith("/dashboard") ? "Back to dashboard" : "Back to facilities";
+  return { base: basePath, backTo, backLabel };
 }
 
-function FacilityDetail() {
+function FacilityDetail({ basePath, oversightRoot }) {
   const { id } = useParams();
   const location = useLocation();
+  const nav = useNavigate();
   const state = useAsyncData(() => bomFacilityApi.get(id).then(responseData).then(facilityFromDto), [id]);
   const warehouse = useAsyncData(({ signal }) => loadWarehouseStructure(id, { signal }), [id]);
   const units = useAsyncData(({ signal }) => loadFacilityUnits(id, { signal }), [id]);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const { base, backTo, backLabel } = facilityNav(location);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const { base, backTo, backLabel } = facilityNav(location, { basePath, oversightRoot });
 
   if (!state.loading && state.error && /not found|unavailable|invalid|404/i.test(state.error)) return <BomUnavailable />;
 
@@ -146,7 +186,12 @@ function FacilityDetail() {
           <>
             <Panel
               title="Facility information"
-              action={<Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Edit facility</Link></Button>}
+              action={(
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Edit facility</Link></Button>
+                  <Button variant="outline" onClick={() => setDeleteOpen(true)}>Delete facility</Button>
+                </div>
+              )}
             >
               <Details values={[
                 ["Facility code", facility.code],
@@ -171,11 +216,17 @@ function FacilityDetail() {
                 </Button>
               </div>
             </Panel>
-            <AsyncBoundary state={warehouse} render={({ zones, racks }) => {
+            <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");
               return (
                 <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones → aisles → racks → cells).">
+                  {!available && (
+                    <p className="bom-warning mb-5">
+                      The warehouse map does not apply to this facility: {reason || "it is not an ACTIVE Managed Inventory facility"}.
+                      Storage units are the storage model that applies here.
+                    </p>
+                  )}
                   <Details values={[
                     ["Zones", zones.length],
                     ["Racks", racks.length],
@@ -240,6 +291,24 @@ function FacilityDetail() {
                 </p>
               </ConfirmDialog>
             )}
+            {deleteOpen && (
+              <ConfirmDialog
+                title="Delete facility"
+                confirmLabel="Delete facility"
+                onClose={() => setDeleteOpen(false)}
+                onConfirm={async () => {
+                  await bomFacilityApi.remove(id);
+                  invalidateFacilities();
+                  nav(backTo);
+                }}
+              >
+                <p className="text-sm text-slate-500">
+                  <b>{facility.name}</b> is soft deleted: it leaves every list, the warehouse map and the rent wizard, and only
+                  ADMIN/BOM can list and restore it again. The backend refuses the delete while storage units or warehouse zones still
+                  reference the facility.
+                </p>
+              </ConfirmDialog>
+            )}
           </>
         );
       }} />
@@ -247,11 +316,11 @@ function FacilityDetail() {
   );
 }
 
-function FacilityForm({ mode }) {
+function FacilityForm({ mode, basePath, oversightRoot }) {
   const { id } = useParams();
   const location = useLocation();
   const nav = useNavigate();
-  const { backTo } = facilityNav(location);
+  const { backTo } = facilityNav(location, { basePath, oversightRoot });
   const isEdit = mode === "edit";
   const state = useAsyncData(
     () => (isEdit ? bomFacilityApi.get(id).then(responseData).then(facilityForm) : Promise.resolve(null)),

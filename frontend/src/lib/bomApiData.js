@@ -1,6 +1,8 @@
 import { bomFacilityApi, bomInventoryApi, bomReservationApi, bomUnitApi, bomWarehouseApi } from "@/api/bomApi";
+import { apiErrorMessage } from "@/lib/apiError";
 import {
-  facilityFromDto, inventoryItemFromDto, reservationFromDto, responseData, responseList, unitFromDto, warehouseFromDto,
+  cellFromDto, facilityFromDto, inventoryItemFromDto, itemMovementFromDto, rackFromDto, reservationFromDto,
+  responseData, responseList, unitFromDto, warehouseFromDto, zoneFromDto,
 } from "@/lib/bomMappers";
 
 const PAGE_LIMIT = 100;
@@ -50,6 +52,13 @@ export async function loadFacilities() {
 export const facilityName = (facilities, id) =>
   facilities.find((f) => f.id === id)?.name || "Unknown facility";
 
+// Soft-deleted facilities are hidden from every list unless ADMIN/BOM ask for them
+// (facility.service.ts requires a management role for includeDeleted=true).
+export async function loadFacilitiesIncludingDeleted({ signal } = {}) {
+  const { rows } = await fetchPaged(bomFacilityApi.list, { includeDeleted: "true" }, { signal });
+  return rows.map(facilityFromDto).filter((facility) => facility.deleted);
+}
+
 // Cross-facility reservations. The backend only exposes reservations per facility,
 // so we fetch the facilities in parallel and bound the number of calls.
 const MAX_FACILITY_FETCHES = 12;
@@ -72,19 +81,48 @@ export async function loadReservations(facilities, { signal } = {}) {
 // facility at a time and fires its four scoped reads in parallel (no N+1 fan-out).
 
 export async function loadWarehouseStructure(facilityId, { signal } = {}) {
-  const dto = responseData(await bomWarehouseApi.map(facilityId, { signal }));
-  return warehouseFromDto(dto);
+  try {
+    const dto = responseData(await bomWarehouseApi.map(facilityId, { signal }));
+    return { ...warehouseFromDto(dto), available: true, reason: "" };
+  } catch (error) {
+    if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") throw error;
+    // 404/409 mean the facility is outside the warehouse map (not ACTIVE, or it does not
+    // offer MANAGED_INVENTORY). That is a valid facility state, not a page failure, so the
+    // caller receives an empty structure plus the backend reason.
+    const status = error?.response?.status;
+    if (status === 404 || status === 409) {
+      return { zones: [], racks: [], available: false, reason: apiErrorMessage(error) };
+    }
+    throw error;
+  }
 }
 
-export async function loadFacilityUnits(facilityId, { signal } = {}) {
-  const list = (params, config) => bomUnitApi.listByFacility(facilityId, params, config);
-  const { rows, total, truncated } = await fetchPaged(list, {}, { signal });
+export async function loadFacilityUnits(facilityId, { signal, ...params } = {}) {
+  const list = (query, config) => bomUnitApi.listByFacility(facilityId, query, config);
+  const { rows, total, truncated } = await fetchPaged(list, params, { signal });
   return { rows: rows.map(unitFromDto), total, truncated };
 }
 
-export async function loadFacilityInventory(facilityId, { signal } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, { facilityId }, { signal });
+export async function loadFacilityInventory(facilityId, { signal, ...params } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, { facilityId, ...params }, { signal });
   return { rows: rows.map(inventoryItemFromDto), total, truncated };
+}
+
+// Cross-facility inventory read. The list endpoint accepts facilityId/customerId/category/
+// status/search plus page+limit, so the console filters server-side and bounds the paging.
+export async function loadInventoryItems(params = {}, { signal } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, params, { signal });
+  return { rows: rows.map(inventoryItemFromDto), total, truncated };
+}
+
+export async function loadInventoryItem(id, { signal } = {}) {
+  return inventoryItemFromDto(responseData(await bomInventoryApi.get(id, { signal })));
+}
+
+export async function loadItemMovements(id, { signal } = {}) {
+  const response = await bomInventoryApi.movements(id, { signal });
+  const rows = Array.isArray(response?.data?.data) ? response.data.data : [];
+  return rows.map(itemMovementFromDto);
 }
 
 export async function loadFacilityReservations(facilityId, { signal } = {}) {
@@ -102,4 +140,24 @@ export async function loadManagedCapacity(facilityId, { startDate, endDate, sign
     if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") throw error;
     return null;
   }
+}
+
+/* --------------------- Warehouse structure collections --------------------- */
+// The list endpoints require an explicit facilityId for BOM/ADMIN, otherwise the backend
+// narrows the query to ACTIVE MANAGED_INVENTORY facilities only. Each endpoint also
+// validates the facility, so a non-managed facility answers 409 instead of an empty list.
+
+export async function loadZones(facilityId, { signal } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.zones, { facilityId }, { signal });
+  return { rows: rows.map(zoneFromDto), total, truncated };
+}
+
+export async function loadRacks(facilityId, { signal } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.racks, { facilityId }, { signal });
+  return { rows: rows.map(rackFromDto), total, truncated };
+}
+
+export async function loadCells(facilityId, rackId, { signal } = {}) {
+  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.cells, { facilityId, rackId }, { signal });
+  return { rows: rows.map(cellFromDto), total, truncated };
 }

@@ -5,6 +5,7 @@ import {
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityUnits, loadManagedCapacity, loadWarehouseStructure,
@@ -81,26 +82,18 @@ export default function UtilizationReportLivePage() {
 
           {facilityId && (
             <AsyncBoundary state={scope} render={(data) => (data ? (
-              <FacilityUtilization facilityId={facilityId} facilities={facilities} data={data} window={window} />
+              <FacilityUtilization facilityId={facilityId} facilities={facilities} data={data} window={window} onReload={scope.reload} />
             ) : null)} />
           )}
-
-          <Panel title="Not available from the backend yet">
-            <Details values={[
-              ["Revenue-based utilization", "No payment module exists - collected revenue per m³ cannot be calculated"],
-              ["Historical time series", "Only current stock snapshots are exposed; no date-ranged utilization API"],
-              ["Shelf-level used volume", "Backend reports an empty baseline (MI-01) until inventory placement ships"],
-              ["Export", "No report export API; CSV/XLSX export stays disabled"],
-            ]} />
-          </Panel>
         </>
       )} />
     </Screen>
   );
 }
 
-function FacilityUtilization({ facilityId, facilities, data, window }) {
+function FacilityUtilization({ facilityId, facilities, data, window, onReload }) {
   const { structure, units, inventory, capacity } = data;
+  const [capacityOpen, setCapacityOpen] = useState(false);
   const racks = structure.racks;
   const unitRows = units.rows;
   const itemRows = inventory.rows;
@@ -181,6 +174,7 @@ function FacilityUtilization({ facilityId, facilities, data, window }) {
         subtitle={capacity
           ? `Interval ${String(capacity.interval?.startDate || window.startDate).slice(0, 10)} → ${String(capacity.interval?.endDate || window.endDate).slice(0, 10)}`
           : "This facility has no active Managed Inventory capacity configuration."}
+        action={<Button variant="outline" onClick={() => setCapacityOpen(true)}>Configure capacity</Button>}
       >
         {capacity ? (
           <>
@@ -210,9 +204,24 @@ function FacilityUtilization({ facilityId, facilities, data, window }) {
           ]} />
         </div>
         {inventory.truncated && <div className="mt-4"><TruncatedNotice total={inventory.total} shown={itemRows.length} /></div>}
+        {capacityOpen && (
+          <ManagedCapacityDialog
+            facilityId={facilityId}
+            facilityLabel={facilityName(facilities, facilityId)}
+            configured={Boolean(capacity)}
+            onClose={() => setCapacityOpen(false)}
+            onSaved={onReload}
+          />
+        )}
       </Panel>
 
       <Panel title="Warehouse structure and physical capacity" subtitle="Warehouse-map read model (zones → aisles → racks → cells).">
+        {!structure.available && (
+          <p className="bom-warning mb-5">
+            The warehouse map is unavailable for this facility: {structure.reason || "the facility is not part of the managed warehouse map"}.
+            Structure counts stay empty, but the managed capacity configuration below can still be reviewed or configured.
+          </p>
+        )}
         <Details values={[
           ["Zones", structure.zones.length],
           ["Racks", racks.length],
@@ -222,7 +231,7 @@ function FacilityUtilization({ facilityId, facilities, data, window }) {
           ["Rack envelope volume", m3(envelopeM3)],
         ]} />
         <p className="bom-warning mt-5">
-          Rack envelope volume is an approximate physical denominator (width × depth × height per rack). Shelf-level used volume stays at the backend MI-01 empty baseline.
+          Rack envelope volume is an approximate physical denominator (width × depth × height per rack). Used volume stays 0 until an inbound is confirmed on a cell.
         </p>
         <div className="mt-5">
           <Table

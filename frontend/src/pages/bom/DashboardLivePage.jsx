@@ -89,7 +89,7 @@ export default function DashboardLivePage() {
             <Panel title="Still demo (backend contract pending)">
               <Details values={[
                 ["Revenue reports", "Demo — no payment/report API yet"],
-                ["Inventory placement", "Warehouse structure is live in oversight; used weight is still an empty baseline"],
+                ["Inventory placement", "Backend inbound confirmation exists (items land on cells); no live console screen for it yet"],
                 ["Business audit", "Demo — backend audit endpoints are per-user only"],
               ]} />
               <div className="mt-5 flex flex-wrap gap-3">

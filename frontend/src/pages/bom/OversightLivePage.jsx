@@ -18,7 +18,9 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 // every facility: it lists facilities with ONE request and then loads the heavy,
 // facility-scoped reads (warehouse map, units, managed inventory, reservations) for
 // the facility the user selects - 4 parallel requests, no N+1.
-export default function OversightLivePage() {
+export default function OversightLivePage({
+  oversightRoot = "/bom/oversight", managePath = "/bom/facilities",
+}) {
   const directory = useAsyncData(loadFacilities, []);
   const [facilityId, setFacilityId] = useState("");
   const [status, setStatus] = useState("");
@@ -41,7 +43,7 @@ export default function OversightLivePage() {
       title="Cross-facility oversight"
       description="Read-only cross-facility visibility built from the live facility, warehouse-map, storage-unit, managed-inventory and reservation APIs."
       notice={LIVE_NOTICE}
-      action={<Button asChild variant="outline"><Link to="/bom/facilities">Manage facilities</Link></Button>}
+      action={<Button asChild variant="outline"><Link to={managePath}>Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const rows = facilities.filter((f) =>
@@ -75,7 +77,7 @@ export default function OversightLivePage() {
                 label="Facility directory"
                 rows={rows}
                 columns={[
-                  { key: "name", label: "Facility", render: (f) => <Link className="manager-link font-semibold" to={`/bom/oversight/facilities/${f.id}`}>{f.name}</Link> },
+                  { key: "name", label: "Facility", render: (f) => <Link className="manager-link font-semibold" to={`${oversightRoot}/facilities/${f.id}`}>{f.name}</Link> },
                   { key: "code", label: "Code" },
                   { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
                   { key: "city", label: "City / Province" },
@@ -109,17 +111,6 @@ export default function OversightLivePage() {
                 <FacilityScope facilityId={facilityId} facilities={facilities} data={data} />
               ) : null)} />
             )}
-
-            <Panel title="Not available from the backend yet">
-              <Details values={[
-                ["Payments / revenue", "No payment module exists - revenue reporting is blocked"],
-                ["Refunds & extra charges", "No refund/charge API"],
-                ["Contract extensions", "No time/capacity extension API"],
-                ["Item movements", "Inbound, relocation, outbound and movement history are not implemented"],
-                ["Global audit & login history", "Audit and login-history endpoints are per-user only"],
-                ["Warehouse used weight", "Backend reports an empty baseline (source MI_01_EMPTY) until inventory placement ships"],
-              ]} />
-            </Panel>
           </>
         );
       }} />
@@ -147,7 +138,7 @@ function FacilityScope({ facilityId, facilities, data }) {
       <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones -> aisles -> racks -> cells).">
         {racks.length > 0 && <Meter label="Allocatable cell capacity" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
         <p className="bom-warning mt-4">
-          Used weight is the backend MI-01 empty baseline, so utilization reads EMPTY until managed-inventory placement ships.
+          Used weight reads 0 until Staff confirm an inbound for an item, because the rack total is the sum of its cell counters.
         </p>
         <Table
           label="Warehouse racks"

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Dialog, Button, Panel, Message } from "@/components/manager/ManagerUI";
+import { apiErrorMessage } from "@/lib/apiError";
 
 export const LIVE_NOTICE =
   "Live backend data · Changes are saved to the server through the confirmed ADMIN/BOM APIs. Existing rentals, contracts and payments are never rewritten.";
@@ -40,7 +41,9 @@ export function ConfirmDialog({ title, summary, confirmLabel = "Confirm", onConf
       await onConfirm();
       onClose?.();
     } catch (err) {
-      setError(err?.message || "The request could not be completed.");
+      // Surface the backend rule (for example the 409 "delete active racks first") instead
+      // of the generic axios status text.
+      setError(apiErrorMessage(err));
     } finally {
       setPending(false);
     }

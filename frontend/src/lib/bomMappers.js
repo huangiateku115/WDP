@@ -68,6 +68,64 @@ export function warehouseFromDto(dto) {
   return { zones, racks };
 }
 
+/* ------------------ Warehouse structure list collections ------------------ */
+export function zoneFromDto(d) {
+  return {
+    id: d?._id,
+    facilityId: d?.facilityId || "",
+    code: d?.code || "",
+    name: d?.name || "",
+    description: d?.description || "",
+    color: d?.color || "",
+    sortOrder: d?.sortOrder ?? 0,
+    isActive: d?.isActive !== false,
+  };
+}
+
+export function rackFromDto(d) {
+  const dims = d?.dimensions || {};
+  const widthM = Number(dims.widthM) || 0;
+  const depthM = Number(dims.depthM) || 0;
+  const heightM = Number(dims.heightM) || 0;
+  return {
+    id: d?._id,
+    facilityId: d?.facilityId || "",
+    zoneId: d?.zoneId || "",
+    aisleCode: d?.aisleCode || "",
+    rackCode: d?.rackCode || "",
+    dimensions: { widthM, depthM, heightM },
+    levelCount: d?.levelCount ?? 0,
+    cellsPerLevel: d?.cellsPerLevel ?? 0,
+    cellCount: (d?.levelCount ?? 0) * (d?.cellsPerLevel ?? 0),
+    maxWeightKgPerLevel: d?.maxWeightKgPerLevel ?? 0,
+    maxWeightKg: d?.maxWeightKg ?? (d?.levelCount ?? 0) * (d?.maxWeightKgPerLevel ?? 0),
+    mapX: d?.mapX ?? 0,
+    mapY: d?.mapY ?? 0,
+    orientation: d?.orientation ?? 0,
+    operationalStatus: d?.operationalStatus || "",
+    envelopeM3: widthM * depthM * heightM,
+  };
+}
+
+export function cellFromDto(d) {
+  const dims = d?.dimensions || {};
+  const widthM = Number(dims.widthM) || 0;
+  const depthM = Number(dims.depthM) || 0;
+  const usableHeightM = dims.usableHeightM === undefined ? null : Number(dims.usableHeightM);
+  return {
+    id: d?._id,
+    rackId: d?.rackId || "",
+    zoneId: d?.zoneId || "",
+    code: d?.code || "",
+    levelNumber: d?.levelNumber ?? 0,
+    cellNumber: d?.cellNumber ?? 0,
+    dimensions: { widthM, depthM, usableHeightM },
+    maxWeightKg: d?.maxWeightKg ?? 0,
+    usableVolumeM3: usableHeightM === null ? null : widthM * depthM * usableHeightM,
+    operationalStatus: d?.operationalStatus || "",
+  };
+}
+
 export function unitFromDto(d) {
   return {
     id: d?._id,
@@ -76,6 +134,7 @@ export function unitFromDto(d) {
     status: d?.status || "",
     volumeM3: d?.volumeM3 ?? 0,
     dimensions: d?.dimensions || {},
+    description: d?.description || "",
   };
 }
 
@@ -91,6 +150,37 @@ export function inventoryItemFromDto(d) {
     totalWeightKg: d?.totalWeightKg ?? 0,
     status: d?.status || "",
     placed: Boolean(d?.currentCellId),
+    facilityId: d?.facilityId || "",
+    customerId: d?.customerId || "",
+    reservationId: d?.managedReservationId || "",
+    description: d?.description || "",
+    unitWeightKg: d?.unitWeightKg ?? 0,
+    unitVolumeM3: d?.unitVolumeM3 ?? 0,
+    unitDimensionsM: d?.unitDimensionsM || null,
+    preferredCellId: d?.preferredCellId || null,
+    currentCellId: d?.currentCellId || null,
+    inboundRequestedAt: d?.inboundRequestedAt || "",
+    inboundConfirmedAt: d?.inboundConfirmedAt || "",
+    rejectionReason: d?.inboundRejection?.reason || "",
+    createdAt: d?.createdAt || "",
+    updatedAt: d?.updatedAt || "",
+  };
+}
+
+// ItemMovement ledger rows (GET /inventory-items/:id/movements). Management roles also
+// receive customerId/performedBy, which is what the BOM/Admin console displays.
+export function itemMovementFromDto(d) {
+  return {
+    id: d?._id,
+    type: d?.type || "",
+    cellId: d?.destinationCellId || null,
+    quantity: d?.quantity ?? 0,
+    quantityUnit: d?.quantityUnit || "",
+    totalWeightKg: d?.actualTotalWeightKg ?? 0,
+    totalVolumeM3: d?.actualTotalVolumeM3 ?? 0,
+    performedBy: d?.performedBy || "",
+    performedAt: d?.performedAt || d?.createdAt || "",
+    note: d?.inspectionNote || "",
   };
 }
 
@@ -112,6 +202,7 @@ export function facilityFromDto(d) {
     description: d?.description || "",
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
     status: d?.status || "ACTIVE",
+    deleted: Boolean(d?.deletedAt),
   };
 }
 export function facilityForm(d) {
