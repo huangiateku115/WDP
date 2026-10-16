@@ -25,13 +25,31 @@ const reservationApi = {
       { startDate, endDate, pricingPolicyId },
       config,
     ),
+  createManaged: (payload) =>
+    axiosClient.post("/reservations/managed", payload),
   createReal: (
-    { facilityId, storageUnitId, startDate, endDate, pricingPolicyId },
+    {
+      facilityId,
+      storageUnitId,
+      startDate,
+      endDate,
+      pricingPolicyId,
+      estimatedRent,
+      depositAmount,
+    },
     config,
   ) =>
     axiosClient.post(
       "/reservations",
-      { facilityId, storageUnitId, startDate, endDate, pricingPolicyId },
+      {
+        facilityId,
+        storageUnitId,
+        startDate,
+        endDate,
+        pricingPolicyId,
+        estimatedRent,
+        depositAmount,
+      },
       config,
     ),
   mineReal: (config) => axiosClient.get("/reservations/me", config),

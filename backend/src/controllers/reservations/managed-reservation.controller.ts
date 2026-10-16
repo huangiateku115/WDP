@@ -19,4 +19,6 @@ export const approve = endpoint(req => ManagedReservationService.approve(req.par
 export const reject = endpoint(req => ManagedReservationService.reject(req.params.id, req.body, req.user!));
 export const cancel = endpoint(req => ManagedReservationService.cancel(req.params.id, req.user!));
 export const mockPay = endpoint(req => ManagedReservationService.mockPay(req.params.id, req.user!));
+export const initiateDeposit = endpoint(req => ManagedReservationService.initiateDeposit(req.params.id, req.body, req.user!), 201);
+export const confirmMockDeposit = endpoint(req => ManagedReservationService.confirmMockDeposit(req.params.id, req.body, req.user!));
 export const activate = endpoint(req => ManagedReservationService.activate(req.params.id, req.user!));

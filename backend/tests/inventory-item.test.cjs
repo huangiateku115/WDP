@@ -18,7 +18,7 @@ const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').defaul
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
 const { InventoryItemService: service } = require('../dist/services/inventory-items/inventory-item.service');
 const { parseCreate, parseUpdate, InventoryItemError } = require('../dist/services/inventory-items/inventory-item.validation');
-const { requireActiveManagedInventoryReservation } = require('../dist/services/reservations/managed-inventory-reservation.guard');
+const { requireActiveManagedInventoryReservation, requireManagedInventoryReservationForRegistration } = require('../dist/services/reservations/managed-inventory-reservation.guard');
 
 const facilityId = '507f1f77bcf86cd799439011';
 const reservationId = '507f1f77bcf86cd799439021';
@@ -65,7 +65,8 @@ function mockEligibility(t, reservation = managedReservation(), facility = { sta
   t.mock.method(Reservation, 'findOne', filter => {
     assert.equal(String(filter.customerId), userId.toString());
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
-    assert.equal(filter.status, 'ACTIVE');
+    if (filter.$or) { assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date); }
+    else assert.equal(filter.status, 'ACTIVE');
     return new Query(reservation);
   });
   t.mock.method(Facility, 'findOne', () => new Query(facility ? { _id: oid(facilityId), ...facility } : null));
@@ -96,6 +97,45 @@ test('registration derives lot totals, keeps currentCellId null, and writes no p
   assert.equal(result.customerId, undefined, 'customer DTO omits internal owner field');
   assert.equal(saved.facilityId.toString(), facilityId);
   assert.equal(saved.createdBy.toString(), userId.toString());
+});
+
+test('version 2 DEPOSIT_PAID owner may register an item before activation without writing physical stock', async t => {
+  const reservation = managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 });
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    return new Query(reservation);
+  });
+  t.mock.method(Facility, 'findOne', () => new Query({ _id: oid(facilityId), status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  let saved;
+  t.mock.method(Item.prototype, 'save', async function () { saved = this; return this; });
+  const created = await service.create(itemBody(), actor());
+  assert.equal(created.status, 'REGISTERED'); assert.equal(created.currentCellId, null);
+  assert.equal(saved.managedReservationId.toString(), reservationId);
+});
+
+test('CHECKIN_READY does not allow new item registration after the contract and balance snapshot is complete', async t => {
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
+  await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
+});
+
+test('version 2 DEPOSIT_PAID owner may request inbound before activation without confirming physical occupancy', async t => {
+  const item = itemDoc();
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  t.mock.method(Item, 'findOneAndUpdate', filter => {
+    assert.equal(filter.status, 'REGISTERED');
+    return new Query(itemDoc({ status: 'PENDING_INBOUND' }));
+  });
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(filter.$or[0].status, 'ACTIVE'); assert.ok(filter.$or[0].startDate.$lte instanceof Date); assert.ok(filter.$or[0].endDate.$gt instanceof Date);
+    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    return new Query(managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 }));
+  });
+  t.mock.method(Reservation, 'exists', () => new Query(null));
+  t.mock.method(Facility, 'findOne', () => new Query({ status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const result = await service.requestInbound(itemId, actor());
+  assert.equal(result.status, 'PENDING_INBOUND');
+  assert.equal(result.currentCellId, null);
 });
 
 test('request cannot spoof customer/facility, derived totals, status, or Mongo operators', () => {
@@ -130,6 +170,14 @@ test('Managed rental guard accepts only owned active MI rental with valid m3 all
     return new Query(managedReservation({ allocatedCapacity: 0 }));
   });
   await assert.rejects(requireActiveManagedInventoryReservation(reservationId, userId), { status: 409 });
+});
+
+test('item metadata and placement preview remain ACTIVE-only after a deposit', async t => {
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.status, 'ACTIVE');
+    return new Query(null);
+  });
+  await assert.rejects(requireActiveManagedInventoryReservation(reservationId, userId), { status: 404 });
 });
 
 test('registration rejects Self Storage, inactive MI rentals, and absent rentals', async t => {
@@ -186,7 +234,8 @@ test('GET /me lists owner history regardless of current reservation status', asy
 
 test('closed Managed reservation cannot authorize new registration or metadata edits', async t => {
   t.mock.method(Reservation, 'findOne', filter => {
-    assert.equal(filter.status, 'ACTIVE');
+    if (filter.$or) { assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date); }
+    else assert.equal(filter.status, 'ACTIVE');
     return new Query(null);
   });
   await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
@@ -291,6 +340,7 @@ test('all inventory-item routes require authentication and role gates match the 
   for (const expected of [
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
     'POST /:id/inbound-request', 'POST /:id/confirm-inbound', 'POST /:id/reject-inbound', 'GET /:id/movements',
+    'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 10);
+  assert.equal(routes.length, 11);
 });

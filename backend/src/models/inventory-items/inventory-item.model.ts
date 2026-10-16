@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IInventoryItem, InventoryItemStatus } from '../../types/inventory-item.type';
+import { IInventoryItem, InventoryItemStatus, ReceivingCustodyStatus, ReceivingInspectionDecision } from '../../types/inventory-item.type';
 import { isValidImageList } from '../../utils/image-url';
 
 const dimensionsSchema = new Schema({
@@ -37,6 +37,18 @@ const schema = new Schema<IInventoryItem>({
     rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   inboundIdempotencyKey: { type: String, trim: true, maxlength: 128 },
+  receivingCustodyStatus: { type: String, enum: Object.values(ReceivingCustodyStatus), default: ReceivingCustodyStatus.NONE },
+  receivingInspection: {
+    decision: { type: String, enum: Object.values(ReceivingInspectionDecision) },
+    observedQuantity: { type: Number, min: 1 },
+    observedUnitWeightKg: { type: Number, min: Number.MIN_VALUE },
+    observedUnitDimensionsM: { type: dimensionsSchema },
+    compatibleWithCellIds: [{ type: Schema.Types.ObjectId, ref: 'WarehouseCell' }],
+    packingLayoutVerified: { type: Boolean, default: false },
+    note: { type: String, trim: true, maxlength: 1000 },
+    inspectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    inspectedAt: { type: Date },
+  },
   images: {
     type: [{ type: String, trim: true }],
     default: [],

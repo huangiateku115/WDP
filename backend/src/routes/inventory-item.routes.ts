@@ -3,6 +3,7 @@ import * as controller from '../controllers/inventory-items/inventory-item.contr
 import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
+import * as checkinController from '../controllers/reservations/managed-checkin.controller';
 
 const router = Router();
 const customer = requireRole([UserRole.CUSTOMER]);
@@ -16,6 +17,7 @@ router.get('/', readers, controller.list);
 router.get('/:id/placement-preview', itemReaders, controller.placementPreview);
 router.post('/:id/inbound-request', customer, controller.requestInbound);
 router.post('/:id/confirm-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmInbound);
+router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), checkinController.inspectItem);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
 router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, controller.get);

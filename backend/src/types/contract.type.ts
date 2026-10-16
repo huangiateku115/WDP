@@ -23,6 +23,21 @@ export interface IContract extends Document {
   
   pdfUrl?: string;
   termsVersion?: string;
+  currentContentVersion?: number;
+  contentVersions?: Array<{
+    version: number;
+    contentHash: string;
+    content: Record<string, unknown>;
+    createdBy: Types.ObjectId;
+    createdAt: Date;
+  }>;
+  signatures?: Array<{
+    version: number;
+    contentHash: string;
+    signerId: Types.ObjectId;
+    signerRole: string;
+    signedAt: Date;
+  }>;
   
   createdAt: Date;
   updatedAt: Date;
