@@ -123,6 +123,31 @@ export function parseInboundRejection(value: unknown) {
   return { reason: text(input.reason, 'reason', 1000) };
 }
 
+export interface OutboundConfirmationInput {
+  verifiedQuantity: number;
+  handoverConfirmed: true;
+  handoverNote: string;
+  idempotencyKey: string;
+}
+
+export function parseOutboundConfirmation(value: unknown): OutboundConfirmationInput {
+  const input = record(value, ['verifiedQuantity', 'handoverConfirmed', 'handoverNote', 'idempotencyKey']);
+  if (input.handoverConfirmed !== true) invalid('handoverConfirmed must be true');
+  const idempotencyKey = text(input.idempotencyKey, 'idempotencyKey', 128);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(idempotencyKey)) invalid('idempotencyKey contains unsupported characters');
+  return {
+    verifiedQuantity: quantity(input.verifiedQuantity),
+    handoverConfirmed: true,
+    handoverNote: text(input.handoverNote, 'handoverNote', 1000),
+    idempotencyKey,
+  };
+}
+
+export function parseOutboundRejection(value: unknown) {
+  const input = record(value, ['reason']);
+  return { reason: text(input.reason, 'reason', 1000) };
+}
+
 export function parseList(value: unknown) {
   const input = record(value, ['facilityId', 'customerId', 'category', 'status', 'search', 'page', 'limit'], 'query');
   const page = queryInteger(input.page, 'page', 1, 1_000_000, 1);

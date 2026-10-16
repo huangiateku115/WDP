@@ -339,8 +339,9 @@ test('all inventory-item routes require authentication and role gates match the 
   assert.ok(routes.every(route => route.handlers.length === 2), 'each route has a role gate before its controller');
   for (const expected of [
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
-    'POST /:id/inbound-request', 'POST /:id/confirm-inbound', 'POST /:id/reject-inbound', 'GET /:id/movements',
+    'POST /:id/inbound-request', 'POST /:id/outbound-request', 'POST /:id/confirm-inbound',
+    'POST /:id/confirm-outbound', 'POST /:id/reject-inbound', 'POST /:id/reject-outbound', 'GET /:id/movements',
     'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 11);
+  assert.equal(routes.length, 14);
 });

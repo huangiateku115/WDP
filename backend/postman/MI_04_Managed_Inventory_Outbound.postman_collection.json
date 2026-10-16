@@ -1,0 +1,147 @@
+{
+  "info": {
+    "name": "WDP — MI-04 Managed Inventory Outbound",
+    "description": "Managed Inventory whole-lot outbound flow. Use dedicated non-production accounts and seeded test records. Set baseUrl, itemId, customerToken, staffToken, and rejectItemId in an environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "itemId", "value": "" },
+    { "key": "rejectItemId", "value": "" },
+    { "key": "customerToken", "value": "" },
+    { "key": "staffToken", "value": "" },
+    { "key": "verifiedQuantity", "value": "2" },
+    { "key": "outboundKey", "value": "mi04-outbound-001" },
+    { "key": "handoverNote", "value": "Two cartons handed to the customer" }
+  ],
+  "item": [
+    {
+      "name": "Customer request and pending checks",
+      "item": [
+        {
+          "name": "Request whole-lot outbound",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "outbound-request"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('request accepted', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('item is pending with original location retained', () => { pm.expect(body.data.status).to.eql('PENDING_OUTBOUND'); pm.expect(body.data.currentCellId).to.be.ok; });",
+            "pm.environment.set('sourceCellId', body.data.currentCellId);"
+          ] } }]
+        },
+        {
+          "name": "Duplicate request is rejected",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "outbound-request"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('duplicate pending request conflicts', () => pm.response.to.have.status(409));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Staff confirmation and replay",
+      "item": [
+        {
+          "name": "Reject partial quantity before handover",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"verifiedQuantity\": 1,\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Only one carton tendered\",\n  \"idempotencyKey\": \"{{outboundKey}}-partial\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/confirm-outbound", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "confirm-outbound"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('partial outbound is rejected', () => pm.response.to.have.status(409));"] } }]
+        },
+        {
+          "name": "Confirm outbound whole lot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"verifiedQuantity\": {{verifiedQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"{{handoverNote}}\",\n  \"idempotencyKey\": \"{{outboundKey}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/confirm-outbound", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "confirm-outbound"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('outbound confirmed', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json().data;",
+            "pm.test('item has no current Cell', () => { pm.expect(body.item.status).to.eql('CHECKED_OUT'); pm.expect(body.item.currentCellId).to.eql(null); });",
+            "pm.test('movement is source-to-outside', () => { pm.expect(body.movement.type).to.eql('OUTBOUND'); pm.expect(body.movement.sourceCellId).to.eql(pm.environment.get('sourceCellId')); pm.expect(body.movement.destinationCellId).to.eql(null); });",
+            "pm.test('first call is not a replay', () => pm.expect(body.idempotentReplay).to.eql(false));"
+          ] } }]
+        },
+        {
+          "name": "Same-key confirmation replays without a second decrement",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"verifiedQuantity\": {{verifiedQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"{{handoverNote}}\",\n  \"idempotencyKey\": \"{{outboundKey}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/confirm-outbound", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "confirm-outbound"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('same payload is idempotent', () => pm.response.to.have.status(200));",
+            "pm.test('response identifies replay', () => pm.expect(pm.response.json().data.idempotentReplay).to.eql(true));"
+          ] } }]
+        },
+        {
+          "name": "Movement history includes one OUTBOUND record",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/movements", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "movements"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('history is visible to owner', () => pm.response.to.have.status(200));",
+            "const rows = pm.response.json().data;",
+            "pm.test('exactly one outbound movement exists', () => pm.expect(rows.filter(row => row.type === 'OUTBOUND')).to.have.length(1));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Staff rejection leaves physical usage unchanged",
+      "item": [
+        {
+          "name": "Request outbound for separate rejection fixture",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{rejectItemId}}/outbound-request", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{rejectItemId}}", "outbound-request"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('separate rejection fixture becomes pending', () => pm.response.to.have.status(200));",
+            "pm.test('pending state retains physical location', () => { const item = pm.response.json().data; pm.expect(item.status).to.eql('PENDING_OUTBOUND'); pm.expect(item.currentCellId).to.be.ok; });"
+          ] } }]
+        },
+        {
+          "name": "Reject outbound",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer identity could not be verified\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{rejectItemId}}/reject-outbound", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{rejectItemId}}", "reject-outbound"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('rejection restores IN_STORAGE', () => pm.response.to.have.status(200));",
+            "const item = pm.response.json().data;",
+            "pm.test('location remains assigned', () => { pm.expect(item.status).to.eql('IN_STORAGE'); pm.expect(item.currentCellId).to.be.ok; });"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}

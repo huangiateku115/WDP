@@ -37,7 +37,7 @@ Rental.status là trạng thái vòng đời chuẩn dùng xuyên các luồng:
 - Gia hạn không phải trạng thái riêng: giữ Active, cập nhật current_end_date/extension_count sau thanh toán thành công.
 - Overdue: đã hết grace period. CheckedOut: hoàn tất nghĩa vụ vật lý nhưng còn chờ quyết toán. Closed: hoàn tất nghĩa vụ, quyết toán và giải phóng tài nguyên.
 - Rental, StorageUnit, Payment, InventoryItem có các miền trạng thái riêng; không dùng lẫn nhau.
-- Item: Registered → PendingInbound → InStorage → PendingOutbound → CheckedOut. Relocation giữ InStorage. Xử lý outbound thất bại phải giữ location/state nhất quán, có thể khôi phục InStorage khi phù hợp.
+- Item: Registered → PendingInbound → InStorage → PendingOutbound → CheckedOut. MI-04 implements normal in-term Managed outbound; overdue outbound still requires a future explicit controlled-outbound policy. Relocation giữ InStorage. Staff rejection returns PendingOutbound to InStorage without changing location or physical counters.
 
 ## 15 Core Flows
 
@@ -55,7 +55,7 @@ Rental.status là trạng thái vòng đời chuẩn dùng xuyên các luồng:
 12. CF-12 đăng ký item: rental Managed thuộc khách và đủ điều kiện; category hỗ trợ, kích thước/cân nặng dương, quantity/unit, item_code duy nhất; volume_m3 = length_m × width_m × height_m trên mỗi stored item/handling unit. Registered, location=null; chưa chiếm chỗ.
 13. CF-13 inbound: rental Active/Managed, ownership/category/quota hợp lệ; Staff kiểm tra hàng thực, chọn Shelf cùng Facility đủ hình học/thể tích/tải trọng và Active. Sai thông tin/không có Shelf → giữ pending để xử lý. Xác nhận vật lý mới cập nhật item/location/quota/Shelf và ghi INBOUND atomically.
 14. CF-14 relocation: item InStorage, Shelf đích khác Shelf nguồn, cùng Facility, Active và đủ điều kiện. Staff xác nhận → giải phóng nguồn, chiếm đích, đổi location, ghi RELOCATION atomically. Không đổi used_capacity_m3 của Rental.
-15. CF-15 outbound: khách yêu cầu, kiểm tra ownership/location/eligibility; Staff lấy/kiểm tra/giao đúng hàng. Xác nhận → OUTBOUND, location=null, CheckedOut, giảm quota đã dùng và Shelf utilization atomically. Khi hết hàng có thể tiếp tục CF-05.
+15. CF-15 outbound: khách yêu cầu trong kỳ thuê Managed ACTIVE, kiểm tra ownership/location/eligibility; Staff được phân công xác nhận đã giao đủ cả lot. Xác nhận → OUTBOUND, location=null, CheckedOut, giảm quota đã dùng và Shelf utilization atomically theo số đo INBOUND đã lưu. Reject giữ location/counters và phục hồi InStorage. OVERDUE cần controlled-outbound policy được ủy quyền riêng; không cho khách tự xuất hàng.
 
 ## Các bất biến quan trọng (BR-01…BR-44)
 

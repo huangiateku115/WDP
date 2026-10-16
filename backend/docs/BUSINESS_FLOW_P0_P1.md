@@ -20,7 +20,7 @@ The SRS (`backend/docs/PROJECT_CONTEXT.md`, CF-01/02/09 and BR-01/06) describes 
 | Handover agreement | Customer and authorized Facility representative sign the same contract version | Same contract-signing rule after goods inspection | Contract version and signers are recorded; representative authority and signature method still need detailed authorization rules |
 | Balance succeeds | Reservation awaits physical handover | Reservation awaits initial inbound confirmation | Record `BALANCE` for `totalDue - successful deposit credit`; never charge deposit on top of rent |
 | First handover/check-in | Staff hands over simulated access credential; reservation becomes `ACTIVE` | Staff-confirmed first inbound atomically updates reservation, allocation, item, physical counters and one movement; rental becomes `ACTIVE` | No activation or physical write before the specified handover/check-in action |
-| Later operations | Existing lifecycle | Subsequent inbound follows the normal `ACTIVE` flow and does not require another initial contract/payment | Outbound/relocation remain out of scope |
+| Later operations | Existing lifecycle | Subsequent inbound follows the normal `ACTIVE` flow and does not require another initial contract/payment | MI-04 later adds normal Managed outbound; relocation remains out of scope |
 
 For both services, the proposed new status should distinguish deposit confirmation from fully paid (`DEPOSIT_PAID`, or an equivalent explicit payment milestone); existing `PAID` must not be reinterpreted as deposit-only. Managed Cell exclusivity remains date-range based and transactional. A Cell with unknown physical counters stays unbookable; the payment foundation does not alter occupancy predicates.
 

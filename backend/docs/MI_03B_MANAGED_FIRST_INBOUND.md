@@ -63,4 +63,4 @@ The transaction locks the item; for v2 it acquires the Facility booking-version 
 
 ## Limitations
 
-Tests use deterministic model/session mocks. They verify the service transaction boundary and simulated serialization, not actual MongoDB transaction rollback or concurrent writes. No Atlas access or real database writes were used. Payment providers remain outside this patch; P3B only reads the P1 settlement ledger. Outbound, relocation, and Self Storage lifecycle changes are out of scope.
+Tests use deterministic model/session mocks. They verify the service transaction boundary and simulated serialization, not actual MongoDB transaction rollback or concurrent writes. No Atlas access or real database writes were used. Payment providers remain outside this patch; P3B only reads the P1 settlement ledger. Normal Managed outbound is specified in [MI-04](MI_04_MANAGED_OUTBOUND.md); relocation and Self Storage lifecycle changes remain out of scope.

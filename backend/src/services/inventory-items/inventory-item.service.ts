@@ -23,7 +23,7 @@ import { ManagedReservationAction } from '../../types/managed-reservation-audit.
 import { IUser, UserRole } from '../../types/user.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
 import { requireActiveManagedInventoryReservation, requireManagedInventoryReservationForRegistration, ManagedReservationGuardError } from '../reservations/managed-inventory-reservation.guard';
-import { InboundConfirmationInput, InventoryItemError, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseUpdate } from './inventory-item.validation';
+import { InboundConfirmationInput, InventoryItemError, OutboundConfirmationInput, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseOutboundConfirmation, parseOutboundRejection, parseUpdate } from './inventory-item.validation';
 import { validateCategoryPolicyConfig } from '../pricing-policy/rule.validation';
 import { calculateRentalPaymentBreakdown } from '../payments/payment-accounting';
 
@@ -76,6 +76,13 @@ function dto(item: IInventoryItem, includeCustomer = false) {
     ...(item.inboundRejection ? { inboundRejection: {
       reason: item.inboundRejection.reason,
       rejectedAt: item.inboundRejection.rejectedAt,
+    } } : {}),
+    ...(item.outboundRequestedAt ? { outboundRequestedAt: item.outboundRequestedAt } : {}),
+    ...(item.outboundConfirmedAt ? { outboundConfirmedAt: item.outboundConfirmedAt } : {}),
+    ...(item.outboundHandoverNote ? { outboundHandoverNote: item.outboundHandoverNote } : {}),
+    ...(item.outboundRejection ? { outboundRejection: {
+      reason: item.outboundRejection.reason,
+      rejectedAt: item.outboundRejection.rejectedAt,
     } } : {}),
     ...(item.receivingCustodyStatus ? { receivingCustodyStatus: item.receivingCustodyStatus } : {}),
     ...(item.receivingInspection ? { receivingInspection: {
@@ -152,6 +159,20 @@ async function lockReservationForInbound(item: IInventoryItem, session: ClientSe
     _id: { $ne: reservation._id },
   }).session(session).exec();
   if (overdue) throw new InventoryItemError(409, 'An unresolved overdue Managed rental blocks new inbound');
+  return reservation;
+}
+
+async function lockReservationForOutbound(item: IInventoryItem, session: ClientSession, now: Date) {
+  const reservation = await ReservationModel.findOneAndUpdate({
+    _id: item.managedReservationId,
+    customerId: item.customerId,
+    facilityId: item.facilityId,
+    serviceType: FacilityServiceType.MANAGED_INVENTORY,
+    status: ReservationStatus.ACTIVE,
+    startDate: { $lte: now },
+    endDate: { $gt: now },
+  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!reservation) throw new InventoryItemError(409, 'A current, in-term ACTIVE Managed Inventory rental is required for normal outbound; overdue rentals require an authorized controlled-outbound policy');
   return reservation;
 }
 
@@ -245,16 +266,95 @@ function inboundReplayMatches(current: IInventoryItem, prior: any, data: Inbound
     (current.quantity <= 1 || data.physicalPackingConfirmed);
 }
 
+function outboundReplayMatches(prior: any, data: OutboundConfirmationInput) {
+  return prior.type === ItemMovementType.OUTBOUND && prior.quantity === data.verifiedQuantity &&
+    prior.handoverNote === data.handoverNote && data.handoverConfirmed === true;
+}
+
+function authoritativeInboundMovementMatches(item: IInventoryItem, cellId: Types.ObjectId, movement: any) {
+  const quantity = Number(movement?.quantity);
+  const unitWeightKg = Number(movement?.actualUnitWeightKg);
+  const totalWeightKg = Number(movement?.actualTotalWeightKg);
+  const dimensions = movement?.actualUnitDimensionsM;
+  const widthM = Number(dimensions?.widthM);
+  const depthM = Number(dimensions?.depthM);
+  const heightM = Number(dimensions?.heightM);
+  const totalVolumeM3 = Number(movement?.actualTotalVolumeM3);
+  if (!movement || movement.type !== ItemMovementType.INBOUND ||
+      !movement.itemId?.equals(item._id) || !movement.managedReservationId?.equals(item.managedReservationId) ||
+      !movement.facilityId?.equals(item.facilityId) || !movement.customerId?.equals(item.customerId) ||
+      !movement.destinationCellId?.equals(cellId) || movement.quantityUnit !== item.quantityUnit || !Number.isSafeInteger(quantity) || quantity <= 0 ||
+      ![unitWeightKg, totalWeightKg, widthM, depthM, heightM, totalVolumeM3].every(value => Number.isFinite(value) && value > 0)) return false;
+  const expectedUnitVolumeM3 = rounded(widthM * depthM * heightM, 6);
+  return quantity === item.quantity &&
+    measurementMatches(totalWeightKg, rounded(unitWeightKg * quantity, 3), 3) &&
+    measurementMatches(totalVolumeM3, rounded(expectedUnitVolumeM3 * quantity, 6), 6);
+}
+
+async function reconcileOutboundAccounting(item: IInventoryItem, cell: any, reservation: any, session: ClientSession) {
+  const physicalStatuses = { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.PENDING_OUTBOUND] };
+  const cellItems = await InventoryItemModel.find({ currentCellId: cell._id, status: physicalStatuses, ...live })
+    .session(session).lean().exec();
+  const reservationItems = await InventoryItemModel.find({ managedReservationId: reservation._id,
+    currentCellId: { $ne: null }, status: physicalStatuses, ...live }).session(session).lean().exec();
+  if (!cellItems.some((row: any) => row._id.equals(item._id)) ||
+      !reservationItems.some((row: any) => row._id.equals(item._id))) {
+    throw new InventoryItemError(409, 'Physical item location does not reconcile with the current Cell and reservation');
+  }
+  const movements = new Map<string, any>();
+  for (const stored of [...new Map([...cellItems, ...reservationItems].map((row: any) => [row._id.toString(), row])).values()] as any[]) {
+    const sourceCellId = stored.currentCellId;
+    if (!sourceCellId || !stored.inboundMovementId ||
+        !stored.managedReservationId.equals(reservation._id) || !stored.customerId.equals(reservation.customerId)) {
+      throw new InventoryItemError(409, 'Stored inventory ownership or inbound evidence is inconsistent');
+    }
+    const movement = await ItemMovementModel.findOne({ _id: stored.inboundMovementId, itemId: stored._id,
+      managedReservationId: stored.managedReservationId, facilityId: stored.facilityId,
+      customerId: stored.customerId, type: ItemMovementType.INBOUND, destinationCellId: sourceCellId }).session(session).exec();
+    if (!authoritativeInboundMovementMatches(stored, sourceCellId, movement)) {
+      throw new InventoryItemError(409, 'A physically stored Item has missing or inconsistent INBOUND movement evidence');
+    }
+    movements.set(stored._id.toString(), movement);
+  }
+  const cellWeight = rounded(cellItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalWeightKg), 0), 3);
+  const cellVolume = rounded(cellItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalVolumeM3), 0), 6);
+  const reservationVolume = rounded(reservationItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalVolumeM3), 0), 6);
+  if (![cell.usedWeightKg, cell.usedVolumeM3, reservation.usedCapacityM3].every((value: unknown) => Number.isFinite(Number(value)) && Number(value) >= 0) ||
+      !measurementMatches(Number(cell.usedWeightKg), cellWeight, 3) ||
+      !measurementMatches(Number(cell.usedVolumeM3), cellVolume, 6) ||
+      !measurementMatches(Number(reservation.usedCapacityM3), reservationVolume, 6)) {
+    throw new InventoryItemError(409, 'Persisted Cell or reservation usage does not reconcile with physically stored lots');
+  }
+  return movements.get(item._id.toString());
+}
+
+async function lockZoneForOutbound(zoneId: Types.ObjectId, facilityId: Types.ObjectId, session: ClientSession) {
+  const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId, ...live },
+    { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!zone) throw new InventoryItemError(409, 'Current Cell Zone is missing');
+  return zone;
+}
+
+async function lockRackForOutbound(rackId: Types.ObjectId, facilityId: Types.ObjectId, zoneId: Types.ObjectId, session: ClientSession) {
+  const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId, ...live },
+    { $inc: { layoutVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!rack) throw new InventoryItemError(409, 'Current Cell Rack is missing');
+  return rack;
+}
+
 function movementDto(movement: any, includeCustomer = true) {
   return {
     _id: movement._id, itemId: movement.itemId, managedReservationId: movement.managedReservationId,
     facilityId: movement.facilityId,
     ...(includeCustomer ? { customerId: movement.customerId, performedBy: movement.performedBy } : {}),
     type: movement.type,
-    destinationCellId: movement.destinationCellId, quantity: movement.quantity, quantityUnit: movement.quantityUnit,
+    sourceCellId: movement.sourceCellId ?? null, destinationCellId: movement.destinationCellId ?? null,
+    quantity: movement.quantity, quantityUnit: movement.quantityUnit,
     actualUnitWeightKg: movement.actualUnitWeightKg, actualTotalWeightKg: movement.actualTotalWeightKg,
     actualUnitDimensionsM: movement.actualUnitDimensionsM, actualTotalVolumeM3: movement.actualTotalVolumeM3,
-    performedAt: movement.performedAt, inspectionNote: movement.inspectionNote,
+    performedAt: movement.performedAt,
+    ...(movement.inspectionNote === undefined ? {} : { inspectionNote: movement.inspectionNote }),
+    ...(movement.handoverNote === undefined ? {} : { handoverNote: movement.handoverNote }),
     createdAt: movement.createdAt,
   };
 }
@@ -610,6 +710,185 @@ export class InventoryItemService {
       locked.inboundRejection = { reason, rejectedAt: new Date(), rejectedBy: actor._id } as any;
       await locked.save({ session });
       return dto(locked, true);
+    }));
+  }
+
+  static async requestOutbound(idInput: unknown, actor: Actor) {
+    if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Customer role required');
+    const itemId = parseId(idInput, 'item ID');
+    return execute(async () => withTransaction(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, customerId: actor._id, ...live }).session(session).exec();
+      if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      if (current.status !== InventoryItemStatus.IN_STORAGE || !current.currentCellId) {
+        throw new InventoryItemError(409, 'Only physically stored inventory can request outbound');
+      }
+      const item = await InventoryItemModel.findOneAndUpdate({
+        _id: current._id, customerId: actor._id, status: InventoryItemStatus.IN_STORAGE,
+        currentCellId: current.currentCellId, ...live,
+      }, { $inc: { __v: 1 } }, { new: true, session }).exec();
+      if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound request');
+
+      const cell = await WarehouseCellModel.findOne({ _id: item.currentCellId, facilityId: item.facilityId, ...live }).session(session).exec();
+      if (!cell) throw new InventoryItemError(409, 'Current Cell is missing or outside the item Facility');
+      await lockZoneForOutbound(cell.zoneId, item.facilityId, session);
+      const now = new Date();
+      const reservation = await lockReservationForOutbound(item, session, now);
+      await lockRackForOutbound(cell.rackId, item.facilityId, cell.zoneId, session);
+      const facility = await FacilityModel.findOne({ _id: item.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).exec();
+      if (!facility || !reservation.facilityId.equals(item.facilityId)) throw new InventoryItemError(409, 'Active Managed Inventory Facility is required');
+      const allocation = await CellAllocationModel.findOne({ cellId: cell._id, reservationId: reservation._id,
+        facilityId: item.facilityId, customerId: item.customerId, status: CellAllocationStatus.OCCUPIED }).session(session).exec();
+      if (!allocation) throw new InventoryItemError(409, 'Current Cell must remain OCCUPIED by this Managed reservation');
+
+      item.status = InventoryItemStatus.PENDING_OUTBOUND;
+      item.outboundRequestedAt = now;
+      item.outboundRequestedBy = actor._id;
+      item.set('outboundRejection', undefined);
+      await item.save({ session });
+      await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.OUTBOUND_REQUESTED,
+        details: { itemId: item._id, cellId: cell._id } }], { session });
+      return dto(item);
+    }));
+  }
+
+  static async confirmOutbound(idInput: unknown, input: unknown, actor: Actor) {
+    if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
+    const itemId = parseId(idInput, 'item ID');
+    const data: OutboundConfirmationInput = parseOutboundConfirmation(input);
+    return execute(async () => withTransaction(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
+      if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      assertFacilityScope(actor, current.facilityId.toString());
+
+      if (current.status === InventoryItemStatus.CHECKED_OUT) {
+        const prior = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
+        if (prior?.type === ItemMovementType.OUTBOUND && current.outboundMovementId?.equals(prior._id)) {
+          if (outboundReplayMatches(prior, data)) return { item: dto(current, true), movement: movementDto(prior), idempotentReplay: true };
+          throw new InventoryItemError(409, 'Idempotency key was already used with a different outbound payload');
+        }
+        throw new InventoryItemError(409, 'Inventory item has already been confirmed outbound');
+      }
+      if (current.status !== InventoryItemStatus.PENDING_OUTBOUND || !current.currentCellId) {
+        throw new InventoryItemError(409, 'Only physically located PENDING_OUTBOUND inventory can be confirmed');
+      }
+
+      // Lock order follows inbound: Item -> Zone -> Reservation -> Rack -> Cell/allocation.
+      const item = await InventoryItemModel.findOneAndUpdate({ _id: current._id,
+        status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
+      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound confirmation');
+
+      const cell = await WarehouseCellModel.findOne({ _id: item.currentCellId, facilityId: item.facilityId, ...live }).session(session).exec();
+      if (!cell) throw new InventoryItemError(409, 'Current Cell is missing or outside the item Facility');
+      await lockZoneForOutbound(cell.zoneId, item.facilityId, session);
+      const performedAt = new Date();
+      const reservation = await lockReservationForOutbound(item, session, performedAt);
+      const rack = await lockRackForOutbound(cell.rackId, item.facilityId, cell.zoneId, session);
+      const facility = await FacilityModel.findOne({ _id: item.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).exec();
+      if (!facility || !reservation.facilityId.equals(item.facilityId) ||
+          !reservation.customerId.equals(item.customerId) || reservation.serviceType !== FacilityServiceType.MANAGED_INVENTORY) {
+        throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
+      }
+      const allocation = await CellAllocationModel.findOne({ cellId: cell._id, reservationId: reservation._id,
+        facilityId: item.facilityId, customerId: item.customerId, status: CellAllocationStatus.OCCUPIED }).session(session).exec();
+      if (!allocation) throw new InventoryItemError(409, 'Current Cell allocation does not belong to this item reservation');
+
+      if (data.verifiedQuantity !== item.quantity) throw new InventoryItemError(409, 'Verified quantity must match the complete registered lot');
+      const inbound = await reconcileOutboundAccounting(item, cell, reservation, session);
+      if (!inbound || !authoritativeInboundMovementMatches(item, cell._id, inbound)) {
+        throw new InventoryItemError(409, 'Authoritative committed INBOUND movement is missing or inconsistent');
+      }
+
+      const totalWeightKg = Number(inbound.actualTotalWeightKg);
+      const totalVolumeM3 = Number(inbound.actualTotalVolumeM3);
+      const usedWeightKg = Number(cell.usedWeightKg);
+      const usedVolumeM3 = Number(cell.usedVolumeM3);
+      const usedCapacityM3 = Number(reservation.usedCapacityM3);
+      if (![usedWeightKg, usedVolumeM3, usedCapacityM3].every(value => Number.isFinite(value) && value >= 0) ||
+          usedWeightKg < totalWeightKg || usedVolumeM3 < totalVolumeM3 || usedCapacityM3 < totalVolumeM3) {
+        throw new InventoryItemError(409, 'Persisted physical usage counters are missing, inconsistent, or insufficient for outbound');
+      }
+      const nextCellWeightKg = rounded(usedWeightKg - totalWeightKg, 3);
+      const nextCellVolumeM3 = rounded(usedVolumeM3 - totalVolumeM3, 6);
+      const nextReservationVolumeM3 = rounded(usedCapacityM3 - totalVolumeM3, 6);
+      if (nextCellWeightKg < 0 || nextCellVolumeM3 < 0 || nextReservationVolumeM3 < 0) {
+        throw new InventoryItemError(409, 'Outbound would make physical usage counters negative');
+      }
+
+      const updatedCell = await WarehouseCellModel.findOneAndUpdate({
+        _id: cell._id, facilityId: item.facilityId, rackId: rack._id, zoneId: cell.zoneId,
+        usedWeightKg, usedVolumeM3, ...live,
+        $expr: { $and: [
+          { $gte: ['$usedWeightKg', totalWeightKg] },
+          { $gte: ['$usedVolumeM3', totalVolumeM3] },
+        ] },
+      }, { $inc: { usedWeightKg: -totalWeightKg, usedVolumeM3: -totalVolumeM3 } },
+      { new: true, session, runValidators: true }).exec();
+      if (!updatedCell) throw new InventoryItemError(409, 'Cell physical usage changed; reload and retry outbound');
+
+      reservation.usedCapacityM3 = nextReservationVolumeM3;
+      await reservation.save({ session });
+      const movement = new ItemMovementModel({
+        itemId: item._id, managedReservationId: reservation._id, facilityId: item.facilityId, customerId: item.customerId,
+        type: ItemMovementType.OUTBOUND, sourceCellId: cell._id, destinationCellId: null,
+        quantity: inbound.quantity, quantityUnit: inbound.quantityUnit,
+        actualUnitWeightKg: inbound.actualUnitWeightKg, actualTotalWeightKg: inbound.actualTotalWeightKg,
+        actualUnitDimensionsM: inbound.actualUnitDimensionsM, actualTotalVolumeM3: inbound.actualTotalVolumeM3,
+        performedBy: actor._id, performedAt, handoverNote: data.handoverNote, idempotencyKey: data.idempotencyKey,
+      });
+      await movement.save({ session });
+
+      const otherStoredItem = await InventoryItemModel.findOne({ _id: { $ne: item._id }, currentCellId: cell._id,
+        status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.PENDING_OUTBOUND] }, ...live }).session(session).select('_id').exec();
+      allocation.status = otherStoredItem ? CellAllocationStatus.OCCUPIED : CellAllocationStatus.RESERVED;
+      await allocation.save({ session });
+
+      item.currentCellId = null;
+      item.status = InventoryItemStatus.CHECKED_OUT;
+      item.outboundConfirmedAt = performedAt;
+      item.outboundConfirmedBy = actor._id;
+      item.outboundMovementId = movement._id;
+      item.outboundHandoverNote = data.handoverNote;
+      item.outboundVerifiedQuantity = data.verifiedQuantity;
+      item.outboundIdempotencyKey = data.idempotencyKey;
+      await item.save({ session });
+      await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.OUTBOUND_CONFIRMED,
+        details: { movementId: movement._id, itemId: item._id, sourceCellId: cell._id,
+          quantity: inbound.quantity, actualTotalWeightKg: totalWeightKg, actualTotalVolumeM3: totalVolumeM3 } }], { session });
+      return { item: dto(item, true), movement: movementDto(movement), idempotentReplay: false };
+    }));
+  }
+
+  static async rejectOutbound(idInput: unknown, input: unknown, actor: Actor) {
+    if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
+    const itemId = parseId(idInput, 'item ID');
+    const { reason } = parseOutboundRejection(input);
+    return execute(async () => withTransaction(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
+      if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      assertFacilityScope(actor, current.facilityId.toString());
+      if (current.status !== InventoryItemStatus.PENDING_OUTBOUND || !current.currentCellId) {
+        throw new InventoryItemError(409, 'Only physically located PENDING_OUTBOUND inventory can be rejected');
+      }
+      const item = await InventoryItemModel.findOneAndUpdate({ _id: current._id,
+        status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
+      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound rejection');
+      const reservation = await ReservationModel.findOne({ _id: item.managedReservationId,
+        facilityId: item.facilityId, customerId: item.customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).session(session).exec();
+      if (!reservation) throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
+      const now = new Date();
+      item.status = InventoryItemStatus.IN_STORAGE;
+      item.outboundRejection = { reason, rejectedAt: now, rejectedBy: actor._id } as any;
+      await item.save({ session });
+      await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.OUTBOUND_REJECTED,
+        details: { itemId: item._id, cellId: item.currentCellId, reason } }], { session });
+      return dto(item, true);
     }));
   }
 

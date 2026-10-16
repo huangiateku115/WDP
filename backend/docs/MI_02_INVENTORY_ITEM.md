@@ -12,7 +12,7 @@ InventoryItem ── preferredCellId? ── WarehouseCell
 InventoryItem ── currentCellId=null until a later confirmed inbound
 ```
 
-`InventoryItem` stores stable `itemCode` (unique per Facility, reserved after deletion), customer and Facility ownership, the Managed Inventory reservation reference, item metadata, quantity, per-unit physical values, server-derived totals, optional URL images, a preferred Cell, and status `REGISTERED`, `PENDING_INBOUND`, or `IN_STORAGE`. A unique Facility/itemCode index arbitrates duplicates. Registration and inbound request leave `currentCellId` null. Only staff-confirmed inbound can place the entire lot and create actual usage; see [MI-02B Staff Inbound](MI_02B_STAFF_INBOUND.md).
+`InventoryItem` stores stable `itemCode` (unique per Facility, reserved after deletion), customer and Facility ownership, the Managed Inventory reservation reference, item metadata, quantity, per-unit physical values, server-derived totals, optional URL images, a preferred Cell, and its Managed Inventory lifecycle status. A unique Facility/itemCode index arbitrates duplicates. Registration and inbound request leave `currentCellId` null. Staff-confirmed inbound places the entire lot and creates actual usage; staff-confirmed outbound checks the entire lot out and releases measured physical usage. See [MI-02B Staff Inbound](MI_02B_STAFF_INBOUND.md) and [MI-04 Managed Inventory Outbound](MI_04_MANAGED_OUTBOUND.md).
 
 `quantity` means a count of identical handling units in one registered lot. For example, quantity 2, quantityUnit `carton`, and unitWeightKg 20 means two identical cartons, 40 kg total. Partial handling of the lot is not supported by MI-02A.
 
@@ -172,9 +172,9 @@ The backend defines `PolicyType.CATEGORY`, but `Policy.config` is a generic JSON
 
 ## Lifecycle and boundaries
 
-Registration still starts at `REGISTERED`; an owner may request physical inbound to move the item to `PENDING_INBOUND`, and only assigned Staff may confirm it into `IN_STORAGE`. Customer metadata edits remain limited to unplaced `REGISTERED` items. `preferredCellId` is only a customer preference, is validated against the current active structure, and is not a reservation. A preferred Cell may become unavailable later.
+Registration still starts at `REGISTERED`; an owner may request physical inbound to move the item to `PENDING_INBOUND`, and only assigned Staff may confirm it into `IN_STORAGE`. For normal in-term Managed rentals, the owner may request whole-lot outbound to move `IN_STORAGE` to `PENDING_OUTBOUND`; Staff confirmation moves it to `CHECKED_OUT`, while Staff rejection returns it to `IN_STORAGE`. Pending outbound retains its Cell. Customer metadata edits remain limited to unplaced `REGISTERED` items. `preferredCellId` is only a customer preference, is validated against the current active structure, and is not a reservation. A preferred Cell may become unavailable later.
 
-Inbound atomically verifies the active in-term Managed rental and remaining `m3` quota, staff-verified measurements, Cell geometry and `m3`/kg capacity plus level/Rack structural limits, actual location and lifecycle state, immutable movement history, and usage aggregates. Confirmation currently fails closed before writes because CATEGORY policy has no defined configuration schema; see MI-02B. Relocation/outbound must preserve equivalent transactional invariants and remain out of scope.
+Inbound and outbound atomically verify Managed ownership, physical location, immutable movement evidence, and usage aggregates. Outbound subtracts the measured dimensions and weight persisted by inbound, never editable Item metadata. An OVERDUE rental has no customer self-service outbound path; an explicitly authorized controlled-outbound policy remains future work. Relocation remains out of scope.
 
 ## SRS alignment and deviations
 
@@ -183,7 +183,7 @@ Inbound atomically verifies the active in-term Managed rental and remaining `m3`
 - SRS reference diagrams describe six shelf levels, while the user-approved MI-01 implementation chose a 4-level × 4-cell Rack. MI-02A preserves that approved 4 × 4 layout; it does not change MI-01 or claim that the two physical layouts are equivalent.
 - Quantity is treated as a lot of identical handling units. SRS does not fully specify split quantities; partial-unit handling remains unresolved and is not implemented.
 - The current reservation creation API creates Self Storage reservations only. Active Managed reservations must be provisioned by a future Managed rental activation flow; MI-02A never fabricates one.
-- No AI forecasting, auto-reordering, inventory stock counter, inbound, relocation, outbound, payment, or deployment is included.
+- No AI forecasting, auto-reordering, relocation, payment changes, or deployment is included. Managed outbound behavior is defined in MI-04.
 
 ## Frontend sequence and Postman scenarios
 

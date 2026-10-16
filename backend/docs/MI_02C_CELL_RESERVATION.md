@@ -6,7 +6,7 @@ MI-02C adds date-range Cell allocations to Managed Inventory booking. Customers 
 
 Creating a Managed reservation transactionally creates a temporary `HOLD` for every selected Cell, expiring with the existing Facility-configured reservation hold. Payment converts those allocations to `RESERVED`. Staff-confirmed inbound changes the matching allocation to `OCCUPIED` and still uses the existing atomic item, Cell counter, rental quota and movement transaction. Customer cancellation or Manager rejection before payment releases empty Cells. Expired holds are ignored for availability and become available in map results. No background expiry worker currently updates stale hold documents; the expiry timestamp is authoritative.
 
-Rental intervals are half-open `[startDate, endDate)`. A Cell may be allocated to different reservations for non-overlapping periods if it has no physical inventory. A Cell with actual weight/volume usage is globally unavailable regardless of rental dates. Contract expiry or overdue status never releases physical occupancy. Because outbound/disposition is not implemented here, occupied allocations remain blocking until a future authorized workflow clears the physical counters and allocation.
+Rental intervals are half-open `[startDate, endDate)`. A Cell may be allocated to different reservations for non-overlapping periods if it has no physical inventory. A Cell with actual weight/volume usage is globally unavailable regardless of rental dates. Contract expiry or overdue status never releases physical occupancy. MI-04 returns an empty Cell allocation to RESERVED under the same reservation after confirmed normal outbound; it does not release that rental's Cell ownership. Overdue/forced disposition still needs a separately authorized policy.
 
 ## API and authorization
 
@@ -32,7 +32,7 @@ Creation locks Facility quota, Zones, Racks and selected Cells in deterministic 
 
 Managed booking now reuses the two-layer warehouse map to select multiple available Cells for the entered rental period. The frontend sums each Cell's configured geometric volume and sends the selected IDs and total; the backend independently recomputes both before quoting and booking. Booking selection is advisory until the create transaction commits. A conflict requires refreshing the period map and selecting again. My Inventory remains owner-scoped, and its map preference highlights/dims Cells based on server-derived ownership flags.
 
-The map reports actual Cell weight/volume counters when available; it does not infer or fabricate item usage. Payment-provider integration, background hold cleanup, outbound, relocation and disposition remain outside MI-02C. Unit tests use deterministic Mongoose mocks. No live multi-client transaction or shared Atlas integration was run for this change.
+The map reports actual Cell weight/volume counters when available; it does not infer or fabricate item usage. Payment-provider integration, background hold cleanup, relocation, and controlled overdue disposition remain outside MI-02C. Managed outbound is specified in MI-04. Unit tests use deterministic Mongoose mocks. No live multi-client transaction or shared Atlas integration was run for this change.
 
 ### Legacy Cell counters
 

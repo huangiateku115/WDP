@@ -22,6 +22,15 @@ export const placementPreview: RequestHandler = async (req, res, next) => {
 export const requestInbound: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.requestInbound(req.params.id, req.user!) }); } catch (error) { next(error); }
 };
+export const requestOutbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.requestOutbound(req.params.id, req.user!) }); } catch (error) { next(error); }
+};
+export const confirmOutbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.confirmOutbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
+export const rejectOutbound: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.rejectOutbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
 export const confirmInbound: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.confirmInbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
 };

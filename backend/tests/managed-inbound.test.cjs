@@ -286,8 +286,8 @@ function mockPlacementPreview(t, { usedWeightKg = 40, usedVolumeM3 = .03, alloca
   return { _id: customerId, role: 'CUSTOMER' };
 }
 
-test('model supports the inbound state machine, transactional occupancy counters and immutable movement indexes', async () => {
-  assert.deepEqual(Item.schema.path('status').enumValues, ['REGISTERED', 'PENDING_INBOUND', 'RECEIVED_PENDING_ACCEPTANCE', 'IN_STORAGE']);
+test('model supports the inventory lifecycle, transactional occupancy counters and immutable movement indexes', async () => {
+  assert.deepEqual(Item.schema.path('status').enumValues, ['REGISTERED', 'PENDING_INBOUND', 'RECEIVED_PENDING_ACCEPTANCE', 'IN_STORAGE', 'PENDING_OUTBOUND', 'CHECKED_OUT']);
   assert.equal(Cell.schema.path('usedWeightKg').defaultValue, 0);
   assert.equal(Cell.schema.path('usedVolumeM3').defaultValue, 0);
   assert.equal(Reservation.schema.path('usedCapacityM3').defaultValue, 0);

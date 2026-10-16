@@ -6,6 +6,8 @@ export enum InventoryItemStatus {
   /** Staff has received goods for inspection, but inventory is not committed to a Cell. */
   RECEIVED_PENDING_ACCEPTANCE = 'RECEIVED_PENDING_ACCEPTANCE',
   IN_STORAGE = 'IN_STORAGE',
+  PENDING_OUTBOUND = 'PENDING_OUTBOUND',
+  CHECKED_OUT = 'CHECKED_OUT',
 }
 
 export enum ReceivingCustodyStatus { NONE = 'NONE', IN_CUSTODY = 'IN_CUSTODY', RETURNED = 'RETURNED' }
@@ -44,6 +46,15 @@ export interface InventoryItemFields {
   inboundMovementId?: Types.ObjectId;
   inboundRejection?: { reason: string; rejectedAt: Date; rejectedBy: Types.ObjectId };
   inboundIdempotencyKey?: string;
+  outboundRequestedAt?: Date;
+  outboundRequestedBy?: Types.ObjectId;
+  outboundConfirmedAt?: Date;
+  outboundConfirmedBy?: Types.ObjectId;
+  outboundMovementId?: Types.ObjectId;
+  outboundHandoverNote?: string;
+  outboundVerifiedQuantity?: number;
+  outboundIdempotencyKey?: string;
+  outboundRejection?: { reason: string; rejectedAt: Date; rejectedBy: Types.ObjectId };
   receivingCustodyStatus?: ReceivingCustodyStatus;
   receivingInspection?: {
     decision: ReceivingInspectionDecision;

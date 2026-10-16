@@ -7,7 +7,8 @@ const schema = new Schema<IItemMovement>({
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, immutable: true },
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
   type: { type: String, enum: Object.values(ItemMovementType), required: true, immutable: true },
-  destinationCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', required: true, immutable: true },
+  sourceCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', immutable: true, default: null },
+  destinationCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', immutable: true, default: null },
   quantity: { type: Number, required: true, min: 1, immutable: true },
   quantityUnit: { type: String, required: true, immutable: true },
   actualUnitWeightKg: { type: Number, required: true, min: Number.MIN_VALUE, immutable: true },
@@ -20,9 +21,22 @@ const schema = new Schema<IItemMovement>({
   actualTotalVolumeM3: { type: Number, required: true, min: Number.MIN_VALUE, immutable: true },
   performedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
   performedAt: { type: Date, required: true, immutable: true },
-  inspectionNote: { type: String, required: true, trim: true, maxlength: 1000, immutable: true },
+  inspectionNote: { type: String, trim: true, maxlength: 1000, immutable: true },
+  handoverNote: { type: String, trim: true, maxlength: 1000, immutable: true },
   idempotencyKey: { type: String, required: true, trim: true, maxlength: 128, immutable: true },
 }, { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw', versionKey: false });
+
+schema.pre('validate', function () {
+  if (this.type === ItemMovementType.INBOUND) {
+    if (!this.destinationCellId || this.sourceCellId != null || !this.inspectionNote) {
+      this.invalidate('destinationCellId', 'INBOUND must move from outside to a destination Cell');
+    }
+  } else if (this.type === ItemMovementType.OUTBOUND) {
+    if (!this.sourceCellId || this.destinationCellId != null || !this.handoverNote) {
+      this.invalidate('sourceCellId', 'OUTBOUND must move from a source Cell to outside');
+    }
+  }
+});
 
 schema.index({ itemId: 1, performedAt: -1, _id: -1 });
 schema.index({ facilityId: 1, performedAt: -1 });
