@@ -3,8 +3,13 @@ import { Document, Types } from 'mongoose';
 export enum InventoryItemStatus {
   REGISTERED = 'REGISTERED',
   PENDING_INBOUND = 'PENDING_INBOUND',
+  /** Staff has received goods for inspection, but inventory is not committed to a Cell. */
+  RECEIVED_PENDING_ACCEPTANCE = 'RECEIVED_PENDING_ACCEPTANCE',
   IN_STORAGE = 'IN_STORAGE',
 }
+
+export enum ReceivingCustodyStatus { NONE = 'NONE', IN_CUSTODY = 'IN_CUSTODY', RETURNED = 'RETURNED' }
+export enum ReceivingInspectionDecision { ACCEPTED = 'ACCEPTED', DISCREPANCY = 'DISCREPANCY', REJECTED = 'REJECTED' }
 
 export interface InventoryItemDimensionsM {
   widthM: number;
@@ -39,6 +44,18 @@ export interface InventoryItemFields {
   inboundMovementId?: Types.ObjectId;
   inboundRejection?: { reason: string; rejectedAt: Date; rejectedBy: Types.ObjectId };
   inboundIdempotencyKey?: string;
+  receivingCustodyStatus?: ReceivingCustodyStatus;
+  receivingInspection?: {
+    decision: ReceivingInspectionDecision;
+    observedQuantity: number;
+    observedUnitWeightKg: number;
+    observedUnitDimensionsM: InventoryItemDimensionsM;
+    compatibleWithCellIds: Types.ObjectId[];
+    packingLayoutVerified: boolean;
+    note: string;
+    inspectedBy: Types.ObjectId;
+    inspectedAt: Date;
+  };
   createdAt?: Date;
   images: string[];
   createdBy: Types.ObjectId;

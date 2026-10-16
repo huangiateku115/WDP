@@ -2,7 +2,11 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import FacilityModel from '../../models/facilities/facility.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
 import ItemMovementModel from '../../models/inventory-items/item-movement.model';
+import ContractModel from '../../models/contracts/contract.model';
 import ReservationModel from '../../models/reservations/reservation.model';
+import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
+import ManagedFacilityCapacityModel from '../../models/reservations/managed-facility-capacity.model';
+import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
 import WarehouseCellModel from '../../models/warehouse-map/warehouse-cell.model';
 import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model';
@@ -13,11 +17,15 @@ import { ItemMovementType } from '../../types/item-movement.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { PolicyType } from '../../types/pricing-policy.type';
+import { ContractStatus, IContract } from '../../types/contract.type';
+import { PaymentPurpose, PaymentStatus } from '../../types/payment.type';
+import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { IUser, UserRole } from '../../types/user.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
-import { requireActiveManagedInventoryReservation, ManagedReservationGuardError } from '../reservations/managed-inventory-reservation.guard';
+import { requireActiveManagedInventoryReservation, requireManagedInventoryReservationForRegistration, ManagedReservationGuardError } from '../reservations/managed-inventory-reservation.guard';
 import { InboundConfirmationInput, InventoryItemError, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseUpdate } from './inventory-item.validation';
 import { validateCategoryPolicyConfig } from '../pricing-policy/rule.validation';
+import { calculateRentalPaymentBreakdown } from '../payments/payment-accounting';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const managementReaders = [UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF];
@@ -69,6 +77,17 @@ function dto(item: IInventoryItem, includeCustomer = false) {
       reason: item.inboundRejection.reason,
       rejectedAt: item.inboundRejection.rejectedAt,
     } } : {}),
+    ...(item.receivingCustodyStatus ? { receivingCustodyStatus: item.receivingCustodyStatus } : {}),
+    ...(item.receivingInspection ? { receivingInspection: {
+      decision: item.receivingInspection.decision,
+      observedQuantity: item.receivingInspection.observedQuantity,
+      observedUnitWeightKg: item.receivingInspection.observedUnitWeightKg,
+      observedUnitDimensionsM: item.receivingInspection.observedUnitDimensionsM,
+      compatibleWithCellIds: item.receivingInspection.compatibleWithCellIds,
+      packingLayoutVerified: item.receivingInspection.packingLayoutVerified,
+      note: item.receivingInspection.note,
+      inspectedAt: item.receivingInspection.inspectedAt,
+    } } : {}),
     images: item.images ?? [],
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
@@ -109,17 +128,22 @@ async function withTransaction<T>(work: (session: ClientSession) => Promise<T>):
   } finally { await session.endSession(); }
 }
 
-async function lockReservationForInbound(item: IInventoryItem, session: ClientSession, now: Date) {
+async function lockReservationForInbound(item: IInventoryItem, session: ClientSession, now: Date, allowDepositPaidRequest = false) {
   const reservation = await ReservationModel.findOneAndUpdate({
     _id: item.managedReservationId,
     customerId: item.customerId,
     facilityId: item.facilityId,
     serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    status: ReservationStatus.ACTIVE,
-    startDate: { $lte: now },
-    endDate: { $gt: now },
+    ...(allowDepositPaidRequest ? { $or: [
+      { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
+      { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: now } },
+      { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, endDate: { $gt: now } },
+    ] } : { $or: [
+      { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
+      { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, startDate: { $lte: now }, endDate: { $gt: now } },
+    ] }),
   }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
-  if (!reservation) throw new InventoryItemError(409, 'An active, in-term Managed Inventory rental is required for inbound');
+  if (!reservation) throw new InventoryItemError(409, allowDepositPaidRequest ? 'An active or deposit-paid version 2 Managed reservation is required to request inbound' : 'An active, in-term Managed Inventory rental is required to confirm inbound');
   const overdue = await ReservationModel.exists({
     customerId: item.customerId,
     facilityId: item.facilityId,
@@ -129,6 +153,49 @@ async function lockReservationForInbound(item: IInventoryItem, session: ClientSe
   }).session(session).exec();
   if (overdue) throw new InventoryItemError(409, 'An unresolved overdue Managed rental blocks new inbound');
   return reservation;
+}
+
+function signedByBothCurrentVersion(contract: IContract) {
+  const version = contract.currentContentVersion;
+  const active = contract.contentVersions?.find(entry => entry.version === version);
+  if (!version || !active || contract.status !== ContractStatus.SIGNED) return false;
+  const signatures = contract.signatures?.filter(signature => signature.version === version && signature.contentHash === active.contentHash) ?? [];
+  return signatures.some(signature => signature.signerRole === UserRole.CUSTOMER) && signatures.some(signature => signature.signerRole !== UserRole.CUSTOMER);
+}
+
+async function assertV2FirstInboundPrerequisites(reservation: any, item: IInventoryItem, session: ClientSession, at: Date) {
+  if (reservation.bookingFlowVersion !== 2 || reservation.status !== ReservationStatus.CHECKIN_READY) return;
+  if (reservation.startDate > at || reservation.endDate <= at) throw new InventoryItemError(409, 'First Managed inbound is allowed only during the rental period');
+  const deposit = await ReservationPaymentModel.findOne({ reservationId: reservation._id, purpose: PaymentPurpose.DEPOSIT, status: PaymentStatus.SUCCEEDED }).session(session).exec();
+  if (!deposit || deposit.serviceType !== FacilityServiceType.MANAGED_INVENTORY || !deposit.customerId.equals(reservation.customerId) || deposit.currency !== 'VND' || deposit.amount !== reservation.depositAmount) {
+    throw new InventoryItemError(409, 'Successful Managed deposit settlement is required');
+  }
+  const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent, depositAmount: deposit.amount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+  if (breakdown.balanceDue > 0) {
+    const balance = await ReservationPaymentModel.findOne({ reservationId: reservation._id, purpose: PaymentPurpose.BALANCE, status: PaymentStatus.SUCCEEDED }).session(session).exec();
+    if (!balance || balance.serviceType !== FacilityServiceType.MANAGED_INVENTORY || !balance.customerId.equals(reservation.customerId) || balance.currency !== 'VND' || balance.amount !== breakdown.balanceDue) {
+      throw new InventoryItemError(409, 'Full Managed balance settlement is required before first inbound');
+    }
+  } else if (!reservation.balanceSettledAt) throw new InventoryItemError(409, 'Zero balance must be explicitly settled before first inbound');
+
+  const contract = await ContractModel.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
+  if (!contract || !signedByBothCurrentVersion(contract)) throw new InventoryItemError(409, 'Customer and Facility representative must sign the current contract version before first inbound');
+  const active = contract.contentVersions?.find(entry => entry.version === contract.currentContentVersion);
+  const handover = (active?.content as any)?.handover;
+  const snapshot = Array.isArray(handover) ? handover.find((entry: any) => String(entry.itemId) === String(item._id)) : undefined;
+  const inspection = item.receivingInspection;
+  const snapshotCells = Array.isArray(snapshot?.compatibleCellIds) ? snapshot.compatibleCellIds.map(String).sort() : [];
+  const inspectedCells = (inspection?.compatibleWithCellIds ?? []).map(String).sort();
+  if (!snapshot || snapshot.decision !== 'ACCEPTED' || !inspection || inspection.decision !== 'ACCEPTED' ||
+      snapshot.itemCode !== item.itemCode || snapshot.name !== item.name || snapshot.category !== item.category || snapshot.quantity !== inspection.observedQuantity ||
+      !measurementMatches(snapshot.weightKg, inspection.observedUnitWeightKg, 3) ||
+      !measurementMatches(snapshot.dimensionsM?.widthM, inspection.observedUnitDimensionsM?.widthM, 6) ||
+      !measurementMatches(snapshot.dimensionsM?.depthM, inspection.observedUnitDimensionsM?.depthM, 6) ||
+      !measurementMatches(snapshot.dimensionsM?.heightM, inspection.observedUnitDimensionsM?.heightM, 6) ||
+      Boolean(snapshot.packingLayoutVerified) !== Boolean(inspection.packingLayoutVerified) ||
+      snapshotCells.length !== inspectedCells.length || snapshotCells.some((cellId: string, index: number) => cellId !== inspectedCells[index])) {
+    throw new InventoryItemError(409, 'Accepted receiving inspection must match the signed contract version');
+  }
 }
 
 async function lockZoneForInbound(zoneId: Types.ObjectId, facilityId: Types.ObjectId, session: ClientSession) {
@@ -225,7 +292,7 @@ export class InventoryItemService {
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only customers can register inventory items');
     const data = parseCreate(input);
     return execute(async () => {
-      const reservation = await requireActiveManagedInventoryReservation(data.managedReservationId, actor._id);
+      const reservation = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id);
       const facilityId = reservation.facilityId;
       const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId) : undefined;
       const totals = deriveTotals(data);
@@ -302,8 +369,15 @@ export class InventoryItemService {
     return execute(async () => {
       const item = await loadItem(itemId);
       await assertItemReadAccess(item, actor);
-      // Closed rentals do not erase history, but they cannot authorize metadata changes.
-      await requireActiveManagedInventoryReservation(item.managedReservationId, actor._id, item.facilityId);
+      // Normal item edits remain ACTIVE-only. A rejected v2 receiving inspection
+      // may be corrected after deposit, before a contract snapshot is created.
+      let reservation;
+      try { reservation = await requireActiveManagedInventoryReservation(item.managedReservationId, actor._id, item.facilityId); }
+      catch (error) {
+        if (!(error instanceof ManagedReservationGuardError) || item.receivingInspection?.decision !== 'REJECTED') throw error;
+        reservation = await requireManagedInventoryReservationForRegistration(item.managedReservationId, actor._id, item.facilityId);
+        if (reservation.status !== ReservationStatus.DEPOSIT_PAID || reservation.bookingFlowVersion !== 2 || await ContractModel.exists({ reservationId: reservation._id })) throw error;
+      }
       if (item.status !== InventoryItemStatus.REGISTERED || item.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
       if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, item.facilityId);
       const normalized = { ...changes };
@@ -315,6 +389,10 @@ export class InventoryItemService {
       Object.assign(item, deriveTotals(item));
       item.currentCellId = null;
       item.status = InventoryItemStatus.REGISTERED;
+      if (item.receivingInspection?.decision === 'REJECTED') {
+        item.set('receivingInspection', undefined);
+        item.receivingCustodyStatus = 'NONE' as any;
+      }
       await item.save();
       return dto(item);
     });
@@ -335,7 +413,7 @@ export class InventoryItemService {
         $unset: { inboundRejection: 1 }, $inc: { __v: 1 },
       }, { new: true, session, runValidators: true }).exec();
       if (!pending) throw new InventoryItemError(409, 'Inventory item changed; reload and retry inbound request');
-      const reservation = await lockReservationForInbound(item, session, now);
+      const reservation = await lockReservationForInbound(item, session, now, true);
       const facility = await FacilityModel.findOne({
         _id: item.facilityId, status: FacilityStatus.ACTIVE,
         serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live,
@@ -372,8 +450,37 @@ export class InventoryItemService {
       const cell = await WarehouseCellModel.findOne({ _id: data.cellId, ...live }).session(session).exec();
       if (!cell) throw new InventoryItemError(404, 'Destination Cell not found');
       if (!cell.facilityId.equals(item.facilityId)) throw new InventoryItemError(409, 'Destination Cell must belong to the item Facility');
+      const reservationPreflight = await ReservationModel.findOne({ _id: item.managedReservationId, customerId: item.customerId,
+        facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).select('bookingFlowVersion').session(session).exec();
+      if (!reservationPreflight) throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
+      if (reservationPreflight.bookingFlowVersion === 2) {
+        const capacityLock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId: item.facilityId },
+          { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+        if (!capacityLock) throw new InventoryItemError(409, 'Managed capacity configuration is missing');
+      }
       await lockZoneForInbound(cell.zoneId, item.facilityId, session);
-      const reservation = await lockReservationForInbound(item, session, new Date());
+      const performedAt = new Date();
+      const reservation = await lockReservationForInbound(item, session, performedAt);
+      const firstV2Inbound = reservation.bookingFlowVersion === 2 && reservation.status === ReservationStatus.CHECKIN_READY;
+      if (reservation.bookingFlowVersion === 2) {
+        await assertV2FirstInboundPrerequisites(reservation, item, session, performedAt);
+        const inspection = item.receivingInspection;
+        if (!inspection || inspection.decision !== 'ACCEPTED' ||
+            inspection.observedQuantity !== item.quantity ||
+            !measurementMatches(inspection.observedUnitWeightKg, item.unitWeightKg, 3) ||
+            !measurementMatches(inspection.observedUnitDimensionsM?.widthM, item.unitDimensionsM.widthM, 6) ||
+            !measurementMatches(inspection.observedUnitDimensionsM?.depthM, item.unitDimensionsM.depthM, 6) ||
+            !measurementMatches(inspection.observedUnitDimensionsM?.heightM, item.unitDimensionsM.heightM, 6) ||
+            (item.quantity > 1 && !inspection.packingLayoutVerified)) {
+          throw new InventoryItemError(409, 'A current ACCEPTED receiving inspection matching registered item data is required');
+        }
+        if (!reservation.allocatedCellIds?.some((allocatedId: Types.ObjectId) => allocatedId.equals(cell._id))) {
+          throw new InventoryItemError(409, 'Destination Cell is not selected in this reservation');
+        }
+        if (!inspection.compatibleWithCellIds?.some((compatibleId: Types.ObjectId) => compatibleId.equals(cell._id))) {
+          throw new InventoryItemError(409, 'Destination Cell was not approved by the receiving inspection');
+        }
+      }
       const allocation = await CellAllocationModel.findOne({ cellId: cell._id, reservationId: reservation._id,
         customerId: item.customerId, status: { $in: [CellAllocationStatus.RESERVED, CellAllocationStatus.OCCUPIED] } }).session(session).exec();
       if (!allocation) throw new InventoryItemError(409, 'Inbound destination must be allocated to this Managed reservation');
@@ -395,6 +502,14 @@ export class InventoryItemService {
           !measurementMatches(item.unitDimensionsM.heightM, data.actualUnitDimensionsM.heightM, 6)) {
         throw new InventoryItemError(409, 'Verified quantity/measurements differ from registration; reject inbound so the owner can correct the item first');
       }
+      if (reservation.bookingFlowVersion === 2 && (
+          !measurementMatches(Number(item.receivingInspection?.observedUnitWeightKg), data.actualUnitWeightKg, 3) ||
+          !measurementMatches(Number(item.receivingInspection?.observedUnitDimensionsM?.widthM), data.actualUnitDimensionsM.widthM, 6) ||
+          !measurementMatches(Number(item.receivingInspection?.observedUnitDimensionsM?.depthM), data.actualUnitDimensionsM.depthM, 6) ||
+          !measurementMatches(Number(item.receivingInspection?.observedUnitDimensionsM?.heightM), data.actualUnitDimensionsM.heightM, 6) ||
+          item.receivingInspection?.observedQuantity !== data.verifiedQuantity)) {
+        throw new InventoryItemError(409, 'Final physical measurements differ from the accepted receiving inspection');
+      }
       if (item.quantity > 1 && !data.physicalPackingConfirmed) throw new InventoryItemError(409, 'Staff must physically confirm the complete multi-unit packing layout');
       const unit = data.actualUnitDimensionsM;
       const horizontalFit = (unit.widthM <= cell.dimensions.widthM && unit.depthM <= cell.dimensions.depthM) ||
@@ -405,23 +520,24 @@ export class InventoryItemService {
       const unitVolumeM3 = rounded(unit.widthM * unit.depthM * unit.heightM, 6);
       const totalVolumeM3 = rounded(unitVolumeM3 * item.quantity, 6);
       const cellVolumeM3 = rounded(cell.dimensions.widthM * cell.dimensions.depthM * cell.dimensions.usableHeightM, 6);
-      const usedCellWeightKg = Number(cell.usedWeightKg ?? 0);
-      const usedCellVolumeM3 = Number(cell.usedVolumeM3 ?? 0);
+      const usedCellWeightKg = cell.usedWeightKg;
+      const usedCellVolumeM3 = cell.usedVolumeM3;
+      if (!Number.isFinite(usedCellWeightKg) || usedCellWeightKg < 0 || !Number.isFinite(usedCellVolumeM3) || usedCellVolumeM3 < 0) {
+        throw new InventoryItemError(409, 'Destination Cell physical usage counters are unknown; verify this Cell before inbound');
+      }
       if (usedCellWeightKg + totalWeightKg > cell.maxWeightKg || usedCellVolumeM3 + totalVolumeM3 > cellVolumeM3) {
         throw new InventoryItemError(409, 'Destination Cell kg or m3 capacity would be exceeded');
       }
-      const levelUsage = await WarehouseCellModel.aggregate([
-        { $match: { rackId: rack._id, levelNumber: cell.levelNumber, ...live } },
-        { $group: { _id: null, usedWeightKg: { $sum: { $ifNull: ['$usedWeightKg', 0] } } } },
-      ]).session(session).exec();
-      if (Number(levelUsage[0]?.usedWeightKg ?? 0) + totalWeightKg > rack.maxWeightKgPerLevel) {
+      const rackCells = await WarehouseCellModel.find({ rackId: rack._id, ...live }).session(session).lean().exec();
+      if (rackCells.some((rackCell: any) => !Number.isFinite(rackCell.usedWeightKg) || rackCell.usedWeightKg < 0 || !Number.isFinite(rackCell.usedVolumeM3) || rackCell.usedVolumeM3 < 0)) {
+        throw new InventoryItemError(409, 'Rack physical usage is unknown; verify legacy Cell counters before inbound');
+      }
+      const levelUsedWeightKg = rackCells.filter((rackCell: any) => rackCell.levelNumber === cell.levelNumber).reduce((sum: number, rackCell: any) => sum + rackCell.usedWeightKg, 0);
+      if (levelUsedWeightKg + totalWeightKg > rack.maxWeightKgPerLevel) {
         throw new InventoryItemError(409, 'Destination Rack level weight limit would be exceeded');
       }
-      const rackUsage = await WarehouseCellModel.aggregate([
-        { $match: { rackId: rack._id, ...live } },
-        { $group: { _id: null, usedWeightKg: { $sum: { $ifNull: ['$usedWeightKg', 0] } } } },
-      ]).session(session).exec();
-      if (Number(rackUsage[0]?.usedWeightKg ?? 0) + totalWeightKg > rack.levelCount * rack.maxWeightKgPerLevel) {
+      const rackUsedWeightKg = rackCells.reduce((sum: number, rackCell: any) => sum + rackCell.usedWeightKg, 0);
+      if (rackUsedWeightKg + totalWeightKg > rack.levelCount * rack.maxWeightKgPerLevel) {
         throw new InventoryItemError(409, 'Destination Rack structural weight limit would be exceeded');
       }
       const usedQuotaM3 = rounded(Number(reservation.usedCapacityM3 ?? 0), 6);
@@ -429,23 +545,25 @@ export class InventoryItemService {
         throw new InventoryItemError(409, 'Managed rental used volume plus this lot would exceed its contracted quota');
       }
 
-      // Category policy config has no authoritative schema in the SRS or backend.
-      // Fail closed before any counter, item or movement write.
+      // Enforce the approved Managed CATEGORY policy before any occupancy write.
       await assertCategoryPolicyDecision(item.facilityId, item.category, session, new Date());
 
       const updatedCell = await WarehouseCellModel.findOneAndUpdate({
         _id: cell._id, facilityId: item.facilityId, rackId: rack._id, zoneId: cell.zoneId,
-        operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live,
+        operationalStatus: WarehouseOperationalStatus.AVAILABLE, usedWeightKg: usedCellWeightKg, usedVolumeM3: usedCellVolumeM3, ...live,
         $expr: { $and: [
-          { $lte: [{ $add: [{ $ifNull: ['$usedWeightKg', 0] }, totalWeightKg] }, '$maxWeightKg'] },
-          { $lte: [{ $add: [{ $ifNull: ['$usedVolumeM3', 0] }, totalVolumeM3] }, cellVolumeM3] },
+          { $lte: [{ $add: ['$usedWeightKg', totalWeightKg] }, '$maxWeightKg'] },
+          { $lte: [{ $add: ['$usedVolumeM3', totalVolumeM3] }, cellVolumeM3] },
         ] },
       }, { $inc: { usedWeightKg: totalWeightKg, usedVolumeM3: totalVolumeM3 } }, { new: true, session, runValidators: true }).exec();
       if (!updatedCell) throw new InventoryItemError(409, 'Destination Cell capacity changed; reload and retry');
 
       reservation.usedCapacityM3 = rounded(usedQuotaM3 + totalVolumeM3, 6);
+      if (firstV2Inbound) {
+        reservation.status = ReservationStatus.ACTIVE;
+        reservation.statusHistory.push({ status: ReservationStatus.ACTIVE, actorId: actor._id, reason: 'First Staff-confirmed Managed inbound completed check-in after signatures and full balance settlement', createdAt: performedAt } as any);
+      }
       await reservation.save({ session });
-      const performedAt = new Date();
       const movement = new ItemMovementModel({
         itemId: item._id, managedReservationId: reservation._id, facilityId: item.facilityId, customerId: item.customerId,
         type: ItemMovementType.INBOUND, destinationCellId: updatedCell._id,
@@ -466,6 +584,11 @@ export class InventoryItemService {
       item.inboundMovementId = movement._id;
       item.inboundIdempotencyKey = data.idempotencyKey;
       await item.save({ session });
+      if (firstV2Inbound) await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.ACTIVATED, fromStatus: ReservationStatus.CHECKIN_READY,
+        toStatus: ReservationStatus.ACTIVE, details: { firstInboundMovementId: movement._id, itemId: item._id, cellId: updatedCell._id } }], { session });
+      if (reservation.bookingFlowVersion === 2) await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.INBOUND_CONFIRMED, details: { movementId: movement._id, itemId: item._id, cellId: updatedCell._id, firstInbound: firstV2Inbound } }], { session });
       return { item: dto(item, true), movement: movementDto(movement), idempotentReplay: false };
     }));
   }

@@ -4,6 +4,7 @@ import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
 import * as ManagedReservationController from '../controllers/reservations/managed-reservation.controller';
+import * as ManagedCheckinController from '../controllers/reservations/managed-checkin.controller';
 
 const router = Router();
 
@@ -22,6 +23,11 @@ router.get('/managed/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MAN
 router.patch('/managed/:id/approve', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.approve);
 router.patch('/managed/:id/reject', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.reject);
 router.patch('/managed/:id/cancel', requireRole([UserRole.CUSTOMER]), ManagedReservationController.cancel);
+router.post('/managed/:id/deposit', requireRole([UserRole.CUSTOMER]), ManagedReservationController.initiateDeposit);
+router.post('/managed/:id/deposit/mock-confirm', requireRole([UserRole.CUSTOMER]), ManagedReservationController.confirmMockDeposit);
+router.post('/managed/:id/contract', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedCheckinController.createContract);
+router.post('/managed/:id/balance', requireRole([UserRole.CUSTOMER]), ManagedCheckinController.initiateBalance);
+router.post('/managed/:id/balance/mock-confirm', requireRole([UserRole.CUSTOMER]), ManagedCheckinController.confirmMockBalance);
 router.post('/managed/:id/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.mockPay);
 router.patch('/managed/:id/activate', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.activate);
 

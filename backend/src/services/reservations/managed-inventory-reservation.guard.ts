@@ -9,11 +9,12 @@ export class ManagedReservationGuardError extends Error {
 }
 
 /** Read-only eligibility check. It never creates, updates, or reserves rental capacity. */
-export async function requireActiveManagedInventoryReservation(
+async function requireManagedInventoryReservation(
   reservationId: string | Types.ObjectId,
   customerId: string | Types.ObjectId,
   expectedFacilityId?: string | Types.ObjectId,
   session?: ClientSession,
+  eligibility: Record<string, unknown> = { status: ReservationStatus.ACTIVE },
 ): Promise<IReservation> {
   const reservationObjectId = typeof reservationId === 'string' ? new Types.ObjectId(reservationId) : reservationId;
   const customerObjectId = typeof customerId === 'string' ? new Types.ObjectId(customerId) : customerId;
@@ -21,7 +22,7 @@ export async function requireActiveManagedInventoryReservation(
     _id: reservationObjectId,
     customerId: customerObjectId,
     serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    status: ReservationStatus.ACTIVE,
+    ...eligibility,
   };
   let reservationQuery = ReservationModel.findOne(filter);
   if (session) reservationQuery = reservationQuery.session(session);
@@ -43,4 +44,28 @@ export async function requireActiveManagedInventoryReservation(
   if (session) facilityQuery = facilityQuery.session(session);
   if (!await facilityQuery.exec()) throw new ManagedReservationGuardError(409, 'Managed Inventory Facility is not active');
   return reservation;
+}
+
+/** Existing ACTIVE rentals plus version 2 reservations after their deposit may register items. */
+export function requireManagedInventoryReservationForRegistration(
+  reservationId: string | Types.ObjectId,
+  customerId: string | Types.ObjectId,
+  expectedFacilityId?: string | Types.ObjectId,
+  session?: ClientSession,
+): Promise<IReservation> {
+  return requireManagedInventoryReservation(reservationId, customerId, expectedFacilityId, session, {
+    $or: [
+      { status: ReservationStatus.ACTIVE },
+      { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: new Date() } },
+    ],
+  });
+}
+
+export function requireActiveManagedInventoryReservation(
+  reservationId: string | Types.ObjectId,
+  customerId: string | Types.ObjectId,
+  expectedFacilityId?: string | Types.ObjectId,
+  session?: ClientSession,
+): Promise<IReservation> {
+  return requireManagedInventoryReservation(reservationId, customerId, expectedFacilityId, session);
 }

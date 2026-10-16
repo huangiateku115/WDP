@@ -9,6 +9,7 @@ import { FacilityServiceType } from '../../types/facility.type';
 import ManagedFacilityCapacityModel from '../../models/reservations/managed-facility-capacity.model';
 import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
+import { ManagedCheckinError, ManagedCheckinService } from '../../services/reservations/managed-checkin.service';
 
 export const getMyContracts = async (req: Request, res: Response) => {
   try {
@@ -29,11 +30,11 @@ export const getContractById = async (req: Request, res: Response) => {
     
     // Check permission: FM, Admin, BOM or the owner
     const isOwner = contract.customerId.toString() === req.user!._id.toString();
-    const isStaff = ['ADMIN', 'FACILITY_MANAGER', 'BOM'].includes(req.user!.role);
+    const isStaff = ['ADMIN', 'FACILITY_MANAGER', 'FACILITY_STAFF', 'BOM'].includes(req.user!.role);
     if (!isOwner && !isStaff) {
       return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
-    if (req.user!.role === 'FACILITY_MANAGER') {
+    if (['FACILITY_MANAGER', 'FACILITY_STAFF'].includes(req.user!.role)) {
       const reservation: any = contract.reservationId;
       if (!req.user!.assignedFacilityId || String(reservation?.facilityId?._id ?? reservation?.facilityId) !== req.user!.assignedFacilityId.toString()) {
         return res.status(404).json({ success: false, message: 'Contract not found' });
@@ -52,8 +53,12 @@ export const signContract = async (req: Request, res: Response) => {
     const reservations: any = ReservationModel;
     const existing: any = await contracts.findOne({ _id: req.params.id, customerId: req.user!._id });
     if (existing) {
-      const linkedReservation = await reservations.findById(existing.reservationId).select('serviceType facilityId').exec();
+      const linkedReservation = await reservations.findById(existing.reservationId).select('serviceType facilityId bookingFlowVersion').exec();
       if (linkedReservation?.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+        if (linkedReservation.bookingFlowVersion === 2) {
+          const signed = await ManagedCheckinService.signContract(req.params.id, req.user! as any);
+          return res.json({ success: true, data: signed });
+        }
         const session = await mongoose.startSession();
         try {
           let signed: any = null;
@@ -91,6 +96,7 @@ export const signContract = async (req: Request, res: Response) => {
     if (!contract) return res.status(400).json({ success: false, message: 'Contract cannot be signed (not found or already signed).' });
     return res.json({ success: true, data: contract });
   } catch (error: any) {
+    if (error instanceof ManagedCheckinError) return res.status(error.status).json({ success: false, message: error.message });
     return res.status(500).json({ success: false, message: error.message });
   }
 };

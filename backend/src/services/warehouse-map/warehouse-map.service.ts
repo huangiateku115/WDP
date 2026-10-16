@@ -166,6 +166,8 @@ function utilizationStatus(used: number, capacity: number): UtilizationStatus {
 
 /** Cell counters are transactional materialized aggregates maintained by inbound. */
 async function usageForRack(_rack: IWarehouseRack, cells: IWarehouseCell[]): Promise<WarehouseUsageSnapshot> {
+  const physicalUsageKnown = cells.every(cell => typeof cell.usedWeightKg === 'number' && Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 &&
+    typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0);
   const usage = cells.reduce((sum, cell) => ({
     usedWeightKg: sum.usedWeightKg + Number(cell.usedWeightKg ?? 0),
     usedVolumeM3: sum.usedVolumeM3 + Number(cell.usedVolumeM3 ?? 0),
@@ -173,7 +175,7 @@ async function usageForRack(_rack: IWarehouseRack, cells: IWarehouseCell[]): Pro
   if (!Number.isFinite(usage.usedWeightKg) || !Number.isFinite(usage.usedVolumeM3) || usage.usedWeightKg < 0 || usage.usedVolumeM3 < 0) {
     throw new WarehouseMapError(500, 'Warehouse inventory usage counters are invalid');
   }
-  return { ...usage, source: 'WAREHOUSE_CELL_COUNTERS' };
+  return { ...usage, physicalUsageKnown, source: 'WAREHOUSE_CELL_COUNTERS' };
 }
 
 function validRemaining(capacity: number, used: number) { return Math.max(0, capacity - used); }
@@ -190,8 +192,7 @@ function parseBookingRange(value: unknown, actor: Actor) {
   const query = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
   const start = query.startDate, end = query.endDate;
   if (start === undefined && end === undefined) {
-    const startDate = new Date(), endDate = new Date(Date.now() + 1);
-    return { startDate, endDate };
+    return undefined;
   }
   if (typeof start !== 'string' || typeof end !== 'string') throw new WarehouseMapError(400, 'startDate and endDate must be provided together');
   const startDate = new Date(start), endDate = new Date(end);
@@ -203,14 +204,16 @@ function parseBookingRange(value: unknown, actor: Actor) {
 
 async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { startDate: Date; endDate: Date }) {
   const rows = new Map<string, any[]>();
-  if (!cells.length || !range) return { rows, myInventoryCells: new Set<string>() };
+  if (!cells.length) return { rows, myInventoryCells: new Set<string>() };
   const ids = cells.map(cell => cell._id);
   const now = new Date();
+  const current = { startDate: { $lte: now }, endDate: { $gt: now } };
+  const period = range ? { startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } } : current;
   const allocations = await CellAllocationModel.find({ cellId: { $in: ids },
     $or: [
       { status: CellAllocationStatus.OCCUPIED },
-      { status: CellAllocationStatus.RESERVED, startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } },
-      { status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } },
+      { status: CellAllocationStatus.RESERVED, $or: [current, period] },
+      { status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, $or: [current, period] },
     ],
   }).select('cellId reservationId customerId status startDate endDate holdExpiresAt').lean().exec();
   for (const row of allocations) rows.set(String(row.cellId), [...(rows.get(String(row.cellId)) ?? []), row]);
@@ -223,18 +226,27 @@ async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { 
   return { rows, myInventoryCells };
 }
 
-function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor) {
+function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true) {
+  const physicalUsageKnown = typeof cell.usedWeightKg === 'number' && Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 &&
+    typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0;
   const usedWeightKg = Number(cell.usedWeightKg ?? 0), usedVolumeM3 = Number(cell.usedVolumeM3 ?? 0);
-  const active = allocations.find(allocation => allocation.status === CellAllocationStatus.OCCUPIED || allocation.status === CellAllocationStatus.RESERVED || allocation.status === CellAllocationStatus.HOLD);
+  const now = new Date();
+  const occupied = allocations.some(allocation => allocation.status === CellAllocationStatus.OCCUPIED);
+  const activeNow = allocations.find(allocation => allocation.status === CellAllocationStatus.RESERVED && allocation.startDate <= now && allocation.endDate > now || allocation.status === CellAllocationStatus.HOLD && allocation.holdExpiresAt > now && allocation.startDate <= now && allocation.endDate > now);
+  const activePeriod = allocations.find(allocation => allocation.status === CellAllocationStatus.RESERVED && allocation.startDate < (range?.endDate ?? now) && allocation.endDate > (range?.startDate ?? now) || allocation.status === CellAllocationStatus.HOLD && allocation.holdExpiresAt > now && allocation.startDate < (range?.endDate ?? now) && allocation.endDate > (range?.startDate ?? now));
   const isMine = Boolean(actor?.role === UserRole.CUSTOMER && allocations.some(allocation => String(allocation.customerId) === actor._id.toString()));
-  const bookingStatus = usedWeightKg > 0 || usedVolumeM3 > 0 || active?.status === CellAllocationStatus.OCCUPIED
-    ? 'OCCUPIED' : active ? 'RESERVED' : 'AVAILABLE';
+  const physicallyOccupied = !Number.isFinite(usedWeightKg) || !Number.isFinite(usedVolumeM3) || usedWeightKg !== 0 || usedVolumeM3 !== 0 || occupied;
+  const bookingStatus = physicallyOccupied ? 'OCCUPIED' : activeNow ? 'RESERVED' : 'AVAILABLE';
+  const periodStatus = physicallyOccupied ? 'OCCUPIED' : activePeriod ? 'RESERVED' : 'AVAILABLE';
   const displayStatus = cell.operationalStatus === WarehouseOperationalStatus.MAINTENANCE ? 'MAINTENANCE'
     : cell.operationalStatus === WarehouseOperationalStatus.BLOCKED ? 'BLOCKED' : bookingStatus;
-  const maxVolumeM3 = cell.dimensions.usableHeightM === undefined ? null : cell.dimensions.widthM * cell.dimensions.depthM * cell.dimensions.usableHeightM;
-  return { bookingStatus, displayStatus, isMine, hasMyInventory, usedWeightKg, maxWeightKg: cell.maxWeightKg,
-    remainingWeightKg: validRemaining(cell.maxWeightKg, usedWeightKg), usedVolumeM3, maxVolumeM3,
-    remainingVolumeM3: maxVolumeM3 === null ? null : validRemaining(maxVolumeM3, usedVolumeM3) };
+  const widthM = Number(cell.dimensions?.widthM), depthM = Number(cell.dimensions?.depthM), usableHeightM = Number(cell.dimensions?.usableHeightM);
+  const validUsableDimensions = Number.isFinite(widthM) && widthM > 0 && Number.isFinite(depthM) && depthM > 0 && Number.isFinite(usableHeightM) && usableHeightM > 0;
+  const isBookable = cell.operationalStatus === WarehouseOperationalStatus.AVAILABLE && rackAvailable && validUsableDimensions && physicalUsageKnown && !physicallyOccupied && !activePeriod;
+  const maxVolumeM3 = validUsableDimensions ? widthM * depthM * usableHeightM : null;
+  return { bookingStatus, displayStatus, periodStatus, isBookable, physicalUsageKnown, isMine, hasMyInventory, usedWeightKg, maxWeightKg: cell.maxWeightKg,
+    remainingWeightKg: physicalUsageKnown ? validRemaining(cell.maxWeightKg, usedWeightKg) : null, usedVolumeM3, maxVolumeM3,
+    remainingVolumeM3: maxVolumeM3 === null || !physicalUsageKnown ? null : validRemaining(maxVolumeM3, usedVolumeM3) };
 }
 
 async function assertRecordAccess(actor: Actor, facilityId: Types.ObjectId, write = false, session?: ClientSession) {
@@ -676,7 +688,7 @@ export class WarehouseMapService {
             const ratedCapacityKg = rack.levelCount * rack.maxWeightKgPerLevel;
             const allocatableCapacityKg = rackCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
             const usage = await usageForRack(rack as IWarehouseRack, rackCells);
-            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor));
+            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE));
             return {
               _id: rack._id,
               rackCode: rack.rackCode,
@@ -688,6 +700,7 @@ export class WarehouseMapService {
               utilization: {
                 usedWeightKg: usage.usedWeightKg,
                 usedVolumeM3: usage.usedVolumeM3,
+                physicalUsageKnown: usage.physicalUsageKnown,
                 source: usage.source,
                 // Keep maxWeightKg as the legacy rated capacity field.
                 maxWeightKg: ratedCapacityKg,
@@ -698,7 +711,8 @@ export class WarehouseMapService {
                 status: utilizationStatus(usage.usedWeightKg, ratedCapacityKg),
               },
               cellCount: rackCells.length,
-              availableCellCount: statuses.filter(cell => cell.displayStatus === 'AVAILABLE').length,
+              availableCellCount: statuses.filter(cell => cell.isBookable).length,
+              availableForPeriodCellCount: statuses.filter(cell => cell.isBookable).length,
               reservedCellCount: statuses.filter(cell => cell.displayStatus === 'RESERVED').length,
               occupiedCellCount: statuses.filter(cell => cell.displayStatus === 'OCCUPIED').length,
               blockedCellCount: statuses.filter(cell => cell.displayStatus === 'BLOCKED').length,
@@ -709,7 +723,7 @@ export class WarehouseMapService {
         })));
         return { _id: zone._id, code: zone.code, name: zone.name, ...(zone.color ? { color: zone.color } : {}), aisles };
       }));
-      return { facilityId, zones: zonesDto };
+      return { facilityId, ...(range ? { requestedInterval: { startDate: range.startDate, endDate: range.endDate } } : {}), zones: zonesDto };
     });
   }
 
@@ -731,6 +745,8 @@ export class WarehouseMapService {
         const allocatableCapacityKg = levelCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
         const usedWeightKg = levelCells.reduce((sum, cell) => sum + Number(cell.usedWeightKg ?? 0), 0);
         const usedVolumeM3 = levelCells.reduce((sum, cell) => sum + Number(cell.usedVolumeM3 ?? 0), 0);
+          const physicalUsageKnown = levelCells.every(cell => typeof cell.usedWeightKg === 'number' && Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 &&
+            typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0);
         levels.push({
           levelNumber,
           maxWeightKg,
@@ -738,7 +754,8 @@ export class WarehouseMapService {
           allocatableCapacityKg,
           usedWeightKg,
           usedVolumeM3,
-          remainingWeightKg: validRemaining(maxWeightKg, usedWeightKg),
+            physicalUsageKnown,
+            remainingWeightKg: physicalUsageKnown ? validRemaining(maxWeightKg, usedWeightKg) : null,
           utilizationStatus: utilizationStatus(usedWeightKg, maxWeightKg),
           cells: levelCells.map(cell => ({
             _id: cell._id,
@@ -747,13 +764,14 @@ export class WarehouseMapService {
             dimensions: cell.dimensions,
             operationalStatus: cell.operationalStatus,
             utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg),
-            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor),
+            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE),
           })),
         });
       }
       const capacityKg = rack.levelCount * rack.maxWeightKgPerLevel;
       const allocatableCapacityKg = cells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
       return {
+        ...(range ? { requestedInterval: { startDate: range.startDate, endDate: range.endDate } } : {}),
         rack: {
           _id: rack._id,
           facilityId: rack.facilityId,
@@ -775,7 +793,8 @@ export class WarehouseMapService {
           allocatableCapacityKg,
           usedWeightKg: usage.usedWeightKg,
           usedVolumeM3: usage.usedVolumeM3,
-          remainingWeightKg: validRemaining(capacityKg, usage.usedWeightKg),
+          physicalUsageKnown: usage.physicalUsageKnown,
+          remainingWeightKg: usage.physicalUsageKnown ? validRemaining(capacityKg, usage.usedWeightKg) : null,
           utilizationStatus: utilizationStatus(usage.usedWeightKg, capacityKg),
           source: usage.source,
         },

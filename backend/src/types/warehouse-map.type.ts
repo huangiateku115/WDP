@@ -119,5 +119,6 @@ export type UtilizationStatus = 'EMPTY' | 'PARTIAL' | 'NEAR_FULL' | 'FULL';
 export interface WarehouseUsageSnapshot {
   usedWeightKg: number;
   usedVolumeM3: number;
+  physicalUsageKnown: boolean;
   source: 'WAREHOUSE_CELL_COUNTERS';
 }
