@@ -1,3 +1,5 @@
+import SelfStorageMockPayment, { SelfPaymentNavigation } from './SelfStorageMockPayment';
+import { canPaySelfStorage } from '@/lib/selfStoragePayment';
 import {
   serviceType,
   serviceLabel,
@@ -11,7 +13,7 @@ import {
   managedMockEnabled,
 } from "@/lib/customerReservationService";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
 import managedReservationApi from "@/api/managedReservationApi";
@@ -84,8 +86,8 @@ const managedLifecycle = {
 };
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
-      reservationApi.mineReal(config).then(rows),
-    ),
+    reservationApi.mineReal(config).then(rows),
+  ),
     [filter, setFilter] = useState(""),
     [service, setService] = useState("");
   const records =
@@ -223,6 +225,8 @@ export function ReservationDetailIntegration() {
           : Promise.reject(Error("Invalid reservation ID.")),
       [id],
     );
+  const paymentContracts = useBackend(config => serviceType(resource.data) === SELF_STORAGE ? contractApi.mineReal(config).then(rows) : Promise.resolve([]), [id, resource.data?.serviceType, resource.data?.status]);
+  const paymentContract = paymentContracts.data?.find(c => recordId(c.reservationId) === id);
   return (
     <BackendScreen
       title="Reservation details"
@@ -256,6 +260,7 @@ export function ReservationDetailIntegration() {
                 unavailable; the displayed backend status is unchanged.
               </p>
             )}
+          {serviceType(resource.data) === SELF_STORAGE && <><LoadState resource={paymentContracts} /><SelfPaymentNavigation contract={paymentContract} reservation={resource.data} /></>}
           <div className="flex flex-wrap gap-4">
             {canCancel(resource.data) && (
               <ConfirmAction
@@ -305,6 +310,8 @@ export function ReservationDetailIntegration() {
               )}
             {serviceType(resource.data) &&
               (["CONTRACTED", "PAID"].includes(resource.data.status) || (resource.data.bookingFlowVersion === 2 && resource.data.status === "RESERVED")) && (
+                { serviceType(resource.data) === MANAGED_INVENTORY &&
+              ["CONTRACTED", "PAID"].includes(resource.data.status) && (
                 <Button asChild variant="outline">
                   <Link to={`/portal/payments/${id}`}>
                     {resource.data.bookingFlowVersion === 2 ? "Pay advance rent deposit" : "Review simulated payment"}
@@ -326,6 +333,7 @@ export function ReservationDetailIntegration() {
   );
 }
 export function ContractsIntegration() {
+  const reservations = useBackend(config => reservationApi.mineReal(config).then(rows));
   const resource = useBackend((config) =>
     contractApi.mineReal(config).then(rows),
   );
@@ -342,6 +350,7 @@ export function ContractsIntegration() {
               {c.contractCode || "Storage rental contract"}
             </h2>
             <RentalStatus status={c.status} />
+            <SelfPaymentNavigation contract={c} reservation={reservations.data?.find(r => recordId(r) === recordId(c.reservationId))} />
             {validId(recordId(c.reservationId)) && (
               <Button asChild className="mt-4">
                 <Link to={`/portal/contracts/${recordId(c.reservationId)}`}>
@@ -361,13 +370,16 @@ export function ContractsIntegration() {
   );
 }
 export function ContractDetailIntegration() {
+  const nav = useNavigate(), session = useAuthSession();
+  const [confirmedSignature, setConfirmedSignature] = useState(null), [signatureNotice, setSignatureNotice] = useState('');
   const { reservationId } = useParams(),
     now = useCurrentTime();
   const resource = useBackend(
     (config) => contractContext(reservationId, config),
     [reservationId],
   );
-  const contract = resource.data?.contract,
+  useEffect(() => { setSignatureNotice(''); setConfirmedSignature(null); }, [reservationId, session.accessToken]);
+  const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
   return (
@@ -376,6 +388,7 @@ export function ContractDetailIntegration() {
       description="Owned contracts, including drafts, are retrieved from the backend."
     >
       <LoadState resource={resource} />
+      <Message error={signatureNotice} />
       {contract ? (
         <Card>
           <CardContent>
@@ -438,7 +451,14 @@ export function ContractDetailIntegration() {
                       throw Error(
                         "Backend did not confirm this contract signature.",
                       );
-                    resource.retry();
+                    if (latest.reservation.serviceType === SELF_STORAGE) {
+                      setConfirmedSignature({ id: reservationId, token, contract: result });
+                      const associatedId = recordId(result.reservationId) || recordId(latest.contract.reservationId);
+                      resource.retry();
+                      if (!validId(associatedId) || associatedId !== recordId(latest.reservation)) { setSignatureNotice('Contract signed. The associated reservation could not be verified; refresh before proceeding to payment.'); return; }
+                      try { const refreshed = await contractContext(associatedId); if (getAccessToken() !== token) return; if (canPaySelfStorage(refreshed.reservation, refreshed.contract)) nav(`/portal/payments/${associatedId}`); }
+                      catch (e) { if (getAccessToken() === token) setSignatureNotice('Contract signed. Refresh the contract/reservation to continue to payment.'); }
+                    } else resource.retry();
                   }}
                 />
               )}
@@ -449,7 +469,8 @@ export function ContractDetailIntegration() {
                   hold could not be confirmed.
                 </p>
               )}
-            <Button variant="outline" className="mt-4" onClick={resource.retry}>
+            <SelfPaymentNavigation contract={contract} reservation={reservation} />
+            <Button variant="outline" className="mt-4" onClick={() => { setSignatureNotice(''); resource.retry(); }}>
               Refresh contract and reservation
             </Button>
             <Link
@@ -473,6 +494,7 @@ export function ContractDetailIntegration() {
   );
 }
 export function PaymentIntegration() {
+  const session = useAuthSession();
   const { reservationId } = useParams(),
     now = useCurrentTime(),
     enabled = managedMockEnabled(import.meta.env);
@@ -496,6 +518,7 @@ export function PaymentIntegration() {
   const contract = contracts.data?.find(
     (c) => recordId(c.reservationId) === reservationId,
   );
+  if (serviceType(resource.data) === SELF_STORAGE) return <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
   return (
     <BackendScreen
       title="Simulated Payment"
@@ -508,12 +531,12 @@ export function PaymentIntegration() {
           {managedDeposit && (
             <Card><CardContent><h2 className="text-xl font-bold">Advance rent deposit</h2>
               <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. This screen uses the development mock only.</p>
-              <Details values={[["Deposit due", `${resource.data.depositAmount} ${resource.data.managedPricingSnapshot?.pricingRule?.currency || "VND"}`],["Total rent due", resource.data.managedPricingSnapshot?.amountBreakdown?.totalDue],["Balance after deposit", resource.data.managedPricingSnapshot?.amountBreakdown?.balanceDue]]}/>
-              {!managedDepositEnabled && <Message error="Managed deposit flow is disabled in this frontend. Enable VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED=true for a development build and MI_MANAGED_DEPOSIT_FLOW_ENABLED=true with NODE_ENV=development in the backend."/>}
-              {resource.data.status === "DEPOSIT_PAID" && <Message success="Deposit settled. Reservation is DEPOSIT_PAID; Cells are reserved and rental activation awaits later approved handover steps."/>}
+              <Details values={[["Deposit due", `${resource.data.depositAmount} ${resource.data.managedPricingSnapshot?.pricingRule?.currency || "VND"}`], ["Total rent due", resource.data.managedPricingSnapshot?.amountBreakdown?.totalDue], ["Balance after deposit", resource.data.managedPricingSnapshot?.amountBreakdown?.balanceDue]]} />
+              {!managedDepositEnabled && <Message error="Managed deposit flow is disabled in this frontend. Enable VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED=true for a development build and MI_MANAGED_DEPOSIT_FLOW_ENABLED=true with NODE_ENV=development in the backend." />}
+              {resource.data.status === "DEPOSIT_PAID" && <Message success="Deposit settled. Reservation is DEPOSIT_PAID; Cells are reserved and rental activation awaits later approved handover steps." />}
               {managedDepositEnabled && resource.data.status === "RESERVED" && <div className="mt-4 flex flex-wrap gap-3">
-                <ConfirmAction label="Initiate advance rent deposit" onAction={async()=>{const token=getAccessToken();const result=record(await managedReservationApi.initiateDeposit(reservationId,{idempotencyKey:depositKey.current}));if(getAccessToken()!==token)return;if(result.payment?.purpose!=="DEPOSIT"||result.payment?.status!=="PENDING"||result.amount!==resource.data.depositAmount)throw Error("Backend did not confirm the expected pending deposit.");setDepositInitiated(true);resource.retry();}}/>
-                <ConfirmAction label="Confirm development mock deposit" disabled={!depositInitiated} onAction={async()=>{const token=getAccessToken();const result=record(await managedReservationApi.confirmMockDeposit(reservationId,{idempotencyKey:depositKey.current}));if(getAccessToken()!==token)return;if(result.reconciliationRequired)throw Error("The hold expired before confirmation. Payment requires reconciliation and the Cells were not reclaimed.");if(result.reservation?.status!=="DEPOSIT_PAID"||result.payment?.status!=="SUCCEEDED")throw Error("Backend did not confirm the deposit settlement.");setDepositInitiated(false);resource.retry();}}/>
+                <ConfirmAction label="Initiate advance rent deposit" onAction={async () => { const token = getAccessToken(); const result = record(await managedReservationApi.initiateDeposit(reservationId, { idempotencyKey: depositKey.current })); if (getAccessToken() !== token) return; if (result.payment?.purpose !== "DEPOSIT" || result.payment?.status !== "PENDING" || result.amount !== resource.data.depositAmount) throw Error("Backend did not confirm the expected pending deposit."); setDepositInitiated(true); resource.retry(); }} />
+                <ConfirmAction label="Confirm development mock deposit" disabled={!depositInitiated} onAction={async () => { const token = getAccessToken(); const result = record(await managedReservationApi.confirmMockDeposit(reservationId, { idempotencyKey: depositKey.current })); if (getAccessToken() !== token) return; if (result.reconciliationRequired) throw Error("The hold expired before confirmation. Payment requires reconciliation and the Cells were not reclaimed."); if (result.reservation?.status !== "DEPOSIT_PAID" || result.payment?.status !== "SUCCEEDED") throw Error("Backend did not confirm the deposit settlement."); setDepositInitiated(false); resource.retry(); }} />
               </div>}
             </CardContent></Card>
           )}
@@ -597,12 +620,12 @@ export function AccessIntegration() {
 function AccessForm({ id }) {
   const logs = useBackend((config) => accessApi.logs(config).then(rows), [id]);
   const resource = useBackend(
-      (config) =>
-        validId(id)
-          ? reservationApi.detailForCustomer(id, config).then(record)
-          : Promise.reject(Error("Invalid reservation ID.")),
-      [id],
-    ),
+    (config) =>
+      validId(id)
+        ? reservationApi.detailForCustomer(id, config).then(record)
+        : Promise.reject(Error("Invalid reservation ID.")),
+    [id],
+  ),
     [pin, setPin] = useState(""),
     [pending, setPending] = useState(false),
     [message, setMessage] = useState(""),
