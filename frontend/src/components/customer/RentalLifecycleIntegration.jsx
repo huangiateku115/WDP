@@ -1,5 +1,7 @@
 import SelfStorageMockPayment,{SelfPaymentNavigation} from './SelfStorageMockPayment';
 import {canPaySelfStorage} from '@/lib/selfStoragePayment';
+import ManagedCellSummary from './warehouse/ManagedCellSummary';
+import {clearMapAvailability} from './warehouse/ManagedCellBooking';
 import {
   serviceType,
   serviceLabel,
@@ -74,7 +76,7 @@ const managedLifecycle = {
     "A Managed contract has been created. Sign it while the hold is valid.",
   PAID: "Payment has been recorded. Authorized management must activate the Managed quota; no unit handover is required.",
   ACTIVE:
-    "Managed quota is activated. Inventory registration is a separate future integration; no cell or physical stock is assigned.",
+    "Managed rental is activated. Selected Cells remain allocated; physical occupancy requires Staff-confirmed inbound.",
   OVERDUE:
     "Managed rental is overdue. Unresolved obligations may continue to hold commercial quota.",
   CANCELLED:
@@ -240,6 +242,7 @@ export function ReservationDetailIntegration() {
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
+          <ManagedCellSummary reservation={resource.data}/>
           <p>
             {(serviceType(resource.data) === MANAGED_INVENTORY
               ? managedLifecycle[resource.data.status]
@@ -282,6 +285,7 @@ export function ReservationDetailIntegration() {
                     throw Error(
                       "Cancellation was not confirmed by the backend.",
                     );
+                  if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
                   resource.retry();
                 }}
               />
@@ -577,6 +581,7 @@ export function PaymentIntegration() {
                   recordId(result) !== reservationId
                 )
                   throw Error("Backend did not confirm payment.");
+                if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
                 resource.retry();
                 contracts.retry();
               }}
