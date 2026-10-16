@@ -10,6 +10,7 @@ import facilityApi from '@/api/facilityApi';
 import {useAuthSession,getAccessToken} from '@/lib/authSession';
 import {useBackend,record,validId} from '@/components/customer/RentalBackendUI';
 import {validateRackDetail,warehouseAxis,weightText,measurementText} from '@/lib/warehouseMap';
+import {availableCellCount} from '@/lib/managedBookingDisplay';
 import WarehouseBreadcrumbs from '@/components/customer/WarehouseBreadcrumbs';
 import WarehouseCells,{CellInformation,WarehouseStatus} from './CellInformation';
 import './warehouse-dashboard.css';
@@ -35,20 +36,22 @@ export default function DigitalWarehouseDashboard(props) {
   const {accessToken}=useAuthSession();
   return <Dashboard key={`${props.facilityId}:${accessToken}`} {...props} token={accessToken}/>;
 }
-function Dashboard({facilityId,map,initialRackId,token}) {
+function Dashboard({facilityId,map,initialRackId,token,booking}) {
   const inventory=useInventoryMapPreference(facilityId);
   const root=useRef(null),viewport=useRef(null),floor=useRef(null),zones=useRef(new Map()),cache=useRef(new Map()),drag=useRef(null),pendingZone=useRef(null);
   const [rackId,setRackId]=useState(initialRackId||''),[cell,setCell]=useState(null),[zoneId,setZoneId]=useState(''),[query,setQuery]=useState(''),[zoom,setZoom]=useState(1),[bounds,setBounds]=useState({width:1,height:1});
-  const [sidebar,setSidebar]=useState(false),[drawer,setDrawer]=useState(false),[expanded,setExpanded]=useState(false),[fullscreen,setFullscreen]=useState(false),[fullscreenError,setFullscreenError]=useState(''),[updated,setUpdated]=useState(null);
+  const [sidebar,setSidebar]=useState(false),[drawer,setDrawer]=useState(false),[expanded,setExpanded]=useState(false),[fullscreen,setFullscreen]=useState(false),[fullscreenError,setFullscreenError]=useState(''),[updated,setUpdated]=useState(null),[myInventoryOnly,setMyInventoryOnly]=useState(false);
   const facility=useBackend(config=>validId(facilityId)?facilityApi.publicDetail(facilityId,config).then(record):Promise.resolve(null),[facilityId],true);
   const detail=useBackend(async config=>{
     if(!rackId)return null;
     if(!validId(facilityId)||!validId(rackId))throw Error('Invalid facility or rack ID.');
-    if(cache.current.has(rackId))return cache.current.get(rackId);
-    const result=validateRackDetail(record(await warehouseMapApi.getRackDetailMap(rackId,config)),facilityId,rackId);
-    if(!config.signal.aborted&&getAccessToken()===token)cache.current.set(rackId,result);
+    const cacheKey=`${rackId}:${booking?.startDate||''}:${booking?.endDate||''}:${booking?.refreshKey||0}`;
+    if(cache.current.has(cacheKey))return cache.current.get(cacheKey);
+    const params=booking?.startDate&&booking?.endDate?{startDate:booking.startDate,endDate:booking.endDate}:{};
+    const result=validateRackDetail(record(await warehouseMapApi.getRackDetailMap(rackId,{...config,params})),facilityId,rackId);
+    if(!config.signal.aborted&&getAccessToken()===token)cache.current.set(cacheKey,result);
     return result;
-  },[facilityId,rackId]);
+  },[facilityId,rackId,booking?.startDate,booking?.endDate,booking?.refreshKey]);
   useEffect(()=>{setRackId(initialRackId||'');setCell(null);},[initialRackId]);
   useEffect(()=>{setCell(null);},[detail.data]);
   useEffect(()=>{if(rackId&&map.data){const zone=map.data.zones.find(z=>z.aisles.some(a=>a.racks.some(r=>r._id===rackId)));if(zone)setZoneId(zone._id);}},[rackId,map.data]);
@@ -56,7 +59,7 @@ function Dashboard({facilityId,map,initialRackId,token}) {
   useEffect(()=>{const change=()=>setFullscreen(document.fullscreenElement===root.current);const escape=e=>{if(e.key==='Escape'){setCell(null);setDrawer(false);setExpanded(false);}};document.addEventListener('fullscreenchange',change);document.addEventListener('keydown',escape);return()=>{document.removeEventListener('fullscreenchange',change);document.removeEventListener('keydown',escape);};},[]);
   useEffect(()=>{if(!floor.current)return;const measure=()=>setBounds({width:floor.current?.offsetWidth||1,height:floor.current?.offsetHeight||1});const observer=new ResizeObserver(measure);observer.observe(floor.current);measure();return()=>observer.disconnect();},[map.data,query]);
   const allRacks=useMemo(()=>map.data?.zones.flatMap(z=>z.aisles.flatMap(a=>a.racks))||[],[map.data]);
-  const statistics=useMemo(()=>{const sum=key=>allRacks.every(r=>Number.isInteger(r[key])&&r[key]>=0)?allRacks.reduce((n,r)=>n+r[key],0):null;return [['Zones',map.data?.zones.length],['Racks',map.data?allRacks.length:null],['Cells',map.data?sum('cellCount'):null],['Available cells',map.data?sum('availableCellCount'):null],['Blocked cells',null],['Maintenance cells',null]];},[map.data,allRacks]);
+  const statistics=useMemo(()=>{const sum=key=>allRacks.every(r=>Number.isInteger(r[key])&&r[key]>=0)?allRacks.reduce((n,r)=>n+r[key],0):null;const period=!!booking?.startDate&&!!booking?.endDate;return [['Zones',map.data?.zones.length],['Racks',map.data?allRacks.length:null],['Cells',map.data?sum('cellCount'):null],[period?'Available for selected period':'Available now',map.data?availableCellCount(allRacks,period):null],['Blocked cells',null],['Maintenance cells',null]];},[map.data,allRacks,booking?.startDate,booking?.endDate]);
   const filtered=useMemo(()=>{
     const q=query.trim().toLowerCase();if(!q)return map.data?.zones||[];
     return (map.data?.zones||[]).map(zone=>{const zoneMatch=`${zone.code} ${zone.name||''}`.toLowerCase().includes(q);return {...zone,aisles:zone.aisles.map(aisle=>({...aisle,racks:aisle.racks.filter(r=>zoneMatch||aisle.aisleCode.toLowerCase().includes(q)||String(r.rackCode).toLowerCase().includes(q)||(cache.current.get(r._id)?.levels.some(l=>l.cells.some(c=>String(c.code||`C${c.cellNumber}`).toLowerCase().includes(q)))))})).filter(a=>a.racks.length)};}).filter(z=>z.aisles.length||`${z.code} ${z.name||''}`.toLowerCase().includes(q));
@@ -69,13 +72,14 @@ function Dashboard({facilityId,map,initialRackId,token}) {
   const refresh=()=>{if(map.loading||detail.loading)return;cache.current.clear();setCell(null);map.retry();detail.retry();};
   const reset=()=>{setZoom(1);if(viewport.current){viewport.current.scrollLeft=0;viewport.current.scrollTop=0;}};
   async function toggleFullscreen(){setFullscreenError('');if(fullscreen){try{await document.exitFullscreen();}catch{setFullscreenError('Unable to exit fullscreen. Use Escape.');}return;}if(expanded){setExpanded(false);return;}try{if(!root.current?.requestFullscreen)throw Error();await root.current.requestFullscreen();}catch{setExpanded(true);setFullscreenError('Browser fullscreen is unavailable. Expanded dashboard view is enabled.');}}
-  const information=<><div className="wm-section-heading"><h2>{cell?'Cell details':'Rack details'}</h2>{cell&&<Button className="wm-button" variant="outline" size="sm" onClick={()=>setCell(null)}>Clear cell</Button>}</div>{!rackId?<div className="wm-empty-inspector"><Boxes size={34}/><p>Select a rack or cell on the map to view details.</p></div>:<>{!map.error&&<ResourceState resource={detail}/>}{!map.error&&detail.data&&(cell?<><CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack}/><InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack}/></>:<RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId}/>)}</>}</>;
+  const information=<><div className="wm-section-heading"><h2>{cell?'Cell details':'Rack details'}</h2>{cell&&<Button className="wm-button" variant="outline" size="sm" onClick={()=>setCell(null)}>Clear cell</Button>}</div>{!rackId?<div className="wm-empty-inspector"><Boxes size={34}/><p>Select a rack or cell on the map to view details.</p></div>:<>{!map.error&&<ResourceState resource={detail}/>}{!map.error&&detail.data&&(cell?<><CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack} requestedPeriod={!!booking?.startDate&&!!booking?.endDate}/><InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack}/></>:<RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId}/>)}</>}</>;
   const portalTarget=document.fullscreenElement||document.body;
   return <div ref={root} className={`warehouse-dashboard ${expanded?'wm-expanded':''}`}>
     <header className="wm-header"><div><p className="wm-eyebrow"><MapIcon size={14}/> WAREHOUSE EXPLORER · MI-01</p><h1>Digital Warehouse Map</h1><p>Explore warehouse zones, racks and storage cells.</p><WarehouseBreadcrumbs facilityId={validId(facilityId)?facilityId:undefined} facilityName={facility.data?.name} rackCode={initialRackId?(detail.data?.rack.rackCode||'Rack Detail'):undefined}/><p className="wm-facility">{facility.data?.name||facilityId}</p>{facility.loading&&<small role="status">Loading facility context…</small>}{facility.error&&<small role="status">Facility name unavailable. Map access is checked separately by the backend.</small>}{updated&&<small>Last updated {updated.toLocaleTimeString()}</small>}</div>
       <div className="wm-header-actions"><Button asChild variant="outline" className="wm-button"><Link to={initialRackId?`/portal/warehouse-map/${facilityId}${inventory.itemId?`?inventoryItem=${inventory.itemId}`:''}`:'/portal/warehouse-map'}><ArrowLeft size={15}/>{initialRackId?'Back to Warehouse Map':'Back to Facility Selection'}</Link></Button><Button variant="outline" className="wm-button" disabled={map.loading||detail.loading} onClick={refresh}><RefreshCw size={15}/>Refresh</Button><Button variant="outline" className="wm-button" onClick={toggleFullscreen}>{fullscreen||expanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}<span>{fullscreen||expanded?'Exit fullscreen':'Fullscreen'}</span></Button></div>
     </header>
-    <p className="wm-notice">Read-only structural map. MI_01_EMPTY / zero used weight is a technical baseline, not physical vacancy. Physical stock tracking and cell reservations are not available.</p>
+    <p className="wm-notice">{booking?'Choose cells available for the selected rental period. Availability is rechecked atomically when you create the reservation.':'Cell availability reflects active reservations and recorded physical usage. Customer maps show no other customer details.'}</p>
+    <div className="wm-map-controls">{booking&&<span>Selected {booking.selectedCellIds.length} cells · {Number(booking.allocatedCapacityM3||0).toFixed(3)} m³</span>}<Button className="wm-button" variant={myInventoryOnly?'orange':'outline'} onClick={()=>setMyInventoryOnly(v=>!v)} aria-pressed={myInventoryOnly}>My Inventory</Button>{myInventoryOnly&&<small>Cells not reserved by you or holding your inventory are dimmed.</small>}</div>
     <InventoryMapContext controller={inventory}/>{fullscreenError&&<p role="status" className="wm-notice">{fullscreenError}</p>}
     <div className="wm-stats" aria-label="Warehouse statistics">{statistics.map(([label,value],index)=><div className="wm-stat" key={label}><span className={`wm-stat-dot wm-stat-dot-${index}`}/><p>{label}</p><strong>{value==null?'Not available':value.toLocaleString()}</strong></div>)}</div>
     <div className="wm-mobile-tools"><Button className="wm-button" variant="outline" onClick={()=>setSidebar(v=>!v)} aria-expanded={sidebar}><SlidersHorizontal size={15}/>Zones & search</Button><Button className="wm-button" variant="outline" onClick={()=>setDrawer(true)}>View details</Button></div>
@@ -92,7 +96,7 @@ function Dashboard({facilityId,map,initialRackId,token}) {
           onPointerUp={e=>{drag.current=null;e.currentTarget.classList.remove('is-panning');}} onLostPointerCapture={e=>{drag.current=null;e.currentTarget.classList.remove('is-panning');}}>
           <div className="wm-zoom-surface" style={{width:bounds.width*zoom,height:bounds.height*zoom}}><div ref={floor} className="wm-floor" style={{transform:`scale(${zoom})`}}>{filtered.map(zone=><ZonePlane key={zone._id} zone={zone} active={zoneId===zone._id} rackId={zone.aisles.some(a=>a.racks.some(r=>r._id===rackId))?rackId:''} onSelect={selectRack} registerZone={registerZone}/>)}{!filtered.length&&<p className="wm-map-empty">No loaded structure matches your search.</p>}</div></div>
         </div><div className="wm-map-controls"><Button className="wm-button" variant="outline" size="icon" aria-label="Zoom out" disabled={zoom<=0.6} onClick={()=>setZoom(z=>Math.max(0.6,Number((z-0.2).toFixed(1))))}><ZoomOut size={17}/></Button><output aria-label="Map zoom">{Math.round(zoom*100)}%</output><Button className="wm-button" variant="outline" size="icon" aria-label="Zoom in" disabled={zoom>=1.8} onClick={()=>setZoom(z=>Math.min(1.8,Number((z+0.2).toFixed(1))))}><ZoomIn size={17}/></Button><Button className="wm-button" variant="outline" size="sm" onClick={reset}><RotateCcw size={15}/>Reset View</Button><small>Grid positions, not meters · Drag blank space to pan · Scroll on touch</small></div></>}
-        {rackId&&<div className="wm-selected-rack"><div className="wm-rack-inline-state">{!map.error&&<ResourceState resource={detail}/>}</div>{!map.error&&detail.data&&<WarehouseCells key={`${rackId}:${updated?.getTime()||0}`} data={detail.data} selected={cell} query={query} onSelect={value=>{setCell(value);setDrawer(true);}}/>}</div>}
+        {rackId&&<div className="wm-selected-rack"><div className="wm-rack-inline-state">{!map.error&&<ResourceState resource={detail}/>}</div>{!map.error&&detail.data&&<WarehouseCells key={`${rackId}:${booking?.startDate||''}:${booking?.refreshKey||0}:${updated?.getTime()||0}`} data={detail.data} selected={cell} query={query} booking={booking} myInventoryOnly={myInventoryOnly} onSelect={value=>{setCell(value);setDrawer(true);if(booking){const dimensions=value.cell.dimensions||{};const volume=Number(dimensions.widthM)*Number(dimensions.depthM)*Number(dimensions.usableHeightM);booking.onToggleCell?.(value.cell,volume);}}}/>}</div>}
       </section>
       <aside className="wm-inspector wm-panel" aria-label="Selected rack or cell details" aria-live="polite">{information}</aside>
     </div>

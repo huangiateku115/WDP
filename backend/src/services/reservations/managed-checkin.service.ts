@@ -1,0 +1,363 @@
+import crypto from 'crypto';
+import mongoose, { ClientSession, Types } from 'mongoose';
+import ReservationModel from '../../models/reservations/reservation.model';
+import FacilityModel from '../../models/facilities/facility.model';
+import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import ContractModel from '../../models/contracts/contract.model';
+import CustomerProfileModel from '../../models/users/customer-profile.model';
+import UserModel from '../../models/users/user.model';
+import ManagedFacilityCapacityModel from '../../models/reservations/managed-facility-capacity.model';
+import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
+import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
+import WarehouseCellModel from '../../models/warehouse-map/warehouse-cell.model';
+import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
+import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model';
+import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
+import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
+import { ReservationStatus } from '../../types/reservation.type';
+import { UserRole, IUser } from '../../types/user.type';
+import { InventoryItemStatus, ReceivingCustodyStatus, ReceivingInspectionDecision } from '../../types/inventory-item.type';
+import { ContractStatus, IContract } from '../../types/contract.type';
+import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
+import { PaymentProvider, PaymentPurpose, PaymentStatus } from '../../types/payment.type';
+import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
+import { assertIdempotentPaymentMatch, calculateRentalPaymentBreakdown, PaymentAccountingError, transitionPaymentStatus } from '../payments/payment-accounting';
+
+type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
+export class ManagedCheckinError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
+function fail(status: number, message: string): never { throw new ManagedCheckinError(status, message); }
+const live = { deletedAt: { $exists: false } };
+const enabled = () => process.env.NODE_ENV === 'development' && process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED === 'true';
+const id = (value: unknown, label: string) => {
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, `Invalid ${label}`);
+  return new Types.ObjectId(value);
+};
+const record = (value: unknown, allowed: string[], label: string) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key => !allowed.includes(key) || key.startsWith('$'))) fail(400, `Invalid ${label}`);
+  return value as Record<string, any>;
+};
+async function tx<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
+  const session = await mongoose.startSession();
+  try { let result!: T; await session.withTransaction(async () => { result = await work(session); }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } }); return result; }
+  catch (error) { if (error instanceof ManagedCheckinError) throw error; const e = error as any; if (e?.code === 11000 || e?.code === 112 || e?.codeName === 'WriteConflict' || e?.name === 'VersionError' || e?.hasErrorLabel?.('TransientTransactionError')) fail(409, 'Managed check-in changed concurrently; reload and retry'); throw error; }
+  finally { await session.endSession(); }
+}
+async function lockFacility(facilityId: Types.ObjectId, session: ClientSession) {
+  const lock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+  if (!lock) fail(409, 'Managed capacity configuration is missing');
+}
+function assertFacilityRepresentative(actor: Actor, facilityId: Types.ObjectId) {
+  if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
+  if (!actor.assignedFacilityId || !actor.assignedFacilityId.equals(facilityId)) fail(403, 'Facility is outside assigned scope');
+}
+async function loadV2Reservation(reservationId: Types.ObjectId, session: ClientSession, ownerId?: Types.ObjectId) {
+  const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 2, ...(ownerId ? { customerId: ownerId } : {}) }).session(session).exec();
+  if (!reservation) fail(404, 'Version 2 Managed reservation not found');
+  return reservation;
+}
+async function currentContent(reservation: any, session: ClientSession) {
+  const [items, facility] = await Promise.all([
+    InventoryItemModel.find({ managedReservationId: reservation._id, ...live }).sort({ itemCode: 1 }).session(session).lean().exec(),
+    FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).lean().exec(),
+  ]);
+  if (!facility) fail(409, 'Active Managed Facility required for contract');
+  const expectedCellIds = (reservation.allocatedCellIds ?? []).map((cell: Types.ObjectId) => String(cell)).sort();
+  const accepted = items.filter((item: any) => item.receivingInspection?.decision === ReceivingInspectionDecision.ACCEPTED);
+  const unresolved = items.some((item: any) => item.status === InventoryItemStatus.PENDING_INBOUND && !item.receivingInspection?.decision);
+  const hasDiscrepancies = items.some((item: any) => item.receivingInspection?.decision === ReceivingInspectionDecision.DISCREPANCY);
+  const hasRejectedGoods = items.some((item: any) => item.receivingInspection?.decision === ReceivingInspectionDecision.REJECTED);
+  const depositPaid = await ReservationPaymentModel.findOne({ reservationId: reservation._id, purpose: PaymentPurpose.DEPOSIT, status: PaymentStatus.SUCCEEDED }).session(session).lean().exec();
+  if (!depositPaid) fail(409, 'Successful deposit ledger entry required');
+  if (depositPaid.serviceType !== FacilityServiceType.MANAGED_INVENTORY || String(depositPaid.customerId) !== String(reservation.customerId) || depositPaid.currency !== 'VND' || depositPaid.amount !== reservation.depositAmount) fail(409, 'Successful deposit does not match this Managed reservation');
+  const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent, depositAmount: depositPaid.amount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+  const content = {
+    reservation: { id: String(reservation._id), code: reservation.reservationCode, facilityId: String(reservation.facilityId), cellIds: expectedCellIds, startDate: reservation.startDate, endDate: reservation.endDate, term: (reservation.managedPricingSnapshot as any)?.term },
+    facility: { name: facility.name, code: facility.code },
+    pricing: { ...(reservation.managedPricingSnapshot as any), totalDue: breakdown.totalDue, depositCredit: breakdown.depositCredit, balanceDue: breakdown.balanceDue },
+    handover: items.filter((item: any) => item.receivingInspection).map((item: any) => ({ itemId: String(item._id), itemCode: item.itemCode, name: item.name, category: item.category, decision: item.receivingInspection.decision, quantity: item.receivingInspection.observedQuantity, quantityUnit: item.quantityUnit, weightKg: item.receivingInspection.observedUnitWeightKg, dimensionsM: item.receivingInspection.observedUnitDimensionsM, compatibleCellIds: (item.receivingInspection.compatibleWithCellIds ?? []).map(String).sort(), packingLayoutVerified: item.receivingInspection.packingLayoutVerified, custodyStatus: item.receivingCustodyStatus ?? ReceivingCustodyStatus.NONE, note: item.receivingInspection.note, inspectedAt: item.receivingInspection.inspectedAt })),
+  };
+  return { content, ready: accepted.length > 0 && !unresolved && !hasDiscrepancies && !hasRejectedGoods };
+}
+function hashContent(content: unknown) { return crypto.createHash('sha256').update(JSON.stringify(content)).digest('hex'); }
+async function ensureVersion(contract: IContract, reservation: any, actorId: Types.ObjectId, session: ClientSession) {
+  const { content } = await currentContent(reservation, session);
+  const contentHash = hashContent(content);
+  const active = contract.contentVersions?.find(version => version.version === contract.currentContentVersion);
+  if (!active || active.contentHash !== contentHash) {
+    const version = (contract.currentContentVersion ?? 0) + 1;
+    contract.contentVersions = [...(contract.contentVersions ?? []), { version, contentHash, content, createdBy: actorId, createdAt: new Date() }] as any;
+    contract.currentContentVersion = version;
+    contract.status = ContractStatus.DRAFT;
+    contract.set('signedByCustomerAt', undefined);
+    contract.set('signedByFMAt', undefined);
+    contract.set('fmId', undefined);
+  }
+  return { version: contract.currentContentVersion!, contentHash };
+}
+async function audit(reservation: any, actor: Actor, action: ManagedReservationAction, details: Record<string, unknown>, session: ClientSession) {
+  await new ManagedReservationAuditModel({ facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id, action, details }).save({ session });
+}
+
+export class ManagedCheckinService {
+  static async inspectItem(itemIdInput: unknown, body: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    const itemId = id(itemIdInput, 'itemId');
+    const input = record(body, ['decision', 'observedQuantity', 'observedUnitWeightKg', 'observedUnitDimensionsM', 'compatibleCellIds', 'packingLayoutVerified', 'note', 'custodyTaken'], 'inspection');
+    if (!Object.values(ReceivingInspectionDecision).includes(input.decision)) fail(400, 'Invalid inspection decision');
+    if (!Number.isSafeInteger(input.observedQuantity) || input.observedQuantity < 1 || typeof input.observedUnitWeightKg !== 'number' || !Number.isFinite(input.observedUnitWeightKg) || input.observedUnitWeightKg <= 0) fail(400, 'Observed quantity and weight must be positive');
+    const dimensions = input.observedUnitDimensionsM;
+    if (!dimensions || ['widthM', 'depthM', 'heightM'].some(key => typeof dimensions[key] !== 'number' || !Number.isFinite(dimensions[key]) || dimensions[key] <= 0)) fail(400, 'Observed dimensions must be positive');
+    if (typeof input.note !== 'string' || !input.note.trim() || input.note.length > 1000 || typeof input.custodyTaken !== 'boolean' || typeof input.packingLayoutVerified !== 'boolean' || !Array.isArray(input.compatibleCellIds)) fail(400, 'Inspection note, custodyTaken, packingLayoutVerified and compatibleCellIds are required');
+    const compatibleCellIds = input.compatibleCellIds.map((value: unknown) => id(value, 'compatibleCellId'));
+    return tx(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
+      if (!current) fail(404, 'Inventory item not found');
+      if (actor.role !== UserRole.FACILITY_STAFF) fail(403, 'Facility Staff role required for physical inspection');
+      assertFacilityRepresentative(actor, current.facilityId);
+      const reservation = await loadV2Reservation(current.managedReservationId, session);
+      if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Inspection requires a DEPOSIT_PAID v2 Managed reservation');
+      if (reservation.balanceSettledAt) fail(409, 'Receiving inspection is locked after contract and balance completion');
+      await lockFacility(reservation.facilityId, session);
+      if (![InventoryItemStatus.PENDING_INBOUND, InventoryItemStatus.RECEIVED_PENDING_ACCEPTANCE].includes(current.status)) fail(409, 'Only a requested inbound item may be inspected');
+      const allowedCells = (reservation.allocatedCellIds ?? []).map(String);
+      if (compatibleCellIds.some((cellId: Types.ObjectId) => !allowedCells.includes(String(cellId)))) fail(409, 'Compatible Cells must be allocated to this reservation');
+      const allocationCount = await CellAllocationModel.countDocuments({ reservationId: reservation._id, customerId: reservation.customerId,
+        cellId: { $in: compatibleCellIds }, status: CellAllocationStatus.RESERVED }).session(session).exec();
+      if (allocationCount !== compatibleCellIds.length) fail(409, 'Every inspected Cell must remain RESERVED for this rental');
+      const cells = await WarehouseCellModel.find({ _id: { $in: compatibleCellIds }, facilityId: reservation.facilityId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }).session(session).exec();
+      if (cells.length !== compatibleCellIds.length) fail(409, 'Every compatible Cell must be active in the reservation Facility');
+      const zoneIds = [...new Set(cells.map(cell => String(cell.zoneId)))].sort();
+      for (const zoneId of zoneIds) {
+        const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId: reservation.facilityId, isActive: true, ...live },
+          { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
+        if (!zone) fail(409, 'Inspected Cell Zone must remain active');
+      }
+      const rackIds = [...new Set(cells.map(cell => String(cell.rackId)))].sort();
+      for (const rackId of rackIds) {
+        const source = cells.find(cell => String(cell.rackId) === rackId)!;
+        const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId: reservation.facilityId, zoneId: source.zoneId,
+          operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }, { $inc: { layoutVersion: 1 } }, { new: true, session }).exec();
+        if (!rack) fail(409, 'Inspected Cell Rack must remain available');
+      }
+      for (const cell of cells) {
+        const locked = await WarehouseCellModel.findOneAndUpdate({ _id: cell._id, facilityId: reservation.facilityId,
+          operationalStatus: WarehouseOperationalStatus.AVAILABLE, usedWeightKg: { $eq: 0, $exists: true }, usedVolumeM3: { $eq: 0, $exists: true }, ...live },
+        { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+        if (!locked) fail(409, 'Inspected Cell physical usage must be known and empty');
+      }
+      if (input.decision === ReceivingInspectionDecision.ACCEPTED &&
+        (input.observedQuantity !== current.quantity || round(input.observedUnitWeightKg, 3) !== round(current.unitWeightKg, 3) ||
+          ['widthM', 'depthM', 'heightM'].some(key => round(dimensions[key], 6) !== round((current.unitDimensionsM as any)[key], 6)))) {
+        fail(409, 'Observed goods differ from the registered item; record DISCREPANCY or have the owner correct the registration');
+      }
+      if (input.decision === ReceivingInspectionDecision.ACCEPTED && input.observedQuantity > 1 && !input.packingLayoutVerified) fail(409, 'Staff must physically verify the multi-unit packing layout before acceptance');
+      const compatibleCells = cells.filter(cell => {
+        const widthFits = (dimensions.widthM <= cell.dimensions.widthM && dimensions.depthM <= cell.dimensions.depthM) ||
+          (dimensions.depthM <= cell.dimensions.widthM && dimensions.widthM <= cell.dimensions.depthM);
+        const volume = dimensions.widthM * dimensions.depthM * dimensions.heightM * input.observedQuantity;
+        const volumeLimit = cell.dimensions.widthM * cell.dimensions.depthM * Number(cell.dimensions.usableHeightM);
+        const countersKnown = Number.isFinite(cell.usedWeightKg) && Number.isFinite(cell.usedVolumeM3);
+        const physicallyAvailable = cell.usedWeightKg === 0 && cell.usedVolumeM3 === 0;
+        return widthFits && Number.isFinite(cell.dimensions.usableHeightM) && dimensions.heightM <= Number(cell.dimensions.usableHeightM) &&
+          input.observedUnitWeightKg * input.observedQuantity <= cell.maxWeightKg && volume <= volumeLimit && countersKnown && physicallyAvailable;
+      });
+      const acceptedIds = new Set(compatibleCells.map(cell => String(cell._id)));
+      if (input.decision === ReceivingInspectionDecision.ACCEPTED && (!compatibleCellIds.length || compatibleCells.length !== compatibleCellIds.length || compatibleCellIds.some((cellId: Types.ObjectId) => !acceptedIds.has(String(cellId))))) fail(409, 'Accepted goods must fit every selected allocated Cell and its verified empty physical capacity');
+      const inspectedAt = new Date();
+      current.receivingInspection = { decision: input.decision, observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg, observedUnitDimensionsM: dimensions, compatibleWithCellIds: compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified, note: input.note.trim(), inspectedBy: actor._id, inspectedAt } as any;
+      current.receivingCustodyStatus = input.custodyTaken ? ReceivingCustodyStatus.IN_CUSTODY : ReceivingCustodyStatus.NONE;
+      if (input.decision === ReceivingInspectionDecision.REJECTED) {
+        if (input.custodyTaken) fail(400, 'Rejected goods cannot remain in Facility custody; return them before recording rejection');
+        current.receivingCustodyStatus = ReceivingCustodyStatus.RETURNED;
+        current.status = InventoryItemStatus.REGISTERED;
+        current.inboundRejection = { reason: input.note.trim(), rejectedAt: inspectedAt, rejectedBy: actor._id } as any;
+        current.set('inboundRequestedAt', undefined); current.set('inboundRequestedBy', undefined);
+      } else if (input.custodyTaken) current.status = InventoryItemStatus.RECEIVED_PENDING_ACCEPTANCE;
+      else current.status = InventoryItemStatus.PENDING_INBOUND;
+      await current.save({ session });
+      const existingContract = await ContractModel.findOne({ reservationId: reservation._id }).session(session).exec();
+      if (existingContract) {
+        const version = await ensureVersion(existingContract, reservation, actor._id, session);
+        await existingContract.save({ session });
+        await audit(reservation, actor, ManagedReservationAction.CONTRACT_VERSION_CREATED, { contractId: existingContract._id, version: version.version, reason: 'Inspected handover content changed' }, session);
+      }
+      await audit(reservation, actor, ManagedReservationAction.ITEM_INSPECTED, { itemId: current._id, decision: input.decision, observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg, observedUnitDimensionsM: dimensions, custodyTaken: input.custodyTaken, compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified, note: input.note.trim() }, session);
+      return current;
+    });
+  }
+
+  static async createOrRefreshContract(reservationIdInput: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    const reservationId = id(reservationIdInput, 'reservationId');
+    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
+    return tx(async session => {
+      const reservation = await loadV2Reservation(reservationId, session);
+      assertFacilityRepresentative(actor, reservation.facilityId);
+      await lockFacility(reservation.facilityId, session);
+      if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Initial Managed contract requires DEPOSIT_PAID reservation');
+      let contract = await ContractModel.findOne({ reservationId }).session(session).exec();
+      const snapshot = await currentContent(reservation, session);
+      if (!snapshot.ready) fail(409, 'Resolve all receiving discrepancies or rejected inspections and inspect at least one requested item before generating the contract');
+      const [profile, customer] = await Promise.all([
+        CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec(),
+        UserModel.findById(reservation.customerId).session(session).exec(),
+      ]);
+      if (!profile || !customer) fail(409, 'Customer profile is unavailable for contract snapshot');
+      if (!contract) {
+        const content = snapshot.content;
+        const contentHash = hashContent(content);
+        const version = { version: 1, contentHash, content, createdBy: actor._id, createdAt: new Date() };
+        contract = new ContractModel({ contractCode: `CTR-${reservation.reservationCode}`, reservationId, customerId: reservation.customerId,
+          status: ContractStatus.DRAFT, customerSnapshot: { fullName: customer.displayName, email: customer.email, phone: customer.phone, address: profile.address },
+          pricingSnapshot: content.pricing, currentContentVersion: 1, contentVersions: [version], signatures: [], termsVersion: 'MI-V2-1' });
+        await contract.save({ session });
+      } else await ensureVersion(contract, reservation, actor._id, session);
+      await contract.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.CONTRACT_VERSION_CREATED, { contractId: contract._id, version: contract.currentContentVersion }, session);
+      return contract;
+    });
+  }
+
+  static async signContract(contractIdInput: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    if (actor.role !== UserRole.CUSTOMER) fail(403, 'Reservation owner must sign as Customer');
+    const contractId = id(contractIdInput, 'contractId');
+    return tx(async session => {
+      const contract = await ContractModel.findOne({ _id: contractId, customerId: actor._id }).session(session).exec();
+      if (!contract) fail(404, 'Managed contract not found');
+      const reservation = await loadV2Reservation(contract.reservationId, session, actor._id);
+      if (![ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY].includes(reservation.status)) fail(409, 'Contract signing requires a v2 reservation after deposit');
+      await lockFacility(reservation.facilityId, session);
+      if (!(await currentContent(reservation, session)).ready) fail(409, 'Resolve all receiving discrepancies or rejected inspections and inspect at least one requested item before signing');
+      const active = await ensureVersion(contract, reservation, actor._id, session);
+      if (contract.signatures?.some(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole === UserRole.CUSTOMER)) return contract;
+      contract.signatures = [...(contract.signatures ?? []), { version: active.version, contentHash: active.contentHash, signerId: actor._id, signerRole: UserRole.CUSTOMER, signedAt: new Date() }] as any;
+      await updateSignedState(contract, active.version, active.contentHash);
+      syncLegacySignatureFields(contract, active.version, active.contentHash);
+      await contract.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.CONTRACT_SIGNED, { contractId, version: active.version, contentHash: active.contentHash, signerRole: UserRole.CUSTOMER }, session);
+      return contract;
+    });
+  }
+
+  static async signFacilityContract(contractIdInput: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
+    const contractId = id(contractIdInput, 'contractId');
+    return tx(async session => {
+      const contract = await ContractModel.findById(contractId).session(session).exec();
+      if (!contract) fail(404, 'Managed contract not found');
+      const reservation = await loadV2Reservation(contract.reservationId, session);
+      assertFacilityRepresentative(actor, reservation.facilityId);
+      if (![ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY].includes(reservation.status)) fail(409, 'Contract signing requires a v2 reservation after deposit');
+      await lockFacility(reservation.facilityId, session);
+      if (!(await currentContent(reservation, session)).ready) fail(409, 'Resolve all receiving discrepancies or rejected inspections and inspect at least one requested item before signing');
+      const active = await ensureVersion(contract, reservation, actor._id, session);
+      if (!contract.signatures?.some(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole === UserRole.CUSTOMER)) fail(409, 'Customer must sign the current contract version first');
+      if (contract.signatures?.some(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole !== UserRole.CUSTOMER)) return contract;
+      contract.signatures = [...(contract.signatures ?? []), { version: active.version, contentHash: active.contentHash, signerId: actor._id, signerRole: actor.role, signedAt: new Date() }] as any;
+      await updateSignedState(contract, active.version, active.contentHash);
+      syncLegacySignatureFields(contract, active.version, active.contentHash);
+      await contract.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.CONTRACT_SIGNED, { contractId, version: active.version, contentHash: active.contentHash, signerRole: actor.role }, session);
+      return contract;
+    });
+  }
+
+  static async initiateBalance(reservationIdInput: unknown, body: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    if (actor.role !== UserRole.CUSTOMER) fail(403, 'Customer role required');
+    const reservationId = id(reservationIdInput, 'reservationId');
+    const input = record(body, ['idempotencyKey'], 'balance request');
+    if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim() || input.idempotencyKey.trim().length > 160) fail(400, 'Valid idempotencyKey required');
+    return tx(async session => {
+      const reservation = await loadV2Reservation(reservationId, session, actor._id);
+      await lockFacility(reservation.facilityId, session);
+      if (![ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY].includes(reservation.status)) fail(409, 'Balance payment requires a deposit-paid v2 reservation');
+      const contract = await ContractModel.findOne({ reservationId }).session(session).exec();
+      if (!contract || contract.status !== ContractStatus.SIGNED || !signedByBothCurrentVersion(contract)) fail(409, 'Both parties must sign the current contract version before balance payment');
+      const breakdown = await balance(reservation, session);
+      if (breakdown.balanceDue === 0) {
+        if (reservation.status === ReservationStatus.CHECKIN_READY && reservation.balanceSettledAt) return { reservation, payment: null, amount: 0, currency: 'VND', zeroBalance: true, idempotent: true };
+        if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Zero balance is already settled');
+        reservation.status = ReservationStatus.CHECKIN_READY; reservation.balanceSettledAt = new Date(); reservation.balanceSettledBy = actor._id;
+        reservation.statusHistory.push({ status: ReservationStatus.CHECKIN_READY, actorId: actor._id, reason: 'Contract signed; zero balance settled', createdAt: new Date() } as any);
+        await reservation.save({ session });
+        await audit(reservation, actor, ManagedReservationAction.BALANCE_SETTLED, { amount: 0, currency: 'VND', zeroBalance: true }, session);
+        return { reservation, payment: null, amount: 0, currency: 'VND', zeroBalance: true };
+      }
+      const identity = { reservationId: String(reservation._id), purpose: PaymentPurpose.BALANCE, amount: breakdown.balanceDue, currency: 'VND', idempotencyKey: input.idempotencyKey.trim() };
+      const existing = await ReservationPaymentModel.findOne({ idempotencyKey: identity.idempotencyKey }).session(session).exec();
+      if (existing) {
+        try { assertIdempotentPaymentMatch({ reservationId: String(existing.reservationId), purpose: existing.purpose, amount: existing.amount, currency: existing.currency, idempotencyKey: existing.idempotencyKey }, identity); } catch (error) { if (error instanceof PaymentAccountingError) fail(error.status, error.message); throw error; }
+        if (!existing.customerId.equals(actor._id) || existing.provider !== PaymentProvider.MOCK || existing.serviceType !== FacilityServiceType.MANAGED_INVENTORY) fail(409, 'Idempotency key belongs to a different payment');
+        return { payment: existing, reservation, amount: identity.amount, currency: identity.currency, idempotent: true };
+      }
+      if (reservation.status === ReservationStatus.CHECKIN_READY) {
+        const settled = await ReservationPaymentModel.findOne({ reservationId, purpose: PaymentPurpose.BALANCE, status: PaymentStatus.SUCCEEDED }).session(session).exec();
+        if (settled) fail(409, 'Managed balance is already settled with a different idempotency key');
+        fail(409, 'Managed reservation is already check-in ready');
+      }
+      const payment = new ReservationPaymentModel({ ...identity, customerId: actor._id, facilityId: reservation.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+        provider: PaymentProvider.MOCK, providerReference: `MOCK-BALANCE-${new Types.ObjectId()}`, status: PaymentStatus.PENDING });
+      await payment.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.BALANCE_INITIATED, { paymentId: payment._id, amount: payment.amount, purpose: PaymentPurpose.BALANCE }, session);
+      return { payment, reservation, amount: payment.amount, currency: payment.currency, idempotent: false };
+    });
+  }
+
+  static async confirmMockBalance(reservationIdInput: unknown, body: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    if (actor.role !== UserRole.CUSTOMER) fail(403, 'Customer role required');
+    const reservationId = id(reservationIdInput, 'reservationId');
+    const input = record(body, ['idempotencyKey'], 'balance confirmation');
+    if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim()) fail(400, 'Valid idempotencyKey required');
+    return tx(async session => {
+      const reservation = await loadV2Reservation(reservationId, session, actor._id);
+      await lockFacility(reservation.facilityId, session);
+      const payment = await ReservationPaymentModel.findOne({ idempotencyKey: input.idempotencyKey.trim(), reservationId, customerId: actor._id }).session(session).exec();
+      if (!payment || payment.purpose !== PaymentPurpose.BALANCE || payment.provider !== PaymentProvider.MOCK || payment.serviceType !== FacilityServiceType.MANAGED_INVENTORY) fail(404, 'Managed balance payment not found');
+      if (payment.status === PaymentStatus.SUCCEEDED && reservation.status === ReservationStatus.CHECKIN_READY) return { reservation, payment, idempotent: true };
+      if (payment.status !== PaymentStatus.PENDING || reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Balance payment is not pending for this reservation');
+      const contract = await ContractModel.findOne({ reservationId }).session(session).exec();
+      if (!contract || contract.status !== ContractStatus.SIGNED || !signedByBothCurrentVersion(contract)) fail(409, 'Both parties must sign the current contract version before balance settlement');
+      const breakdown = await balance(reservation, session);
+      if (payment.amount !== breakdown.balanceDue || payment.currency !== 'VND' || payment.amount <= 0) fail(409, 'Balance payment amount or currency does not match reservation');
+      payment.status = transitionPaymentStatus(payment.status, PaymentStatus.SUCCEEDED).status; payment.succeededAt = new Date(); await payment.save({ session });
+      reservation.status = ReservationStatus.CHECKIN_READY; reservation.balanceSettledAt = payment.succeededAt; reservation.balanceSettledBy = actor._id;
+      reservation.statusHistory.push({ status: ReservationStatus.CHECKIN_READY, actorId: actor._id, reason: 'Contract signatures and Managed advance-rent balance settled; physical inbound remains pending', createdAt: payment.succeededAt } as any);
+      await reservation.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.BALANCE_SETTLED, { paymentId: payment._id, amount: payment.amount, currency: payment.currency }, session);
+      return { reservation, payment, idempotent: false };
+    });
+  }
+}
+
+async function balance(reservation: any, session: ClientSession) {
+  const deposit = await ReservationPaymentModel.findOne({ reservationId: reservation._id, purpose: PaymentPurpose.DEPOSIT, status: PaymentStatus.SUCCEEDED }).session(session).exec();
+  if (!deposit) fail(409, 'Successful deposit is required');
+  if (deposit.serviceType !== FacilityServiceType.MANAGED_INVENTORY || !deposit.customerId.equals(reservation.customerId) || deposit.currency !== 'VND' || deposit.amount !== reservation.depositAmount) fail(409, 'Successful deposit does not match this Managed reservation');
+  return calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent, depositAmount: deposit.amount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+}
+function round(value: number, decimals: number) { const factor = 10 ** decimals; return Math.round((value + Number.EPSILON) * factor) / factor; }
+function signedByBothCurrentVersion(contract: IContract) {
+  const version = contract.currentContentVersion;
+  const active = contract.contentVersions?.find(entry => entry.version === version);
+  if (!version || !active) return false;
+  const current = contract.signatures?.filter(signature => signature.version === version && signature.contentHash === active.contentHash) ?? [];
+  return current.some(signature => signature.signerRole === UserRole.CUSTOMER) && current.some(signature => signature.signerRole !== UserRole.CUSTOMER);
+}
+async function updateSignedState(contract: IContract, version: number, contentHash: string) {
+  const current = contract.signatures?.filter(signature => signature.version === version && signature.contentHash === contentHash) ?? [];
+  const customer = current.find(signature => signature.signerRole === UserRole.CUSTOMER);
+  const facility = current.find(signature => signature.signerRole !== UserRole.CUSTOMER);
+  contract.status = customer && facility ? ContractStatus.SIGNED : ContractStatus.DRAFT;
+}
+function syncLegacySignatureFields(contract: IContract, version: number, contentHash: string) {
+  const current = contract.signatures?.filter(signature => signature.version === version && signature.contentHash === contentHash) ?? [];
+  const customer = current.find(signature => signature.signerRole === UserRole.CUSTOMER);
+  const facility = current.find(signature => signature.signerRole !== UserRole.CUSTOMER);
+  contract.set('signedByCustomerAt', customer?.signedAt);
+  contract.set('signedByFMAt', facility?.signedAt);
+  contract.set('fmId', facility?.signerId);
+}

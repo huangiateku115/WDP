@@ -6,7 +6,7 @@ function unavailable(error) {
 }
 
 const warehouseMapApi = {
-  getWarehouseMap: (facilityId, config = {}) => axiosClient.get('/warehouse-map', {...config, params:{facilityId}}).catch(unavailable),
+  getWarehouseMap: (facilityId, config = {}) => axiosClient.get('/warehouse-map', {...config, params:{...config.params,facilityId}}).catch(unavailable),
   getRackDetailMap: (rackId, config = {}) => axiosClient.get(`/racks/${encodeURIComponent(rackId)}/detail-map`, config).catch(unavailable),
 };
 export default warehouseMapApi;

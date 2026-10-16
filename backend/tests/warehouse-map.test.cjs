@@ -246,6 +246,110 @@ test('map separates operational/display state from booking state and returns onl
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
 });
 
+test('legacy Cell with missing physical counters is shown as unknown and cannot be booked', async t => {
+  const legacyCell = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject();
+  delete legacyCell.usedWeightKg;
+  delete legacyCell.usedVolumeM3;
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([legacyCell]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await service.rackDetailMap(rackId, actor('CUSTOMER'), {
+    startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z',
+  });
+  const mapped = result.levels[3].cells[0];
+  assert.equal(mapped.bookingStatus, 'AVAILABLE', 'allocation state remains unchanged');
+  assert.equal(mapped.usedWeightKg, 0, 'legacy response keeps normalized numeric fields for compatibility');
+  assert.equal(mapped.usedVolumeM3, 0);
+  assert.equal(mapped.physicalUsageKnown, false);
+  assert.equal(mapped.isBookable, false, 'unknown emptiness fails closed');
+  assert.equal(mapped.remainingWeightKg, null);
+  assert.equal(mapped.remainingVolumeM3, null);
+  assert.equal(result.capacity.physicalUsageKnown, false);
+});
+
+test('booking map separates current state from half-open requested-period availability', async t => {
+  const now = Date.now(), startDate = new Date(now + 10 * 86400000), endDate = new Date(now + 20 * 86400000);
+  const cells = [
+    cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(),
+    cell(1, 2, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(),
+    cell(1, 3, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(),
+    cell(1, 4, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 40, usedVolumeM3: .03 }).toObject(),
+  ];
+  const allocations = [
+    { cellId: cells[0]._id, status: 'RESERVED', startDate: new Date(startDate.getTime() + 1000), endDate: new Date(endDate.getTime() - 1000) },
+    { cellId: cells[1]._id, status: 'RESERVED', startDate: new Date(now - 86400000), endDate: new Date(now + 86400000) },
+    { cellId: cells[1]._id, status: 'RESERVED', startDate: new Date(endDate.getTime() + 1000), endDate: new Date(endDate.getTime() + 86400000) },
+    { cellId: cells[2]._id, status: 'HOLD', holdExpiresAt: new Date(now - 1000), startDate, endDate },
+    { cellId: cells[3]._id, status: 'OCCUPIED', startDate, endDate },
+  ];
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query(cells), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query(allocations));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await service.rackDetailMap(rackId, actor('CUSTOMER'), { startDate: startDate.toISOString(), endDate: endDate.toISOString() });
+  const byCell = new Map(result.levels[3].cells.map(row => [row.cellNumber, row]));
+  assert.equal(result.requestedInterval.startDate.toISOString(), startDate.toISOString());
+  assert.equal(byCell.get(1).bookingStatus, 'AVAILABLE', 'future reservation does not alter current booking state');
+  assert.equal(byCell.get(1).periodStatus, 'RESERVED');
+  assert.equal(byCell.get(1).isBookable, false);
+  assert.equal(byCell.get(2).periodStatus, 'AVAILABLE', 'non-overlapping rental range remains available');
+  assert.equal(byCell.get(2).bookingStatus, 'RESERVED', 'current status remains separate from future period availability');
+  assert.equal(byCell.get(2).isBookable, true);
+  assert.equal(byCell.get(3).isBookable, true, 'expired temporary hold does not block its interval');
+  assert.equal(byCell.get(4).periodStatus, 'OCCUPIED');
+  assert.equal(byCell.get(4).isBookable, false, 'physical occupancy blocks future booking');
+});
+
+test('Available now count includes only Cells that can actually be booked now', async t => {
+  const cells = [
+    cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(),
+    cell(1, 2, { dimensions: { widthM: .5, depthM: .6 } }).toObject(),
+    cell(1, 3, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, operationalStatus: 'MAINTENANCE' }).toObject(),
+    cell(1, 4, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(),
+  ];
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Rack, 'find', () => new Query([rack().toObject()]));
+  t.mock.method(Cell, 'find', () => new Query(cells));
+  t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: cells[3]._id, status: 'RESERVED', startDate: new Date(Date.now() - 1000), endDate: new Date(Date.now() + 60000) }]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await service.warehouseMap(facilityId, actor('CUSTOMER'));
+  const mappedRack = result.zones[0].aisles[0].racks[0];
+  assert.equal(mappedRack.availableCellCount, 1);
+  assert.equal(mappedRack.availableForPeriodCellCount, 1);
+});
+
+test('Cell is not bookable under unavailable Rack, without usable height, or with physical usage', async t => {
+  let rackDoc = rack({ operationalStatus: 'MAINTENANCE' });
+  let cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject();
+  t.mock.method(Rack, 'findOne', () => new Query(rackDoc));
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([cellDoc]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const period = { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' };
+  let result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
+  assert.equal(result.levels[3].cells[0].isBookable, false, 'parent Rack maintenance blocks booking');
+
+  rackDoc = rack({ operationalStatus: 'AVAILABLE' });
+  cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6 } }).toObject();
+  result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
+  assert.equal(result.levels[3].cells[0].maxVolumeM3, null);
+  assert.equal(result.levels[3].cells[0].isBookable, false, 'missing usableHeightM cannot be booked');
+
+  cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedVolumeM3: 0.01 }).toObject();
+  result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
+  assert.equal(result.levels[3].cells[0].periodStatus, 'OCCUPIED');
+  assert.equal(result.levels[3].cells[0].isBookable, false, 'nonzero physical occupancy blocks booking');
+});
+
 test('customer maps reject inactive, deleted, and non-managed facilities; customer cannot change structure', async t => {
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
   t.mock.method(Facility, 'findOne', () => new Query(facility({ status: 'INACTIVE' })));

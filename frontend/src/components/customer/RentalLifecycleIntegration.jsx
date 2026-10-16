@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
+import managedReservationApi from "@/api/managedReservationApi";
 import contractApi from "@/api/contractApi";
 import { accessApi } from "@/api/customerRentalApi";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ async function contractContext(reservationId, config) {
 }
 const managedLifecycle = {
   RESERVED: "Managed quota is held while awaiting Manager/Admin approval.",
+  DEPOSIT_PAID: "Advance rent deposit settled. The selected Cells are reserved; no contract has been signed, no item is in storage and the rental is not active.",
   CONTRACTED:
     "A Managed contract has been created. Sign it while the hold is valid.",
   PAID: "Payment has been recorded. Authorized management must activate the Managed quota; no unit handover is required.",
@@ -231,14 +233,16 @@ export function ReservationDetailIntegration() {
         <Message success=" Waiting for management approval." />
       )}
       {location.state?.managedCreated && (
-        <Message success="Waiting for management approval." />
+        <Message success={resource.data?.bookingFlowVersion === 2 ? "Reservation held. Complete the advance rent deposit to reserve the selected Cells." : "Waiting for management approval."} />
       )}
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
           <p>
             {(serviceType(resource.data) === MANAGED_INVENTORY
-              ? managedLifecycle[resource.data.status]
+              ? resource.data.bookingFlowVersion === 2 && resource.data.status === "RESERVED"
+                ? "Managed reservation created. Pay the advance rent deposit before the temporary Cell hold expires; no Manager approval or contract is required for booking."
+                : managedLifecycle[resource.data.status]
               : serviceType(resource.data) === SELF_STORAGE
                 ? lifecycleInfo[resource.data.status]
                 : "Unsupported service. Service-specific actions are unavailable.") ||
@@ -300,10 +304,10 @@ export function ReservationDetailIntegration() {
                 </Button>
               )}
             {serviceType(resource.data) &&
-              ["CONTRACTED", "PAID"].includes(resource.data.status) && (
+              (["CONTRACTED", "PAID"].includes(resource.data.status) || (resource.data.bookingFlowVersion === 2 && resource.data.status === "RESERVED")) && (
                 <Button asChild variant="outline">
                   <Link to={`/portal/payments/${id}`}>
-                    Review simulated payment
+                    {resource.data.bookingFlowVersion === 2 ? "Pay advance rent deposit" : "Review simulated payment"}
                   </Link>
                 </Button>
               )}
@@ -472,6 +476,8 @@ export function PaymentIntegration() {
   const { reservationId } = useParams(),
     now = useCurrentTime(),
     enabled = managedMockEnabled(import.meta.env);
+  const [depositInitiated, setDepositInitiated] = useState(false);
+  const depositKey = useRef(`managed-deposit-${reservationId}`);
   const resource = useBackend(
     (config) =>
       validId(reservationId)
@@ -480,10 +486,12 @@ export function PaymentIntegration() {
     [reservationId],
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
+  const managedDeposit = managed && resource.data?.bookingFlowVersion === 2;
+  const managedDepositEnabled = import.meta.env.DEV === true && import.meta.env.VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED === "true";
   const contracts = useBackend(
     (config) =>
-      managed ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
-    [reservationId, managed, resource.data?.status],
+      managed && !managedDeposit ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
+    [reservationId, managed, managedDeposit, resource.data?.status],
   );
   const contract = contracts.data?.find(
     (c) => recordId(c.reservationId) === reservationId,
@@ -497,7 +505,19 @@ export function PaymentIntegration() {
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
-          {resource.data.status === "PAID" ? (
+          {managedDeposit && (
+            <Card><CardContent><h2 className="text-xl font-bold">Advance rent deposit</h2>
+              <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. This screen uses the development mock only.</p>
+              <Details values={[["Deposit due", `${resource.data.depositAmount} ${resource.data.managedPricingSnapshot?.pricingRule?.currency || "VND"}`],["Total rent due", resource.data.managedPricingSnapshot?.amountBreakdown?.totalDue],["Balance after deposit", resource.data.managedPricingSnapshot?.amountBreakdown?.balanceDue]]}/>
+              {!managedDepositEnabled && <Message error="Managed deposit flow is disabled in this frontend. Enable VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED=true for a development build and MI_MANAGED_DEPOSIT_FLOW_ENABLED=true with NODE_ENV=development in the backend."/>}
+              {resource.data.status === "DEPOSIT_PAID" && <Message success="Deposit settled. Reservation is DEPOSIT_PAID; Cells are reserved and rental activation awaits later approved handover steps."/>}
+              {managedDepositEnabled && resource.data.status === "RESERVED" && <div className="mt-4 flex flex-wrap gap-3">
+                <ConfirmAction label="Initiate advance rent deposit" onAction={async()=>{const token=getAccessToken();const result=record(await managedReservationApi.initiateDeposit(reservationId,{idempotencyKey:depositKey.current}));if(getAccessToken()!==token)return;if(result.payment?.purpose!=="DEPOSIT"||result.payment?.status!=="PENDING"||result.amount!==resource.data.depositAmount)throw Error("Backend did not confirm the expected pending deposit.");setDepositInitiated(true);resource.retry();}}/>
+                <ConfirmAction label="Confirm development mock deposit" disabled={!depositInitiated} onAction={async()=>{const token=getAccessToken();const result=record(await managedReservationApi.confirmMockDeposit(reservationId,{idempotencyKey:depositKey.current}));if(getAccessToken()!==token)return;if(result.reconciliationRequired)throw Error("The hold expired before confirmation. Payment requires reconciliation and the Cells were not reclaimed.");if(result.reservation?.status!=="DEPOSIT_PAID"||result.payment?.status!=="SUCCEEDED")throw Error("Backend did not confirm the deposit settlement.");setDepositInitiated(false);resource.retry();}}/>
+              </div>}
+            </CardContent></Card>
+          )}
+          {managedDeposit ? null : resource.data.status === "PAID" ? (
             <Message success="Backend reservation status: Đã thanh toán." />
           ) : (
             <p className="text-sm text-slate-500">
@@ -506,14 +526,14 @@ export function PaymentIntegration() {
                 : "Demo payment is available for an owned Self Storage CONTRACTED reservation."}
             </p>
           )}
-          {managed && <LoadState resource={contracts} />}
-          {managed && !enabled && (
+          {managed && !managedDeposit && <LoadState resource={contracts} />}
+          {managed && !managedDeposit && !enabled && (
             <p className="mt-4 text-sm text-orange-700">
               Managed mock payment is unavailable in this environment. No
               production payment API is provided.
             </p>
           )}
-          {managed &&
+          {managed && !managedDeposit &&
             enabled &&
             !canMockPay(resource.data, contract, enabled, now) && (
               <p className="mt-4 text-sm text-orange-700">
@@ -524,7 +544,7 @@ export function PaymentIntegration() {
           {!serviceType(resource.data) && (
             <Message error="Unsupported service. Payment is unavailable." />
           )}
-          {canMockPay(resource.data, contract, enabled, now) && (
+          {!managedDeposit && canMockPay(resource.data, contract, enabled, now) && (
             <ConfirmAction
               label="Simulate Payment (Demo)"
               onAction={async () => {

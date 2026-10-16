@@ -9,4 +9,6 @@ export default {
   detail:(reservationId,config)=>client.get(`/reservations/managed/${id(reservationId)}`,config),
   cancel:reservationId=>client.patch(`/reservations/managed/${id(reservationId)}/cancel`),
   mockPay:reservationId=>client.post(`/reservations/managed/${id(reservationId)}/mock-pay`),
+  initiateDeposit:(reservationId,{idempotencyKey},config)=>client.post(`/reservations/managed/${id(reservationId)}/deposit`,{idempotencyKey},config),
+  confirmMockDeposit:(reservationId,{idempotencyKey},config)=>client.post(`/reservations/managed/${id(reservationId)}/deposit/mock-confirm`,{idempotencyKey},config),
 };

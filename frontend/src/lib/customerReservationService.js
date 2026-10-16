@@ -28,10 +28,11 @@ export function managedTerms(rules,facilityId,start) {
   }
   return [...terms.values()].sort((a,b)=>['DAY','MONTH','YEAR'].indexOf(a.unit)-['DAY','MONTH','YEAR'].indexOf(b.unit)||a.value-b.value);
 }
-export function managedRequest({facilityId,allocatedCapacityM3,startDate,term}) {
+export function managedRequest({facilityId,allocatedCapacityM3,startDate,term,cellIds}) {
   if(!/^[a-f\d]{24}$/i.test(facilityId||'')||typeof allocatedCapacityM3!=='number'||!Number.isFinite(allocatedCapacityM3)||allocatedCapacityM3<=0||!term||!Number.isSafeInteger(term.value)||term.value<=0||!['DAY','MONTH','YEAR'].includes(term.unit))throw Error('Invalid Managed facility, quota or rental term.');
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(startDate||'')||!Number.isFinite(Date.parse(startDate))||new Date(startDate).toISOString()!==startDate.replace(/Z$/,startDate.includes('.')?'Z':'.000Z')||Date.parse(startDate)<=Date.now())throw Error('Managed start date must be a valid future ISO UTC timestamp.');
-  return {facilityId,allocatedCapacityM3,startDate,term:{value:term.value,unit:term.unit}};
+  if(!Array.isArray(cellIds)||!cellIds.length||cellIds.some(value=>!/^[a-f\d]{24}$/i.test(value||''))||new Set(cellIds.map(value=>value.toLowerCase())).size!==cellIds.length)throw Error('Select one or more unique Managed warehouse Cells.');
+  return {facilityId,allocatedCapacityM3,startDate,term:{value:term.value,unit:term.unit},cellIds:[...cellIds]};
 }
 export function managedCreation(response) {
   const data=response?.data?.success===true?response.data.data:null,r=data?.reservation;

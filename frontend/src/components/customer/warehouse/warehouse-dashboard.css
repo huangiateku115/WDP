@@ -9,3 +9,4 @@
 .wm-rack-inline-state{display:none}@media(max-width:1199px){.wm-rack-inline-state{display:block}}
 
 .wm-cell.wm-available{--wm-glow:#4adea233}.wm-cell.wm-blocked{--wm-glow:#fb718533}.wm-cell.wm-maintenance{--wm-glow:#facc1533}.wm-cell:hover,.wm-cell:focus-visible,.wm-cell.is-selected{box-shadow:0 0 14px var(--wm-glow,#46d7e333)}
+.wm-cell.wm-reserved{color:#fbbf24;--wm-glow:#fbbf2433}.wm-cell.wm-occupied{color:#fb7185;--wm-glow:#fb718533}.wm-cell.is-booking-selected{outline:2px solid #46d7e3;outline-offset:2px}.wm-cell.is-dimmed{opacity:.28}.wm-cell:disabled{cursor:not-allowed;opacity:.55}
