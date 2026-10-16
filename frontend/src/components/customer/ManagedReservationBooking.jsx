@@ -31,6 +31,39 @@ import {
   validId,
   rentalError,
 } from "./RentalBackendUI";
+import { useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import facilityApi from "@/api/facilityApi";
+import managedApi from "@/api/managedReservationApi";
+import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
+import { getAccessToken, useAuthSession } from "@/lib/authSession";
+import {
+  managedTerms,
+  managedRequest,
+  managedCreation,
+  MANAGED_INVENTORY,
+} from "@/lib/customerReservationService";
+import { rentalEndDate, termKey, termLabel } from "@/lib/rentalPeriod";
+import { managedBookingRecovery } from "@/lib/managedBookingDisplay";
+import ManagedWarehouseMap from "@/components/customer/ManagedWarehouseMap";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  BackendScreen,
+  Card,
+  CardContent,
+  Button,
+  Link,
+  Details,
+  Message,
+  LoadState,
+  useBackend,
+  rows,
+  record,
+  recordId,
+  validId,
+  rentalError,
+} from "./RentalBackendUI";
 
 export function ServiceChoice() {
   return (
