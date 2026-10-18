@@ -30,6 +30,10 @@ const reservationSchema = new Schema<IReservation>({
   },
   balanceSettledAt: { type: Date },
   balanceSettledBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  depositPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+  balancePaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+  handoverByStaffId: { type: Schema.Types.ObjectId, ref: 'User' },
+  handoverAt: { type: Date },
   storageCondition: { type: String },  
   
   startDate: { type: Date, required: true },

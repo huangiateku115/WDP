@@ -43,6 +43,10 @@ export interface IReservation extends Document {
   paymentSimulation?: { simulated: boolean; provider: 'MOCK'; paidAt: Date; actorId: Types.ObjectId };
   balanceSettledAt?: Date;
   balanceSettledBy?: Types.ObjectId;
+  depositPaymentId?: Types.ObjectId;
+  balancePaymentId?: Types.ObjectId;
+  handoverByStaffId?: Types.ObjectId;
+  handoverAt?: Date;
   storageCondition?: string;
   
   startDate: Date;

@@ -36,6 +36,12 @@ const contractSchema = new Schema<IContract>({
     signerRole: { type: String, required: true },
     signedAt: { type: Date, required: true },
   }],
+  signedProofUrl: { type: String },
+  signedProofPublicId: { type: String },
+  signedProofUploadedAt: { type: Date },
+  verifiedByStaff: { type: Schema.Types.ObjectId, ref: 'User' },
+  verifiedAt: { type: Date },
+  paperContractNumber: { type: String },
 }, { timestamps: true });
 
 export default mongoose.model<IContract>('Contract', contractSchema);
