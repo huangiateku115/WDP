@@ -3,6 +3,16 @@ const coordinate = value => Number.isSafeInteger(value) && value >= 0 && value <
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const invalid = () => {throw Error('The warehouse response is invalid. Please retry; no layout has been substituted.');};
 
+// displayStatus/bookingStatus describe now; periodStatus describes the requested interval.
+// Ownership and inventory membership are annotations, never evidence of physical occupancy.
+export function cellPeriodStatus(cell){
+  if(['RESERVED','OCCUPIED'].includes(cell?.periodStatus))return cell.periodStatus;
+  if(cell?.periodStatus!=='AVAILABLE')return 'UNKNOWN';
+  if(cell.isBookable===false)return 'UNAVAILABLE';
+  if(cell.isBookable!==true||cell.operationalStatus!=='AVAILABLE'||cell.physicalUsageKnown!==true||cell.usedWeightKg!==0||cell.usedVolumeM3!==0)return 'UNKNOWN';
+  return 'AVAILABLE';
+}
+
 export function validateWarehouseMap(data, facilityId) {
   if (!object(data) || !id(data.facilityId) || data.facilityId.toLowerCase() !== facilityId.toLowerCase() || !Array.isArray(data.zones)) invalid();
   for (const zone of data.zones) {

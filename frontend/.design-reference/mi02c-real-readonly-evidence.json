@@ -1,0 +1,29 @@
+{
+  "mode": "REAL BACKEND; READ ONLY; NO FIXTURES",
+  "frontend": "http://127.0.0.1:5173",
+  "api": "http://localhost:5000/api/v1",
+  "results": [
+    {
+      "url": "http://localhost:5000/api/v1/health",
+      "method": "GET",
+      "status": 200,
+      "success": true,
+      "database": "connected"
+    },
+    {
+      "url": "http://localhost:5000/api/v1/reservations/me",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "url": "http://localhost:5000/api/v1/warehouse-map",
+      "method": "GET",
+      "status": 401
+    }
+  ],
+  "attemptedMutations": [],
+  "authenticatedAccountsUsed": 0,
+  "databaseIsolation": "NOT VERIFIED",
+  "transactions": "NOT VERIFIED",
+  "mutationGate": "BLOCKED — TEST DATABASE SAFETY NOT VERIFIED"
+}

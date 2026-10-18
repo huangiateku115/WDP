@@ -1,8 +1,10 @@
+import {reservationAmount,reservationVietnamTime} from '@/lib/customerReservationDisplay';
 import {
   serviceType,
   serviceLabel,
   MANAGED_INVENTORY,
   SELF_STORAGE,
+  reservationLifecycle,
 } from "@/lib/customerReservationService";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -16,9 +18,13 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {managedReservationFinancials,managedQuoteFinancials,managedFinancialRows} from '@/lib/managedRentalPricing';
+import {isManagedV2} from '@/lib/customerReservationService';
 export { CustomerScreen, Details, Message, Card, CardContent, Button, Link };
 export const statusLabels = {
   RESERVED: "Chờ duyệt",
+  DEPOSIT_PAID: "Đã thanh toán trước tiền thuê",
+  CHECKIN_READY: "Đã hoàn tất tiền thuê / Chờ nhập kho thực tế",
   CONTRACTED: "Đã duyệt / Chờ hoàn tất hợp đồng",
   PAID: "Đã thanh toán",
   ACTIVE: "Đang thuê",
@@ -155,14 +161,14 @@ export function LoadState({ resource }) {
     </>
   );
 }
-export function RentalStatus({ status }) {
+export function RentalStatus({ status, reservation }) {
   return (
     <Badge
       variant={
         ["ACTIVE", "PAID", "CLOSED"].includes(status) ? "green" : "orange"
       }
     >
-      {statusLabels[status] || status || "Status not returned"}
+      {(reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
     </Badge>
   );
 }
@@ -176,7 +182,8 @@ export function addressText(value) {
           .join(", ")
       : undefined;
 }
-export function RentalSummary({ item }) {
+export function RentalSummary({ item, localizeManagedV2=false }) {
+  const localized=localizeManagedV2&&isManagedV2(item),date=value=>localized?reservationVietnamTime(value):value;
   const facility =
       typeof item.facilityId === "object" ? item.facilityId : item.facility,
     unit =
@@ -201,17 +208,17 @@ export function RentalSummary({ item }) {
             ["Volume (m³)", unit?.volumeM3],
           ]
         : []),
-    ["Start date", item.startDate],
-    ["End date", item.endDate],
-    ["Estimated rent", item.estimatedRent],
-    ["Deposit", item.depositAmount],
-    ["Payment deadline", item.paymentDeadline || item.expiresAt],
+    ["Start date", date(item.startDate)],
+    ["End date", date(item.endDate)],
+    ...(!isManagedV2(item)?[["Estimated rent", item.estimatedRent],["Deposit", item.depositAmount]]:[]),
+    ["Payment deadline", date(item.paymentDeadline || item.expiresAt)],
   ];
   return (
     <Card>
       <CardContent>
-        <RentalStatus status={item.status} />
+        <RentalStatus status={item.status} reservation={item} />
         <div className="mt-5">
+          {isManagedV2(item)&&<ManagedFinancialSummary reservation={item} localizeCurrency={localized}/>}
           <Details
             values={values.filter(
               ([, v]) => v !== undefined && v !== null && typeof v !== "object",
@@ -221,6 +228,10 @@ export function RentalSummary({ item }) {
       </CardContent>
     </Card>
   );
+}
+export function ManagedFinancialSummary({reservation,quote,localizeCurrency=false}){
+  try{const result=quote?managedQuoteFinancials(quote):managedReservationFinancials(reservation);return <div><Details values={managedFinancialRows(result,localizeCurrency?reservationAmount:undefined)}/><p className="mt-2 text-xs text-slate-500">Advance rent is included in the total, not an additional security deposit. The planned balance does not prove payment.</p></div>;}
+  catch(error){return <Message error={error.message}/>;}
 }
 export function BackendScreen({ children, ...props }) {
   return <CustomerScreen {...props}>{children}</CustomerScreen>;

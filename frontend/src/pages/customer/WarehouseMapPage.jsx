@@ -1,4 +1,5 @@
-import {useParams} from 'react-router-dom';
+import {useParams,useSearchParams} from 'react-router-dom';
+import {readBookingPeriod} from '@/lib/managedCellBooking';
 import DigitalWarehouseDashboard from '@/components/customer/warehouse/DigitalWarehouseDashboard';
 import {ArrowUp, ArrowLeft} from 'lucide-react';
 import warehouseMapApi from '@/api/warehouseMapApi';
@@ -48,7 +49,8 @@ function ZoneMap({zone,facilityId}) {
 
 export default function WarehouseMapPage() {
   const {facilityId} = useParams();
-  const map = useBackend(config => validId(facilityId) ? warehouseMapApi.getWarehouseMap(facilityId,config).then(response=>validateWarehouseMap(record(response),facilityId)) : Promise.reject(Error('Invalid facility ID.')), [facilityId]);
+  const [bookingParams]=useSearchParams(),range=readBookingPeriod(bookingParams).range;
+  const map = useBackend(config => validId(facilityId) ? warehouseMapApi.getWarehouseMap(facilityId,config,range).then(response=>validateWarehouseMap(record(response),facilityId)) : Promise.reject(Error('Invalid facility ID.')), [facilityId,JSON.stringify(range)]);
   const rackCount = map.data?.zones.reduce((sum,zone)=>sum+zone.aisles.reduce((n,aisle)=>n+aisle.racks.length,0),0);
   return <DigitalWarehouseDashboard facilityId={facilityId} map={map}/>;
 }
@@ -77,6 +79,7 @@ export function WarehouseRackDetailPage() {
 // Direct Rack URLs retain their path and open the same interactive map context.
 export function InteractiveWarehouseRackDetailPage(){
  const {facilityId,rackId}=useParams();
- const map=useBackend(config=>validId(facilityId)&&validId(rackId)?warehouseMapApi.getWarehouseMap(facilityId,config).then(response=>validateWarehouseMap(record(response),facilityId)):Promise.reject(Error('Invalid facility or rack ID.')),[facilityId,rackId]);
+ const [bookingParams]=useSearchParams(),range=readBookingPeriod(bookingParams).range;
+ const map=useBackend(config=>validId(facilityId)&&validId(rackId)?warehouseMapApi.getWarehouseMap(facilityId,config,range).then(response=>validateWarehouseMap(record(response),facilityId)):Promise.reject(Error('Invalid facility or rack ID.')),[facilityId,rackId,JSON.stringify(range)]);
  return <DigitalWarehouseDashboard facilityId={facilityId} initialRackId={rackId} map={map}/>;
 }

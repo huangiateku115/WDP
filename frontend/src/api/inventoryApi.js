@@ -7,6 +7,7 @@ const inventoryApi = {
   getMine: ({page=1,limit=20}={},config={})=>axiosClient.get('/inventory-items/me',{...config,params:{page,limit}}),
   get: (id,config)=>axiosClient.get(`/inventory-items/${inventoryItemId(id)}`,config),
   create: payload=>axiosClient.post('/inventory-items',payload),
+  requestInbound: id=>axiosClient.post(`/inventory-items/${inventoryItemId(id)}/inbound-request`,{}),
   update: (id,payload)=>axiosClient.patch(`/inventory-items/${inventoryItemId(id)}`,payload),
   preview: (id,cellId,config={})=>axiosClient.get(`/inventory-items/${inventoryItemId(id)}/placement-preview`,{...config,params:cellId?{cellId}:{} }),
 };

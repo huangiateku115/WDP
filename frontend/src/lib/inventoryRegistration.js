@@ -2,6 +2,9 @@ export const inventoryId=value=>typeof value==='string'?value:value?._id||value?
 export const validInventoryId=value=>typeof value==='string'&&/^[a-f\d]{24}$/i.test(value);
 export function httpImage(value){if(typeof value!=='string'||!value.trim()||value.trim().length>2048)return false;try{const url=new URL(value.trim());return ['http:','https:'].includes(url.protocol)&&!!url.hostname&&!url.username&&!url.password;}catch{return false;}}
 export const eligibleInventoryRental=r=>r?.serviceType==='MANAGED_INVENTORY'&&r.status==='ACTIVE'&&validInventoryId(inventoryId(r))&&validInventoryId(inventoryId(r.facilityId))&&Number.isFinite(Number(r.allocatedCapacity))&&Number(r.allocatedCapacity)>0;
+// Registration eligibility is separate from the existing ACTIVE-only edit/preview guard.
+export const eligibleInventoryRegistration=(r,now=Date.now())=>eligibleInventoryRental(r)||(r?.bookingFlowVersion===2&&r?.status==='DEPOSIT_PAID'&&Date.parse(r.endDate)>now&&eligibleInventoryRental({...r,status:'ACTIVE'}));
+export const eligibleV2Inbound=(item,r,now=Date.now())=>r?.bookingFlowVersion===2&&eligibleInventoryRental({...r,status:'ACTIVE'})&&inventoryId(r)===inventoryId(item?.managedReservationId)&&inventoryId(r.facilityId)===inventoryId(item?.facilityId)&&item?.status==='REGISTERED'&&item.currentCellId===null&&Date.parse(r.endDate)>now&&(['DEPOSIT_PAID','CHECKIN_READY'].includes(r.status)||(r.status==='ACTIVE'&&Date.parse(r.startDate)<=now));
 export const editableInventory=(item,rental)=>item?.status==='REGISTERED'&&item.currentCellId===null&&eligibleInventoryRental(rental)&&inventoryId(rental)===inventoryId(item.managedReservationId)&&inventoryId(rental.facilityId)===inventoryId(item.facilityId);
 function text(value,name,max){if(typeof value!=='string'||!value.trim()||value.trim().length>max)throw Error(`${name} must contain 1–${max} characters.`);return value.trim();}
 export function inventoryFormPayload(form,edit=false){
