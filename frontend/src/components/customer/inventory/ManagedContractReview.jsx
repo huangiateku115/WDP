@@ -1,0 +1,39 @@
+import {useState,useRef} from 'react';
+import {getAccessToken,useAuthSession} from '@/lib/authSession';
+import {inventoryId,inventoryError} from '@/lib/inventoryRegistration';
+import {currentManagedContract,maySignManaged,contractFingerprint} from '@/lib/managedIntake';
+import {managedIntakeApi} from '@/api/managedIntakeApi';
+import {Button,Card,CardContent,Details,Message} from '../RentalBackendUI';
+import {Checkbox} from '@/components/ui/checkbox';
+import {customerManagedContractState} from '@/lib/customerManagedContractState';
+import CustomerContractSnapshot from './CustomerContractSnapshot';
+import {reservationVietnamTime} from '@/lib/customerReservationDisplay';
+
+// Shared Customer/Facility view. All legal/intake/pricing content comes from the server snapshot.
+export default function ManagedContractReview({contract,reservation,loadLatest,onRefresh,customerView=false}){
+  const {user}=useAuthSession(),[saved,setSaved]=useState(null),[confirmed,setConfirmed]=useState(false),[pending,setPending]=useState(false),[locked,setLocked]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState(''),busy=useRef(false);
+  const current=saved||contract;let progress,invalid='';try{progress=currentManagedContract(current,reservation);}catch(e){invalid=inventoryError(e);}
+  const canSign=!!progress&&maySignManaged(current,reservation,user)&&(!customerView||user?.role==='CUSTOMER');
+  async function sign(){
+    if(busy.current||!canSign||!confirmed||locked)return;
+    busy.current=true;setPending(true);setError('');setSuccess('');const token=getAccessToken();let sent=false;
+    try{
+      const latest=await loadLatest();if(getAccessToken()!==token)return;
+      if(contractFingerprint(latest.contract)!==contractFingerprint(current)||!maySignManaged(latest.contract,latest.reservation,user))throw Error('Contract version, signatures or reservation changed. Refresh and review before signing.');
+      sent=true;
+      const response=await(user.role==='CUSTOMER'?managedIntakeApi.signCustomer(inventoryId(current)):managedIntakeApi.signFacility(inventoryId(current)));
+      if(getAccessToken()!==token)return;
+      const signed=response?.data?.success===true?response.data.data:null,p=currentManagedContract(signed,latest.reservation);
+      if(inventoryId(signed)!==inventoryId(current)||p.version!==progress.version||p.hash!==progress.hash||!(user.role==='CUSTOMER'?inventoryId(p.customer?.signerId)===inventoryId(user):inventoryId(p.facility?.signerId)===inventoryId(user)&&p.facility?.signerRole===user.role))throw Error('Backend signature result or reviewed version could not be verified.');
+      setSaved(signed);setLocked(true);setConfirmed(false);setSuccess(`Backend confirmed your signature. Current contract progress: ${p.status}. No payment or physical inbound was performed.`);
+    }catch(e){if(getAccessToken()!==token)return;if(sent&&(!e.response?.status||e.response.status>=500)){setLocked(true);setError('Signature result is unknown. Use Refresh contract (GET) to reconcile before any new explicit attempt. No automatic PATCH retry is made.');}else{setConfirmed(false);setError(inventoryError(e));}}
+    finally{busy.current=false;setPending(false);}
+  }
+  if(customerView)return <CustomerReview current={current} state={customerManagedContractState(current,reservation,user)} confirmed={confirmed} setConfirmed={setConfirmed} pending={pending} locked={locked} error={error} success={success} sign={sign} onRefresh={onRefresh}/>;
+  return <Card><CardContent><h2 className="text-xl font-bold">Managed V2 contract review</h2><Message error={invalid||error} success={success}/>{progress&&<><p role="status" className="mt-3 font-semibold text-brand">Signature progress: {progress.status}</p><Details values={[["Contract",current.contractCode||inventoryId(current)],["Stored status",current.status],["Current version",progress.version],["Content hash",progress.hash],["Customer signer",progress.customer?`${progress.customer.signerId} · ${progress.customer.signedAt}`:'Not signed'],["Facility signer",progress.facility?`${progress.facility.signerRole} · ${progress.facility.signerId} · ${progress.facility.signedAt}`:'Not signed'],["Terms version",current.termsVersion||'Not returned']]}/><h3 className="mt-5 font-bold">Backend-confirmed current content</h3><p className="mt-2 text-sm">Review this snapshot during the direct check-in/intake process. Customer must sign the current version before the assigned Facility representative.</p><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-slate-50 p-4 text-xs" aria-label="Current contract snapshot">{JSON.stringify({customer:current.customerSnapshot,content:progress.content},null,2)}</pre><p className="mt-3 text-sm">Only signatures matching the current version and content hash count. Older signatures do not sign changed content.</p>{canSign&&!locked&&<label className="mt-5 flex items-start gap-3 text-sm"><Checkbox checked={confirmed} disabled={pending} onCheckedChange={v=>setConfirmed(v===true)}/><span>I have reviewed the displayed contract during direct check-in/intake and confirm signing as {user.role}.</span></label>}<div className="mt-5 flex flex-wrap gap-3"><Button variant="orange" disabled={!canSign||!confirmed||pending||locked} onClick={sign}>{pending?'Signing…':user?.role==='CUSTOMER'?'Sign current Managed contract':'Countersign current Managed contract'}</Button><Button variant="outline" disabled={pending} onClick={onRefresh}>Refresh contract (GET)</Button></div>{!canSign&&<p className="mt-3 text-sm text-orange-700">Signing unavailable for this identity, reservation state or current signature progress. Facility signing requires the Customer signature first.</p>}</>}</CardContent></Card>;
+}
+function CustomerReview({current,state,confirmed,setConfirmed,pending,locked,error,success,sign,onRefresh}){
+  const progress=state.progress,fully=state.kind==='SIGNED',partial=state.kind==='PARTIALLY_SIGNED';
+  const signer=s=>s?`${s.signerRole} · ${s.signerId} · ${reservationVietnamTime(s.signedAt)}`:'Not signed for the current version';
+  return <Card><CardContent><h2 className="text-xl font-bold">Managed V2 contract review</h2><div className="mt-4"><Message error={fully?'':state.reason||error} success={fully?state.message:success}/>{!fully&&state.message&&<p role="status" className="soft-panel mt-3 p-4 text-sm">{state.message}</p>}{state.notice&&<p role="note" className="mt-3 text-sm text-orange-700">{state.notice}</p>}</div><section className="mt-6 space-y-3" aria-label="Contract version and signing progress"><h3 className="font-bold text-brand">Contract version and signing progress</h3>{progress&&<p role="status" className="font-semibold text-brand">Signature progress: {progress.status}</p>}<Details values={[["Contract",current.contractCode||inventoryId(current)],...(progress?[["Stored status",current.status]]:[]),...(progress?[["Current version",progress.version],["Content hash",progress.hash],["Customer signer",signer(progress.customer)],["Facility signer",signer(progress.facility)]]:[]),["Terms version",current.termsVersion||'Not returned']]}/></section>{progress&&<CustomerContractSnapshot contract={current} progress={progress}/>}<div className="mt-6">{state.canSign&&!locked&&<label className="flex items-start gap-3 text-sm"><Checkbox checked={confirmed} disabled={pending} onCheckedChange={v=>setConfirmed(v===true)}/><span>I have reviewed the displayed contract during direct check-in/intake and confirm signing as CUSTOMER.</span></label>}<div className="mt-4 flex flex-wrap gap-3"><Button variant="orange" disabled={!state.canSign||!confirmed||pending||locked} onClick={sign}>{fully?'Fully signed':partial?'Customer signed':pending?'Signing…':'Sign current Managed contract'}</Button><Button variant="outline" disabled={pending} onClick={onRefresh}>Refresh contract (GET)</Button></div></div></CardContent></Card>;
+}

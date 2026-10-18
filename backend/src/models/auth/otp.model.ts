@@ -10,7 +10,7 @@ const otpSchema = new Schema(
   {
     email: { type: String, required: true },
     otp: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now, expires: 3000 }, // TTL index: auto delete after 300 seconds (5 mins)
+    createdAt: { type: Date, default: Date.now, expires: 30000 }, // TTL index: auto delete after 300 seconds (5 mins)
   }
 );
 

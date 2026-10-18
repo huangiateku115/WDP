@@ -1,5 +1,11 @@
-import SelfStorageMockPayment, { SelfPaymentNavigation } from './SelfStorageMockPayment';
-import { canPaySelfStorage } from '@/lib/selfStoragePayment';
+import ManagedContractReview from './inventory/ManagedContractReview';
+import CustomerBalancePayment from './CustomerBalancePayment';
+import CustomerDepositPayment from './CustomerDepositPayment';
+import {eligibleInventoryRegistration} from '@/lib/inventoryRegistration';
+import SelfStorageMockPayment,{SelfPaymentNavigation} from './SelfStorageMockPayment';
+import {canPaySelfStorage} from '@/lib/selfStoragePayment';
+import ManagedCellSummary from './warehouse/ManagedCellSummary';
+import {clearMapAvailability} from './warehouse/ManagedCellBooking';
 import {
   serviceType,
   serviceLabel,
@@ -11,6 +17,10 @@ import {
   canMockPay,
   contractAmounts,
   managedMockEnabled,
+  isManagedV2,
+  isLegacyManaged,
+  hasLegacyRentalFlow,
+  reservationLifecycle,
 } from "@/lib/customerReservationService";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
@@ -31,6 +41,7 @@ import {
   Message,
   LoadState,
   RentalSummary,
+  ManagedFinancialSummary,
   RentalStatus,
   statusLabels,
   useBackend,
@@ -69,21 +80,6 @@ async function contractContext(reservationId, config) {
     throw Error("Contract does not match this reservation.");
   return { contract, reservation };
 }
-const managedLifecycle = {
-  RESERVED: "Managed quota is held while awaiting Manager/Admin approval.",
-  DEPOSIT_PAID: "Advance rent deposit settled. The selected Cells are reserved; no contract has been signed, no item is in storage and the rental is not active.",
-  CONTRACTED:
-    "A Managed contract has been created. Sign it while the hold is valid.",
-  PAID: "Payment has been recorded. Authorized management must activate the Managed quota; no unit handover is required.",
-  ACTIVE:
-    "Managed quota is activated. Inventory registration is a separate future integration; no cell or physical stock is assigned.",
-  OVERDUE:
-    "Managed rental is overdue. Unresolved obligations may continue to hold commercial quota.",
-  CANCELLED:
-    "Managed reservation is cancelled. Payment and activation are unavailable.",
-  CHECKED_OUT: "The backend reports CHECKED_OUT for this Managed reservation.",
-  CLOSED: "The backend reports this Managed reservation as closed.",
-};
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
     reservationApi.mineReal(config).then(rows),
@@ -139,16 +135,16 @@ export function RentalsIntegration() {
             ),
           ].map((s) => (
             <option key={s} value={s}>
-              {statusLabels[s] || s}
+              {s==='RESERVED'&&resource.data?.some(isManagedV2)?'RESERVED — see rental flow':statusLabels[s] || s}
             </option>
           ))}
         </select>
       </label>
       {[
         ["Active Rentals", ["ACTIVE", "OVERDUE"]],
-        ["Awaiting activation / handover", ["PAID"]],
+        ["Awaiting activation / handover", ["PAID", "CHECKIN_READY"]],
         ["Rental History", ["CHECKED_OUT", "CLOSED"]],
-        ["Reservations", ["RESERVED", "CONTRACTED", "CANCELLED"]],
+        ["Reservations", ["RESERVED", "DEPOSIT_PAID", "CONTRACTED", "CANCELLED"]],
         [
           "Other returned statuses",
           records
@@ -159,6 +155,8 @@ export function RentalsIntegration() {
                   "ACTIVE",
                   "OVERDUE",
                   "PAID",
+                  "CHECKIN_READY",
+                  "DEPOSIT_PAID",
                   "CHECKED_OUT",
                   "CLOSED",
                   "RESERVED",
@@ -202,18 +200,8 @@ export function RentalsIntegration() {
     </BackendScreen>
   );
 }
-const lifecycleInfo = {
-  RESERVED:
-    "Waiting for Facility Manager approval. Any deadline is shown only when returned by the backend.",
-  CONTRACTED: "Approved. Review the available backend contract.",
-  PAID: "Payment completed. Waiting for Facility Manager handover.",
-  ACTIVE: "Rental active. Simulated access is available.",
-  OVERDUE: "Rental overdue. Access is unavailable.",
-  CHECKED_OUT: "Storage returned. Access is unavailable.",
-  CLOSED: "Rental completed and archived.",
-  CANCELLED: "Reservation cancelled. Payment and access are unavailable.",
-};
 export function ReservationDetailIntegration() {
+  const session = useAuthSession();
   const location = useLocation(),
     now = useCurrentTime();
   const params = useParams(),
@@ -237,20 +225,16 @@ export function ReservationDetailIntegration() {
         <Message success=" Waiting for management approval." />
       )}
       {location.state?.managedCreated && (
-        <Message success={resource.data?.bookingFlowVersion === 2 ? "Reservation held. Complete the advance rent deposit to reserve the selected Cells." : "Waiting for management approval."} />
+        <Message success={isManagedV2(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
       )}
       {resource.data && (
         <>
-          <RentalSummary item={resource.data} />
+          <RentalSummary item={resource.data} localizeManagedV2 />
+          {isManagedV2(resource.data)&&<CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>reservationApi.detailForCustomer(id,config).then(record)} onReservationRefresh={resource.retry}/>}
+          {isManagedV2(resource.data)&&<CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>contractContext(id,config)} onReservationRefresh={resource.retry}/>}
+          <ManagedCellSummary reservation={resource.data}/>{isManagedV2(resource.data)&&<div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data)&&<Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status==='RESERVED'&&<p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
           <p>
-            {(serviceType(resource.data) === MANAGED_INVENTORY
-              ? resource.data.bookingFlowVersion === 2 && resource.data.status === "RESERVED"
-                ? "Managed reservation created. Pay the advance rent deposit before the temporary Cell hold expires; no Manager approval or contract is required for booking."
-                : managedLifecycle[resource.data.status]
-              : serviceType(resource.data) === SELF_STORAGE
-                ? lifecycleInfo[resource.data.status]
-                : "Unsupported service. Service-specific actions are unavailable.") ||
-              "Status information is not available."}
+            {reservationLifecycle(resource.data).description}
           </p>
           {serviceType(resource.data) === MANAGED_INVENTORY &&
             ["RESERVED", "CONTRACTED"].includes(resource.data.status) &&
@@ -286,6 +270,7 @@ export function ReservationDetailIntegration() {
                     throw Error(
                       "Cancellation was not confirmed by the backend.",
                     );
+                  if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
                   resource.retry();
                 }}
               />
@@ -293,7 +278,7 @@ export function ReservationDetailIntegration() {
             <Button variant="outline" onClick={resource.retry}>
               Refresh status
             </Button>
-            {serviceType(resource.data) &&
+            {hasLegacyRentalFlow(resource.data) &&
               [
                 "CONTRACTED",
                 "PAID",
@@ -308,16 +293,9 @@ export function ReservationDetailIntegration() {
                   </Link>
                 </Button>
               )}
-            {serviceType(resource.data) &&
-              (["CONTRACTED", "PAID"].includes(resource.data.status) || (resource.data.bookingFlowVersion === 2 && resource.data.status === "RESERVED")) && (
-                { serviceType(resource.data) === MANAGED_INVENTORY &&
-              ["CONTRACTED", "PAID"].includes(resource.data.status) && (
-                <Button asChild variant="outline">
-                  <Link to={`/portal/payments/${id}`}>
-                    {resource.data.bookingFlowVersion === 2 ? "Pay advance rent deposit" : "Review simulated payment"}
-                  </Link>
-                </Button>
-              )}
+            {isLegacyManaged(resource.data) && ["CONTRACTED", "PAID"].includes(resource.data.status) && (
+              <Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Review simulated payment</Link></Button>
+            )}
             {serviceType(resource.data) === SELF_STORAGE &&
               resource.data.status === "ACTIVE" && (
                 <Button asChild>
@@ -363,8 +341,8 @@ export function ContractsIntegration() {
       ))}
       {resource.data?.length === 0 && <p>No contracts returned.</p>}
       <p className="text-sm text-slate-500">
-        The backend returns DRAFT and signed contracts. Facility Manager
-        approval creates the draft.
+        Legacy drafts follow the existing approval flow. Managed V2 contracts
+        belong to physical intake; review the current content version before signing.
       </p>
     </BackendScreen>
   );
@@ -382,6 +360,7 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
+  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
   return (
     <BackendScreen
       title="Review rental contract"
@@ -393,14 +372,13 @@ export function ContractDetailIntegration() {
         <Card>
           <CardContent>
             <RentalStatus status={contract.status} />
+            {isManagedV2(reservation)&&<ManagedFinancialSummary reservation={reservation}/>}
             <Details
               values={[
                 ["Contract number", contract.contractCode],
                 ["Signed at", contract.signedByCustomerAt],
                 ["Service", serviceLabel(reservation)],
-                ["Estimated rent", amounts.estimatedRent],
-                ["Deposit", amounts.depositAmount],
-                ["Total due", amounts.totalDue],
+                ...(!isManagedV2(reservation)?[["Estimated rent", amounts.estimatedRent],["Deposit", amounts.depositAmount],["Total due", amounts.totalDue]]:[]),
                 [
                   "Currency",
                   serviceType(reservation) === MANAGED_INVENTORY
@@ -465,8 +443,7 @@ export function ContractDetailIntegration() {
             {contract.status === "DRAFT" &&
               !canSign(contract, reservation, now) && (
                 <p className="mt-4 text-sm text-orange-700">
-                  Signing unavailable: service, reservation status or Managed
-                  hold could not be confirmed.
+                  {isManagedV2(reservation)?'Managed V2 contract signing is not implemented in this phase. No signature can be submitted here.':'Signing unavailable: service, reservation status or Managed hold could not be confirmed.'}
                 </p>
               )}
             <SelfPaymentNavigation contract={contract} reservation={reservation} />
@@ -508,11 +485,11 @@ export function PaymentIntegration() {
     [reservationId],
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
-  const managedDeposit = managed && resource.data?.bookingFlowVersion === 2;
+  const managedDeposit = isManagedV2(resource.data);
   const managedDepositEnabled = import.meta.env.DEV === true && import.meta.env.VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED === "true";
   const contracts = useBackend(
     (config) =>
-      managed && !managedDeposit ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
+      isLegacyManaged(resource.data) ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
     [reservationId, managed, managedDeposit, resource.data?.status],
   );
   const contract = contracts.data?.find(
@@ -521,8 +498,8 @@ export function PaymentIntegration() {
   if (serviceType(resource.data) === SELF_STORAGE) return <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
   return (
     <BackendScreen
-      title="Simulated Payment"
-      description="Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."
+      title={managedDeposit ? "Managed V2 payment status" : "Simulated Payment"}
+      description={managedDeposit ? "Read-only status. No payment action is implemented in this phase." : "Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."}
     >
       <LoadState resource={resource} />
       {resource.data && (
@@ -530,17 +507,13 @@ export function PaymentIntegration() {
           <RentalSummary item={resource.data} />
           {managedDeposit && (
             <Card><CardContent><h2 className="text-xl font-bold">Advance rent deposit</h2>
-              <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. This screen uses the development mock only.</p>
-              <Details values={[["Deposit due", `${resource.data.depositAmount} ${resource.data.managedPricingSnapshot?.pricingRule?.currency || "VND"}`], ["Total rent due", resource.data.managedPricingSnapshot?.amountBreakdown?.totalDue], ["Balance after deposit", resource.data.managedPricingSnapshot?.amountBreakdown?.balanceDue]]} />
-              {!managedDepositEnabled && <Message error="Managed deposit flow is disabled in this frontend. Enable VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED=true for a development build and MI_MANAGED_DEPOSIT_FLOW_ENABLED=true with NODE_ENV=development in the backend." />}
-              {resource.data.status === "DEPOSIT_PAID" && <Message success="Deposit settled. Reservation is DEPOSIT_PAID; Cells are reserved and rental activation awaits later approved handover steps." />}
-              {managedDepositEnabled && resource.data.status === "RESERVED" && <div className="mt-4 flex flex-wrap gap-3">
-                <ConfirmAction label="Initiate advance rent deposit" onAction={async () => { const token = getAccessToken(); const result = record(await managedReservationApi.initiateDeposit(reservationId, { idempotencyKey: depositKey.current })); if (getAccessToken() !== token) return; if (result.payment?.purpose !== "DEPOSIT" || result.payment?.status !== "PENDING" || result.amount !== resource.data.depositAmount) throw Error("Backend did not confirm the expected pending deposit."); setDepositInitiated(true); resource.retry(); }} />
-                <ConfirmAction label="Confirm development mock deposit" disabled={!depositInitiated} onAction={async () => { const token = getAccessToken(); const result = record(await managedReservationApi.confirmMockDeposit(reservationId, { idempotencyKey: depositKey.current })); if (getAccessToken() !== token) return; if (result.reconciliationRequired) throw Error("The hold expired before confirmation. Payment requires reconciliation and the Cells were not reclaimed."); if (result.reservation?.status !== "DEPOSIT_PAID" || result.payment?.status !== "SUCCEEDED") throw Error("Backend did not confirm the deposit settlement."); setDepositInitiated(false); resource.retry(); }} />
-              </div>}
-            </CardContent></Card>
+              <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. Payment actions are unavailable in this phase.</p>
+              <ManagedFinancialSummary reservation={resource.data}/>
+              <p className="mt-3 text-sm">{reservationLifecycle(resource.data).description}</p>
+              <p className="mt-3 text-sm text-slate-500">Deposit and balance actions are not available in this phase. Review intake signatures under Contracts. No payment can be submitted here.</p>
+             </CardContent></Card>
           )}
-          {managedDeposit ? null : resource.data.status === "PAID" ? (
+          {!hasLegacyRentalFlow(resource.data) ? null : resource.data.status === "PAID" ? (
             <Message success="Backend reservation status: Đã thanh toán." />
           ) : (
             <p className="text-sm text-slate-500">
@@ -549,14 +522,14 @@ export function PaymentIntegration() {
                 : "Demo payment is available for an owned Self Storage CONTRACTED reservation."}
             </p>
           )}
-          {managed && !managedDeposit && <LoadState resource={contracts} />}
-          {managed && !managedDeposit && !enabled && (
+          {isLegacyManaged(resource.data) && <LoadState resource={contracts} />}
+          {isLegacyManaged(resource.data) && !enabled && (
             <p className="mt-4 text-sm text-orange-700">
               Managed mock payment is unavailable in this environment. No
               production payment API is provided.
             </p>
           )}
-          {managed && !managedDeposit &&
+          {isLegacyManaged(resource.data) &&
             enabled &&
             !canMockPay(resource.data, contract, enabled, now) && (
               <p className="mt-4 text-sm text-orange-700">
@@ -567,7 +540,7 @@ export function PaymentIntegration() {
           {!serviceType(resource.data) && (
             <Message error="Unsupported service. Payment is unavailable." />
           )}
-          {!managedDeposit && canMockPay(resource.data, contract, enabled, now) && (
+          {hasLegacyRentalFlow(resource.data) && canMockPay(resource.data, contract, enabled, now) && (
             <ConfirmAction
               label="Simulate Payment (Demo)"
               onAction={async () => {
@@ -599,6 +572,7 @@ export function PaymentIntegration() {
                   recordId(result) !== reservationId
                 )
                   throw Error("Backend did not confirm payment.");
+                if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
                 resource.retry();
                 contracts.retry();
               }}
