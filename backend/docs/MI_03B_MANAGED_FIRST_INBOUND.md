@@ -7,7 +7,9 @@ MI-03B extends the existing `POST /api/v1/inventory-items/:id/confirm-inbound` e
 ```text
 RESERVED + HOLD
   -- successful DEPOSIT --> DEPOSIT_PAID + RESERVED allocation
-  -- inspection, signed current contract, settled BALANCE --> CHECKIN_READY + RESERVED allocation
+  -- customer inbound request --> item PENDING_INBOUND
+  -- Staff ACCEPTED inspection with custodyTaken=true --> item RECEIVED_PENDING_ACCEPTANCE
+  -- signed current contract and settled BALANCE --> CHECKIN_READY + RESERVED allocation
   -- first Staff-confirmed inbound in rental period --> ACTIVE + destination OCCUPIED + item IN_STORAGE
   -- subsequent inbound --> ACTIVE + additional physical usage and INBOUND movement
 ```
@@ -53,7 +55,9 @@ On the first v2 inbound, the persisted reservation transitions `CHECKIN_READY â†
 
 ## First-inbound checks
 
-The service rechecks the assigned Staff Facility, active Managed Facility, rental interval `[startDate, endDate)`, and unresolved overdue restrictions. It verifies successful DEPOSIT and full BALANCE ledger settlement (or the explicit zero-balance settlement marker), both signatures for the current contract version/hash, and the contract snapshot for the inspected item. The item must still be `PENDING_INBOUND`; its ACCEPTED inspection must match current registration and final Staff measurements. The destination must be among both the reservation's selected Cells and the inspection-compatible Cells, and its allocation must belong to the same reservation/customer.
+Postman order is: Customer `POST /api/v1/inventory-items/{id}/inbound-request`; assigned Staff `POST /api/v1/inventory-items/{id}/receiving-inspection` with `decision: ACCEPTED` and `custodyTaken: true`; create and sign the current contract, settle the balance until the reservation is `CHECKIN_READY`; then assigned Staff `POST /api/v1/inventory-items/{id}/confirm-inbound`. There is no separate Customer acceptance endpoint between Staff inspection and confirmation. The first confirmation requires the item to be `RECEIVED_PENDING_ACCEPTANCE`, with the current ACCEPTED inspection and `receivingCustodyStatus: IN_CUSTODY`.
+
+The service rechecks the assigned Staff Facility, active Managed Facility, rental interval `[startDate, endDate)`, and unresolved overdue restrictions. It verifies successful DEPOSIT and full BALANCE ledger settlement (or the explicit zero-balance settlement marker), both signatures for the current contract version/hash, and the contract snapshot for the inspected item. The ACCEPTED inspection must match current registration and final Staff measurements. The destination must be among both the reservation's selected Cells and the inspection-compatible Cells, and its allocation must belong to the same reservation/customer.
 
 The Zone, Rack, Cell, and Facility must remain operational. Unknown or invalid physical counters fail closed, including counters of other Cells used to calculate the Rack/tier weight. Geometry, Cell weight/volume, level/Rack weight, category policy, and contracted reservation m3 limits are checked against persisted values. No client value can select or override quota or pricing.
 

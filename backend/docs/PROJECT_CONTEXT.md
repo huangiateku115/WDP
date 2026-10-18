@@ -54,7 +54,7 @@ Rental.status là trạng thái vòng đời chuẩn dùng xuyên các luồng:
 11. CF-11 tài khoản/phân quyền: Admin quản lý tài khoản/role/facility scope, guard, audit và login/logout.
 12. CF-12 đăng ký item: rental Managed thuộc khách và đủ điều kiện; category hỗ trợ, kích thước/cân nặng dương, quantity/unit, item_code duy nhất; volume_m3 = length_m × width_m × height_m trên mỗi stored item/handling unit. Registered, location=null; chưa chiếm chỗ.
 13. CF-13 inbound: rental Active/Managed, ownership/category/quota hợp lệ; Staff kiểm tra hàng thực, chọn Shelf cùng Facility đủ hình học/thể tích/tải trọng và Active. Sai thông tin/không có Shelf → giữ pending để xử lý. Xác nhận vật lý mới cập nhật item/location/quota/Shelf và ghi INBOUND atomically.
-14. CF-14 relocation: item InStorage, Shelf đích khác Shelf nguồn, cùng Facility, Active và đủ điều kiện. Staff xác nhận → giải phóng nguồn, chiếm đích, đổi location, ghi RELOCATION atomically. Không đổi used_capacity_m3 của Rental.
+14. CF-14 relocation (MI-05): Managed Inventory item IN_STORAGE, Cell đích khác Cell nguồn, cùng Facility, Active và đủ điều kiện. Staff xác nhận → giải phóng nguồn, chiếm đích, đổi location, ghi RELOCATION atomically dựa trên measurement INBOUND đã commit. Không đổi used_capacity_m3 hoặc trạng thái Reservation.
 15. CF-15 outbound: khách yêu cầu trong kỳ thuê Managed ACTIVE, kiểm tra ownership/location/eligibility; Staff được phân công xác nhận đã giao đủ cả lot. Xác nhận → OUTBOUND, location=null, CheckedOut, giảm quota đã dùng và Shelf utilization atomically theo số đo INBOUND đã lưu. Reject giữ location/counters và phục hồi InStorage. OVERDUE cần controlled-outbound policy được ủy quyền riêng; không cho khách tự xuất hàng.
 
 ## Các bất biến quan trọng (BR-01…BR-44)

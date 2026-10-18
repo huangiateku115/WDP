@@ -245,11 +245,14 @@ function mockSuccessfulConfirmation(t, { movementFailure = false, concurrentItem
   }, actor: { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: oid(facilityId) } };
 }
 
-function mockV2FirstInbound(t, { status = 'CHECKIN_READY', startDate = new Date(Date.now() - 60_000), endDate = new Date(Date.now() + 86_400_000),
+function mockV2FirstInbound(t, { status = 'CHECKIN_READY', itemStatus = status === 'CHECKIN_READY' ? 'RECEIVED_PENDING_ACCEPTANCE' : 'PENDING_INBOUND',
+  custodyStatus = status === 'CHECKIN_READY' ? 'IN_CUSTODY' : 'NONE', startDate = new Date(Date.now() - 60_000), endDate = new Date(Date.now() + 86_400_000),
   signatures = ['CUSTOMER', 'FACILITY_STAFF'], balanceSettled = true, contractSnapshot = true, inspectionDecision = 'ACCEPTED',
   depositPaid = true, signedHashMatches = true, initialCellWeightKg = 0, initialCellVolumeM3 = 0 } = {}) {
   const setup = mockSuccessfulConfirmation(t, { initialCellWeightKg, initialCellVolumeM3 });
   const { state } = setup;
+  state.item.status = itemStatus;
+  state.item.receivingCustodyStatus = custodyStatus;
   Object.assign(state.reservation, { bookingFlowVersion: 2, status, serviceType: 'MANAGED_INVENTORY', startDate, endDate,
     allocatedCellIds: [oid(cellId), oid('507f1f77bcf86cd799439042')], estimatedRent: 1000, depositAmount: 200,
     taxAmount: 0, discountAmount: 0, statusHistory: [], ...(balanceSettled ? { balanceSettledAt: new Date() } : {}) });
@@ -433,7 +436,26 @@ test('first version 2 inbound requires signed contract and settled payments, the
   assert.equal(setup.state.cell.usedWeightKg, 40);
   assert.equal(setup.state.cell.usedVolumeM3, .03);
   assert.equal(setup.state.movements.size, 1);
+  assert.equal(setup.state.item.receivingCustodyStatus, 'IN_CUSTODY');
   assert.deepEqual(setup.state.auditEvents.map(event => event.action), ['ACTIVATED', 'INBOUND_CONFIRMED']);
+});
+
+test('first inbound requires accepted inspection and custody; an uninspected or rejected item cannot bypass check-in', async t => {
+  const uninspected = mockV2FirstInbound(t, { itemStatus: 'PENDING_INBOUND', custodyStatus: 'NONE' });
+  uninspected.state.item.receivingInspection = undefined;
+  await assert.rejects(service.confirmInbound(itemId, uninspected.body, uninspected.actor), { status: 409 });
+  assert.equal(uninspected.state.cell.usedWeightKg, 0);
+  assert.equal(uninspected.state.movements.size, 0);
+
+  const custodyMissing = mockV2FirstInbound(t, { itemStatus: 'PENDING_INBOUND', custodyStatus: 'NONE' });
+  await assert.rejects(service.confirmInbound(itemId, custodyMissing.body, custodyMissing.actor), { status: 409, message: /custody taken/ });
+  assert.equal(custodyMissing.state.cell.usedWeightKg, 0);
+  assert.equal(custodyMissing.state.movements.size, 0);
+
+  const rejected = mockV2FirstInbound(t, { itemStatus: 'REGISTERED', custodyStatus: 'RETURNED', inspectionDecision: 'REJECTED' });
+  await assert.rejects(service.confirmInbound(itemId, rejected.body, rejected.actor), { status: 409 });
+  assert.equal(rejected.state.cell.usedWeightKg, 0);
+  assert.equal(rejected.state.movements.size, 0);
 });
 
 test('version 2 first inbound fails closed on missing signature, changed contract hash, unpaid balance, stale inspection, or invalid dates', async t => {
@@ -450,7 +472,7 @@ test('version 2 first inbound fails closed on missing signature, changed contrac
     const setup = mockV2FirstInbound(t, options);
     await assert.rejects(service.confirmInbound(itemId, setup.body, setup.actor), { status: 409 });
     assert.equal(setup.state.reservation.status, 'CHECKIN_READY');
-    assert.equal(setup.state.item.status, 'PENDING_INBOUND');
+    assert.equal(setup.state.item.status, 'RECEIVED_PENDING_ACCEPTANCE');
     assert.equal(setup.state.cell.usedWeightKg, 0);
     assert.equal(setup.state.movements.size, 0);
   });
@@ -468,7 +490,7 @@ test('version 2 first inbound rejects unknown legacy Cell counters and unallocat
 });
 
 test('version 2 subsequent inbound stays ACTIVE without another contract or balance payment', async t => {
-  const setup = mockV2FirstInbound(t, { status: 'ACTIVE', initialCellWeightKg: 40, initialCellVolumeM3: .03 });
+  const setup = mockV2FirstInbound(t, { status: 'ACTIVE', itemStatus: 'PENDING_INBOUND', initialCellWeightKg: 40, initialCellVolumeM3: .03 });
   setup.state.allocation.status = 'OCCUPIED';
   const result = await service.confirmInbound(itemId, setup.body, setup.actor);
   assert.equal(result.item.status, 'IN_STORAGE');
@@ -494,6 +516,8 @@ test('version 2 movement failure rolls back activation, counters, allocation and
   setup.state.reservation.statusHistory = [];
   setup.state.item.receivingInspection = { decision: 'ACCEPTED', observedQuantity: 2, observedUnitWeightKg: 20,
     observedUnitDimensionsM: { widthM: .25, depthM: .3, heightM: .2 }, compatibleWithCellIds: [oid(cellId)], packingLayoutVerified: true };
+  setup.state.item.status = 'RECEIVED_PENDING_ACCEPTANCE';
+  setup.state.item.receivingCustodyStatus = 'IN_CUSTODY';
   const contentHash = 'valid-contract-content-hash';
   t.mock.method(Contract, 'findOne', () => new Query({ status: 'SIGNED', currentContentVersion: 1,
     contentVersions: [{ version: 1, contentHash, content: { handover: [{ itemId, itemCode: 'LOT-1', name: 'Cartons', category: 'DOCUMENTS',
@@ -505,7 +529,7 @@ test('version 2 movement failure rolls back activation, counters, allocation and
     : { customerId, serviceType: 'MANAGED_INVENTORY', amount: 800, currency: 'VND' }));
   await assert.rejects(service.confirmInbound(itemId, setup.body, setup.actor), /Internal Server Error/);
   assert.equal(setup.state.reservation.status, 'CHECKIN_READY');
-  assert.equal(setup.state.item.status, 'PENDING_INBOUND');
+  assert.equal(setup.state.item.status, 'RECEIVED_PENDING_ACCEPTANCE');
   assert.equal(setup.state.cell.usedWeightKg, 0);
   assert.equal(setup.state.cell.usedVolumeM3, 0);
   assert.equal(setup.state.allocation.status, 'RESERVED');
@@ -603,14 +627,16 @@ test('Staff inbound is limited to the Cell allocated to that Managed reservation
   assert.equal(setup.state.item.status, 'PENDING_INBOUND');
 });
 
-test('pre-inbound received goods cannot be committed as IN_STORAGE before the rental reaches ACTIVE', async t => {
-  const setup = mockSuccessfulConfirmation(t);
-  setup.state.item.status = 'RECEIVED_PENDING_ACCEPTANCE';
-  await assert.rejects(service.confirmInbound(itemId, setup.body, setup.actor), { status: 409, message: /PENDING_INBOUND/ });
-  assert.equal(setup.state.item.currentCellId, null);
-  assert.equal(setup.state.cell.usedWeightKg, 0);
-  assert.equal(setup.state.cell.usedVolumeM3, 0);
-  assert.equal(setup.state.movement, null);
+test('accepted received goods are committed as first IN_STORAGE inbound and activate the rental atomically', async t => {
+  const setup = mockV2FirstInbound(t);
+  const result = await service.confirmInbound(itemId, setup.body, setup.actor);
+  assert.equal(result.item.status, 'IN_STORAGE');
+  assert.equal(setup.state.reservation.status, 'ACTIVE');
+  assert.equal(setup.state.item.currentCellId.toString(), cellId);
+  assert.equal(setup.state.cell.usedWeightKg, 40);
+  assert.equal(setup.state.cell.usedVolumeM3, .03);
+  assert.equal(setup.state.reservation.usedCapacityM3, .03);
+  assert.equal(setup.state.movements.size, 1);
 });
 
 test('quantity greater than one requires physical packing attestation and mismatched measurements stay pending', () => {

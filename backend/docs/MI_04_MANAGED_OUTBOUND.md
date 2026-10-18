@@ -1,6 +1,6 @@
 # MI-04 — Managed Inventory Outbound
 
-MI-04 adds whole-lot outbound for `MANAGED_INVENTORY`. It does not change Self-Storage routes or lifecycle. Relocation, partial outbound, overdue/forced disposition, rental closure, and contracted quota release remain out of scope.
+MI-04 adds whole-lot outbound for `MANAGED_INVENTORY`. It does not change Self-Storage routes or lifecycle. Partial outbound, overdue/forced disposition, rental closure, and contracted quota release remain out of scope. Relocation is covered by [MI-05](MI_05_MANAGED_RELOCATION.md).
 
 ## Lifecycle and boundaries
 
@@ -68,7 +68,7 @@ Content-Type: application/json
 
 `verifiedQuantity` must equal the complete registered lot, and `handoverConfirmed` must be exactly `true`. The server checks Staff Facility assignment, item/reservation/customer/Facility relationships, current Cell, and occupied allocation. It requires the item's persisted authoritative INBOUND movement and reconciles the Cell's and reservation's physical usage counters against all currently stored Managed lots. Missing, malformed, or inconsistent evidence fails closed.
 
-The amount subtracted comes from the committed INBOUND movement's `actualTotalWeightKg` and `actualTotalVolumeM3`, never from mutable Item metadata or client input. OUTBOUND movement fields contain the original `sourceCellId`, `destinationCellId: null`, persisted quantity and measurements, Staff actor, handover note, and idempotency key. Existing INBOUND movement fields and history response remain compatible; outbound DTOs use `sourceCellId` plus a null destination.
+The amount subtracted comes from the committed INBOUND movement's `actualTotalWeightKg` and `actualTotalVolumeM3`, never from mutable Item metadata or client input. The service follows `currentPlacementMovementId` and the immutable RELOCATION lineage to determine the current Cell, so outbound remains correct after one or more moves. OUTBOUND movement fields contain the current `sourceCellId`, `destinationCellId: null`, persisted quantity and measurements, Staff actor, handover note, and idempotency key. Existing INBOUND movement fields and history response remain compatible; outbound DTOs use `sourceCellId` plus a null destination.
 
 ```json
 {

@@ -23,7 +23,7 @@ import { ManagedReservationAction } from '../../types/managed-reservation-audit.
 import { IUser, UserRole } from '../../types/user.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
 import { requireActiveManagedInventoryReservation, requireManagedInventoryReservationForRegistration, ManagedReservationGuardError } from '../reservations/managed-inventory-reservation.guard';
-import { InboundConfirmationInput, InventoryItemError, OutboundConfirmationInput, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseOutboundConfirmation, parseOutboundRejection, parseUpdate } from './inventory-item.validation';
+import { InboundConfirmationInput, InventoryItemError, OutboundConfirmationInput, RelocationInput, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseOutboundConfirmation, parseOutboundRejection, parseRelocation, parseUpdate } from './inventory-item.validation';
 import { validateCategoryPolicyConfig } from '../pricing-policy/rule.validation';
 import { calculateRentalPaymentBreakdown } from '../payments/payment-accounting';
 
@@ -176,6 +176,20 @@ async function lockReservationForOutbound(item: IInventoryItem, session: ClientS
   return reservation;
 }
 
+async function lockReservationForRelocation(item: IInventoryItem, session: ClientSession, now: Date) {
+  const reservation = await ReservationModel.findOneAndUpdate({
+    _id: item.managedReservationId,
+    customerId: item.customerId,
+    facilityId: item.facilityId,
+    serviceType: FacilityServiceType.MANAGED_INVENTORY,
+    status: ReservationStatus.ACTIVE,
+    startDate: { $lte: now },
+    endDate: { $gt: now },
+  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!reservation) throw new InventoryItemError(409, 'Relocation requires an in-term ACTIVE Managed Inventory rental');
+  return reservation;
+}
+
 function signedByBothCurrentVersion(contract: IContract) {
   const version = contract.currentContentVersion;
   const active = contract.contentVersions?.find(entry => entry.version === version);
@@ -271,6 +285,15 @@ function outboundReplayMatches(prior: any, data: OutboundConfirmationInput) {
     prior.handoverNote === data.handoverNote && data.handoverConfirmed === true;
 }
 
+function relocationReplayMatches(prior: any, data: RelocationInput) {
+  return prior.type === ItemMovementType.RELOCATION &&
+    prior.sourceCellId?.toString() === data.sourceCellId &&
+    prior.destinationCellId?.toString() === data.destinationCellId &&
+    prior.quantity === data.verifiedQuantity &&
+    prior.physicalPackingConfirmed === data.physicalPackingConfirmed &&
+    prior.relocationNote === data.relocationNote;
+}
+
 function authoritativeInboundMovementMatches(item: IInventoryItem, cellId: Types.ObjectId, movement: any) {
   const quantity = Number(movement?.quantity);
   const unitWeightKg = Number(movement?.actualUnitWeightKg);
@@ -291,41 +314,105 @@ function authoritativeInboundMovementMatches(item: IInventoryItem, cellId: Types
     measurementMatches(totalVolumeM3, rounded(expectedUnitVolumeM3 * quantity, 6), 6);
 }
 
+function placementMeasurementsMatchInbound(placement: any, inbound: any) {
+  return placement.quantity === inbound.quantity && placement.quantityUnit === inbound.quantityUnit &&
+    measurementMatches(Number(placement.actualUnitWeightKg), Number(inbound.actualUnitWeightKg), 3) &&
+    measurementMatches(Number(placement.actualTotalWeightKg), Number(inbound.actualTotalWeightKg), 3) &&
+    measurementMatches(Number(placement.actualUnitDimensionsM?.widthM), Number(inbound.actualUnitDimensionsM?.widthM), 6) &&
+    measurementMatches(Number(placement.actualUnitDimensionsM?.depthM), Number(inbound.actualUnitDimensionsM?.depthM), 6) &&
+    measurementMatches(Number(placement.actualUnitDimensionsM?.heightM), Number(inbound.actualUnitDimensionsM?.heightM), 6) &&
+    measurementMatches(Number(placement.actualTotalVolumeM3), Number(inbound.actualTotalVolumeM3), 6);
+}
+
+async function authoritativeInboundForStoredItem(stored: any, reservation: any, session: ClientSession) {
+  if (!stored.currentCellId || !stored.inboundMovementId ||
+      !stored.managedReservationId.equals(reservation._id) || !stored.facilityId.equals(reservation.facilityId) ||
+      !stored.customerId.equals(reservation.customerId)) {
+    throw new InventoryItemError(409, 'Stored inventory ownership, location, or inbound evidence is inconsistent');
+  }
+  const scope = { itemId: stored._id, managedReservationId: stored.managedReservationId,
+    facilityId: stored.facilityId, customerId: stored.customerId };
+  const inbound = await ItemMovementModel.findOne({ _id: stored.inboundMovementId, ...scope,
+    type: ItemMovementType.INBOUND }).session(session).exec();
+  if (!inbound || !inbound.destinationCellId ||
+      !authoritativeInboundMovementMatches(stored, inbound.destinationCellId, inbound)) {
+    throw new InventoryItemError(409, 'A physically stored Item has missing or inconsistent INBOUND movement evidence');
+  }
+
+  // Old records have no placement pointer and have never been relocated. Their
+  // inbound destination remains a valid compatibility fallback.
+  let placementId = stored.currentPlacementMovementId;
+  if (!placementId) {
+    if (!inbound.destinationCellId.equals(stored.currentCellId)) {
+      throw new InventoryItemError(409, 'Legacy Item location does not match its original INBOUND movement');
+    }
+    return inbound;
+  }
+
+  let expectedDestination = stored.currentCellId as Types.ObjectId;
+  const visited = new Set<string>();
+  for (let depth = 0; depth < 1000; depth += 1) {
+    const placementKey = placementId.toString();
+    if (visited.has(placementKey)) throw new InventoryItemError(409, 'Placement movement lineage contains a cycle');
+    visited.add(placementKey);
+    const placement = placementKey === inbound._id.toString()
+      ? inbound
+      : await ItemMovementModel.findOne({ _id: placementId, ...scope,
+        type: ItemMovementType.RELOCATION }).session(session).exec();
+    if (!placement || !placement.destinationCellId?.equals(expectedDestination)) {
+      throw new InventoryItemError(409, 'Current Cell does not match committed placement movement lineage');
+    }
+    if (placement._id.equals(inbound._id)) return inbound;
+    if (placement.type !== ItemMovementType.RELOCATION || !placement.sourceCellId ||
+        placement.sourceCellId.equals(placement.destinationCellId) || !placement.previousPlacementMovementId ||
+        !placementMeasurementsMatchInbound(placement, inbound)) {
+      throw new InventoryItemError(409, 'RELOCATION movement lineage or measurements are inconsistent');
+    }
+    expectedDestination = placement.sourceCellId;
+    placementId = placement.previousPlacementMovementId;
+  }
+  throw new InventoryItemError(409, 'Placement movement lineage exceeds the supported history depth');
+}
+
+async function reconcileManagedPhysicalUsage(reservation: any, session: ClientSession) {
+  const items = await InventoryItemModel.find({ managedReservationId: reservation._id,
+    currentCellId: { $ne: null }, status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.PENDING_OUTBOUND] }, ...live })
+    .session(session).lean().exec();
+  const inboundByItem = new Map<string, any>();
+  const usageByCell = new Map<string, { weightKg: number; volumeM3: number; itemIds: Set<string> }>();
+  for (const stored of items as any[]) {
+    const inbound = await authoritativeInboundForStoredItem(stored, reservation, session);
+    const cellKey = stored.currentCellId.toString();
+    const usage = usageByCell.get(cellKey) ?? { weightKg: 0, volumeM3: 0, itemIds: new Set<string>() };
+    usage.weightKg = rounded(usage.weightKg + Number(inbound.actualTotalWeightKg), 3);
+    usage.volumeM3 = rounded(usage.volumeM3 + Number(inbound.actualTotalVolumeM3), 6);
+    usage.itemIds.add(stored._id.toString());
+    usageByCell.set(cellKey, usage);
+    inboundByItem.set(stored._id.toString(), inbound);
+  }
+  const reservationVolumeM3 = rounded([...usageByCell.values()].reduce((sum, usage) => sum + usage.volumeM3, 0), 6);
+  if (!Number.isFinite(Number(reservation.usedCapacityM3)) || Number(reservation.usedCapacityM3) < 0 ||
+      !measurementMatches(Number(reservation.usedCapacityM3), reservationVolumeM3, 6)) {
+    throw new InventoryItemError(409, 'Persisted reservation usage does not reconcile with physically stored lots');
+  }
+  return { items: items as any[], inboundByItem, usageByCell };
+}
+
 async function reconcileOutboundAccounting(item: IInventoryItem, cell: any, reservation: any, session: ClientSession) {
   const physicalStatuses = { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.PENDING_OUTBOUND] };
   const cellItems = await InventoryItemModel.find({ currentCellId: cell._id, status: physicalStatuses, ...live })
     .session(session).lean().exec();
-  const reservationItems = await InventoryItemModel.find({ managedReservationId: reservation._id,
-    currentCellId: { $ne: null }, status: physicalStatuses, ...live }).session(session).lean().exec();
-  if (!cellItems.some((row: any) => row._id.equals(item._id)) ||
-      !reservationItems.some((row: any) => row._id.equals(item._id))) {
+  const physical = await reconcileManagedPhysicalUsage(reservation, session);
+  if (!cellItems.some((row: any) => row._id.equals(item._id)) || !physical.inboundByItem.has(item._id.toString())) {
     throw new InventoryItemError(409, 'Physical item location does not reconcile with the current Cell and reservation');
   }
-  const movements = new Map<string, any>();
-  for (const stored of [...new Map([...cellItems, ...reservationItems].map((row: any) => [row._id.toString(), row])).values()] as any[]) {
-    const sourceCellId = stored.currentCellId;
-    if (!sourceCellId || !stored.inboundMovementId ||
-        !stored.managedReservationId.equals(reservation._id) || !stored.customerId.equals(reservation.customerId)) {
-      throw new InventoryItemError(409, 'Stored inventory ownership or inbound evidence is inconsistent');
-    }
-    const movement = await ItemMovementModel.findOne({ _id: stored.inboundMovementId, itemId: stored._id,
-      managedReservationId: stored.managedReservationId, facilityId: stored.facilityId,
-      customerId: stored.customerId, type: ItemMovementType.INBOUND, destinationCellId: sourceCellId }).session(session).exec();
-    if (!authoritativeInboundMovementMatches(stored, sourceCellId, movement)) {
-      throw new InventoryItemError(409, 'A physically stored Item has missing or inconsistent INBOUND movement evidence');
-    }
-    movements.set(stored._id.toString(), movement);
+  const cellUsage = physical.usageByCell.get(cell._id.toString()) ?? { weightKg: 0, volumeM3: 0, itemIds: new Set<string>() };
+  if (![cell.usedWeightKg, cell.usedVolumeM3].every((value: unknown) => Number.isFinite(Number(value)) && Number(value) >= 0) ||
+      !measurementMatches(Number(cell.usedWeightKg), cellUsage.weightKg, 3) ||
+      !measurementMatches(Number(cell.usedVolumeM3), cellUsage.volumeM3, 6)) {
+    throw new InventoryItemError(409, 'Persisted Cell usage does not reconcile with physically stored lots');
   }
-  const cellWeight = rounded(cellItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalWeightKg), 0), 3);
-  const cellVolume = rounded(cellItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalVolumeM3), 0), 6);
-  const reservationVolume = rounded(reservationItems.reduce((sum: number, row: any) => sum + Number(movements.get(row._id.toString())?.actualTotalVolumeM3), 0), 6);
-  if (![cell.usedWeightKg, cell.usedVolumeM3, reservation.usedCapacityM3].every((value: unknown) => Number.isFinite(Number(value)) && Number(value) >= 0) ||
-      !measurementMatches(Number(cell.usedWeightKg), cellWeight, 3) ||
-      !measurementMatches(Number(cell.usedVolumeM3), cellVolume, 6) ||
-      !measurementMatches(Number(reservation.usedCapacityM3), reservationVolume, 6)) {
-    throw new InventoryItemError(409, 'Persisted Cell or reservation usage does not reconcile with physically stored lots');
-  }
-  return movements.get(item._id.toString());
+  return physical.inboundByItem.get(item._id.toString());
 }
 
 async function lockZoneForOutbound(zoneId: Types.ObjectId, facilityId: Types.ObjectId, session: ClientSession) {
@@ -342,6 +429,31 @@ async function lockRackForOutbound(rackId: Types.ObjectId, facilityId: Types.Obj
   return rack;
 }
 
+async function lockZoneForRelocation(zoneId: Types.ObjectId, facilityId: Types.ObjectId, requireActive: boolean, session: ClientSession) {
+  const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId,
+    ...(requireActive ? { isActive: true } : {}), ...live },
+  { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!zone) throw new InventoryItemError(409, requireActive ? 'Destination Zone must be active' : 'Source Zone is missing');
+  return zone;
+}
+
+async function lockRackForRelocation(rackId: Types.ObjectId, facilityId: Types.ObjectId, zoneId: Types.ObjectId,
+  requireAvailable: boolean, session: ClientSession) {
+  const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId,
+    ...(requireAvailable ? { operationalStatus: WarehouseOperationalStatus.AVAILABLE } : {}), ...live },
+  { $inc: { layoutVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!rack) throw new InventoryItemError(409, requireAvailable ? 'Destination Rack must be AVAILABLE' : 'Source Rack is missing');
+  return rack;
+}
+
+async function lockCellForRelocation(cellId: Types.ObjectId, facilityId: Types.ObjectId, available: boolean, session: ClientSession) {
+  const cell = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, facilityId,
+    ...(available ? { operationalStatus: WarehouseOperationalStatus.AVAILABLE } : {}), ...live },
+  { $inc: { allocationVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!cell) throw new InventoryItemError(409, available ? 'Destination Cell must be AVAILABLE' : 'Source Cell is missing');
+  return cell;
+}
+
 function movementDto(movement: any, includeCustomer = true) {
   return {
     _id: movement._id, itemId: movement.itemId, managedReservationId: movement.managedReservationId,
@@ -349,12 +461,15 @@ function movementDto(movement: any, includeCustomer = true) {
     ...(includeCustomer ? { customerId: movement.customerId, performedBy: movement.performedBy } : {}),
     type: movement.type,
     sourceCellId: movement.sourceCellId ?? null, destinationCellId: movement.destinationCellId ?? null,
+    ...(movement.previousPlacementMovementId ? { previousPlacementMovementId: movement.previousPlacementMovementId } : {}),
     quantity: movement.quantity, quantityUnit: movement.quantityUnit,
     actualUnitWeightKg: movement.actualUnitWeightKg, actualTotalWeightKg: movement.actualTotalWeightKg,
     actualUnitDimensionsM: movement.actualUnitDimensionsM, actualTotalVolumeM3: movement.actualTotalVolumeM3,
     performedAt: movement.performedAt,
     ...(movement.inspectionNote === undefined ? {} : { inspectionNote: movement.inspectionNote }),
     ...(movement.handoverNote === undefined ? {} : { handoverNote: movement.handoverNote }),
+    ...(movement.relocationNote === undefined ? {} : { relocationNote: movement.relocationNote }),
+    ...(movement.physicalPackingConfirmed === undefined ? {} : { physicalPackingConfirmed: movement.physicalPackingConfirmed }),
     createdAt: movement.createdAt,
   };
 }
@@ -537,13 +652,15 @@ export class InventoryItemService {
         if (prior && inboundReplayMatches(current, prior, data)) return { item: dto(current, true), movement: movementDto(prior), idempotentReplay: true };
         throw new InventoryItemError(409, 'Inventory item has already been confirmed inbound');
       }
-      if (current.status !== InventoryItemStatus.PENDING_INBOUND || current.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced PENDING_INBOUND inventory can be confirmed');
+      if (![InventoryItemStatus.PENDING_INBOUND, InventoryItemStatus.RECEIVED_PENDING_ACCEPTANCE].includes(current.status) || current.currentCellId !== null) {
+        throw new InventoryItemError(409, 'Only unplaced, inspection-eligible inbound inventory can be confirmed');
+      }
 
       // Item write token serializes against customer metadata edits before any
       // other lock is acquired. Structural locks then follow Zone -> Reservation
       // -> Rack -> Cell, matching structural update lock order.
       const item = await InventoryItemModel.findOneAndUpdate({
-        _id: current._id, status: InventoryItemStatus.PENDING_INBOUND, currentCellId: null, ...live,
+        _id: current._id, status: current.status, currentCellId: null, ...live,
       }, { $inc: { __v: 1 } }, { new: true, session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry');
 
@@ -562,6 +679,13 @@ export class InventoryItemService {
       const performedAt = new Date();
       const reservation = await lockReservationForInbound(item, session, performedAt);
       const firstV2Inbound = reservation.bookingFlowVersion === 2 && reservation.status === ReservationStatus.CHECKIN_READY;
+      if (firstV2Inbound && (item.status !== InventoryItemStatus.RECEIVED_PENDING_ACCEPTANCE ||
+          item.receivingInspection?.decision !== 'ACCEPTED' || item.receivingCustodyStatus !== 'IN_CUSTODY')) {
+        throw new InventoryItemError(409, 'First inbound requires an ACCEPTED receiving inspection with Facility custody taken');
+      }
+      if (reservation.bookingFlowVersion === 2 && !firstV2Inbound && item.status !== InventoryItemStatus.PENDING_INBOUND) {
+        throw new InventoryItemError(409, 'Subsequent inbound requires a newly requested PENDING_INBOUND item');
+      }
       if (reservation.bookingFlowVersion === 2) {
         await assertV2FirstInboundPrerequisites(reservation, item, session, performedAt);
         const inspection = item.receivingInspection;
@@ -682,6 +806,7 @@ export class InventoryItemService {
       item.inboundConfirmedAt = performedAt;
       item.inboundConfirmedBy = actor._id;
       item.inboundMovementId = movement._id;
+      item.currentPlacementMovementId = movement._id;
       item.inboundIdempotencyKey = data.idempotencyKey;
       await item.save({ session });
       if (firstV2Inbound) await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
@@ -798,9 +923,11 @@ export class InventoryItemService {
 
       if (data.verifiedQuantity !== item.quantity) throw new InventoryItemError(409, 'Verified quantity must match the complete registered lot');
       const inbound = await reconcileOutboundAccounting(item, cell, reservation, session);
-      if (!inbound || !authoritativeInboundMovementMatches(item, cell._id, inbound)) {
-        throw new InventoryItemError(409, 'Authoritative committed INBOUND movement is missing or inconsistent');
-      }
+      // reconcileOutboundAccounting verifies the committed INBOUND against the
+      // item and validates currentCellId through its placement lineage. The
+      // inbound destination is the original placement and can differ from the
+      // current Cell after one or more RELOCATION movements.
+      if (!inbound) throw new InventoryItemError(409, 'Authoritative committed INBOUND movement is missing or inconsistent');
 
       const totalWeightKg = Number(inbound.actualTotalWeightKg);
       const totalVolumeM3 = Number(inbound.actualTotalVolumeM3);
@@ -851,6 +978,7 @@ export class InventoryItemService {
       item.outboundConfirmedAt = performedAt;
       item.outboundConfirmedBy = actor._id;
       item.outboundMovementId = movement._id;
+      item.currentPlacementMovementId = null;
       item.outboundHandoverNote = data.handoverNote;
       item.outboundVerifiedQuantity = data.verifiedQuantity;
       item.outboundIdempotencyKey = data.idempotencyKey;
@@ -889,6 +1017,234 @@ export class InventoryItemService {
         actorId: actor._id, action: ManagedReservationAction.OUTBOUND_REJECTED,
         details: { itemId: item._id, cellId: item.currentCellId, reason } }], { session });
       return dto(item, true);
+    }));
+  }
+
+  static async relocate(idInput: unknown, input: unknown, actor: Actor) {
+    if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
+    const itemId = parseId(idInput, 'item ID');
+    const data: RelocationInput = parseRelocation(input);
+    return execute(async () => withTransaction(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
+      if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      assertFacilityScope(actor, current.facilityId.toString());
+
+      const prior = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
+      if (prior) {
+        if (relocationReplayMatches(prior, data)) {
+          return { item: dto(current, true), movement: movementDto(prior), idempotentReplay: true };
+        }
+        throw new InventoryItemError(409, 'Idempotency key was already used with a different relocation payload');
+      }
+      if (current.status !== InventoryItemStatus.IN_STORAGE || !current.currentCellId) {
+        throw new InventoryItemError(409, 'Only physically stored IN_STORAGE inventory can be relocated');
+      }
+      if (current.currentCellId.toString() !== data.sourceCellId) {
+        throw new InventoryItemError(409, 'sourceCellId must match the Item current Cell');
+      }
+
+      // Match the shared item-first ordering used by inbound and outbound.
+      const item = await InventoryItemModel.findOneAndUpdate({ _id: current._id,
+        status: InventoryItemStatus.IN_STORAGE, currentCellId: current.currentCellId, ...live },
+      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      if (!item) {
+        const racedMovement = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
+        if (racedMovement && relocationReplayMatches(racedMovement, data)) {
+          const latest = await InventoryItemModel.findOne({ _id: current._id, ...live }).session(session).exec();
+          return { item: dto(latest ?? current, true), movement: movementDto(racedMovement), idempotentReplay: true };
+        }
+        throw new InventoryItemError(409, 'Inventory item changed; reload and retry relocation');
+      }
+
+      const sourcePreflight = await WarehouseCellModel.findOne({ _id: data.sourceCellId, facilityId: item.facilityId, ...live }).session(session).exec();
+      if (!sourcePreflight || !sourcePreflight._id.equals(item.currentCellId)) throw new InventoryItemError(409, 'Source Cell does not match the current Item location');
+      const destinationPreflight = await WarehouseCellModel.findOne({ _id: data.destinationCellId, facilityId: item.facilityId, ...live }).session(session).exec();
+      if (!destinationPreflight) throw new InventoryItemError(404, 'Destination Cell not found in this Facility');
+      if (sourcePreflight._id.equals(destinationPreflight._id)) throw new InventoryItemError(400, 'Source and destination Cells must differ');
+
+      const reservationPreflight = await ReservationModel.findOne({ _id: item.managedReservationId, customerId: item.customerId,
+        facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).select('bookingFlowVersion').session(session).exec();
+      if (!reservationPreflight) throw new InventoryItemError(409, 'Item is not owned by a Managed Inventory reservation');
+      if (reservationPreflight.bookingFlowVersion === 2) {
+        const capacityLock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId: item.facilityId },
+          { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+        if (!capacityLock) throw new InventoryItemError(409, 'Managed capacity configuration is missing');
+      }
+
+      // Acquire all Zone locks in sorted ID order, then Reservation, all Rack
+      // locks in sorted order, then both Cell locks in sorted order.
+      const zoneRequirements = new Map<string, { id: Types.ObjectId; active: boolean }>();
+      for (const { id, active } of [
+        { id: sourcePreflight.zoneId as Types.ObjectId, active: false },
+        { id: destinationPreflight.zoneId as Types.ObjectId, active: true },
+      ]) {
+        const key = id.toString();
+        const priorRequirement = zoneRequirements.get(key);
+        zoneRequirements.set(key, { id, active: active || Boolean(priorRequirement?.active) });
+      }
+      const lockedZones = new Map<string, any>();
+      for (const zone of [...zoneRequirements.values()].sort((a, b) => a.id.toString().localeCompare(b.id.toString()))) {
+        lockedZones.set(zone.id.toString(), await lockZoneForRelocation(zone.id, item.facilityId, zone.active, session));
+      }
+
+      const performedAt = new Date();
+      const reservation = await lockReservationForRelocation(item, session, performedAt);
+      const facility = await FacilityModel.findOne({ _id: item.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).exec();
+      if (!facility || !reservation.facilityId.equals(item.facilityId) || !reservation.customerId.equals(item.customerId)) {
+        throw new InventoryItemError(409, 'An active Managed Inventory Facility and matching reservation are required');
+      }
+
+      const rackRequirements = new Map<string, { id: Types.ObjectId; zoneId: Types.ObjectId; available: boolean }>();
+      for (const { id, zoneId, available } of [
+        { id: sourcePreflight.rackId as Types.ObjectId, zoneId: sourcePreflight.zoneId as Types.ObjectId, available: false },
+        { id: destinationPreflight.rackId as Types.ObjectId, zoneId: destinationPreflight.zoneId as Types.ObjectId, available: true },
+      ]) {
+        const key = id.toString();
+        const previous = rackRequirements.get(key);
+        if (previous && !previous.zoneId.equals(zoneId)) throw new InventoryItemError(409, 'Rack hierarchy is inconsistent');
+        rackRequirements.set(key, { id, zoneId, available: available || Boolean(previous?.available) });
+      }
+      const lockedRacks = new Map<string, any>();
+      for (const rack of [...rackRequirements.values()].sort((a, b) => a.id.toString().localeCompare(b.id.toString()))) {
+        lockedRacks.set(rack.id.toString(), await lockRackForRelocation(rack.id, item.facilityId, rack.zoneId, rack.available, session));
+      }
+
+      const cellIds = [sourcePreflight._id as Types.ObjectId, destinationPreflight._id as Types.ObjectId]
+        .sort((a, b) => a.toString().localeCompare(b.toString()));
+      const lockedCells = new Map<string, any>();
+      for (const cellId of cellIds) {
+        lockedCells.set(cellId.toString(), await lockCellForRelocation(cellId, item.facilityId,
+          cellId.equals(destinationPreflight._id), session));
+      }
+      const sourceCell = lockedCells.get(sourcePreflight._id.toString());
+      const destinationCell = lockedCells.get(destinationPreflight._id.toString());
+      const sourceZone = lockedZones.get(sourceCell.zoneId.toString());
+      const destinationZone = lockedZones.get(destinationCell.zoneId.toString());
+      const sourceRack = lockedRacks.get(sourceCell.rackId.toString());
+      const destinationRack = lockedRacks.get(destinationCell.rackId.toString());
+      if (!sourceZone || !destinationZone || !sourceRack || !destinationRack ||
+          !sourceCell.zoneId.equals(sourcePreflight.zoneId) || !sourceCell.rackId.equals(sourcePreflight.rackId) ||
+          !destinationCell.zoneId.equals(destinationPreflight.zoneId) || !destinationCell.rackId.equals(destinationPreflight.rackId)) {
+        throw new InventoryItemError(409, 'Cell Zone or Rack relationship changed; reload and retry relocation');
+      }
+
+      const sourceAllocation = await CellAllocationModel.findOne({ cellId: sourceCell._id, reservationId: reservation._id,
+        facilityId: item.facilityId, customerId: item.customerId, status: CellAllocationStatus.OCCUPIED }).session(session).exec();
+      if (!sourceAllocation) throw new InventoryItemError(409, 'Source Cell must be OCCUPIED by this Managed reservation');
+      const destinationAllocation = await CellAllocationModel.findOne({ cellId: destinationCell._id, reservationId: reservation._id,
+        facilityId: item.facilityId, customerId: item.customerId,
+        status: { $in: [CellAllocationStatus.RESERVED, CellAllocationStatus.OCCUPIED] } }).session(session).exec();
+      if (!destinationAllocation) throw new InventoryItemError(409, 'Destination Cell must be allocated to this Managed reservation');
+
+      if (data.verifiedQuantity !== item.quantity || (item.quantity > 1 && !data.physicalPackingConfirmed)) {
+        throw new InventoryItemError(409, 'Relocation must verify the complete lot and its physical packing');
+      }
+      await assertCategoryPolicyDecision(item.facilityId, item.category, session, performedAt);
+
+      const physical = await reconcileManagedPhysicalUsage(reservation, session);
+      const itemInbound = physical.inboundByItem.get(item._id.toString());
+      const sourceUsage = physical.usageByCell.get(sourceCell._id.toString());
+      const destinationUsage = physical.usageByCell.get(destinationCell._id.toString()) ?? { weightKg: 0, volumeM3: 0, itemIds: new Set<string>() };
+      if (!itemInbound || !sourceUsage?.itemIds.has(item._id.toString())) {
+        throw new InventoryItemError(409, 'Item placement is missing from the reconciled physical inventory');
+      }
+      if (![sourceCell.usedWeightKg, sourceCell.usedVolumeM3, destinationCell.usedWeightKg, destinationCell.usedVolumeM3]
+        .every((value: unknown) => Number.isFinite(Number(value)) && Number(value) >= 0) ||
+          !measurementMatches(Number(sourceCell.usedWeightKg), sourceUsage.weightKg, 3) ||
+          !measurementMatches(Number(sourceCell.usedVolumeM3), sourceUsage.volumeM3, 6) ||
+          !measurementMatches(Number(destinationCell.usedWeightKg), destinationUsage.weightKg, 3) ||
+          !measurementMatches(Number(destinationCell.usedVolumeM3), destinationUsage.volumeM3, 6)) {
+        throw new InventoryItemError(409, 'Source or destination Cell usage does not reconcile with stored Managed inventory');
+      }
+
+      const actualWeightKg = Number(itemInbound.actualTotalWeightKg);
+      const actualVolumeM3 = Number(itemInbound.actualTotalVolumeM3);
+      const actualUnit = itemInbound.actualUnitDimensionsM;
+      const cellDimensions = destinationCell.dimensions;
+      if (!cellDimensions || !Number.isFinite(Number(cellDimensions.usableHeightM)) || Number(cellDimensions.usableHeightM) <= 0) {
+        throw new InventoryItemError(409, 'Destination Cell usable height must be measured');
+      }
+      const horizontalFit = (actualUnit.widthM <= cellDimensions.widthM && actualUnit.depthM <= cellDimensions.depthM) ||
+        (actualUnit.depthM <= cellDimensions.widthM && actualUnit.widthM <= cellDimensions.depthM);
+      if (!horizontalFit || actualUnit.heightM > Number(cellDimensions.usableHeightM)) {
+        throw new InventoryItemError(409, 'Measured lot geometry does not fit the destination Cell');
+      }
+      const destinationCellVolumeM3 = rounded(cellDimensions.widthM * cellDimensions.depthM * Number(cellDimensions.usableHeightM), 6);
+      if (!Number.isFinite(destinationCellVolumeM3) || destinationCellVolumeM3 <= 0 ||
+          Number(destinationCell.usedWeightKg) + actualWeightKg > Number(destinationCell.maxWeightKg) ||
+          Number(destinationCell.usedVolumeM3) + actualVolumeM3 > destinationCellVolumeM3) {
+        throw new InventoryItemError(409, 'Destination Cell kg or m3 capacity would be exceeded');
+      }
+
+      const rackCellsById = new Map<string, any[]>();
+      for (const rack of [...new Map([sourceRack, destinationRack].map(row => [row._id.toString(), row])).values()]) {
+        const rackCells = await WarehouseCellModel.find({ rackId: rack._id, ...live }).session(session).lean().exec();
+        if (rackCells.some((row: any) => !Number.isFinite(Number(row.usedWeightKg)) || Number(row.usedWeightKg) < 0 ||
+            !Number.isFinite(Number(row.usedVolumeM3)) || Number(row.usedVolumeM3) < 0)) {
+          throw new InventoryItemError(409, 'Rack physical usage is unknown; verify its Cell counters before relocation');
+        }
+        rackCellsById.set(rack._id.toString(), rackCells);
+      }
+      const destinationRackCells = rackCellsById.get(destinationRack._id.toString()) ?? [];
+      const destinationRackTotalKg = destinationRackCells.reduce((sum: number, row: any) => sum + Number(row.usedWeightKg), 0);
+      const destinationLevelKg = destinationRackCells.filter((row: any) => row.levelNumber === destinationCell.levelNumber)
+        .reduce((sum: number, row: any) => sum + Number(row.usedWeightKg), 0);
+      const sourceWasInDestinationRack = sourceRack._id.equals(destinationRack._id);
+      const sourceWasOnDestinationLevel = sourceWasInDestinationRack && sourceCell.levelNumber === destinationCell.levelNumber;
+      const nextRackKg = rounded(destinationRackTotalKg + actualWeightKg - (sourceWasInDestinationRack ? actualWeightKg : 0), 3);
+      const nextLevelKg = rounded(destinationLevelKg + actualWeightKg - (sourceWasOnDestinationLevel ? actualWeightKg : 0), 3);
+      if (nextLevelKg > Number(destinationRack.maxWeightKgPerLevel)) {
+        throw new InventoryItemError(409, 'Destination Rack level weight limit would be exceeded');
+      }
+      if (nextRackKg > Number(destinationRack.levelCount) * Number(destinationRack.maxWeightKgPerLevel)) {
+        throw new InventoryItemError(409, 'Destination Rack structural weight limit would be exceeded');
+      }
+
+      const updatedSource = await WarehouseCellModel.findOneAndUpdate({ _id: sourceCell._id, facilityId: item.facilityId,
+        rackId: sourceRack._id, zoneId: sourceCell.zoneId, usedWeightKg: sourceCell.usedWeightKg,
+        usedVolumeM3: sourceCell.usedVolumeM3, ...live,
+        $expr: { $and: [{ $gte: ['$usedWeightKg', actualWeightKg] }, { $gte: ['$usedVolumeM3', actualVolumeM3] }] },
+      }, { $inc: { usedWeightKg: -actualWeightKg, usedVolumeM3: -actualVolumeM3 } },
+      { new: true, session, runValidators: true }).exec();
+      if (!updatedSource) throw new InventoryItemError(409, 'Source Cell usage changed; reload and retry relocation');
+      const updatedDestination = await WarehouseCellModel.findOneAndUpdate({ _id: destinationCell._id, facilityId: item.facilityId,
+        rackId: destinationRack._id, zoneId: destinationCell.zoneId, operationalStatus: WarehouseOperationalStatus.AVAILABLE,
+        usedWeightKg: destinationCell.usedWeightKg, usedVolumeM3: destinationCell.usedVolumeM3, ...live,
+        $expr: { $and: [
+          { $lte: [{ $add: ['$usedWeightKg', actualWeightKg] }, '$maxWeightKg'] },
+          { $lte: [{ $add: ['$usedVolumeM3', actualVolumeM3] }, destinationCellVolumeM3] },
+        ] },
+      }, { $inc: { usedWeightKg: actualWeightKg, usedVolumeM3: actualVolumeM3 } },
+      { new: true, session, runValidators: true }).exec();
+      if (!updatedDestination) throw new InventoryItemError(409, 'Destination Cell capacity changed; reload and retry relocation');
+
+      const movement = new ItemMovementModel({
+        itemId: item._id, managedReservationId: reservation._id, facilityId: item.facilityId, customerId: item.customerId,
+        type: ItemMovementType.RELOCATION, sourceCellId: sourceCell._id, destinationCellId: destinationCell._id,
+        previousPlacementMovementId: item.currentPlacementMovementId ?? item.inboundMovementId,
+        quantity: itemInbound.quantity, quantityUnit: itemInbound.quantityUnit,
+        actualUnitWeightKg: itemInbound.actualUnitWeightKg, actualTotalWeightKg: itemInbound.actualTotalWeightKg,
+        actualUnitDimensionsM: itemInbound.actualUnitDimensionsM, actualTotalVolumeM3: itemInbound.actualTotalVolumeM3,
+        performedBy: actor._id, performedAt, relocationNote: data.relocationNote,
+        physicalPackingConfirmed: data.physicalPackingConfirmed, idempotencyKey: data.idempotencyKey,
+      });
+      await movement.save({ session });
+
+      sourceAllocation.status = sourceUsage.itemIds.size > 1 ? CellAllocationStatus.OCCUPIED : CellAllocationStatus.RESERVED;
+      await sourceAllocation.save({ session });
+      destinationAllocation.status = CellAllocationStatus.OCCUPIED;
+      await destinationAllocation.save({ session });
+      item.currentCellId = destinationCell._id;
+      item.currentPlacementMovementId = movement._id;
+      item.status = InventoryItemStatus.IN_STORAGE;
+      await item.save({ session });
+      await ManagedReservationAuditModel.create([{ facilityId: reservation.facilityId, reservationId: reservation._id,
+        actorId: actor._id, action: ManagedReservationAction.RELOCATION_CONFIRMED,
+        details: { movementId: movement._id, itemId: item._id, sourceCellId: sourceCell._id,
+          destinationCellId: destinationCell._id, quantity: itemInbound.quantity,
+          actualTotalWeightKg: actualWeightKg, actualTotalVolumeM3: actualVolumeM3 } }], { session });
+      return { item: dto(item, true), movement: movementDto(movement), idempotentReplay: false };
     }));
   }
 

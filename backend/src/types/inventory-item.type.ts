@@ -44,6 +44,8 @@ export interface InventoryItemFields {
   inboundConfirmedAt?: Date;
   inboundConfirmedBy?: Types.ObjectId;
   inboundMovementId?: Types.ObjectId;
+  /** Latest committed placement movement; absent on legacy records, null after checkout. */
+  currentPlacementMovementId?: Types.ObjectId | null;
   inboundRejection?: { reason: string; rejectedAt: Date; rejectedBy: Types.ObjectId };
   inboundIdempotencyKey?: string;
   outboundRequestedAt?: Date;

@@ -31,6 +31,9 @@ export const confirmOutbound: RequestHandler = async (req, res, next) => {
 export const rejectOutbound: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.rejectOutbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
 };
+export const relocate: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.relocate(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
 export const confirmInbound: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.confirmInbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
 };

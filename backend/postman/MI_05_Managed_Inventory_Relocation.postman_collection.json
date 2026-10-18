@@ -1,0 +1,112 @@
+{
+  "info": {
+    "name": "WDP — MI-05 Managed Inventory Relocation",
+    "description": "Set baseUrl in a Postman environment to http://localhost:<actual backend PORT>/api/v1 or the reachable API base URL. Do not assume port 3000; backend PORT comes from the running environment and defaults to 3000 only when unset. Supply itemId, sourceCellId, destinationCellId, customerToken, staffToken, and a fresh relocationKey. Run the before map and history requests, confirm the move, inspect the after map/history, replay the same key, then optionally request and confirm outbound. Use a suitable in-storage item; outbound requests require normal eligibility.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "mi05-managed-inventory-relocation"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "", "type": "string" },
+    { "key": "itemId", "value": "", "type": "string" },
+    { "key": "facilityId", "value": "", "type": "string" },
+    { "key": "sourceCellId", "value": "", "type": "string" },
+    { "key": "destinationCellId", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "relocationKey", "value": "mi05-relocation-001", "type": "string" },
+    { "key": "quantity", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Before relocation",
+      "item": [
+        {
+          "name": "Warehouse map before",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": { "raw": "{{baseUrl}}/warehouse-map?facilityId={{facilityId}}", "host": ["{{baseUrl}}"], "path": ["warehouse-map"], "query": [{ "key": "facilityId", "value": "{{facilityId}}" }] }
+          }
+        },
+        {
+          "name": "Item movement history before",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/movements", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "movements"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Relocate whole lot",
+      "item": [
+        {
+          "name": "Confirm relocation (staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"verifiedQuantity\": {{quantity}},\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Move complete lot to assigned Cell\",\n  \"idempotencyKey\": \"{{relocationKey}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/relocate", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "relocate"] }
+          }
+        },
+        {
+          "name": "Replay identical relocation (must not decrement twice)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"verifiedQuantity\": {{quantity}},\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Move complete lot to assigned Cell\",\n  \"idempotencyKey\": \"{{relocationKey}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/relocate", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "relocate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Verify and outbound after relocation",
+      "item": [
+        {
+          "name": "Warehouse map after",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{staffToken}}" }],
+            "url": { "raw": "{{baseUrl}}/warehouse-map?facilityId={{facilityId}}", "host": ["{{baseUrl}}"], "path": ["warehouse-map"], "query": [{ "key": "facilityId", "value": "{{facilityId}}" }] }
+          }
+        },
+        {
+          "name": "Movement history after",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/movements", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "movements"] }
+          }
+        },
+        {
+          "name": "Request outbound as owner (optional)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "outbound-request"] }
+          }
+        },
+        {
+          "name": "Confirm outbound handover (optional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"verifiedQuantity\": {{quantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Customer collected relocated lot\",\n  \"idempotencyKey\": \"{{relocationKey}}-outbound\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/inventory-items/{{itemId}}/confirm-outbound", "host": ["{{baseUrl}}"], "path": ["inventory-items", "{{itemId}}", "confirm-outbound"] }
+          }
+        }
+      ]
+    }
+  ]
+}

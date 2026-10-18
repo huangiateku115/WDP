@@ -148,6 +148,33 @@ export function parseOutboundRejection(value: unknown) {
   return { reason: text(input.reason, 'reason', 1000) };
 }
 
+export interface RelocationInput {
+  sourceCellId: string;
+  destinationCellId: string;
+  verifiedQuantity: number;
+  physicalPackingConfirmed: boolean;
+  relocationNote: string;
+  idempotencyKey: string;
+}
+
+export function parseRelocation(value: unknown): RelocationInput {
+  const input = record(value, ['sourceCellId', 'destinationCellId', 'verifiedQuantity', 'physicalPackingConfirmed', 'relocationNote', 'idempotencyKey']);
+  if (typeof input.physicalPackingConfirmed !== 'boolean') invalid('physicalPackingConfirmed must be a boolean');
+  const sourceCellId = parseId(input.sourceCellId, 'sourceCellId');
+  const destinationCellId = parseId(input.destinationCellId, 'destinationCellId');
+  if (sourceCellId === destinationCellId) invalid('sourceCellId and destinationCellId must differ');
+  const idempotencyKey = text(input.idempotencyKey, 'idempotencyKey', 128);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(idempotencyKey)) invalid('idempotencyKey contains unsupported characters');
+  return {
+    sourceCellId,
+    destinationCellId,
+    verifiedQuantity: quantity(input.verifiedQuantity),
+    physicalPackingConfirmed: input.physicalPackingConfirmed,
+    relocationNote: text(input.relocationNote, 'relocationNote', 1000),
+    idempotencyKey,
+  };
+}
+
 export function parseList(value: unknown) {
   const input = record(value, ['facilityId', 'customerId', 'category', 'status', 'search', 'page', 'limit'], 'query');
   const page = queryInteger(input.page, 'page', 1, 1_000_000, 1);

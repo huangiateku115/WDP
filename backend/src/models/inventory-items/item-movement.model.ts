@@ -9,6 +9,7 @@ const schema = new Schema<IItemMovement>({
   type: { type: String, enum: Object.values(ItemMovementType), required: true, immutable: true },
   sourceCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', immutable: true, default: null },
   destinationCellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', immutable: true, default: null },
+  previousPlacementMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', immutable: true },
   quantity: { type: Number, required: true, min: 1, immutable: true },
   quantityUnit: { type: String, required: true, immutable: true },
   actualUnitWeightKg: { type: Number, required: true, min: Number.MIN_VALUE, immutable: true },
@@ -23,6 +24,8 @@ const schema = new Schema<IItemMovement>({
   performedAt: { type: Date, required: true, immutable: true },
   inspectionNote: { type: String, trim: true, maxlength: 1000, immutable: true },
   handoverNote: { type: String, trim: true, maxlength: 1000, immutable: true },
+  relocationNote: { type: String, trim: true, maxlength: 1000, immutable: true },
+  physicalPackingConfirmed: { type: Boolean, immutable: true },
   idempotencyKey: { type: String, required: true, trim: true, maxlength: 128, immutable: true },
 }, { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw', versionKey: false });
 
@@ -34,6 +37,12 @@ schema.pre('validate', function () {
   } else if (this.type === ItemMovementType.OUTBOUND) {
     if (!this.sourceCellId || this.destinationCellId != null || !this.handoverNote) {
       this.invalidate('sourceCellId', 'OUTBOUND must move from a source Cell to outside');
+    }
+  } else if (this.type === ItemMovementType.RELOCATION) {
+    if (!this.sourceCellId || !this.destinationCellId || this.sourceCellId.equals(this.destinationCellId) ||
+        !this.previousPlacementMovementId || !this.relocationNote ||
+        (this.quantity > 1 && this.physicalPackingConfirmed !== true)) {
+      this.invalidate('destinationCellId', 'RELOCATION must move a whole lot between distinct Cells with placement lineage and a note');
     }
   }
 });

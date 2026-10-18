@@ -22,6 +22,7 @@ router.post('/:id/confirm-outbound', requireRole([UserRole.FACILITY_STAFF]), con
 router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), checkinController.inspectItem);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
 router.post('/:id/reject-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectOutbound);
+router.post('/:id/relocate', requireRole([UserRole.FACILITY_STAFF]), controller.relocate);
 router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, controller.get);
 router.patch('/:id', customer, controller.update);

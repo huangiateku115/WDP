@@ -1,6 +1,6 @@
 import { Document, Types } from 'mongoose';
 
-export enum ItemMovementType { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND' }
+export enum ItemMovementType { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND', RELOCATION = 'RELOCATION' }
 
 export interface ItemMovementFields {
   itemId: Types.ObjectId;
@@ -10,6 +10,7 @@ export interface ItemMovementFields {
   type: ItemMovementType;
   sourceCellId?: Types.ObjectId | null;
   destinationCellId?: Types.ObjectId | null;
+  previousPlacementMovementId?: Types.ObjectId;
   quantity: number;
   quantityUnit: string;
   actualUnitWeightKg: number;
@@ -20,6 +21,8 @@ export interface ItemMovementFields {
   performedAt: Date;
   inspectionNote: string;
   handoverNote?: string;
+  relocationNote?: string;
+  physicalPackingConfirmed?: boolean;
   idempotencyKey: string;
 }
 

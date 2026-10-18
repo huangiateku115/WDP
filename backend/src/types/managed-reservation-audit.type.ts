@@ -20,6 +20,7 @@ export enum ManagedReservationAction {
   OUTBOUND_REQUESTED = 'OUTBOUND_REQUESTED',
   OUTBOUND_CONFIRMED = 'OUTBOUND_CONFIRMED',
   OUTBOUND_REJECTED = 'OUTBOUND_REJECTED',
+  RELOCATION_CONFIRMED = 'RELOCATION_CONFIRMED',
 }
 
 export interface IManagedReservationAudit extends Document {

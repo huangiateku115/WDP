@@ -31,6 +31,7 @@ const schema = new Schema<IInventoryItem>({
   inboundConfirmedAt: { type: Date },
   inboundConfirmedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   inboundMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement' },
+  currentPlacementMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', default: null },
   inboundRejection: {
     reason: { type: String, trim: true, maxlength: 1000 },
     rejectedAt: { type: Date },
