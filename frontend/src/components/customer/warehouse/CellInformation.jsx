@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { weightText, measurementText } from "@/lib/warehouseMap";
+import { weightText, measurementText, cellPeriodStatus } from "@/lib/warehouseMap";
 import { cellBookingReason, volumeText } from "@/lib/managedCellBooking";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,10 @@ export function WarehouseStatus({ status }) {
   return (
     <span className={`wm-status wm-${kind}`}>{status || "Not returned"}</span>
   );
+}
+function CellPeriodStatus({cell}){
+  const status=cellPeriodStatus(cell);
+  return <span className="inline-flex flex-wrap items-center gap-1" aria-label={`${status}${cell.isMine===true?' · YOURS':''}`}><WarehouseStatus status={status}/>{cell.isMine===true&&<span className="rounded border border-orange-300 px-1 text-xs font-semibold text-orange-500">· YOURS</span>}</span>;
 }
 export function CellInformation({ cell, level, rack }) {
   const fields = [
@@ -54,10 +58,14 @@ export function CellInformation({ cell, level, rack }) {
     ],
   ];
   fields.push(
-    ["Booking status", cell.bookingStatus || "Unknown"],
-    ["Display status", cell.displayStatus || "Unknown"],
+    ["Operational status", cell.operationalStatus || "Unknown"],
+    ["Reservation-period status", cell.periodStatus || "Unknown"],
+    ["Current booking status (now)", cell.bookingStatus || "Unknown"],
+    ["Bookable for interval", cell.isBookable === true ? "Yes" : "Not confirmed"],
+    ["Physical usage verified", cell.physicalUsageKnown === true ? "Yes" : "Unknown — booking unavailable"],
+    ["Backend display status (now)", cell.displayStatus || "Unknown"],
     ["Ownership", cell.isMine === true ? "Yours" : "No ownership confirmed"],
-    ["Your stored inventory", cell.hasMyInventory === true ? "Yes" : "No"],
+    ["Your stored inventory", cell.hasMyInventory === true ? "Yes" : cell.hasMyInventory === false ? "No" : "Unknown"],
     ["Physical volume", volumeText(cell.usedVolumeM3)],
     ["Maximum volume", volumeText(cell.maxVolumeM3)],
     ["Remaining volume", volumeText(cell.remainingVolumeM3)],
@@ -66,8 +74,7 @@ export function CellInformation({ cell, level, rack }) {
     <>
       <div className="wm-info-heading">
         <strong>{cell.code || `Cell C${cell.cellNumber}`}</strong>
-        <WarehouseStatus status={cell.operationalStatus} />
-        <WarehouseStatus status={cell.displayStatus} />
+        <CellPeriodStatus cell={cell}/>
       </div>
       <dl className="wm-definition">
         {fields
@@ -166,7 +173,7 @@ export default function WarehouseCells({
             <h4>Level {level.levelNumber}</h4>
             <div className="wm-cell-row">
               {cells.map((cell) => {
-                const picked = booking?.selection.some(
+                const status=cellPeriodStatus(cell),picked = booking?.selection.some(
                     (x) => x.cell._id === cell._id,
                   ),
                   reason = cellBookingReason(
@@ -181,9 +188,9 @@ export default function WarehouseCells({
                   >
                     <button
                       type="button"
-                      className={`wm-cell wm-${["AVAILABLE", "RESERVED", "OCCUPIED", "BLOCKED", "MAINTENANCE"].includes(cell.displayStatus) ? cell.displayStatus.toLowerCase() : "unknown"} ${selected?.cell._id === cell._id ? "is-selected" : ""}`}
+                      className={`wm-cell wm-${["AVAILABLE", "RESERVED", "OCCUPIED"].includes(status) ? status.toLowerCase() : "unknown"} ${selected?.cell._id === cell._id ? "is-selected" : ""}`}
                       aria-pressed={selected?.cell._id === cell._id}
-                      aria-label={`Inspect ${cell.code || `Cell C${cell.cellNumber}`}, Level ${level.levelNumber}, ${cell.operationalStatus}`}
+                      aria-label={`Inspect ${cell.code || `Cell C${cell.cellNumber}`}, Level ${level.levelNumber}, ${status}${cell.isMine===true?' · YOURS':''}`}
                       aria-describedby={
                         hover?.cell._id === cell._id ? id : undefined
                       }
@@ -215,8 +222,7 @@ export default function WarehouseCells({
                       <span className="wm-cell-code">
                         {cell.code || `C${cell.cellNumber}`}
                       </span>
-                      <span>{cell.displayStatus || "Booking unknown"}</span>
-                      {cell.isMine === true && <span>Yours</span>}
+                      <CellPeriodStatus cell={cell}/>
                       {cell.hasMyInventory === true && (
                         <span>Your inventory</span>
                       )}
@@ -238,14 +244,14 @@ export default function WarehouseCells({
                           disabled={
                             booking.locked ||
                             booking.checking ||
-                            (!picked && !!reason)
+                            (!picked && (cell.isBookable!==true || status!=='AVAILABLE' || !!reason))
                           }
                           onClick={() => booking.toggle(cell, level, data.rack)}
                         >
                           {picked ? "Deselect" : "Select"}
                         </Button>
-                        {!picked && reason && (
-                          <small className="wm-booking-reason">{reason}</small>
+                        {!picked && (reason||status!=='AVAILABLE') && (
+                          <small className="wm-booking-reason">{reason||'Reservation-period availability is not confirmed.'}</small>
                         )}
                       </>
                     )}

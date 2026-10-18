@@ -1,36 +1,11 @@
-import { useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import facilityApi from "@/api/facilityApi";
-import managedApi from "@/api/managedReservationApi";
-import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
-import { getAccessToken, useAuthSession } from "@/lib/authSession";
+import { managedQuoteFinancials } from "@/lib/managedRentalPricing";
 import {
-  managedTerms,
-  managedRequest,
-  managedCreation,
-  MANAGED_INVENTORY,
-} from "@/lib/customerReservationService";
-import { rentalEndDate, termKey, termLabel } from "@/lib/rentalPeriod";
-import { managedBookingRecovery } from "@/lib/managedBookingDisplay";
-import ManagedWarehouseMap from "@/components/customer/ManagedWarehouseMap";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  BackendScreen,
-  Card,
-  CardContent,
-  Button,
-  Link,
-  Details,
-  Message,
-  LoadState,
-  useBackend,
-  rows,
-  record,
-  recordId,
-  validId,
-  rentalError,
-} from "./RentalBackendUI";
+  cellBookingReason,
+  cellVolume,
+  canonicalRange,
+} from "@/lib/managedCellBooking";
+import { ManagedFinancialSummary } from "./RentalBackendUI";
+
 import { useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import facilityApi from "@/api/facilityApi";
@@ -73,7 +48,7 @@ export function ServiceChoice() {
       </Button>
       <Button asChild variant="orange">
         <Link to="/portal/rent?service=managed">
-          Managed Inventory · Rent quota
+          Managed Inventory · Select Cells
         </Link>
       </Button>
     </div>
@@ -200,8 +175,33 @@ function ManagedForm() {
     setMapRefreshKey((v) => v + 1);
     setError("");
   }
-  function toggleCell(cell, volumeM3) {
-    if (!Number.isFinite(volumeM3) || volumeM3 <= 0) return;
+  function toggleCell(cell, volumeM3, rack) {
+    // This optional map callback must apply the same rules as the main basket.
+    const range = { startDate, endDate: `${end}T00:00:00.000Z` };
+    if (selectedCells[cell?._id]) {
+      setSelectedCells((current) => {
+        const next = { ...current };
+        delete next[cell._id];
+        return next;
+      });
+      setChecked(null);
+      setQuote(null);
+      setConfirmed(false);
+      return;
+    }
+    if (
+      !rack ||
+      rack.facilityId !== facilityId ||
+      cellBookingReason(cell, rack, range)
+    )
+      return;
+    try {
+      canonicalRange(range);
+      if (cellVolume(cell) !== volumeM3) return;
+    } catch {
+      return;
+    }
+    if (Object.keys(selectedCells).length >= 100) return;
     setSelectedCells((current) => {
       const next = { ...current };
       if (next[cell._id]) delete next[cell._id];
@@ -276,6 +276,9 @@ function ManagedForm() {
         typeof data.pricing?.currency !== "string"
       )
         throw Error("Invalid Managed quote response.");
+      if (data.bookingFlowVersion === 2) managedQuoteFinancials(data);
+      else if (data.bookingFlowVersion != null && data.bookingFlowVersion !== 1)
+        throw Error("Unsupported Managed quote version.");
       setQuote({ key, data });
     } catch (e) {
       if (getAccessToken() === token && currentKey.current === key)
@@ -297,7 +300,7 @@ function ManagedForm() {
   }
   return (
     <BackendScreen
-      title="Rent Managed Inventory quota"
+      title="Rent Managed Inventory Cells"
       description="Review commercial capacity and pricing. Select specific Warehouse Cells before creating a reservation."
     >
       <ServiceChoice />
@@ -384,19 +387,14 @@ function ManagedForm() {
                     date.
                   </p>
                 )}
-              <label className="block field-label">
-                Requested quota (m³)
-                <Input
-                  aria-label="Requested quota (m³)"
-                  className="mt-2"
-                  type="number"
-                  min="0"
-                  step="any"
-                  disabled={!!pending}
-                  value={quota}
-                  onChange={(e) => change(setQuota, e.target.value)}
-                />
-              </label>
+              <div className="field-label">
+                <p>Selected Cell capacity (m³)</p>
+                <p className="mt-2 text-sm" role="status">
+                  {payload
+                    ? `${allocatedCapacityM3} m³ from ${cellIds.length} selected Cell(s)`
+                    : "No validated Cells selected. Select Cells on the Warehouse Map to calculate capacity."}
+                </p>
+              </div>
               <p className="text-sm">
                 Rental end (UTC): {end || "Choose a valid date and term"}
               </p>
@@ -422,21 +420,21 @@ function ManagedForm() {
                   values={[
                     ["Sellable capacity (m³)", capacity.sellableCapacityM3],
                     [
-                      "Peak committed quota (m³)",
+                      "Peak committed capacity (m³)",
                       capacity.committedPeakCapacityM3,
                     ],
                     [
-                      "Unresolved overdue quota (m³)",
+                      "Unresolved overdue capacity (m³)",
                       capacity.unresolvedOverdueObligationM3,
                     ],
                     ["Available capacity (m³)", capacity.availableCapacityM3],
-                    ["Requested quota (m³)", Number(quota)],
+                    ["Selected Cell capacity (m³)", allocatedCapacityM3],
                     ["Start", capacity.interval?.startDate],
                     ["End", capacity.interval?.endDate],
                   ].filter(([, v]) => v != null)}
                 />
-                {capacity.availableCapacityM3 < Number(quota) ? (
-                  <Message error="Requested quota exceeds available Managed capacity for this interval." />
+                {capacity.availableCapacityM3 < allocatedCapacityM3 ? (
+                  <Message error="Selected Cell capacity exceeds available Managed capacity for this interval." />
                 ) : (
                   <Button
                     className="mt-5"
@@ -453,6 +451,9 @@ function ManagedForm() {
             {review && (
               <div className="mt-6 space-y-5">
                 <h3 className="font-bold">Review server quote</h3>
+                {review.bookingFlowVersion === 2 && (
+                  <ManagedFinancialSummary quote={review} />
+                )}
                 <Details
                   values={[
                     ["Allocated capacity (m³)", review.allocatedCapacityM3],
@@ -461,10 +462,20 @@ function ManagedForm() {
                     ["End", review.endDate],
                     ["Rate per m³", review.pricing.ratePerM3],
                     ["Estimated rent", review.pricing.estimatedRent],
-                    ["Deposit", review.deposit.amount],
+                    [
+                      review.bookingFlowVersion === 2
+                        ? "Scheduled advance-rent deposit"
+                        : "Deposit",
+                      review.deposit.amount,
+                    ],
                     ["Deposit percentage", review.deposit.percentage],
                     ["Currency", review.pricing.currency],
-                    ["Total due", review.totalDue],
+                    [
+                      "Total due",
+                      review.bookingFlowVersion === 2
+                        ? undefined
+                        : review.totalDue,
+                    ],
                   ].filter(([, v]) => v != null)}
                 />
                 <p className="text-sm text-slate-500">
@@ -480,8 +491,8 @@ function ManagedForm() {
                     onCheckedChange={(v) => setConfirmed(v === true)}
                   />
                   <span>
-                    I confirm the facility, quota, UTC rental period and
-                    returned quote.
+                    I confirm the facility, selected Cell capacity, UTC rental
+                    period and returned quote.
                   </span>
                 </label>
                 <Button
@@ -495,8 +506,9 @@ function ManagedForm() {
             )}
             {!capacity && (
               <p className="mt-5 text-sm text-slate-500">
-                Choose a facility, date, configured term and quota to check
-                availability.
+                Choose a facility, date and configured term, then select Cells
+                on the Warehouse Map. Capacity checks and quotes remain
+                unavailable here until validated Cell selections are available.
               </p>
             )}
           </CardContent>
@@ -509,8 +521,9 @@ function ManagedForm() {
         </Button>
       )}
       <p className="text-sm text-slate-500">
-        Approval and activation are performed by authorized management.
-        Inventory registration remains a separate future integration.
+        Managed V2 bookings do not require routine Manager approval. Activation
+        follows Staff-confirmed first inbound after the required contract and
+        balance steps. Legacy records retain their existing lifecycle.
       </p>
     </BackendScreen>
   );

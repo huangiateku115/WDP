@@ -1,7 +1,5 @@
 import axiosClient from "./axiosClient";
 import { canonicalRange } from "@/lib/managedCellBooking";
-import axiosClient from "./axiosClient";
-import { canonicalRange } from "@/lib/managedCellBooking";
 
 function unavailable(error) {
   if (error.response?.status === 409)

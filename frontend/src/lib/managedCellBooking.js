@@ -1,6 +1,17 @@
 import {managedRequest} from './customerReservationService.js';
+import {managedQuoteFinancials} from './managedRentalPricing.js';
 
 const id=value=>typeof value==='string'&&/^[a-f\d]{24}$/i.test(value);
+// The date-only picker retains its existing 00:00 UTC payload. Backend requires start > now.
+export function minimumBookingStartDate(now=Date.now()){
+  const day=new Date(now);day.setUTCHours(0,0,0,0);day.setUTCDate(day.getUTCDate()+1);return day.toISOString().slice(0,10);
+}
+export function bookingStartDateError(start,now=Date.now()){
+  if(!start)return 'Choose a rental start date.';
+  const range=bookingInterval(start,{value:1,unit:'DAY'});
+  if(!range)return 'Choose a valid UTC calendar date.';
+  return Date.parse(range.startDate)<=now?'Choose a future UTC start date. Dates start at 00:00 UTC (07:00 Vietnam time).':'';
+}
 export const volumeText=value=>Number.isFinite(value)?`${Number(value.toFixed(6)).toLocaleString('en-US',{maximumFractionDigits:6})} m³`:'Not returned';
 export function bookingInterval(start,term) {
   if(!/^\d{4}-\d{2}-\d{2}$/.test(start||'')||!Number.isSafeInteger(term?.value)||term.value<1||!['DAY','MONTH','YEAR'].includes(term.unit))return null;
@@ -29,12 +40,17 @@ export function cellVolume(cell) {
 }
 export function cellBookingReason(cell,rack,range) {
   if(!range)return 'Choose a rental start date and term before selecting Cells.';
+  try{canonicalRange(range);}catch{return 'Choose a valid UTC rental interval.';}
   if(Date.parse(range.startDate)<=Date.now())return 'Choose a future UTC start date.';
   if(!id(cell?._id)||!id(rack?._id)||!id(rack?.facilityId))return 'Cell identity or Facility is unavailable.';
   if(rack.operationalStatus!=='AVAILABLE')return 'Parent Rack is not AVAILABLE.';
+  if(cell.facilityId!=null&&cell.facilityId!==rack.facilityId)return 'Cell belongs to a different Facility.';
   if(cell.operationalStatus!=='AVAILABLE')return `Cell operation: ${cell.operationalStatus||'unknown'}.`;
   if(!['AVAILABLE','RESERVED','OCCUPIED'].includes(cell.bookingStatus)||!['AVAILABLE','RESERVED','OCCUPIED','BLOCKED','MAINTENANCE'].includes(cell.displayStatus))return 'Booking status is missing or unknown; refresh availability.';
   if(cell.bookingStatus!=='AVAILABLE'||cell.displayStatus!=='AVAILABLE')return `Cell is ${cell.displayStatus} for this interval.`;
+  if(cell.physicalUsageKnown!==true)return 'Physical usage is unknown; this Cell cannot be booked.';
+  if(cell.isBookable!==true)return 'Cell is not confirmed bookable for this interval.';
+  if(cell.periodStatus!=='AVAILABLE')return 'Cell reservation-period availability is missing or unavailable. Refresh the selected interval.';
   if(typeof cell.usedWeightKg!=='number'||typeof cell.usedVolumeM3!=='number'||cell.usedWeightKg!==0||cell.usedVolumeM3!==0)return 'Physical usage is unknown or this Cell contains inventory.';
   try{cellVolume(cell);}catch(e){return e.message;}return '';
 }
@@ -51,6 +67,8 @@ export function selectedPayload(facilityId,selection,range,term) {
 }
 export function verifiedCellQuote(data,payload,range) {
   if(!data||String(data.facilityId)!==payload.facilityId||Math.abs(data.allocatedCapacityM3-payload.allocatedCapacityM3)>1e-6||!Number.isFinite(data.allocatedCapacityM3)||data.startDate!==range.startDate||data.endDate!==range.endDate||data.term?.value!==payload.term.value||data.term?.unit!==payload.term.unit||![data.pricing?.ratePerM3,data.pricing?.estimatedRent,data.deposit?.amount,data.deposit?.percentage,data.taxAmount].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)||typeof data.pricing.currency!=='string'||!Number.isFinite(data.pricing.estimatedRent+data.deposit.amount+data.taxAmount))throw Error('Invalid Managed quote. Refresh and request a new quote.');
+  if(data.bookingFlowVersion===2)managedQuoteFinancials(data);
+  else if(data.bookingFlowVersion!=null&&data.bookingFlowVersion!==1)throw Error('Unsupported Managed quote version.');
   return data;
 }
 export function matchesCellReservation(r,payload,range) {

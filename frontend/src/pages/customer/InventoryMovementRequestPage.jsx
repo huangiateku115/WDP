@@ -1,3 +1,5 @@
+import ManagedInboundRequest from '@/components/customer/inventory/ManagedInboundRequest';
+import {validInventoryId} from '@/lib/inventoryRegistration';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useCustomerData, customerDemoEnabled, requestDemoMovement, reservedInboundVolume, formatVolume, locationLabel } from '@/lib/customerDemoStore';
@@ -6,6 +8,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 export default function InventoryMovementRequestPage({type}){
+ const {id}=useParams();
+ if(type==='INBOUND'&&validInventoryId(id))return <CustomerScreen title="Request inbound" description="Managed Inventory V2 receiving request."><ManagedInboundRequest id={id}/></CustomerScreen>;
+ return <DemoMovementRequest type={type}/>;
+}
+function DemoMovementRequest({type}){
  const {id}=useParams();const data=useCustomerData();const item=data.items.find(item=>item.id===id);const rental=data.rentals.find(rental=>rental.id===item?.rentalId);const [notes,setNotes]=useState('');const [confirmed,setConfirmed]=useState(false);const [error,setError]=useState('');const [success,setSuccess]=useState('');const inbound=type==='INBOUND';
  if(!item||!rental||rental.model!=='MANAGED_INVENTORY')return <CustomerScreen title={`Request ${inbound?'inbound':'outbound'}`} description="Staff-managed inventory movement."><EmptyState title="Item not found" description="Select an item in your Managed Inventory rental." to="/portal/inventory" label="My Inventory"/></CustomerScreen>;
  const pending=data.requests.find(request=>request.itemId===id&&request.status==='PENDING');const waitingVolume=reservedInboundVolume(rental.id);const total=item.volume_m3*item.quantity;const projected=rental.used_capacity_m3+waitingVolume+(pending?.type==='INBOUND'?0:total);const available=item.status===(inbound?'Registered':'InStorage')&&rental.status==='ACTIVE';const exceeds=inbound&&projected>rental.allocated_capacity_m3+1e-9;
