@@ -1,6 +1,8 @@
+import ContractPrintAction from './ContractPrintAction';
 import ManagedContractReview from './inventory/ManagedContractReview';
 import CustomerBalancePayment from './CustomerBalancePayment';
 import CustomerDepositPayment from './CustomerDepositPayment';
+import {volumeText} from '@/lib/managedCellBooking';
 import {eligibleInventoryRegistration} from '@/lib/inventoryRegistration';
 import SelfStorageMockPayment,{SelfPaymentNavigation} from './SelfStorageMockPayment';
 import {canPaySelfStorage} from '@/lib/selfStoragePayment';
@@ -215,6 +217,8 @@ export function ReservationDetailIntegration() {
     );
   const paymentContracts = useBackend(config => serviceType(resource.data) === SELF_STORAGE ? contractApi.mineReal(config).then(rows) : Promise.resolve([]), [id, resource.data?.serviceType, resource.data?.status]);
   const paymentContract = paymentContracts.data?.find(c => recordId(c.reservationId) === id);
+  const allocated=resource.data?.allocatedCapacity,used=resource.data?.usedCapacityM3;
+  const capacityKnown=[allocated,used].every(value=>typeof value==='number'&&Number.isFinite(value)&&value>=0);
   return (
     <BackendScreen
       title="Reservation details"
@@ -230,6 +234,7 @@ export function ReservationDetailIntegration() {
       {resource.data && (
         <>
           <RentalSummary item={resource.data} localizeManagedV2 />
+          {isManagedV2(resource.data)&&<Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity",typeof allocated==='number'&&Number.isFinite(allocated)&&allocated>=0?volumeText(allocated):'Not returned'],["Used capacity",typeof used==='number'&&Number.isFinite(used)&&used>=0?volumeText(used):'Not returned'],["Remaining capacity",capacityKnown?volumeText(Math.max(0,allocated-used)):'Not available — capacity data is missing or invalid']]}/></CardContent></Card>}
           {isManagedV2(resource.data)&&<CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>reservationApi.detailForCustomer(id,config).then(record)} onReservationRefresh={resource.retry}/>}
           {isManagedV2(resource.data)&&<CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>contractContext(id,config)} onReservationRefresh={resource.retry}/>}
           <ManagedCellSummary reservation={resource.data}/>{isManagedV2(resource.data)&&<div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data)&&<Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status==='RESERVED'&&<p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
@@ -360,7 +365,7 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
-  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
   return (
     <BackendScreen
       title="Review rental contract"
@@ -372,6 +377,7 @@ export function ContractDetailIntegration() {
         <Card>
           <CardContent>
             <RentalStatus status={contract.status} />
+            <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId}/>
             {isManagedV2(reservation)&&<ManagedFinancialSummary reservation={reservation}/>}
             <Details
               values={[

@@ -1,8 +1,8 @@
-import {useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useLocation} from 'react-router-dom';
 import authApi from '@/api/authApi';
-import {saveAuthSession, saveSessionUser, profileFromResponse, getAccessToken} from '@/lib/authSession';
-import {customerWarehouseDestination} from '@/lib/customerRedirect';
+import {saveAuthSession, saveSessionUser, profileFromResponse, getAccessToken,clearAuthSession,useAuthSession,consumeLogoutWarning} from '@/lib/authSession';
+import {authenticatedDestination} from '@/lib/customerRedirect';
 import {apiErrorMessage} from '@/lib/apiError';
 import referenceImages from '@/components/common/referenceImages';
 import { Link, useNavigate } from "react-router-dom";
@@ -16,13 +16,49 @@ export default function LoginPage() {
   const location=useLocation(),busy=useRef(false);
   const [showPassword,setShowPassword]=useState(false);
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState('');
+  const session=useAuthSession(),[remember,setRemember]=useState(false),[returning,setReturning]=useState(null),[checking,setChecking]=useState(false);
+  const [logoutWarning]=useState(()=>consumeLogoutWarning());
+  useEffect(()=>{consumeLogoutWarning(true);},[]);
+  const mounted=useRef(false),validation=useRef(null);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;validation.current?.abort();};},[]);
+  useEffect(()=>{
+    setReturning(null);
+    if(!session.remembered||!session.accessToken||busy.current){setChecking(false);return;}
+    const controller=new AbortController(),token=session.accessToken;validation.current=controller;setChecking(true);
+    authApi.me({signal:controller.signal}).then(response=>{
+      if(controller.signal.aborted||getAccessToken()!==token)return;
+      const user=profileFromResponse(response);authenticatedDestination(user.role);saveSessionUser(user);setReturning({token,user});
+    }).catch(()=>{
+      if(controller.signal.aborted)return;
+      if(getAccessToken()===token)clearAuthSession();
+      setError('We could not validate your saved session. Please sign in with your password.');
+    }).finally(()=>{if(!controller.signal.aborted)setChecking(false);});
+    return()=>controller.abort();
+  },[session.accessToken,session.remembered]);
+  function anotherAccount(){validation.current?.abort();clearAuthSession();setReturning(null);setChecking(false);setEmail('');setPassword('');setRemember(false);setError('');}
+  async function continueSession(){
+    if(busy.current||!returning||getAccessToken()!==returning.token)return;
+    busy.current=true;setPending(true);setError('');const token=returning.token,controller=new AbortController();validation.current=controller;
+    try{
+      const user=profileFromResponse(await authApi.me({signal:controller.signal}));
+      if(!mounted.current||getAccessToken()!==token)return;
+      const destination=authenticatedDestination(user.role,location.state?.from);saveSessionUser(user);nav(destination,{replace:true});
+    }catch(err){
+      if(!mounted.current||controller.signal.aborted)return;
+      if(getAccessToken()===token)clearAuthSession();setReturning(null);setError('Your saved session is unavailable or expired. Please sign in with your password.');
+    }finally{busy.current=false;if(mounted.current)setPending(false);}
+  }
   const signIn=async event=>{event.preventDefault();if(busy.current)return;busy.current=true;setPending(true);setError('');try{
+    clearAuthSession();setReturning(null);
     const response=await authApi.login({email:email.trim(),password});
     const tokens=response.data?.data;
-    saveAuthSession({accessToken:tokens?.accessToken,refreshToken:tokens?.refreshToken,user:tokens?.user});
-    let user=tokens?.user||null;
-    try{user=profileFromResponse(await authApi.me());if(getAccessToken()!==tokens.accessToken)return;saveSessionUser(user);}catch(err){if(!getAccessToken())throw err;}
-    nav(user?.role==='FACILITY_MANAGER'?'/manager/dashboard':user?.role==='FACILITY_STAFF'?'/staff/dashboard':customerWarehouseDestination(user?.role,location.state?.from));
+    if(!mounted.current)return;
+    saveAuthSession({accessToken:tokens?.accessToken,refreshToken:tokens?.refreshToken,user:tokens?.user,remember:false});
+    try{
+      const user=profileFromResponse(await authApi.me());if(!mounted.current||getAccessToken()!==tokens.accessToken)return;
+      const destination=authenticatedDestination(user.role,location.state?.from);
+      saveAuthSession({accessToken:tokens.accessToken,refreshToken:tokens.refreshToken,user,remember});setPassword('');nav(destination,{replace:true});
+    }catch(err){if(getAccessToken()===tokens.accessToken)clearAuthSession();throw err;}
   }catch(err){setError(apiErrorMessage(err,'Unable to sign in. Please try again.'));}finally{busy.current=false;setPending(false);}};
   return (
     <div className="mx-auto max-w-5xl px-5 py-14">
@@ -44,7 +80,12 @@ export default function LoginPage() {
             Sign in to manage your active storage units, check gate PINs, and
             view contracts.
           </p>
-          <form className="mt-6 space-y-4" onSubmit={signIn}>
+          {checking&&<p role="status" className="mt-6 text-sm text-slate-600">Checking your saved session…</p>}
+          {returning&&session.accessToken===returning.token?<div className="mt-6 space-y-4 rounded-xl border border-green-200 bg-green-50 p-5">
+            <p className="font-semibold text-[#176B3A]">Welcome back!</p><p className="break-words text-xl font-bold">{returning.user.displayName||returning.user.email||'Your account'}</p><p className="text-sm text-slate-600">{returning.user.role}</p>
+            <Button className="w-full" disabled={pending} onClick={continueSession}>{pending?'Validating session…':`Continue as ${returning.user.displayName||returning.user.email||'your account'}`}</Button>
+            <Button variant="outline" className="w-full" disabled={pending} onClick={anotherAccount}>Sign in with another account</Button>
+          </div>:!checking&&<form className="mt-6 space-y-4" onSubmit={signIn}>
             <div>
               <div className="field-label">Email Address</div>
               <Input aria-label="Email address" type="email" autoComplete="username" placeholder="name@domain.com" required value={email} onChange={event=>setEmail(event.target.value)} disabled={pending} />
@@ -59,16 +100,18 @@ export default function LoginPage() {
                 <button type="button" aria-label={showPassword?'Hide password':'Show password'} aria-pressed={showPassword} onClick={()=>setShowPassword(value=>!value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#176B3A]">{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Checkbox defaultChecked disabled aria-label="Session stored on this device" />
-              Stay signed in on this device until you sign out
-            </div>
+            <label htmlFor="remember-login" className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox id="remember-login" checked={remember} disabled={pending} onCheckedChange={value=>setRemember(value===true)} />
+              Remember Me
+            </label>
             {location.state?.passwordReset?<p role="status" className="text-sm text-emerald-700">Password reset successfully. Sign in with your new password.</p>:location.state?.registered&&<p role="status" className="text-sm text-emerald-700">Account created. Sign in with your new credentials.</p>}
             {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
             <Button className="w-full" size="lg" type="submit" disabled={pending}>
               {pending?'Signing in…':'Sign In to My Storage →'}
             </Button>
-          </form>
+          </form>}
+          {checking&&<Button variant="outline" className="mt-4" onClick={anotherAccount}>Sign in with another account</Button>}
+          {(logoutWarning||location.state?.logoutWarning)&&<p role="status" className="mt-4 text-sm text-orange-800">Signed out on this device. The server could not confirm session revocation.</p>}
           <p className="mt-5 text-center">
             New to SelfStorage?{" "}
             <Link className="font-bold text-blue-700" to="/register">

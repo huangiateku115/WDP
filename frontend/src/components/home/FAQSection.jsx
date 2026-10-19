@@ -1,3 +1,5 @@
+import {Link} from 'react-router-dom';
+import {ArrowRight} from 'lucide-react';
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
@@ -16,49 +18,12 @@ const faqs = [
   },
   {
     q: "Do I need to pay a deposit?",
-    a: "Deposit and total amounts require a confirmed backend quote. Reservation submission is unavailable until those calculations are confirmed.",
+    a: "Your rental quote sets out the deposit and total before reservation. Review these amounts along with your contract before continuing.",
   },
 ];
 
 export default function FAQSection() {
   const [open, setOpen] = useState(0);
 
-  return (
-    <section className="page-container py-20">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="section-label justify-center">Got Questions?</p>
-        <h2 className="section-title mt-3">Frequently Asked Questions</h2>
-      </div>
-
-      <div className="mx-auto mt-10 max-w-3xl space-y-3">
-        {faqs.map((item, index) => (
-          <article
-            key={item.q}
-            className="overflow-hidden rounded-xl border border-[#e8eaf3] bg-white"
-          >
-            <button
-              type="button"
-              onClick={() => setOpen(open === index ? -1 : index)}
-              className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
-            >
-              <span className="text-sm font-semibold">{item.q}</span>
-
-              <ChevronDown
-                size={18}
-                className={`text-[#176B3A] transition ${
-                  open === index ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-
-            {open === index && (
-              <p className="border-t px-5 py-4 text-sm leading-6 text-[#697386]">
-                {item.a}
-              </p>
-            )}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
+ return <section className="vs-section vs-white"><div className="page-container vs-faq"><div><p className="vs-eyebrow">Before you get started</p><h2>A few things<br/>you might wonder.</h2><p className="vs-description">The right space starts with the right information. We are here to help you find it.</p><Link className="vs-text-link mt-6" to="/support">More questions? Visit Support <ArrowRight size={16}/></Link></div><div>{faqs.map((item,index)=><article className="border-b border-[#dfe6dc] py-5" key={item.q}><button type="button" className="flex w-full items-center justify-between gap-5 text-left text-sm font-semibold" aria-expanded={open===index} aria-controls={'home-answer-'+index} onClick={()=>setOpen(open===index?-1:index)}>{item.q}<ChevronDown size={18} className={open===index?'rotate-180':''}/></button>{open===index&&<p id={'home-answer-'+index} className="mt-4 text-sm leading-7 text-[#637267]">{item.a}</p>}</article>)}</div></div></section>;
 }

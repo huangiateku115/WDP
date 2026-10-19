@@ -1,3 +1,4 @@
+import CustomerOutboundPage from '@/components/customer/inventory/CustomerOutbound';
 import ManagedInboundRequest from '@/components/customer/inventory/ManagedInboundRequest';
 import {validInventoryId} from '@/lib/inventoryRegistration';
 import { useState } from 'react';
@@ -9,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 export default function InventoryMovementRequestPage({type}){
  const {id}=useParams();
+ if(type==='OUTBOUND')return <CustomerOutboundPage id={id}/>;
  if(type==='INBOUND'&&validInventoryId(id))return <CustomerScreen title="Request inbound" description="Managed Inventory V2 receiving request."><ManagedInboundRequest id={id}/></CustomerScreen>;
  return <DemoMovementRequest type={type}/>;
 }
