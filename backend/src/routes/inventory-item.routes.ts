@@ -4,13 +4,18 @@ import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
 import * as checkinController from '../controllers/reservations/managed-checkin.controller';
+import rateLimit from 'express-rate-limit';
+import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
 
 const router = Router();
 const customer = requireRole([UserRole.CUSTOMER]);
 const readers = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]);
 const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.CUSTOMER]);
+const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
 
 router.use(requireAuth);
+router.post('/image-uploads', customer, inventoryImageUploadLimiter, uploadInventoryImageFile, controller.uploadImage);
+router.delete('/image-uploads/:uploadId', customer, controller.removeImageUpload);
 router.post('/', customer, controller.create);
 router.get('/me', customer, controller.listMine);
 router.get('/', readers, controller.list);

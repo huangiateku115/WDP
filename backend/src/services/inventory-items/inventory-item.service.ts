@@ -26,6 +26,7 @@ import { requireActiveManagedInventoryReservation, requireManagedInventoryReserv
 import { InboundConfirmationInput, InventoryItemError, OutboundConfirmationInput, RelocationInput, parseCreate, parseId, parseInboundConfirmation, parseInboundRejection, parseList, parseOutboundConfirmation, parseOutboundRejection, parseRelocation, parseUpdate } from './inventory-item.validation';
 import { validateCategoryPolicyConfig } from '../pricing-policy/rule.validation';
 import { calculateRentalPaymentBreakdown } from '../payments/payment-accounting';
+import { ManagedInventoryImageService } from '../upload/managed-inventory-image.service';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const managementReaders = [UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF];
@@ -507,6 +508,22 @@ export class InventoryItemService {
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only customers can register inventory items');
     const data = parseCreate(input);
     return execute(async () => {
+      if (data.images?.length) {
+        return withTransaction(async session => {
+          const reservation = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id, undefined, session);
+          const facilityId = reservation.facilityId;
+          const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId) : undefined;
+          const totals = deriveTotals(data);
+          const item = new InventoryItemModel({
+            ...data, facilityId, customerId: actor._id, managedReservationId: reservation._id,
+            ...(preferredCell ? { preferredCellId: preferredCell._id } : {}), ...totals,
+            currentCellId: null, status: InventoryItemStatus.REGISTERED, createdBy: actor._id,
+          });
+          await ManagedInventoryImageService.attachNewImages(data.images ?? [], [], item._id, actor._id, reservation._id, session);
+          await item.save({ session });
+          return dto(item);
+        });
+      }
       const reservation = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id);
       const facilityId = reservation.facilityId;
       const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId) : undefined;
@@ -594,6 +611,40 @@ export class InventoryItemService {
         if (reservation.status !== ReservationStatus.DEPOSIT_PAID || reservation.bookingFlowVersion !== 2 || await ContractModel.exists({ reservationId: reservation._id })) throw error;
       }
       if (item.status !== InventoryItemStatus.REGISTERED || item.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
+      const currentImages = item.images ?? [];
+      const requestedImages = (changes.images as string[] | undefined) ?? currentImages;
+      if (requestedImages.some(url => !currentImages.includes(url))) {
+        return withTransaction(async session => {
+          const fresh = await InventoryItemModel.findOne({ _id: itemId, customerId: actor._id, ...live }).session(session).exec();
+          if (!fresh) throw new InventoryItemError(404, 'Inventory item not found');
+          await assertItemReadAccess(fresh, actor);
+          let freshReservation;
+          try { freshReservation = await requireActiveManagedInventoryReservation(fresh.managedReservationId, actor._id, fresh.facilityId, session); }
+          catch (error) {
+            if (!(error instanceof ManagedReservationGuardError) || fresh.receivingInspection?.decision !== 'REJECTED') throw error;
+            freshReservation = await requireManagedInventoryReservationForRegistration(fresh.managedReservationId, actor._id, fresh.facilityId, session);
+            if (freshReservation.status !== ReservationStatus.DEPOSIT_PAID || freshReservation.bookingFlowVersion !== 2 || await ContractModel.exists({ reservationId: freshReservation._id }).session(session)) throw error;
+          }
+          if (fresh.status !== InventoryItemStatus.REGISTERED || fresh.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
+          if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, fresh.facilityId);
+          const normalized = { ...changes };
+          const preferredCellId = normalized.preferredCellId;
+          delete normalized.preferredCellId;
+          Object.assign(fresh, normalized);
+          if (preferredCellId === null) fresh.set('preferredCellId', undefined);
+          else if (preferredCellId) fresh.preferredCellId = new Types.ObjectId(preferredCellId as string);
+          Object.assign(fresh, deriveTotals(fresh));
+          fresh.currentCellId = null;
+          fresh.status = InventoryItemStatus.REGISTERED;
+          if (fresh.receivingInspection?.decision === 'REJECTED') {
+            fresh.set('receivingInspection', undefined);
+            fresh.receivingCustodyStatus = 'NONE' as any;
+          }
+          await ManagedInventoryImageService.attachNewImages(requestedImages, currentImages, fresh._id, actor._id, fresh.managedReservationId, session);
+          await fresh.save({ session });
+          return dto(fresh);
+        });
+      }
       if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, item.facilityId);
       const normalized = { ...changes };
       const preferredCellId = normalized.preferredCellId;

@@ -13,6 +13,7 @@ mongoose.set('bufferCommands', false);
 const Facility = require('../dist/models/facilities/facility.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
+const ImageUpload = require('../dist/models/inventory-items/inventory-image-upload.model').default;
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
@@ -50,7 +51,7 @@ const itemBody = (overrides = {}) => ({
   itemCode: 'customer-lot-01', name: 'Archive cartons', category: 'DOCUMENTS',
   description: 'Identical cartons', quantity: 2, quantityUnit: 'carton', unitWeightKg: 20,
   unitDimensionsM: { widthM: 0.25, depthM: 0.3, heightM: 0.2 },
-  images: ['https://example.test/carton.jpg'], ...overrides,
+  images: [], ...overrides,
 });
 const itemDoc = (overrides = {}) => new Item({
   _id: oid(itemId), facilityId: oid(facilityId), customerId: userId,
@@ -111,6 +112,15 @@ test('version 2 DEPOSIT_PAID owner may register an item before activation withou
   const created = await service.create(itemBody(), actor());
   assert.equal(created.status, 'REGISTERED'); assert.equal(created.currentCellId, null);
   assert.equal(saved.managedReservationId.toString(), reservationId);
+});
+
+test('new Item registration cannot attach an arbitrary HTTP URL without upload ownership metadata', async t => {
+  mockEligibility(t);
+  const session = { withTransaction: async work => work(), endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  t.mock.method(ImageUpload, 'findOne', () => new Query(null));
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('unowned URL must fail before saving Item'); });
+  await assert.rejects(service.create(itemBody({ images: ['https://res.cloudinary.com/other-customer/item.jpg'] }), actor()), { status: 403 });
 });
 
 test('CHECKIN_READY does not allow new item registration after the contract and balance snapshot is complete', async t => {
@@ -210,6 +220,16 @@ test('customer edits only REGISTERED metadata and totals are recalculated', asyn
   assert.equal(updated.currentCellId, null);
   assert.equal(updated.status, 'REGISTERED');
   await assert.rejects(service.update(itemId, { facilityId }, actor()), { status: 400 });
+});
+
+test('editing keeps a legacy HTTP image already owned by that Item', async t => {
+  mockEligibility(t);
+  const legacy = 'https://legacy.example.test/old-item-photo.jpg';
+  const item = itemDoc({ images: [legacy] });
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  t.mock.method(Item.prototype, 'save', async function () { return this; });
+  const updated = await service.update(itemId, { name: 'Archive cartons updated', images: [legacy] }, actor());
+  assert.deepEqual(updated.images, [legacy]);
 });
 
 test('owner can read historical item after its Managed reservation closes', async t => {
@@ -336,13 +356,14 @@ test('all inventory-item routes require authentication and role gates match the 
     handlers: layer.route.stack.map(entry => entry.handle.name),
   }));
   assert.equal(router.stack[0].handle.name, 'requireAuth', 'router-level authentication runs before every endpoint');
-  assert.ok(routes.every(route => route.handlers.length === 2), 'each route has a role gate before its controller');
+  assert.ok(routes.every(route => route.handlers.length >= 2), 'each route has a role gate before its controller; upload routes may add rate-limit and multipart middleware');
   for (const expected of [
+    'POST /image-uploads', 'DELETE /image-uploads/:uploadId',
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
     'POST /:id/inbound-request', 'POST /:id/outbound-request', 'POST /:id/confirm-inbound',
     'POST /:id/confirm-outbound', 'POST /:id/reject-inbound', 'POST /:id/reject-outbound', 'GET /:id/movements',
     'POST /:id/relocate',
     'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 15);
+  assert.equal(routes.length, 17);
 });

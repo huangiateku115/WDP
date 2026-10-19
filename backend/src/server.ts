@@ -6,12 +6,18 @@ async function start(): Promise<void> {
   const { connectDatabase, disconnectDatabase } = await import('./config/database');
   const { authKeycloakAdmin } = await import('./config/keycloak-admin.config');
   const { default: app } = await import('./app');
+  const { ManagedInventoryImageService } = await import('./services/upload/managed-inventory-image.service');
   const server = http.createServer(app);
+  const imageCleanupTimer = setInterval(() => {
+    void ManagedInventoryImageService.cleanupExpired().catch(() => console.error('Managed inventory image cleanup will retry on the next interval'));
+  }, 15 * 60 * 1000);
+  imageCleanupTimer.unref();
   let shuttingDown = false;
 
   async function shutdown(exitCode: number): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
+    clearInterval(imageCleanupTimer);
     const timeout = setTimeout(() => {
       console.error('Shutdown timed out');
       process.exit(1);
