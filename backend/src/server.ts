@@ -7,9 +7,11 @@ async function start(): Promise<void> {
   const { authKeycloakAdmin } = await import('./config/keycloak-admin.config');
   const { default: app } = await import('./app');
   const { ManagedInventoryImageService } = await import('./services/upload/managed-inventory-image.service');
+  const { ManagedReceivingEvidenceService } = await import('./services/upload/managed-receiving-evidence.service');
   const server = http.createServer(app);
   const imageCleanupTimer = setInterval(() => {
     void ManagedInventoryImageService.cleanupExpired().catch(() => console.error('Managed inventory image cleanup will retry on the next interval'));
+    void ManagedReceivingEvidenceService.cleanupExpired().catch(() => console.error('Managed receiving evidence cleanup will retry on the next interval'));
   }, 15 * 60 * 1000);
   imageCleanupTimer.unref();
   let shuttingDown = false;

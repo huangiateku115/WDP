@@ -3,6 +3,8 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import ReservationModel from '../../models/reservations/reservation.model';
 import FacilityModel from '../../models/facilities/facility.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import ReceivingInspectionEvidenceModel from '../../models/inventory-items/receiving-inspection-evidence.model';
+import { ManagedReceivingEvidenceService } from '../upload/managed-receiving-evidence.service';
 import ContractModel from '../../models/contracts/contract.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import UserModel from '../../models/users/user.model';
@@ -102,23 +104,48 @@ export class ManagedCheckinService {
   static async inspectItem(itemIdInput: unknown, body: unknown, actor: Actor) {
     if (!enabled()) fail(404, 'Managed check-in flow is disabled');
     const itemId = id(itemIdInput, 'itemId');
-    const input = record(body, ['decision', 'observedQuantity', 'observedUnitWeightKg', 'observedUnitDimensionsM', 'compatibleCellIds', 'packingLayoutVerified', 'note', 'custodyTaken'], 'inspection');
+    const input = record(body, ['decision', 'observedQuantity', 'observedUnitWeightKg', 'observedUnitDimensionsM', 'compatibleCellIds', 'packingLayoutVerified', 'note', 'custodyTaken', 'evidenceUploadIds', 'idempotencyKey'], 'inspection');
     if (!Object.values(ReceivingInspectionDecision).includes(input.decision)) fail(400, 'Invalid inspection decision');
     if (!Number.isSafeInteger(input.observedQuantity) || input.observedQuantity < 1 || typeof input.observedUnitWeightKg !== 'number' || !Number.isFinite(input.observedUnitWeightKg) || input.observedUnitWeightKg <= 0) fail(400, 'Observed quantity and weight must be positive');
     const dimensions = input.observedUnitDimensionsM;
     if (!dimensions || ['widthM', 'depthM', 'heightM'].some(key => typeof dimensions[key] !== 'number' || !Number.isFinite(dimensions[key]) || dimensions[key] <= 0)) fail(400, 'Observed dimensions must be positive');
     if (typeof input.note !== 'string' || !input.note.trim() || input.note.length > 1000 || typeof input.custodyTaken !== 'boolean' || typeof input.packingLayoutVerified !== 'boolean' || !Array.isArray(input.compatibleCellIds)) fail(400, 'Inspection note, custodyTaken, packingLayoutVerified and compatibleCellIds are required');
     const compatibleCellIds = input.compatibleCellIds.map((value: unknown) => id(value, 'compatibleCellId'));
+    if (input.evidenceUploadIds !== undefined && (!Array.isArray(input.evidenceUploadIds) || input.evidenceUploadIds.length > 10)) fail(400, 'evidenceUploadIds must contain at most 10 images');
+    const evidenceUploadIds = (input.evidenceUploadIds ?? []).map((value: unknown) => id(value, 'evidenceUploadId'));
+    const idempotencyKey = input.idempotencyKey;
+    if (idempotencyKey !== undefined && (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{7,127}$/.test(idempotencyKey))) fail(400, 'Invalid inspection idempotencyKey');
+    const payloadHash = hashContent({ decision: input.decision, observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg,
+      observedUnitDimensionsM: dimensions, compatibleCellIds: compatibleCellIds.map(String), packingLayoutVerified: input.packingLayoutVerified,
+      note: input.note.trim(), custodyTaken: input.custodyTaken, evidenceUploadIds: evidenceUploadIds.map(String) });
     return tx(async session => {
       const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
       if (!current) fail(404, 'Inventory item not found');
       if (actor.role !== UserRole.FACILITY_STAFF) fail(403, 'Facility Staff role required for physical inspection');
       assertFacilityRepresentative(actor, current.facilityId);
       const reservation = await loadV2Reservation(current.managedReservationId, session);
+      if (!reservation.facilityId.equals(current.facilityId) || !reservation.customerId.equals(current.customerId)) fail(409, 'Item ownership and Facility must match its Managed reservation');
+      // Replays are resolved before temporary upload-state checks; the committed snapshot already owns those uploads.
+      if (idempotencyKey !== undefined) {
+        const replay = await ReceivingInspectionEvidenceModel.findOne({ itemId: current._id, idempotencyKey }).session(session).exec();
+        if (replay) {
+          if (replay.payloadHash !== payloadHash || String(replay.facilityId) !== String(current.facilityId) || !replay.inspectedBy.equals(actor._id)) fail(409, 'Inspection idempotencyKey was already used with a different payload or Staff member');
+          return current;
+        }
+      }
       if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Inspection requires a DEPOSIT_PAID v2 Managed reservation');
       if (reservation.balanceSettledAt) fail(409, 'Receiving inspection is locked after contract and balance completion');
       await lockFacility(reservation.facilityId, session);
       if (![InventoryItemStatus.PENDING_INBOUND, InventoryItemStatus.RECEIVED_PENDING_ACCEPTANCE].includes(current.status)) fail(409, 'Only a requested inbound item may be inspected');
+      const previousInspection = current.receivingInspection as any;
+      const sameCompatibleCells = JSON.stringify((previousInspection?.compatibleWithCellIds ?? []).map(String).sort()) === JSON.stringify(compatibleCellIds.map(String).sort());
+      const completingAcceptedCustody = previousInspection?.decision === ReceivingInspectionDecision.ACCEPTED &&
+        current.status === InventoryItemStatus.PENDING_INBOUND && current.receivingCustodyStatus === ReceivingCustodyStatus.NONE &&
+        input.decision === ReceivingInspectionDecision.ACCEPTED && input.custodyTaken && sameCompatibleCells &&
+        previousInspection.observedQuantity === input.observedQuantity && round(previousInspection.observedUnitWeightKg, 3) === round(input.observedUnitWeightKg, 3) &&
+        ['widthM', 'depthM', 'heightM'].every(key => round(previousInspection.observedUnitDimensionsM?.[key], 6) === round(dimensions[key], 6)) &&
+        Boolean(previousInspection.packingLayoutVerified) === input.packingLayoutVerified && previousInspection.note === input.note.trim();
+      if (previousInspection?.decision === ReceivingInspectionDecision.ACCEPTED && !completingAcceptedCustody) fail(409, 'An accepted receiving inspection cannot be overwritten; only its unchanged inspection may complete custody');
       const allowedCells = (reservation.allocatedCellIds ?? []).map(String);
       if (compatibleCellIds.some((cellId: Types.ObjectId) => !allowedCells.includes(String(cellId)))) fail(409, 'Compatible Cells must be allocated to this reservation');
       const allocationCount = await CellAllocationModel.countDocuments({ reservationId: reservation._id, customerId: reservation.customerId,
@@ -164,6 +191,16 @@ export class ManagedCheckinService {
       const acceptedIds = new Set(compatibleCells.map(cell => String(cell._id)));
       if (input.decision === ReceivingInspectionDecision.ACCEPTED && (!compatibleCellIds.length || compatibleCells.length !== compatibleCellIds.length || compatibleCellIds.some((cellId: Types.ObjectId) => !acceptedIds.has(String(cellId))))) fail(409, 'Accepted goods must fit every selected allocated Cell and its verified empty physical capacity');
       const inspectedAt = new Date();
+      const previousAttempts = await ReceivingInspectionEvidenceModel.countDocuments({ itemId: current._id }).session(session).exec();
+      const evidenceSnapshot = new ReceivingInspectionEvidenceModel({
+        itemId: current._id, reservationId: reservation._id, facilityId: reservation.facilityId, attempt: previousAttempts + 1,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}), payloadHash, decision: input.decision,
+        observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg,
+        observedUnitDimensionsM: dimensions, compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified,
+        note: input.note.trim(), custodyTaken: input.custodyTaken, inspectedBy: actor._id, inspectedAt, images: [],
+      });
+      evidenceSnapshot.images = await ManagedReceivingEvidenceService.attach(evidenceUploadIds, current._id, reservation.facilityId, actor._id, evidenceSnapshot._id, session) as any;
+      await evidenceSnapshot.save({ session });
       current.receivingInspection = { decision: input.decision, observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg, observedUnitDimensionsM: dimensions, compatibleWithCellIds: compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified, note: input.note.trim(), inspectedBy: actor._id, inspectedAt } as any;
       current.receivingCustodyStatus = input.custodyTaken ? ReceivingCustodyStatus.IN_CUSTODY : ReceivingCustodyStatus.NONE;
       if (input.decision === ReceivingInspectionDecision.REJECTED) {
@@ -181,9 +218,27 @@ export class ManagedCheckinService {
         await existingContract.save({ session });
         await audit(reservation, actor, ManagedReservationAction.CONTRACT_VERSION_CREATED, { contractId: existingContract._id, version: version.version, reason: 'Inspected handover content changed' }, session);
       }
-      await audit(reservation, actor, ManagedReservationAction.ITEM_INSPECTED, { itemId: current._id, decision: input.decision, observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg, observedUnitDimensionsM: dimensions, custodyTaken: input.custodyTaken, compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified, note: input.note.trim() }, session);
+      await audit(reservation, actor, ManagedReservationAction.ITEM_INSPECTED, { itemId: current._id, evidenceSnapshotId: evidenceSnapshot._id,
+        evidenceAttempt: evidenceSnapshot.attempt, imageCount: evidenceSnapshot.images.length, decision: input.decision,
+        observedQuantity: input.observedQuantity, observedUnitWeightKg: input.observedUnitWeightKg, observedUnitDimensionsM: dimensions,
+        custodyTaken: input.custodyTaken, compatibleCellIds, packingLayoutVerified: input.packingLayoutVerified, note: input.note.trim() }, session);
       return current;
     });
+  }
+
+  static async receivingContext(itemIdInput: unknown, actor: Actor) {
+    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
+    const itemId = id(itemIdInput, 'itemId');
+    if (actor.role !== UserRole.FACILITY_STAFF || !actor.assignedFacilityId) fail(403, 'Assigned Facility Staff required');
+    const item = await InventoryItemModel.findOne({ _id: itemId, facilityId: actor.assignedFacilityId, ...live }).lean().exec();
+    if (!item) fail(404, 'Managed Inventory Item not found in assigned Facility');
+    const reservation = await ReservationModel.findOne({ _id: item.managedReservationId, facilityId: actor.assignedFacilityId,
+      serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 2 }).select('_id reservationCode facilityId status balanceSettledAt allocatedCellIds').lean().exec();
+    if (!reservation) fail(404, 'Managed reservation not found in assigned Facility');
+    const evidence = await ReceivingInspectionEvidenceModel.find({ itemId, facilityId: actor.assignedFacilityId }).sort({ attempt: 1 }).lean().exec();
+    const cells = await WarehouseCellModel.find({ _id: { $in: reservation.allocatedCellIds ?? [] }, facilityId: actor.assignedFacilityId, ...live })
+      .select('_id cellCode label dimensions maxWeightKg operationalStatus usedWeightKg usedVolumeM3').lean().exec();
+    return { item, reservation, cells, evidence };
   }
 
   static async createOrRefreshContract(reservationIdInput: unknown, actor: Actor) {

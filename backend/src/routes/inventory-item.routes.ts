@@ -24,6 +24,8 @@ router.post('/:id/inbound-request', customer, controller.requestInbound);
 router.post('/:id/outbound-request', customer, controller.requestOutbound);
 router.post('/:id/confirm-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmInbound);
 router.post('/:id/confirm-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmOutbound);
+router.get('/:itemId/receiving-inspection/context', requireRole([UserRole.FACILITY_STAFF]), checkinController.receivingContext);
+router.post('/:itemId/receiving-inspection/image-uploads', requireRole([UserRole.FACILITY_STAFF]), inventoryImageUploadLimiter, uploadInventoryImageFile, checkinController.uploadReceivingEvidence);
 router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), checkinController.inspectItem);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
 router.post('/:id/reject-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectOutbound);
