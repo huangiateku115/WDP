@@ -13,7 +13,7 @@ export function CustomerScreen({
 }) {
   return (
     <div className="customer-screen mx-auto max-w-6xl p-5 md:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="customer-screen-heading flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="label text-sky-700">{eyebrow}</p>
           <h1 className="mt-2 text-3xl font-bold md:text-4xl">{title}</h1>
@@ -27,7 +27,7 @@ export function CustomerScreen({
             ? "Changes are saved in this browser."
             : " Preview actions are unavailable in live mode.")}
       </p>
-      <div className="mt-6 space-y-6">{children}</div>
+      <div className="customer-screen-content mt-6 space-y-6">{children}</div>
     </div>
   );
 }
@@ -63,7 +63,7 @@ export function Field({ label, id, children, hint }) {
 }
 export function Details({ values }) {
   return (
-    <dl className="grid gap-5 sm:grid-cols-2">
+    <dl className="customer-details grid gap-5 sm:grid-cols-2">
       {values.map(([label, value]) => (
         <div key={label}>
           <dt className="text-xs text-slate-500">{label}</dt>

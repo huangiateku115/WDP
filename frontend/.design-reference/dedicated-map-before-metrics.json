@@ -1,0 +1,38 @@
+[
+  {
+    "name": "warehouse",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  }
+]

@@ -98,6 +98,8 @@ export default function WarehouseCells({
   selected,
   onSelect,
   query,
+  statusFilter,
+  onClearStatusFilter,
   booking,
 }) {
   const [hover, setHover] = useState(null),
@@ -184,7 +186,8 @@ export default function WarehouseCells({
                 return (
                   <div
                     key={cell._id}
-                    className={`wm-cell-choice ${picked ? "wm-picked" : ""}`}
+                    className={`wm-cell-choice ${picked ? "wm-picked" : ""} ${statusFilter&&status!==statusFilter ? "wm-status-muted" : ""}`}
+                    data-status-match={statusFilter ? String(status===statusFilter) : undefined}
                   >
                     <button
                       type="button"
@@ -265,6 +268,11 @@ export default function WarehouseCells({
           </div>
         );
       })}
+      {statusFilter&&<div className="wm-cell-filter-summary" role="status">
+        <span>Showing status: {statusFilter}. Other Cells are muted.</span>
+        <button type="button" className="wm-clear-status-filter" onClick={onClearStatusFilter}>Clear filter</button>
+      {!levels.some(level=>level.cells.some(c=>cellPeriodStatus(c)===statusFilter&&(!q||context.includes(q)||String(c.code||`C${c.cellNumber}`).toLowerCase().includes(q))))&&<p>No Cells match this status in the current Rack.</p>}
+      </div>}
       {hover &&
         createPortal(
           <div

@@ -8,6 +8,15 @@ const inventoryItemId = (value) => {
   return encodeURIComponent(value);
 };
 const inventoryApi = {
+  uploadImage: (file, reservationId, {idempotencyKey, ...config} = {}) => {
+    inventoryItemId(reservationId);
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{7,127}$/.test(idempotencyKey || '')) throw Error('Invalid image upload idempotency key.');
+    const body = new FormData();
+    body.append('file', file);
+    body.append('managedReservationId', reservationId);
+    return axiosClient.post('/inventory-items/image-uploads', body, {...config, headers: {'Content-Type': undefined, 'Idempotency-Key': idempotencyKey}});
+  },
+  removeImageUpload: (uploadId, config) => axiosClient.delete(`/inventory-items/image-uploads/${inventoryItemId(uploadId)}`, config),
   getMine: ({ page = 1, limit = 20 } = {}, config = {}) =>
     axiosClient.get("/inventory-items/me", {
       ...config,
