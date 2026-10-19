@@ -1,5 +1,6 @@
 import { RequestHandler } from 'express';
 import { InventoryItemService as service } from '../../services/inventory-items/inventory-item.service';
+import { ManagedInventoryImageService } from '../../services/upload/managed-inventory-image.service';
 
 export const create: RequestHandler = async (req, res, next) => {
   try { res.status(201).json({ success: true, data: await service.create(req.body, req.user!) }); } catch (error) { next(error); }
@@ -42,4 +43,10 @@ export const rejectInbound: RequestHandler = async (req, res, next) => {
 };
 export const movements: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.movements(req.params.id, req.user!) }); } catch (error) { next(error); }
+};
+export const uploadImage: RequestHandler = async (req, res, next) => {
+  try { res.status(201).json({ success: true, data: await ManagedInventoryImageService.upload(req.file, req.body?.managedReservationId, req.get('Idempotency-Key'), req.user!) }); } catch (error) { next(error); }
+};
+export const removeImageUpload: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await ManagedInventoryImageService.remove(req.params.uploadId, req.user!) }); } catch (error) { next(error); }
 };
