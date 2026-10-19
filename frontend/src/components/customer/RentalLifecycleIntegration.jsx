@@ -1,3 +1,4 @@
+import ContractPrintAction from './ContractPrintAction';
 import ManagedContractReview from './inventory/ManagedContractReview';
 import CustomerBalancePayment from './CustomerBalancePayment';
 import CustomerDepositPayment from './CustomerDepositPayment';
@@ -364,7 +365,7 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
-  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
   return (
     <BackendScreen
       title="Review rental contract"
@@ -376,6 +377,7 @@ export function ContractDetailIntegration() {
         <Card>
           <CardContent>
             <RentalStatus status={contract.status} />
+            <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId}/>
             {isManagedV2(reservation)&&<ManagedFinancialSummary reservation={reservation}/>}
             <Details
               values={[
