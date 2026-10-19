@@ -5,6 +5,7 @@ const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const contractApi = {
   detailReal: (id,config)=>axiosClient.get(`/contracts/${encodeURIComponent(id)}`,config),
+  byReservationReal: (reservationId,config)=>axiosClient.get(`/contracts/reservation/${encodeURIComponent(reservationId)}`,config),
   mineReal: config=>axiosClient.get('/contracts/me',config),
   // Backend contract.routes/controller confirm PATCH, no request body, owner + DRAFT.
   signReal: id=>axiosClient.patch(`/contracts/${encodeURIComponent(id)}/sign`),
@@ -42,7 +43,7 @@ const contractApi = {
       sessionStorage.setItem(`contract_${contractId}`, JSON.stringify(signed));
       return { data: signed };
     }
-    return axiosClient.post(`/contracts/${contractId}/sign`, payload);
+    return axiosClient.patch(`/contracts/${contractId}/sign`);
   },
 };
 

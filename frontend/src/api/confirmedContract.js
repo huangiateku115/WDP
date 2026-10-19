@@ -54,6 +54,10 @@ export function assertConfirmedRequest(config) {
       /^reservations\/managed\/[a-f\d]{24}\/mock-pay$/i.test(path));
   const contractDetail =
     method === "GET" && /^contracts\/[a-f\d]{24}$/i.test(path);
+  const contractByReservation =
+    method === "GET" && /^contracts\/reservation\/[a-f\d]{24}$/i.test(path);
+  const userFacilityAssignment =
+    (method === "PATCH" || method === "DELETE") && /^users\/[a-f\d]{24}\/facility-assignment$/i.test(path);
   const inventoryCustomer =
     (method === "POST" &&
       (path === "inventory-items" ||
@@ -200,6 +204,8 @@ export function assertConfirmedRequest(config) {
     inventoryCustomer ||
     managedCustomer ||
     contractDetail ||
+    contractByReservation ||
+    userFacilityAssignment ||
     warehouseRead ||
     customerAllowed ||
     (method === "GET" &&

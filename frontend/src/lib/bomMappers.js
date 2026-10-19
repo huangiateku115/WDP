@@ -173,6 +173,7 @@ export function itemMovementFromDto(d) {
   return {
     id: d?._id,
     type: d?.type || "",
+    sourceCellId: d?.sourceCellId || null,
     cellId: d?.destinationCellId || null,
     quantity: d?.quantity ?? 0,
     quantityUnit: d?.quantityUnit || "",
@@ -180,7 +181,9 @@ export function itemMovementFromDto(d) {
     totalVolumeM3: d?.actualTotalVolumeM3 ?? 0,
     performedBy: d?.performedBy || "",
     performedAt: d?.performedAt || d?.createdAt || "",
-    note: d?.inspectionNote || "",
+    // INBOUND uses inspectionNote, OUTBOUND handoverNote and RELOCATION relocationNote.
+    note: d?.inspectionNote || d?.handoverNote || d?.relocationNote || "",
+    physicalPackingConfirmed: d?.physicalPackingConfirmed,
   };
 }
 
@@ -201,6 +204,7 @@ export function facilityFromDto(d) {
     openingHours: d?.operatingHours || "",
     description: d?.description || "",
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
+    images: Array.isArray(d?.images) ? d.images : [],
     status: d?.status || "ACTIVE",
     deleted: Boolean(d?.deletedAt),
   };
@@ -218,6 +222,7 @@ export function facilityForm(d) {
     openingHours: f.openingHours,
     description: f.description,
     serviceTypes: f.serviceTypes.length ? f.serviceTypes : ["SELF_STORAGE"],
+    images: f.images,
     status: f.status,
   };
 }
@@ -238,6 +243,9 @@ export function facilityBody(form, { includeCode = false } = {}) {
   if (includeCode) body.code = (form.code || "").trim().toUpperCase();
   if (form.openingHours?.trim()) body.operatingHours = form.openingHours.trim();
   if (form.description?.trim()) body.description = form.description.trim();
+  if (Array.isArray(form.images)) {
+    body.images = form.images.map((url) => String(url).trim()).filter(Boolean);
+  }
   return body;
 }
 
@@ -399,9 +407,29 @@ export function categoryBody(form) {
   return body;
 }
 
+/* ---------------------------- Contracts ---------------------------- */
+export function contractFromDto(d) {
+  const reservation = d?.reservationId && typeof d.reservationId === "object" ? d.reservationId : null;
+  const customer = d?.customerSnapshot || {};
+  return {
+    id: d?._id,
+    code: d?.contractCode || "",
+    status: d?.status || "",
+    customerName: customer.fullName || customer.displayName || customer.email
+      || (d?.customerId && typeof d.customerId === "object" ? d.customerId.displayName || d.customerId.email : "")
+      || "Customer",
+    reservationId: reservation?._id || (typeof d?.reservationId === "string" ? d.reservationId : ""),
+    reservationCode: reservation?.reservationCode || "",
+    facilityId: reservation?.facilityId && typeof reservation.facilityId === "object" ? reservation.facilityId._id : reservation?.facilityId,
+    serviceType: reservation?.serviceType || "",
+    signedAt: d?.signedByCustomerAt || "",
+    createdAt: d?.createdAt || "",
+  };
+}
+
 /* ---------------------------- Reservations ---------------------------- */
 export const BOM_RESERVATION_STATUSES = [
-  "RESERVED", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED",
+  "RESERVED", "DEPOSIT_PAID", "CHECKIN_READY", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED",
 ];
 
 export function reservationFromDto(d) {

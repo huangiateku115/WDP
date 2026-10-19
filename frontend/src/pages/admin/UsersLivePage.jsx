@@ -5,10 +5,13 @@ import {
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState, ApiConfirmation } from "@/components/admin/AdminUI";
 import {
-  useAdminUsers, loadAdminUsers, userId, userStatus, isInactive,
+  useAdminUsers, loadAdminUsers, userId, userStatus, isInactive, facilityIdOf,
   createAdminUser, changeAdminUserRole, deactivateAdminUser, reactivateAdminUser, updateAdminUser,
+  assignAdminUserFacility, unassignAdminUserFacility,
 } from "@/lib/adminUsers";
 import { apiErrorMessage } from "@/lib/apiError";
+import { useAsyncData } from "@/lib/useAsyncData";
+import { loadFacilities } from "@/lib/bomApiData";
 
 // Live Admin user administration on top of the confirmed User APIs.
 // Adds Reactivate (PATCH /users/:id/reactivate) and Edit (PUT /users/:id) to the existing
@@ -78,6 +81,8 @@ function UserDirectory({ state }) {
 }
 
 function UserDetail({ state, id }) {
+  const facilities = useAsyncData(loadFacilities, []);
+  const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
       <AdminScreen title="Backend user detail" description="Details are resolved from the confirmed user collection, never a user-detail endpoint.">
@@ -85,7 +90,6 @@ function UserDetail({ state, id }) {
       </AdminScreen>
     );
 
-  const row = state.users.find((u) => userId(u) === id);
   if (!row)
     return (
       <AdminScreen title="User unavailable in the loaded collection" description="No user-detail endpoint is confirmed. Reload the backend collection or return to the directory.">
@@ -100,11 +104,14 @@ function UserDetail({ state, id }) {
     );
 
   const inactive = isInactive(row);
+  const facility = facilityIdOf(row);
+  const facilityLabel = facility ? ((facilities.data || []).find((item) => item.id === facility)?.name || facility) : "Not assigned";
   const values = [
     ["User ID", userId(row)],
     ...["displayName", "email", "phone"].filter((k) => typeof row[k] === "string").map((k) => [[["displayName", "Display name"], ["email", "Email"], ["phone", "Phone"]].find(([key]) => key === k)[1], row[k]]),
     ["Role", <Status value={row.role} />],
     ...(userStatus(row) ? [["Status", <Status value={userStatus(row)} />]] : []),
+    ["Facility scope", facilityLabel],
   ];
 
   return (
@@ -119,6 +126,8 @@ function UserDetail({ state, id }) {
       <Panel title="Change account role">
         <RoleChange row={row} id={id} roles={state.roles} />
       </Panel>
+
+      <FacilityScope row={row} id={id} facilities={facilities.data || []} />
 
       <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded backend data." : "This account is active according to the loaded backend data."}>
         {inactive
@@ -136,6 +145,47 @@ function UserDetail({ state, id }) {
             />}
       </Panel>
     </AdminScreen>
+  );
+}
+
+function FacilityScope({ row, id, facilities }) {
+  const eligible = ["FACILITY_MANAGER", "FACILITY_STAFF"].includes(row.role);
+  const current = facilityIdOf(row);
+  const [facilityId, setFacilityId] = useState("");
+  if (!eligible)
+    return (
+      <Panel title="Facility scope" subtitle="Only Facility Manager and Facility Staff accounts can be assigned to a Facility.">
+        <p className="text-sm text-slate-500">This role does not use a Facility scope.</p>
+      </Panel>
+    );
+  return (
+    <Panel title="Facility scope" subtitle="PATCH/DELETE /users/:id/facility-assignment.">
+      <Field label="Assigned facility">
+        <Select
+          label="Assigned facility"
+          value={facilityId}
+          onChange={setFacilityId}
+          options={[["", current ? "Select another facility" : "Select a facility"], ...facilities.map((item) => [item.id, `${item.name} (${item.code})`])]}
+        />
+      </Field>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <ApiConfirmation
+          label="Assign facility"
+          title="Confirm facility assignment"
+          disabled={!facilityId || facilityId === current}
+          summary={<Details values={[["Account", row.email || userId(row)], ["Facility", facilities.find((item) => item.id === facilityId)?.name || facilityId || "—"]]} />}
+          run={() => assignAdminUserFacility(id, facilityId)}
+        />
+        {current && (
+          <ApiConfirmation
+            label="Unassign facility"
+            title="Confirm facility unassignment"
+            summary={<Details values={[["Account", row.email || userId(row)], ["Current facility", current]]} />}
+            run={() => unassignAdminUserFacility(id)}
+          />
+        )}
+      </div>
+    </Panel>
   );
 }
 

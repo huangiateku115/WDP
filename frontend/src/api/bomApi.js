@@ -8,7 +8,7 @@ const encode = (id) => encodeURIComponent(id);
 
 export const bomFacilityApi = {
   list: (params, config) => axiosClient.get("/facilities", { ...config, params }),
-  get: (id) => axiosClient.get(`/facilities/${encode(id)}`),
+  get: (id, config) => axiosClient.get(`/facilities/${encode(id)}`, config),
   create: (body) => axiosClient.post("/facilities", body),
   update: (id, body) => axiosClient.patch(`/facilities/${encode(id)}`, body),
   setStatus: (id, status) => axiosClient.patch(`/facilities/${encode(id)}/status`, { status }),
@@ -77,6 +77,11 @@ export const bomReservationWriteApi = {
   managedMockPay: (id) => axiosClient.post(`/reservations/managed/${encode(id)}/mock-pay`),
 };
 
+export const bomContractApi = {
+  byReservation: (reservationId, config) => axiosClient.get(`/contracts/reservation/${encode(reservationId)}`, config),
+  get: (id, config) => axiosClient.get(`/contracts/${encode(id)}`, config),
+};
+
 export const bomInventoryApi = {
   list: (params, config) => axiosClient.get("/inventory-items", { ...config, params }),
   get: (id, config) => axiosClient.get(`/inventory-items/${encode(id)}`, config),
@@ -97,5 +102,5 @@ export const bomUnitApi = {
 
 export default {
   bomFacilityApi, bomPricingApi, bomPolicyApi, bomReservationApi, bomReservationWriteApi,
-  bomWarehouseApi, bomInventoryApi, bomUnitApi,
+  bomWarehouseApi, bomInventoryApi, bomUnitApi, bomContractApi,
 };

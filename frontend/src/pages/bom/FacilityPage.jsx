@@ -20,7 +20,7 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 const EMPTY_FORM = {
   code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
   openingHours: "", allDay: false,
-  description: "", serviceTypes: ["SELF_STORAGE"], status: "ACTIVE",
+  description: "", serviceTypes: ["SELF_STORAGE"], images: [], status: "ACTIVE",
 };
 
 // Single "opening hours" field: validates a `HH:MM - HH:MM` range (en-dash accepted).
@@ -351,6 +351,13 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       ? f.serviceTypes.filter((s) => s !== service)
       : [...f.serviceTypes, service],
   }));
+  const images = form.images || [];
+  const setImage = (index, value) => setForm((f) => ({
+    ...f,
+    images: (f.images || []).map((url, i) => (i === index ? value : url)),
+  }));
+  const addImage = () => setForm((f) => ({ ...f, images: [...(f.images || []), ""].slice(0, 10) }));
+  const removeImage = (index) => setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
 
   async function submit(event) {
     event.preventDefault();
@@ -369,7 +376,17 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
         if (message) throw new Error(message);
       }
       const openingHours = form.allDay ? "24/7" : (hours ? formatHours(hours) : "");
-      const body = facilityBody({ ...form, openingHours }, { includeCode: !isEdit });
+      const imageUrls = (form.images || []).map((url) => String(url).trim()).filter(Boolean);
+      if (imageUrls.length > 10) throw new Error("At most 10 facility images are allowed.");
+      if (imageUrls.some((url) => {
+        try {
+          const parsed = new URL(url);
+          return !["http:", "https:"].includes(parsed.protocol);
+        } catch {
+          return true;
+        }
+      })) throw new Error("Each facility image must be a valid HTTP(S) URL.");
+      const body = facilityBody({ ...form, openingHours, images: imageUrls }, { includeCode: !isEdit });
       if (isEdit) await bomFacilityApi.update(id, body);
       else await bomFacilityApi.create(body);
       invalidateFacilities();
@@ -486,6 +503,28 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   ))}
                 </div>
               </Field>
+              <div className="manager-field">
+                <span>Facility images</span>
+                <div className="space-y-2">
+                  {images.map((url, index) => (
+                    <div key={index} className="flex flex-wrap items-center gap-2">
+                      <div className="min-w-[240px] flex-1">
+                        <Input
+                          aria-label={`Facility image URL ${index + 1}`}
+                          placeholder="https://res.cloudinary.com/..."
+                          value={url}
+                          onChange={(event) => setImage(index, event.target.value)}
+                        />
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Remove</Button>
+                    </div>
+                  ))}
+                  {images.length < 10 && (
+                    <Button type="button" variant="outline" onClick={addImage}>Add image URL</Button>
+                  )}
+                </div>
+                <small>Optional. Up to 10 HTTP(S) image URLs; the first image is used as the public catalog cover.</small>
+              </div>
               <div className="bom-wide">
                 <Field label="Description">
                   <Textarea aria-label="Description" value={form.description} onChange={(e) => change("description", e.target.value)} />

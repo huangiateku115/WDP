@@ -133,3 +133,14 @@ No confirmed BOM role value was found in current project source/docs or the supp
 `npm run build` passed. The existing main bundle warning above 500 kB remains non-fatal; no unrelated bundle/dependency refactor was made.
 
 No real BOM backend verification is claimed. Scope stops at Priority 4 BOM; Priority 5 Admin is not implemented.
+
+## 13. Live backend alignment (2026-10-19, frontend-only)
+
+- Facility create/edit/status/restore use the confirmed ADMIN/BOM APIs. Facility images are **optional** URL fields (max 10, HTTP(S) only).
+- `/bom/audit` is **blocked by design**: BOM audit APIs need a user id, BOM cannot call `GET /users`, and `GET /audit/bom/subjects` does not exist. The page sends no request, asks for no ObjectId and shows the missing contract instead of demo events.
+- Contracts are discovered through a facility reservation: one `GET /reservations/facility/:facilityId`, then `GET /contracts/reservation/:reservationId` only for the row the user opens. No `GET /contracts` collection exists, so there is no contract-code search yet.
+- Reservation oversight lists SELF_STORAGE reservations from the facility endpoint. Managed reservations cannot be listed because `GET /reservations/managed` does not exist; the page shows that limitation instead of typing an id or fanning out detail calls.
+- Facility detail has no "Assigned people" panel: `GET /facilities/:id/assignments` does not exist.
+- Movement rows map the full `from/to` location fields; item statuses include the dev lifecycle values.
+- Remaining backend gaps: `GET /contracts`, `GET /reservations/managed`, `GET /audit/bom/subjects`, `GET /facilities/:id/assignments`, global audit, CSV/XLSX export, revenue report (payments API), `GET /users/staff`.
+- Sections 1-12 remain historical demo/Priority 4 notes. Live routes never fall back to demo data.

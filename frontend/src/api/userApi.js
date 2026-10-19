@@ -9,5 +9,7 @@ const userApi={
  updateUser:(userId,{displayName,phone,email})=>axiosClient.put(`/users/${encodeURIComponent(userId)}`,{displayName,phone,email}),
  reactivateUser:userId=>axiosClient.patch(`/users/${encodeURIComponent(userId)}/reactivate`),
  deactivateUser:userId=>axiosClient.delete(`/users/${encodeURIComponent(userId)}`),
+ assignFacility:(userId,facilityId)=>axiosClient.patch(`/users/${encodeURIComponent(userId)}/facility-assignment`,{facilityId}),
+ unassignFacility:userId=>axiosClient.delete(`/users/${encodeURIComponent(userId)}/facility-assignment`),
 };
 export default userApi;

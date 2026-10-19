@@ -1,4 +1,4 @@
-import { bomFacilityApi, bomInventoryApi, bomReservationApi, bomUnitApi, bomWarehouseApi } from "@/api/bomApi";
+import { bomContractApi, bomFacilityApi, bomInventoryApi, bomReservationApi, bomUnitApi, bomWarehouseApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import {
   cellFromDto, facilityFromDto, inventoryItemFromDto, itemMovementFromDto, rackFromDto, reservationFromDto,
@@ -128,6 +128,15 @@ export async function loadItemMovements(id, { signal } = {}) {
 export async function loadFacilityReservations(facilityId, { signal } = {}) {
   const response = await bomReservationApi.listByFacility(facilityId, { signal });
   return responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }));
+}
+
+// A contract can only be discovered through its reservation with the current backend surface.
+// GET /contracts/:id and GET /contracts/reservation/:reservationId are the only reads; there is
+// no collection endpoint, so a contract list must never fan out one request per reservation.
+export async function loadContractForReservation(reservationId, { signal } = {}) {
+  const dto = responseData(await bomContractApi.byReservation(reservationId, { signal }));
+  if (!dto) throw new Error("No contract is attached to this reservation yet.");
+  return { id: dto._id || dto.id, code: dto.contractCode || "" };
 }
 
 // Managed capacity configuration. The endpoint answers 404 for facilities that are not

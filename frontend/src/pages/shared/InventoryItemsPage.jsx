@@ -17,7 +17,7 @@ import { formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 // item, GET /inventory-items/:id/movements the immutable inbound ledger.
 // Physical inbound (request/confirm/reject) is FACILITY_STAFF-only, so this console is
 // read-only by design: it reports what Staff confirmed rather than performing it.
-const ITEM_STATUSES = ["REGISTERED", "PENDING_INBOUND", "IN_STORAGE"];
+const ITEM_STATUSES = ["REGISTERED", "PENDING_INBOUND", "RECEIVED_PENDING_ACCEPTANCE", "IN_STORAGE", "PENDING_OUTBOUND", "CHECKED_OUT"];
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
 const stamp = (value) => (value ? new Date(value).toLocaleString("en-GB") : "—");
 const filtered = (conditions) => Object.fromEntries(Object.entries(conditions).filter(([, value]) => value));
@@ -192,11 +192,12 @@ function ItemDetail({ id, basePath }) {
                   { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
                   { key: "totalWeightKg", label: "Weight", render: (r) => kg(r.totalWeightKg) },
                   { key: "totalVolumeM3", label: "Volume", render: (r) => m3(r.totalVolumeM3) },
+                  { key: "sourceCellId", label: "Source cell", render: (r) => r.sourceCellId || "—" },
                   { key: "cellId", label: "Destination cell", render: (r) => r.cellId || "—" },
                   { key: "performedBy", label: "Performed by", render: (r) => r.performedBy || "—" },
                   { key: "note", label: "Note", render: (r) => r.note || "—" },
                 ]}
-                empty="No movement yet. A row appears when Staff confirm the inbound and the item lands on a cell."
+                empty="No movement yet. A row appears when Staff confirm an inbound, outbound or relocation."
               />
             </Panel>
           )} />

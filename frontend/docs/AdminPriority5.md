@@ -120,3 +120,13 @@ Backend probe without credentials: localhost:5000 could not connect. **No real a
 `npm run build`: passed after final changes. Existing main bundle warning above 500 kB remains non-fatal. No unrelated dependency/bundle refactor was performed.
 
 Priority 5 ends here. Existing Customer/Manager/Staff/BOM features are preserved.
+
+## 13. Live backend alignment (2026-10-19, frontend-only)
+
+- User detail is resolved from the loaded `GET /users` collection again; `GET /users/:id` does not exist.
+- `assignedFacilityId` is retained from `GET /users` and displayed with the Facility name.
+- **Facility scope** panel for FACILITY_MANAGER/FACILITY_STAFF uses the existing `PATCH|DELETE /users/:id/facility-assignment`, then re-requests the collection once (no parallel writes).
+- Facility assignments cannot be read from the facility side: `GET /facilities/:id/assignments` does not exist.
+- `/admin/audit` and `/admin/login-history` remain per-user. BOM cannot reuse them because `GET /audit/bom/subjects` does not exist.
+- Remaining gaps: global audit/login-history, export, server-side pagination for `GET /users`, `GET /users/:id`, `GET /users/staff`.
+- Sections 1-12 remain historical Priority 5 notes.
