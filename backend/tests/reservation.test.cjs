@@ -24,6 +24,10 @@ let PricingRuleModel;
 let PolicyModel;
 let CustomerProfileModel;
 let StorageUnitModel;
+let ContractModel;
+let ContractController;
+let ReservationPaymentModel;
+let CloudinaryService;
 let requireRole;
 let UserRole;
 let ReservationStatus;
@@ -40,6 +44,10 @@ try {
   PolicyModel = require('../dist/models/pricing-policy/policy.model').default;
   CustomerProfileModel = require('../dist/models/users/customer-profile.model').default;
   StorageUnitModel = require('../dist/models/storage-units/storage-unit.model').default;
+  ContractModel = require('../dist/models/contracts/contract.model').default;
+  ContractController = require('../dist/controllers/contracts/contract.controller');
+  ReservationPaymentModel = require('../dist/models/payments/reservation-payment.model').default;
+  CloudinaryService = require('../dist/services/upload/cloudinary.service').CloudinaryService;
   requireRole = require('../dist/middlewares/auth/requireRole').requireRole;
   UserRole = require('../dist/types/user.type').UserRole;
   ReservationStatus = require('../dist/types/reservation.type').ReservationStatus;
@@ -56,6 +64,10 @@ try {
   PolicyModel = require('../src/models/pricing-policy/policy.model').default;
   CustomerProfileModel = require('../src/models/users/customer-profile.model').default;
   StorageUnitModel = require('../src/models/storage-units/storage-unit.model').default;
+  ContractModel = require('../src/models/contracts/contract.model').default;
+  ContractController = require('../src/controllers/contracts/contract.controller');
+  ReservationPaymentModel = require('../src/models/payments/reservation-payment.model').default;
+  CloudinaryService = require('../src/services/upload/cloudinary.service').CloudinaryService;
   requireRole = require('../src/middlewares/auth/requireRole').requireRole;
   UserRole = require('../src/types/user.type').UserRole;
   ReservationStatus = require('../src/types/reservation.type').ReservationStatus;
@@ -460,3 +472,253 @@ test('Suite 6.2: requireRole cho phép đúng role vượt qua', () => {
   assert.equal(nextCalled, true);
   assert.equal(res.statusCode, 200);
 });
+
+// =========================================================================
+// SUITE 7: LUỒNG THỐNG NHẤT (2 ĐỢT THANH TOÁN + BẰNG CHỨNG HỢP ĐỒNG CLOUDINARY)
+// =========================================================================
+
+test('Suite 7.1: initiateDeposit tính toán số tiền cọc chuẩn xác từ breakdown', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    status: ReservationStatus.RESERVED,
+    estimatedRent: 1500000,
+    depositAmount: 1500000,
+    taxAmount: 0,
+    discountAmount: 0,
+  };
+
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: customerAId, role: 'CUSTOMER' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.initiateDeposit(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.data.purpose, 'DEPOSIT');
+  assert.equal(res.body.data.amount, 1500000);
+  assert.equal(res.body.data.breakdown.depositCredit, 1500000);
+  assert.equal(res.body.data.breakdown.balanceDue, 0);
+});
+
+test('Suite 7.2: confirmMockDeposit chuyển sang DEPOSIT_PAID, tạo payment DEPOSIT và tự động sinh Contract DRAFT', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    reservationCode: 'BKG-TEST-1234',
+    customerId: customerAId,
+    facilityId,
+    serviceType: 'SELF_STORAGE',
+    status: ReservationStatus.RESERVED,
+    estimatedRent: 1500000,
+    depositAmount: 1500000,
+    taxAmount: 0,
+    discountAmount: 0,
+    pricingPolicyId,
+    statusHistory: [],
+    save: async () => reservationData,
+  };
+
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+  t.mock.method(ReservationPaymentModel, 'create', async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc }));
+  t.mock.method(ContractModel, 'findOne', async () => null);
+  t.mock.method(CustomerProfileModel, 'findOne', () => ({
+    populate: async () => ({
+      identityCard: '012345678901',
+      address: 'Hà Nội',
+      userId: { fullName: 'Nguyễn Văn A', email: 'a@test.com', phone: '0901234567' }
+    })
+  }));
+  let createdContract = null;
+  t.mock.method(ContractModel, 'create', async (doc) => {
+    createdContract = doc;
+    return doc;
+  });
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: customerAId, role: 'CUSTOMER' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.confirmMockDeposit(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(reservationData.status, ReservationStatus.DEPOSIT_PAID);
+  assert.ok(createdContract !== null);
+  assert.equal(createdContract.status, 'DRAFT');
+  assert.equal(createdContract.customerSnapshot.identityCard, '012345678901');
+});
+
+test('Suite 7.3: Khách hàng gọi initiateBalance khi Staff chưa upload ảnh bằng chứng hợp đồng giấy -> Bị chặn 409', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    status: ReservationStatus.DEPOSIT_PAID,
+    estimatedRent: 3000000,
+    depositAmount: 1500000,
+    taxAmount: 0,
+    discountAmount: 0,
+  };
+
+  const draftContract = {
+    _id: new mongoose.Types.ObjectId(),
+    reservationId: reservationData._id,
+    status: 'DRAFT',
+    signedProofUrl: undefined // Chưa có ảnh bằng chứng
+  };
+
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+  t.mock.method(ContractModel, 'findOne', async () => draftContract);
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: customerAId, role: 'CUSTOMER' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.initiateBalance(req, res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.success, false);
+  assert.ok(res.body.message.includes('Staff xác nhận'));
+});
+
+test('Suite 7.4: Staff upload ảnh chụp hợp đồng giấy lên Cloudinary thành công -> Hợp đồng chuyển SIGNED, đơn sang CHECKIN_READY', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    status: ReservationStatus.DEPOSIT_PAID,
+    statusHistory: [],
+    save: async () => reservationData,
+  };
+
+  const contractData = {
+    _id: new mongoose.Types.ObjectId(),
+    reservationId: reservationData._id,
+    status: 'DRAFT',
+    save: async () => contractData,
+  };
+
+  t.mock.method(ContractModel, 'findById', async () => contractData);
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+  t.mock.method(CloudinaryService, 'uploadBuffer', async () => ({
+    secureUrl: 'https://res.cloudinary.com/test/image/upload/v1/wdp/signed-contracts/sample.jpg',
+    publicId: 'wdp/signed-contracts/sample',
+    format: 'jpg'
+  }));
+
+  const req = {
+    params: { id: contractData._id.toString() },
+    user: { _id: fmId, role: 'FACILITY_STAFF' },
+    file: { buffer: Buffer.from('fake image data') },
+    body: { paperContractNumber: 'HĐ-2026-001' }
+  };
+  const res = mockResponse();
+
+  await ContractController.confirmSignedPaper(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(contractData.status, 'SIGNED');
+  assert.equal(contractData.signedProofUrl, 'https://res.cloudinary.com/test/image/upload/v1/wdp/signed-contracts/sample.jpg');
+  assert.equal(reservationData.status, ReservationStatus.CHECKIN_READY);
+});
+
+test('Suite 7.5: Khách hàng nộp Balance thành công sau khi có bằng chứng -> Trừ cọc chuẩn xác, đơn sang PAID', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    facilityId,
+    serviceType: 'SELF_STORAGE',
+    status: ReservationStatus.CHECKIN_READY,
+    estimatedRent: 3000000,
+    depositAmount: 1500000, // Cọc 1.5tr
+    taxAmount: 0,
+    discountAmount: 0,
+    statusHistory: [],
+    save: async () => reservationData,
+  };
+
+  const signedContract = {
+    _id: new mongoose.Types.ObjectId(),
+    reservationId: reservationData._id,
+    status: 'SIGNED',
+    signedProofUrl: 'https://res.cloudinary.com/test/image/upload/v1/wdp/signed-contracts/sample.jpg'
+  };
+
+  let createdPayment = null;
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+  t.mock.method(ContractModel, 'findOne', async () => signedContract);
+  t.mock.method(ReservationPaymentModel, 'create', async (doc) => {
+    createdPayment = doc;
+    return doc;
+  });
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: customerAId, role: 'CUSTOMER' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.confirmMockBalance(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(reservationData.status, ReservationStatus.PAID);
+  assert.equal(createdPayment.purpose, 'BALANCE');
+  assert.equal(createdPayment.amount, 1500000); // 3tr - 1.5tr cọc = 1.5tr
+});
+
+test('Suite 7.6: Staff thực hiện Handover sau khi đã thanh toán Balance (PAID) -> Đơn sang ACTIVE, Unit sang OCCUPIED, trả về PIN 1234', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    storageUnitId,
+    status: ReservationStatus.PAID,
+    statusHistory: [],
+    save: async () => reservationData,
+  };
+
+  let updatedUnit = null;
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+  t.mock.method(StorageUnitModel, 'findByIdAndUpdate', async (_id, update) => {
+    updatedUnit = update;
+    return {};
+  });
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: fmId, role: 'FACILITY_STAFF' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.handoverReservation(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(reservationData.status, ReservationStatus.ACTIVE);
+  assert.equal(updatedUnit.status, 'OCCUPIED');
+  assert.equal(res.body.data.pinCode, '1234');
+});
+
+test('Suite 7.7: Chặn Handover nếu đơn chưa hoàn tất thanh toán Balance (chưa PAID)', async t => {
+  const reservationData = {
+    _id: new mongoose.Types.ObjectId(),
+    customerId: customerAId,
+    status: ReservationStatus.DEPOSIT_PAID, // Chưa trả Balance
+  };
+
+  t.mock.method(ReservationModel, 'findById', async () => reservationData);
+
+  const req = {
+    params: { id: reservationData._id.toString() },
+    user: { _id: fmId, role: 'FACILITY_STAFF' }
+  };
+  const res = mockResponse();
+
+  await ReservationController.handoverReservation(req, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.success, false);
+  assert.ok(res.body.message.includes('PAID'));
+});
+

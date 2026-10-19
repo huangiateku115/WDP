@@ -39,6 +39,13 @@ export interface IContract extends Document {
     signedAt: Date;
   }>;
   
+  signedProofUrl?: string;
+  signedProofPublicId?: string;
+  signedProofUploadedAt?: Date;
+  verifiedByStaff?: Types.ObjectId;
+  verifiedAt?: Date;
+  paperContractNumber?: string;
+  
   createdAt: Date;
   updatedAt: Date;
 }
