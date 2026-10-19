@@ -1,0 +1,10 @@
+{
+  "changed": [
+    "src/components/customer/warehouse/DigitalWarehouseDashboard.jsx",
+    "src/routes/AppRoutes.jsx"
+  ],
+  "added": [
+    "src/layouts/customer-warehouse.css",
+    "src/layouts/CustomerWarehouseLayout.jsx"
+  ]
+}

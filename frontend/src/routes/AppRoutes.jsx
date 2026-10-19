@@ -2,6 +2,7 @@ import {lazy, Suspense} from 'react';
 import { Navigate, Route, Routes } from "react-router-dom";
 import PublicLayout from "@/layouts/PublicLayout";
 import AuthLayout from "@/layouts/AuthLayout";
+import CustomerWarehouseLayout from "@/layouts/CustomerWarehouseLayout";
 import CustomerLayout from "@/layouts/CustomerLayout";
 import CustomerGate from '@/components/customer/CustomerGate';
 import HomePage from "@/pages/public/HomePage";
@@ -59,13 +60,15 @@ export default function AppRoutes() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>
+      <Route path="/portal/warehouse-map/:facilityId" element={<CustomerGate><CustomerWarehouseLayout /></CustomerGate>}>
+        <Route index element={<WarehouseMapPage />} />
+        <Route path="racks/:rackId" element={<WarehouseRackDetailPage />} />
+      </Route>
       <Route path="/portal" element={<CustomerGate><CustomerLayout /></CustomerGate>}>
         <Route index element={<MyStoragePage />} />
+        <Route path="warehouse-map" element={<WarehouseFacilitySelectionPage />} />
         <Route path="inventory" element={<MyInventoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="warehouse-map" element={<WarehouseFacilitySelectionPage />} />
-        <Route path="warehouse-map/:facilityId" element={<WarehouseMapPage />} />
-        <Route path="warehouse-map/:facilityId/racks/:rackId" element={<WarehouseRackDetailPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="rentals/:id/extend" element={<RentalExtensionPage />} />
         <Route path="rentals/:id/access" element={<RentalAccessPage />} />

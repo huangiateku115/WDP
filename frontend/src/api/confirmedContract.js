@@ -107,6 +107,8 @@ export function assertConfirmedRequest(config) {
   const movementHistory =
     method === "GET" && /^inventory-items\/[a-f\d]{24}\/movements$/i.test(path);
   const allowed =
+    (method === "POST" && path === "inventory-items/image-uploads") ||
+    (method === "DELETE" && /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
     movementHistory ||
     depositMock ||
     customerDeposit ||

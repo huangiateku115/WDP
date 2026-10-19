@@ -1,3 +1,5 @@
+import LoadState from './CustomerResourceState';
+import {PortalSummaryCards,PortalEmptyState,PortalTextLink} from './CustomerPortalUI';
 import ContractPrintAction from './ContractPrintAction';
 import ManagedContractReview from './inventory/ManagedContractReview';
 import CustomerBalancePayment from './CustomerBalancePayment';
@@ -41,7 +43,6 @@ import {
   Link,
   Details,
   Message,
-  LoadState,
   RentalSummary,
   ManagedFinancialSummary,
   RentalStatus,
@@ -100,7 +101,8 @@ export function RentalsIntegration() {
   return (
     <BackendScreen
       title="My Storage"
-      description="Your backend reservations and rental lifecycle."
+      description="Your spaces, reservations and rental details in one place."
+      notice="Rental details reflect the information returned for your account. Available actions depend on each reservation."
       action={
         <Button asChild variant="orange">
           <Link to="/portal/rent">Rent New Unit</Link>
@@ -108,6 +110,8 @@ export function RentalsIntegration() {
       }
     >
       <LoadState resource={resource} />
+      {resource.data&&!resource.error&&<PortalSummaryCards items={[{label:"Active rentals",value:resource.data.filter(r=>r.status==='ACTIVE').length},{label:"Awaiting handover",value:resource.data.filter(r=>['PAID','CHECKIN_READY'].includes(r.status)).length},{label:"Reservations returned",value:resource.data.length}]}/>}
+      <div className="portal-filter-bar">
       <label className="block field-label">
         Storage service
         <select
@@ -142,6 +146,7 @@ export function RentalsIntegration() {
           ))}
         </select>
       </label>
+      </div>
       {[
         ["Active Rentals", ["ACTIVE", "OVERDUE"]],
         ["Awaiting activation / handover", ["PAID", "CHECKIN_READY"]],
@@ -171,19 +176,14 @@ export function RentalsIntegration() {
         const group = records.filter((r) => statuses.includes(r.status));
         return (
           group.length > 0 && (
-            <section key={title}>
+            <section key={title} className="portal-rental-group">
               <h2 className="mb-4 text-xl font-bold">{title}</h2>
-              <div className="space-y-4">
+              <div className="portal-rental-grid space-y-4">
                 {group.map((r) => (
                   <div key={recordId(r)}>
-                    <RentalSummary item={r} />
+                    <RentalSummary item={r} localizeManagedV2 />
                     {validId(recordId(r)) && (
-                      <Link
-                        className="mt-3 inline-block font-semibold text-brand"
-                        to={`/portal/reservations/${recordId(r)}`}
-                      >
-                        View reservation
-                      </Link>
+                      <PortalTextLink to={`/portal/reservations/${recordId(r)}`}>View reservation</PortalTextLink>
                     )}
                   </div>
                 ))}
@@ -193,7 +193,7 @@ export function RentalsIntegration() {
         );
       })}
       {!resource.loading && !resource.error && !records.length && (
-        <p>No reservations match your filter.</p>
+        <PortalEmptyState title="No reservations match your filter." description="Try another service or status, or explore a new storage space."/>
       )}
       <p className="text-xs text-slate-500">
         Extensions, notifications, inventory and payment history remain separate
@@ -323,11 +323,12 @@ export function ContractsIntegration() {
   return (
     <BackendScreen
       title="Contracts & Sign"
-      description="Review contracts returned by your backend account."
+      description="Review your rental agreements, signing progress and contract details."
+      notice="Review the current contract version before signing. Signing and payment status remain confirmed by the service."
     >
       <LoadState resource={resource} />
-      {resource.data?.map((c) => (
-        <Card key={recordId(c)}>
+      <div className="portal-contract-grid">{resource.data?.map((c) => (
+        <Card key={recordId(c)} className="portal-contract-card">
           <CardContent>
             <h2 className="text-xl font-bold">
               {c.contractCode || "Storage rental contract"}
@@ -343,8 +344,8 @@ export function ContractsIntegration() {
             )}
           </CardContent>
         </Card>
-      ))}
-      {resource.data?.length === 0 && <p>No contracts returned.</p>}
+      ))}</div>
+      {resource.data?.length === 0 && <PortalEmptyState title="No contracts returned." description="Your rental agreements will appear here when they are available."/>}
       <p className="text-sm text-slate-500">
         Legacy drafts follow the existing approval flow. Managed V2 contracts
         belong to physical intake; review the current content version before signing.

@@ -236,6 +236,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     [cell, setCell] = useState(null),
     [zoneId, setZoneId] = useState(""),
     [query, setQuery] = useState(""),
+    [statusFilter, setStatusFilter] = useState(""),
     [zoom, setZoom] = useState(1),
     [bounds, setBounds] = useState({ width: 1, height: 1 });
   const [sidebar, setSidebar] = useState(false),
@@ -615,11 +616,14 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           : "Current-time warehouse overview. Choose a rental period to check booking availability."}{" "}
         Reserving Cells is separate from Staff-confirmed physical occupancy.
       </p>
+      <details className="wm-booking-drawer">
+        <summary>Rental period &amp; Cell selection</summary>
       <CellBookingPanel
         booking={booking}
         facilityId={facilityId}
         facilityName={facility.data?.name}
       />
+      </details>
       <InventoryMapContext controller={inventory} />
       {fullscreenError && (
         <p role="status" className="wm-notice">
@@ -706,10 +710,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               "BLOCKED",
               "MAINTENANCE",
             ].map((status) => (
-              <div key={status}>
+              <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter===status} onClick={()=>setStatusFilter(current=>current===status?'':status)}>
                 <WarehouseStatus status={status} />
-              </div>
+              </button>
             ))}
+            {statusFilter&&<button type="button" className="wm-clear-status-filter" onClick={()=>setStatusFilter('')}>Clear filter</button>}
             <p className="wm-muted">
               Selected = booking basket. Yours = ownership, not permission to
               rebook.
@@ -864,6 +869,8 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                   data={detail.data}
                   selected={cell}
                   query={query}
+                  statusFilter={statusFilter}
+                  onClearStatusFilter={()=>setStatusFilter('')}
                   booking={booking}
                   onSelect={(value) => {
                     setCell(value);

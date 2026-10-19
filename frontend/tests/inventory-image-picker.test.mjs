@@ -10,13 +10,13 @@ test('picker accepts the readiness callback used by the registration form', asyn
   const [picker, form] = await Promise.all([readFile(pickerPath, 'utf8'), readFile(formPath, 'utf8')]);
   assert.match(form, /onReady=\{setImagesReady\}/);
   assert.match(picker, /function InventoryImagePicker\(\{[^}]*\bonReady\s*=\s*\(\)\s*=>\s*\{\}/);
-  assert.match(picker, /onReady\?\.\(next\.every\(image\s*=>\s*image\.status\s*===\s*'uploaded'\)\)/);
+  assert.match(picker, /onReady\?\.\(inventoryImagesReady\(next\)\)/);
 });
 
-test('existing Item image URLs are initialized as uploaded images and remain in the emitted URL list', async () => {
+test('existing Item image URLs are attached while only completed uploads join the emitted URL list', async () => {
   const picker = await readFile(pickerPath, 'utf8');
-  assert.match(picker, /value\.filter\(httpImage\)\.map\(\(secureUrl, index\).*status:\s*'uploaded',\s*legacy:\s*true/s);
-  assert.match(picker, /onChange\(next\.map\(image\s*=>\s*image\.secureUrl\)\.filter\(Boolean\)\)/);
+  assert.match(picker, /value\.filter\(httpImage\)\.map\(\(secureUrl, index\).*status:\s*'attached',\s*legacy:\s*true/s);
+  assert.match(picker, /next\.filter\(image=>\['attached','uploaded'\]\.includes\(image\.status\)\)/);
 });
 
 test('picker aborts active uploads during unmount and exposes per-upload cancel', async () => {

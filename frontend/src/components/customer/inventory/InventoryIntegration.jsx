@@ -1,3 +1,5 @@
+import {CustomerImagePreview} from '../CustomerMediaUI';
+import LoadState from '../CustomerResourceState';
 import InventoryStatus from "./InventoryStatus";
 import { CustomerOutboundAction } from "./CustomerOutbound";
 import { useState } from "react";
@@ -18,7 +20,6 @@ import {
   Button,
   Link,
   Details,
-  LoadState,
   RentalStatus,
 } from "../RentalBackendUI";
 import {
@@ -35,7 +36,7 @@ function InventoryImages({ item }) {
   if (!images.length) return null;
   return (
     <>
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="inventory-image-gallery mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {images.map((url, index) => (
           <button
             type="button"
@@ -45,7 +46,7 @@ function InventoryImages({ item }) {
             aria-label={`View full size image ${index + 1}`}
           >
             {broken[index] ? (
-              <div className="flex h-40 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
+              <div className="inventory-image-placeholder flex h-40 items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-500">
                 Image unavailable
               </div>
             ) : (
@@ -66,31 +67,7 @@ function InventoryImages({ item }) {
           </button>
         ))}
       </div>
-      {active && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Full size item image"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 sm:p-6"
-          onClick={() => setActive(null)}
-        >
-          <button
-            type="button"
-            className="absolute right-4 top-4 rounded-lg bg-white px-4 py-2 text-black"
-            onClick={() => setActive(null)}
-          >
-            Close
-          </button>
-          <img
-            src={active}
-            alt={`${item.name}, full size`}
-            className="max-h-[92vh] max-w-[96vw] object-contain"
-            decoding="async"
-            onClick={(event) => event.stopPropagation()}
-            onError={() => setActive(null)}
-          />
-        </div>
-      )}
+      {active&&<CustomerImagePreview images={images} selectedUrl={active} onClose={()=>setActive(null)}/>}
     </>
   );
 }
@@ -286,7 +263,8 @@ function Detail({ id }) {
               <div className="mt-3">
                 <InventoryStatus status={item.status} />
               </div>
-              <div className="mt-5">
+              <div className="inventory-detail-layout">
+              <div className="inventory-detail-metadata mt-5">
                 <Details
                   values={[
                     ["Item name", item.name],
@@ -323,24 +301,13 @@ function Detail({ id }) {
                   ].filter(([, value]) => value != null)}
                 />
               </div>
-              {item.images?.filter(httpImage).length > 0 && (
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {item.images.filter(httpImage).map((url, index) => (
-                    <a key={index} href={url} target="_blank" rel="noreferrer">
-                      <img
-                        className="h-40 w-full rounded-xl object-contain"
-                        src={url}
-                        loading="lazy"
-                        alt={`${item.name}, image ${index + 1}`}
-                      />
-                    </a>
-                  ))}
-                </div>
-              )}
+              <InventoryImages key={JSON.stringify(item.images)} item={item}/>
+              </div>
             </CardContent>
           </Card>
           <LoadState resource={rentals} />
-          <div className="flex flex-wrap gap-3">
+          <div className="inventory-actions flex flex-wrap gap-3" role="group" aria-label="Item actions">
+            <div className="inventory-action-group flex flex-wrap gap-2">
             <Button variant="outline" onClick={refresh}>
               Refresh item
             </Button>
@@ -349,6 +316,8 @@ function Detail({ id }) {
                 View Movement History
               </Link>
             </Button>
+            </div>
+            <div className="inventory-action-group flex flex-wrap gap-2">
             {rental?.bookingFlowVersion === 2 && (
               <Button asChild variant="orange">
                 <Link to={`/portal/inventory/${id}/inbound`}>
@@ -377,6 +346,7 @@ function Detail({ id }) {
                   : "View Warehouse Map"}
               </Link>
             </Button>
+            </div>
           </div>
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">

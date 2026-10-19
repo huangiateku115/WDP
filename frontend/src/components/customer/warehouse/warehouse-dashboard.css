@@ -874,3 +874,10 @@
     max-width: 130px;
   }
 }
+.customer-portal .wm-status-filter {display:block;width:fit-content;padding:3px;border:2px solid transparent;border-radius:6px;background:transparent;cursor:pointer;text-align:left;}
+.customer-portal .wm-status-filter[aria-pressed=true] {border-color:#f28c28;background:#f28c2818;}
+.customer-portal .wm-status-filter:focus-visible,.customer-portal .wm-clear-status-filter:focus-visible {outline:2px solid #f28c28;outline-offset:3px;}
+.customer-portal .wm-clear-status-filter {color:#f5af61;text-decoration:underline;font-size:12px;padding:5px;background:transparent;border:0;cursor:pointer;}
+.customer-portal .wm-cell-filter-summary {margin:10px 0;padding:8px;border:1px solid var(--wm-border);border-radius:8px;}
+.customer-portal .wm-status-muted {opacity:.3;}
+.customer-portal .wm-status-muted:focus-within,.customer-portal .wm-status-muted:hover {opacity:.65;}
