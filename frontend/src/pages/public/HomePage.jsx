@@ -1,14 +1,17 @@
+import {PublicLoadState as LoadState} from '@/components/public/PublicSiteUI';
 import {useState} from 'react';
+import {Link} from 'react-router-dom';
+import {ArrowRight,Box,Boxes,CalendarDays,ClipboardCheck,MapPin,PackageCheck,Search} from 'lucide-react';
 import facilityApi from '@/api/facilityApi';
-import {useBackend,rows} from '@/components/customer/RentalBackendUI';
-import HeroSection from "@/components/home/HeroSection";
-import StorageNeedsSection from "@/components/home/StorageNeedsSection";
-import StorageSolutionsSection from "@/components/home/StorageSolutionsSection";
-import WhyVaultSpaceSection from "@/components/home/WhyVaultSpaceSection";
-import SizeGuideSection from "@/components/home/SizeGuideSection";
-import FacilitiesSection from "@/components/home/FacilitiesSection";
-import HowItWorksSection from "@/components/home/HowItWorksSection";
-import TestimonialsSection from "@/components/home/TestimonialsSection";
-import FAQSection from "@/components/home/FAQSection";
-import CTASection from "@/components/home/CTASection";
-export default function HomePage(){const facilities=useBackend(config=>facilityApi.publicList({...config,params:{page:1,limit:6}}).then(rows),[],true);const [selected,setSelected]=useState('');return <div className="overflow-hidden bg-[#FAFAF7]"><HeroSection facilities={facilities} selected={selected} onSelect={setSelected}/><StorageNeedsSection/><StorageSolutionsSection/><WhyVaultSpaceSection/><SizeGuideSection/><FacilitiesSection resource={facilities}/><HowItWorksSection/><TestimonialsSection/><FAQSection/><CTASection/></div>}
+import {useBackend,rows,recordId} from '@/components/customer/RentalBackendUI';
+import HeroSection from '@/components/home/HeroSection';
+import StorageNeedsSection from '@/components/home/StorageNeedsSection';
+import FAQSection from '@/components/home/FAQSection';
+import FadeContent from '@/components/reactbits/FadeContent';
+import {FacilityCard,PublicCTA,SectionHeading,ServiceCards} from '@/components/public/PublicSiteUI';
+import HomePricingPreview from '@/components/public/HomePricingPreview';
+const steps=[['01','Find your space','Explore facilities and choose self-storage or managed inventory.'],['02','Plan your stay','Select your space and rental period, then review your quote.'],['03','Make it official','Complete the verification, contract and payment steps for your service.'],['04','Settle in','Arrange handover or inventory receiving with the facility team.']];
+export default function HomePage(){
+ const facilities=useBackend(config=>facilityApi.publicList({...config,params:{page:1,limit:6}}).then(rows),[],true),[selected,setSelected]=useState('');
+ return <><HeroSection facilities={facilities} selected={selected} onSelect={setSelected}/><div className="page-container"><div className="vs-trust">{[[Box,'Space for your belongings','Private units for personal and business use.'],[Boxes,'A home for your inventory','Facility-managed receiving and retrieval.'],[CalendarDays,'Details at your fingertips','Review your rental and inventory online.']].map(([Icon,title,text])=><div key={title}><Icon size={27} strokeWidth={1.3}/><div><b>{title}</b><p>{text}</p></div></div>)}</div></div><section id="storage-solutions" className="vs-section vs-white"><div className="page-container"><SectionHeading eyebrow="Storage, your way" title="Different needs. The right kind of space." description="From the boxes you want close to the inventory you need handled, choose the service that works for you."/><ServiceCards/></div></section><StorageNeedsSection/><section className="page-container"><FadeContent blur={false}><div className="vs-dark-panel"><div><p className="vs-eyebrow">Thoughtfully simple storage</p><h2>A little less clutter.<br/>A lot more possibility.</h2><p>Make space for a move, a renovation, or the next stage of your business. Keep track of your rental without losing sight of what matters.</p></div><ul>{[[Search,'Know your options','Browse facility information and published rates before choosing.'],[ClipboardCheck,'Review before you commit','Follow the verification and contract steps for your rental.'],[PackageCheck,'Stay connected to your belongings','View inventory status and completed movements in your account.']].map(([Icon,title,text])=><li key={title}><Icon size={25}/><div><b>{title}</b>{text}</div></li>)}</ul></div></FadeContent></section><section className="vs-section"><div className="page-container"><SectionHeading eyebrow="Find your place" title="Good storage starts with the right location." description="Explore active facilities and find a location that fits your plans."><Link className="vs-text-link" to="/facilities">All facilities <ArrowRight size={18}/></Link></SectionHeading><LoadState resource={facilities}/><div className="vs-facility-grid">{facilities.data?.map((f,i)=><FadeContent key={recordId(f)} delay={i*60} blur={false}><FacilityCard facility={f}/></FadeContent>)}</div>{facilities.data?.length===0&&<div className="vs-empty">No active facilities are currently published. Please check back or visit Support.</div>}</div></section><section className="vs-section vs-white"><div className="page-container"><SectionHeading eyebrow="From here to stored" title="A clear path to more space."><Link className="vs-text-link" to="/how-it-works">How it works <ArrowRight size={18}/></Link></SectionHeading><div className="vs-steps">{steps.map(([number,title,text])=><article className="vs-step" key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}</div></div></section><HomePricingPreview facilities={facilities} selected={selected}/><FAQSection/><PublicCTA/></>;
+}

@@ -22,6 +22,7 @@ const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').defaul
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const CellAllocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
+const ReservationPayment = require('../dist/models/payments/reservation-payment.model').default;
 const { ManagedReservationService: service, ManagedReservationError } = require('../dist/services/reservations/managed-reservation.service');
 const { UserRole } = require('../dist/types/user.type');
 
@@ -72,6 +73,17 @@ function mockQuote(t, options = {}) {
   });
   return { cap };
 }
+
+test('exhausted MongoDB WriteConflict maps to 409 while unexpected transaction errors remain 500-class errors', async t => {
+  const conflict = Object.assign(new Error('write conflict'), { code: 112, codeName: 'WriteConflict' });
+  let transactionError = conflict;
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async () => { throw transactionError; }, endSession: async () => {} }));
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer), { status: 409 });
+
+  const unexpected = Object.assign(new Error('database unavailable'), { code: 91, codeName: 'ShutdownInProgress' });
+  transactionError = unexpected;
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer), error => error === unexpected);
+});
 function mockCellLocks(t, ids = [cellA], volume = 1.5, conflict = null) {
   const cells = ids.map((cellId, index) => ({ _id: cellId, facilityId: fid, zoneId: oid('507f1f77bcf86cd7994390e1'),
     rackId: oid('507f1f77bcf86cd7994390e2'), code: `CELL-${index + 1}`, operationalStatus: 'AVAILABLE', usedWeightKg: 0, usedVolumeM3: 0,
@@ -80,14 +92,21 @@ function mockCellLocks(t, ids = [cellA], volume = 1.5, conflict = null) {
   t.mock.method(Cell, 'findOne', filter => new Query(cells.find(cell => String(cell._id) === String(filter._id))));
   t.mock.method(Zone, 'findOneAndUpdate', () => new Query({ isActive: true }));
   t.mock.method(Rack, 'findOneAndUpdate', () => new Query({ operationalStatus: 'AVAILABLE' }));
-  t.mock.method(Cell, 'findOneAndUpdate', filter => new Query(cells.find(cell => String(cell._id) === String(filter._id))));
+  t.mock.method(Cell, 'findOneAndUpdate', filter => {
+    assert.deepEqual(filter.usedWeightKg, { $eq: 0, $exists: true });
+    assert.deepEqual(filter.usedVolumeM3, { $eq: 0, $exists: true });
+    const cell = cells.find(cell => String(cell._id) === String(filter._id));
+    const physicallyEmpty = typeof cell?.usedWeightKg === 'number' && cell.usedWeightKg === 0 &&
+      typeof cell?.usedVolumeM3 === 'number' && cell.usedVolumeM3 === 0;
+    return new Query(physicallyEmpty ? cell : null);
+  });
   t.mock.method(CellAllocation, 'findOne', filter => {
     if (filter.$or) {
       assert.equal(filter.$or[1].startDate.$lt.toISOString(), '2030-02-01T00:00:00.000Z');
       assert.equal(filter.$or[1].endDate.$gt.toISOString(), '2030-01-01T00:00:00.000Z');
       assert.ok(filter.$or[2].holdExpiresAt.$gt instanceof Date, 'expired temporary holds do not conflict');
     }
-    return new Query(conflict);
+    return new Query(typeof conflict === 'function' ? conflict(filter) : conflict);
   });
   let allocations = [];
   t.mock.method(CellAllocation, 'insertMany', async rows => { allocations = rows; return rows; });
@@ -191,10 +210,16 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
   const result = await service.create(request({ cellIds: [String(cellA)] }), customer);
   assert.equal(result.reservation.serviceType, 'MANAGED_INVENTORY');
   assert.equal(result.reservation.status, 'RESERVED');
+  assert.equal(result.reservation.bookingFlowVersion, undefined, 'default-off booking remains legacy');
   assert.equal(result.reservation.allocatedCapacity, 1.5);
   assert.equal(result.reservation.storageUnitId, undefined);
   assert.equal(result.reservation.estimatedRent, 150);
   assert.equal(result.reservation.depositAmount, 30);
+  assert.deepEqual(result.quote.paymentBreakdown, { totalDue: 150, depositCredit: 30, balanceDue: 120 });
+  assert.deepEqual(saved.managedPricingSnapshot.amountBreakdown, {
+    estimatedRent: 150, depositAmount: 30, taxAmount: 0, discountAmount: 0,
+    totalDue: 150, depositCredit: 30, balanceDue: 120,
+  });
   assert.equal(saved.managedPricingSnapshot.pricingRule.billingBasis, 'PER_M3');
   assert.equal(saved.managedPricingSnapshot.capacityBookingVersion, 2);
   assert.ok(saved.expiresAt instanceof Date);
@@ -202,6 +227,225 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
   assert.equal(allocationState.allocations().length, 1);
   assert.equal(allocationState.allocations()[0].status, 'HOLD');
   assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
+});
+
+test('versioned Managed booking creates only a RESERVED reservation and HOLD allocations without contract or manager approval', async t => {
+  const previous = process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED, previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development'; process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = 'true';
+  t.after(() => { process.env.NODE_ENV = previousNodeEnv; if (previous === undefined) delete process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED; else process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = previous; });
+  const { cap } = mockQuote(t);
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  const allocationState = mockCellLocks(t);
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  let saved;
+  t.mock.method(Reservation.prototype, 'save', async function () { saved = this; return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+  t.mock.method(Contract, 'exists', () => { throw Error('booking must not create a Contract'); });
+  const result = await service.create(request({ cellIds: [String(cellA)] }), customer);
+  assert.equal(result.reservation.status, 'RESERVED');
+  assert.equal(result.reservation.bookingFlowVersion, 2);
+  assert.equal(result.reservation.estimatedRent, 150);
+  assert.equal(result.reservation.depositAmount, 30);
+  assert.equal(result.reservation.managedPricingSnapshot.amountBreakdown.balanceDue, 120);
+  assert.equal(saved.bookingFlowVersion, 2);
+  assert.equal(allocationState.allocations()[0].status, 'HOLD');
+  assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
+});
+
+function enableManagedDeposit(t) {
+  const oldNodeEnv = process.env.NODE_ENV, oldGate = process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED;
+  process.env.NODE_ENV = 'development'; process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = 'true';
+  t.after(() => { process.env.NODE_ENV = oldNodeEnv; if (oldGate === undefined) delete process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED; else process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = oldGate; });
+}
+function mockDepositContext(t, options = {}) {
+  const reservation = new Reservation({ _id: oid('507f1f77bcf86cd7994390e9'), reservationCode: 'MIR-P2-01', customerId: cid, facilityId: fid,
+    serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 2, status: options.reservationStatus || 'RESERVED',
+    allocatedCellIds: [cellA, cellB], expiresAt: options.expired ? new Date(Date.now() - 1000) : new Date(Date.now() + 60000),
+    estimatedRent: 150, depositAmount: 30, taxAmount: 0, discountAmount: 0, statusHistory: [],
+    managedPricingSnapshot: { pricingRule: { currency: 'VND' }, amountBreakdown: { totalDue: 150, depositCredit: 30, balanceDue: 120 } } });
+  const payment = new ReservationPayment({ _id: oid('507f1f77bcf86cd7994390ea'), reservationId: reservation._id, customerId: cid, facilityId: fid,
+    serviceType: 'MANAGED_INVENTORY', purpose: options.purpose || 'DEPOSIT', amount: options.amount ?? 30, currency: 'VND',
+    idempotencyKey: 'managed-deposit-p2-test', provider: options.provider || 'MOCK', status: options.paymentStatus || 'PENDING' });
+  const allocations = [cellA, cellB].map(cellId => ({ cellId, reservationId: reservation._id, customerId: cid, status: 'HOLD', holdExpiresAt: reservation.expiresAt }));
+  let writes = [];
+  t.mock.method(Reservation, 'findOne', filter => new Query(String(filter.customerId) === String(cid) ? reservation : null));
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ facilityId: fid, isActive: true }));
+  t.mock.method(ReservationPayment, 'findOne', () => new Query(payment));
+  t.mock.method(ReservationPayment.prototype, 'save', async function () { writes.push(`payment:${this.status}`); return this; });
+  t.mock.method(Reservation.prototype, 'save', async function () { writes.push(`reservation:${this.status}`); return this; });
+  t.mock.method(CellAllocation, 'countDocuments', () => new Query(allocations.filter(row => row.status === 'HOLD' && row.holdExpiresAt > new Date()).length));
+  t.mock.method(CellAllocation, 'updateMany', (filter, update) => {
+    const matchedCount = allocations.filter(row => row.status === filter.status && row.holdExpiresAt > filter.holdExpiresAt.$gt).length;
+    for (const row of allocations) if (row.status === filter.status && row.holdExpiresAt > filter.holdExpiresAt.$gt) { row.status = update.$set.status; delete row.holdExpiresAt; }
+    writes.push(`allocations:${matchedCount}`); return new Query({ matchedCount, modifiedCount: matchedCount });
+  });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { writes.push(`audit:${this.action}`); if (options.auditFailure) throw options.auditFailure; return this; });
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => {
+    const snapshot = options.rollback ? { reservationStatus: reservation.status, reservationExpiresAt: reservation.expiresAt,
+      history: [...reservation.statusHistory], paymentStatus: payment.status, paymentSucceededAt: payment.succeededAt,
+      allocationRows: allocations.map(row => ({ ...row })) } : null;
+    try { return await fn(); } catch (error) {
+      if (snapshot) {
+        reservation.status = snapshot.reservationStatus; reservation.expiresAt = snapshot.reservationExpiresAt; reservation.statusHistory = snapshot.history;
+        payment.status = snapshot.paymentStatus; payment.succeededAt = snapshot.paymentSucceededAt;
+        allocations.forEach((row, index) => Object.assign(row, snapshot.allocationRows[index]));
+      }
+      throw error;
+    }
+  }, endSession: async () => {} }));
+  return { reservation, payment, allocations, writes };
+}
+
+test('deposit initiation is owner-bound, purpose-specific and idempotent without changing reservation state', async t => {
+  enableManagedDeposit(t);
+  const reservation = new Reservation({ _id: oid('507f1f77bcf86cd7994390e9'), customerId: cid, facilityId: fid, serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 2, status: 'RESERVED', expiresAt: new Date(Date.now() + 60000), estimatedRent: 150, depositAmount: 30, managedPricingSnapshot: { pricingRule: { currency: 'VND' } } });
+  t.mock.method(Reservation, 'findOne', filter => new Query(String(filter.customerId) === String(cid) ? reservation : null));
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ facilityId: fid }));
+  let payment;
+  t.mock.method(ReservationPayment, 'findOne', () => new Query(payment || null));
+  t.mock.method(ReservationPayment.prototype, 'save', async function () { payment = this; return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const first = await service.initiateDeposit(String(reservation._id), { idempotencyKey: 'init-p2' }, customer);
+  const replay = await service.initiateDeposit(String(reservation._id), { idempotencyKey: 'init-p2' }, customer);
+  assert.equal(first.payment.purpose, 'DEPOSIT'); assert.equal(first.payment.amount, 30); assert.equal(first.payment.currency, 'VND');
+  assert.equal(replay.idempotent, true); assert.equal(payment.status, 'PENDING'); assert.equal(reservation.status, 'RESERVED');
+  await assert.rejects(service.initiateDeposit(String(reservation._id), { idempotencyKey: 'different' }, { ...customer, _id: mid }), { status: 404 });
+});
+
+test('successful deposit confirmation atomically moves HOLD to RESERVED and is safe to replay', async t => {
+  enableManagedDeposit(t);
+  const state = mockDepositContext(t);
+  const first = await service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer);
+  assert.equal(first.reservation.status, 'DEPOSIT_PAID'); assert.equal(first.payment.status, 'SUCCEEDED');
+  assert.ok(state.allocations.every(row => row.status === 'RESERVED' && row.holdExpiresAt === undefined));
+  assert.equal(state.reservation.expiresAt, undefined);
+  assert.equal(state.reservation.paymentSimulation?.simulated, undefined);
+  assert.ok(state.writes.some(write => write === 'audit:DEPOSIT_CONFIRMED'));
+  t.mock.restoreAll();
+  // A replay after commit returns the terminal result without mutating allocations or recording a second settlement.
+  t.mock.method(Reservation, 'findOne', () => new Query(state.reservation));
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ facilityId: fid }));
+  t.mock.method(ReservationPayment, 'findOne', () => new Query(state.payment));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const replay = await service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer);
+  assert.equal(replay.idempotent, true); assert.equal(state.allocations.filter(row => row.status === 'RESERVED').length, 2);
+});
+
+test('concurrent duplicate deposit confirmations serialize and record one settlement', async t => {
+  enableManagedDeposit(t);
+  const state = mockDepositContext(t);
+  let queue = Promise.resolve();
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => {
+    const prior = queue; let release; queue = new Promise(resolve => { release = resolve; }); await prior;
+    try { return await fn(); } finally { release(); }
+  }, endSession: async () => {} }));
+  const key = state.payment.idempotencyKey, rid = String(state.reservation._id);
+  const results = await Promise.all([service.confirmMockDeposit(rid, { idempotencyKey: key }, customer), service.confirmMockDeposit(rid, { idempotencyKey: key }, customer)]);
+  assert.ok(results.every(result => result.reservation.status === 'DEPOSIT_PAID' && result.payment.status === 'SUCCEEDED'));
+  assert.equal(state.writes.filter(write => write === 'payment:SUCCEEDED').length, 1);
+  assert.equal(state.writes.filter(write => write === 'allocations:2').length, 1);
+});
+
+test('audit persistence failure aborts deposit confirmation before the service reports success', async t => {
+  enableManagedDeposit(t);
+  const dbFailure = Object.assign(new Error('audit database unavailable'), { code: 91 });
+  const state = mockDepositContext(t, { auditFailure: dbFailure, rollback: true });
+  await assert.rejects(service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer), error => error === dbFailure);
+  assert.ok(state.writes.includes('allocations:2'));
+  assert.ok(state.writes.includes('reservation:DEPOSIT_PAID'));
+  assert.ok(state.writes.includes('payment:SUCCEEDED'));
+  assert.equal(state.payment.status, 'PENDING'); assert.equal(state.reservation.status, 'RESERVED');
+  assert.ok(state.allocations.every(row => row.status === 'HOLD' && row.holdExpiresAt));
+  // The mock models abort/restore behavior; MongoDB rollback semantics require replica-set integration testing.
+});
+
+test('quote fails closed when a legacy Cell has unknown physical counters', async t => {
+  mockQuote(t);
+  t.mock.method(Cell, 'find', () => new Query([{ _id: cellA, facilityId: fid, zoneId: mid, rackId: oid('507f1f77bcf86cd7994390e2'), operationalStatus: 'AVAILABLE', dimensions: { widthM: 0.4, depthM: 0.3, usableHeightM: 1 } }]));
+  await assert.rejects(service.quote(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] })), { status: 409 });
+});
+
+test('expired hold records reconciliation-required payment and never reclaims or promotes Cells', async t => {
+  enableManagedDeposit(t);
+  const state = mockDepositContext(t, { expired: true });
+  const result = await service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer);
+  assert.equal(result.reconciliationRequired, true); assert.equal(state.payment.status, 'RECONCILIATION_REQUIRED');
+  assert.equal(state.reservation.status, 'RESERVED'); assert.ok(state.allocations.every(row => row.status === 'HOLD'));
+  assert.ok(state.writes.some(write => write === 'audit:PAYMENT_RECONCILIATION_REQUIRED'));
+});
+
+test('wrong deposit purpose or amount is rejected without transitioning resources', async t => {
+  for (const paymentOptions of [{ purpose: 'BALANCE' }, { amount: 151 }]) await t.test(JSON.stringify(paymentOptions), async t => {
+    enableManagedDeposit(t); const state = mockDepositContext(t, paymentOptions);
+    await assert.rejects(service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer), { status: 409 });
+    assert.equal(state.reservation.status, 'RESERVED'); assert.ok(state.allocations.every(row => row.status === 'HOLD'));
+  });
+});
+
+test('deposit confirmation is owner-only and version 2 gate is disabled outside development', async t => {
+  enableManagedDeposit(t);
+  const state = mockDepositContext(t);
+  await assert.rejects(service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, { ...customer, _id: mid }), { status: 404 });
+  process.env.NODE_ENV = 'production';
+  await assert.rejects(service.confirmMockDeposit(String(state.reservation._id), { idempotencyKey: state.payment.idempotencyKey }, customer), { status: 404 });
+});
+
+test('version 2 quote rejects deposit policy values that exceed total rent', async t => {
+  enableManagedDeposit(t);
+  mockQuote(t, { deposits: [{ _id: oid('507f1f77bcf86cd7994390b1'), config: { calculation: 'PERCENT_OF_RENT', percentage: 101 }, version: 2 }] });
+  await assert.rejects(service.quote(request()), { status: 409 });
+});
+
+test('VND rounding is explicit and deposit above total is rejected', () => {
+  const { roundVndAmount, calculateRentalPaymentBreakdown } = require('../dist/services/payments/payment-accounting');
+  assert.equal(roundVndAmount(1.49), 1); assert.equal(roundVndAmount(1.5), 2);
+  assert.throws(() => calculateRentalPaymentBreakdown({ rentAmount: 100, depositAmount: 101 }), { status: 409 });
+});
+
+test('Managed v2 routes are customer-only and the schema keeps flow version optional for legacy records', () => {
+  const router = require('../dist/routes/reservation.routes').default;
+  const rows = router.stack.filter(layer => layer.route).map(layer => `${Object.keys(layer.route.methods)[0].toUpperCase()} ${layer.route.path}`);
+  assert.ok(rows.includes('POST /managed/:id/deposit'));
+  assert.ok(rows.includes('POST /managed/:id/deposit/mock-confirm'));
+  assert.equal(Reservation.schema.path('bookingFlowVersion').options.default, undefined);
+  assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2]);
+  assert.ok(Reservation.schema.path('status').enumValues.includes('DEPOSIT_PAID'));
+  assert.ok(ReservationPayment.schema.path('status').enumValues.includes('RECONCILIATION_REQUIRED'));
+});
+
+test('legacy Cell with absent physical counters is rejected by the transactional emptiness lock', async t => {
+  const { cap } = mockQuote(t);
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  const state = mockCellLocks(t);
+  delete state.cells[0].usedWeightKg;
+  delete state.cells[0].usedVolumeM3;
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
+  let aborted = false, savedReservations = 0;
+  t.mock.method(mongoose, 'startSession', async () => ({
+    withTransaction: async fn => { try { return await fn(); } catch (error) { aborted = true; throw error; } },
+    endSession: async () => {},
+  }));
+  t.mock.method(Reservation.prototype, 'save', async function () { savedReservations++; return this; });
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer), {
+    status: 409, message: 'Selected Cell is not physically available for a new reservation',
+  });
+  assert.equal(aborted, true);
+  assert.equal(savedReservations, 0);
+  assert.equal(state.allocations().length, 0);
+});
+
+test('transactional emptiness lock does not overwrite a Cell with existing stock counters', async t => {
+  const { cap } = mockQuote(t);
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  const state = mockCellLocks(t);
+  state.cells[0].usedWeightKg = 40;
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer), { status: 409 });
+  assert.equal(state.cells[0].usedWeightKg, 40);
+  assert.equal(state.allocations().length, 0);
 });
 
 test('multi-cell hold derives commercial m3 from configured dimensions and rejects interval conflicts', async t => {
@@ -219,6 +463,62 @@ test('multi-cell hold derives commercial m3 from configured dimensions and rejec
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
   await assert.rejects(service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer), { status: 409 });
   assert.equal(state.cells.length, 2);
+});
+
+test('quote applies half-open selected-Cell availability checks and accepts adjacent periods', async t => {
+  const { cells } = mockCellLocks(t, [cellA], 0.12);
+  t.mock.method(Cell, 'find', () => new Query(cells));
+  t.mock.method(Zone, 'find', () => new Query([{ _id: cells[0].zoneId }]));
+  t.mock.method(Rack, 'find', () => new Query([{ _id: cells[0].rackId }]));
+  const prior = { _id: oid('507f1f77bcf86cd7994390d9') };
+  t.mock.method(CellAllocation, 'exists', filter => {
+    assert.equal(filter.$or[1].startDate.$lt.toISOString(), '2030-02-01T00:00:00.000Z');
+    assert.equal(filter.$or[1].endDate.$gt.toISOString(), '2030-01-01T00:00:00.000Z');
+    assert.equal(filter.$or[2].holdExpiresAt.$gt instanceof Date, true);
+    return new Query(prior);
+  });
+  await assert.rejects(service.quote(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] })), { status: 409 });
+  t.mock.restoreAll();
+  mockQuote(t);
+  const { cells: adjacentCells } = mockCellLocks(t, [cellA], 0.12);
+  t.mock.method(Cell, 'find', () => new Query(adjacentCells));
+  t.mock.method(Zone, 'find', () => new Query([{ _id: adjacentCells[0].zoneId }]));
+  t.mock.method(Rack, 'find', () => new Query([{ _id: adjacentCells[0].rackId }]));
+  t.mock.method(CellAllocation, 'exists', filter => {
+    assert.deepEqual(filter.$or[1].startDate, { $lt: new Date('2030-02-01T00:00:00.000Z') });
+    assert.deepEqual(filter.$or[1].endDate, { $gt: new Date('2030-01-31T00:00:00.000Z') });
+    return new Query(null);
+  });
+  const quoted = await service.quote(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)], startDate: '2030-01-31T00:00:00.000Z', term: { value: 1, unit: 'DAY' } }));
+  assert.equal(quoted.startDate.toISOString(), '2030-01-31T00:00:00.000Z');
+});
+
+test('concurrent intersecting multi-Cell selections commit only one complete hold set', async t => {
+  const rows = [], ids = [cellA, cellB, oid('507f1f77bcf86cd7994390d3')];
+  mockQuote(t, { commitments: rows });
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  let cellState;
+  cellState = mockCellLocks(t, ids, 0.12, filter => {
+    const selectedId = String(filter.$or?.[0]?.cellId);
+    return cellState.allocations().find(row => String(row.cellId) === selectedId && row.status === 'HOLD') || null;
+  });
+  let version = 1, queue = Promise.resolve();
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ facilityId: fid, sellableCapacityM3: 10, holdDurationMinutes: 30, isActive: true, bookingVersion: ++version }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => {
+    const prior = queue; let release; queue = new Promise(resolve => { release = resolve; }); await prior;
+    try { return await fn(); } finally { release(); }
+  }, endSession: async () => {} }));
+  t.mock.method(Reservation.prototype, 'save', async function () { rows.push(this); return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+  const results = await Promise.allSettled([
+    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer),
+    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellB), String(ids[2])] }), customer),
+  ]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);
+  assert.equal(rows.length, 1);
+  assert.equal(cellState.allocations().length, 2);
+  assert.equal(new Set(cellState.allocations().map(row => String(row.reservationId))).size, 1);
 });
 
 test('Manager rejection and owner cancellation release empty temporary Cell holds', async t => {

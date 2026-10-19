@@ -1,6 +1,6 @@
 # MI-02B — Staff Inbound and Actual Usage
 
-MI-02B adds physical receipt for a whole registered lot and replaces MI-01's empty-usage adapter with transactional Cell counters. It does not implement outbound, relocation, transfer, partial intake, quota extensions, payments, or inventory forecasting. No legacy REGISTERED item is backfilled as physical stock.
+MI-02B adds physical receipt for a whole registered lot and replaces MI-01's empty-usage adapter with transactional Cell counters. Managed outbound is added separately in [MI-04](MI_04_MANAGED_OUTBOUND.md). Relocation, transfer, partial intake, quota extensions, payments, and inventory forecasting remain out of scope. No legacy REGISTERED item is backfilled as physical stock.
 
 ## Lifecycle and API
 
@@ -49,7 +49,7 @@ lotVolumeM3 = unitVolumeM3 × quantity
 
 The whole lot must fit the Cell geometry and volume, Cell kg maximum, aggregate level kg rating, aggregate Rack kg rating, and the Managed reservation's remaining contracted m3 quota. Values are rounded for persisted counters to 0.001 kg and 0.000001 m3. A lot is not split across Cells. Managed `allocatedCapacity` remains contracted quota; `usedCapacityM3` is the separate physical consumption and inbound never releases or changes the contracted quota. An OVERDUE Managed rental blocks new inbound until authorized disposition resolves it; time passing alone never releases physical occupancy.
 
-`WarehouseCell.usedWeightKg` and `usedVolumeM3` are transactional materialized counters with zero defaults. `Reservation.usedCapacityM3` is the matching physical quota aggregate. `InventoryItem.currentCellId` plus append-only `ItemMovement` records are the reconciliation evidence. Only successful inbound increments these counters; REGISTERED and PENDING_INBOUND records contribute zero. Movement rows are protected by update/delete middleware, indexed for item/Facility/reservation history, and have a unique item/idempotency-key index.
+`WarehouseCell.usedWeightKg` and `usedVolumeM3` are transactional materialized counters with zero defaults. `Reservation.usedCapacityM3` is the matching physical quota aggregate. `InventoryItem.currentCellId` plus append-only `ItemMovement` records are the reconciliation evidence. Successful inbound increments these counters and confirmed outbound decrements them using the persisted inbound measurements; REGISTERED and pending request states do not change physical usage. Movement rows are protected by update/delete middleware, indexed for item/Facility/reservation history, and have a unique item/idempotency-key index.
 
 ## Transactions and concurrent writes
 

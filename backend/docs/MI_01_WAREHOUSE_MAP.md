@@ -196,7 +196,7 @@ Creating/restoring a Rack, generating/restoring all Cells, changing Cell limits,
 
 ## MI-01 limitations
 
-There are no separate InventoryStock, Location, or reservation-of-cell models, no outbound/relocation reconciliation yet, and no image/upload service. Customer map access is pre-booking structural browsing only and does not create a reservation. Actual usage changes only after assigned Staff confirm inbound; the FE must distinguish empty cells from unconfirmed registrations. Category-policy config remains undefined, so inbound confirmation currently fails closed until the business decision is made. Customer map responses remain sanitized and never include items or movement history.
+There are no separate InventoryStock, Location, or reservation-of-cell models, and no relocation reconciliation or image/upload service. Customer map access is pre-booking structural browsing only and does not create a reservation. Actual usage changes only after assigned Staff confirm inbound or outbound; pending requests preserve physical usage. The FE must distinguish empty cells from unconfirmed registrations. Category-policy config remains undefined, so inbound confirmation currently fails closed until the business decision is made. Customer map responses remain sanitized and never include items or movement history. See MI-04 for Managed outbound.
 
 ## Deterministic FE fixture
 

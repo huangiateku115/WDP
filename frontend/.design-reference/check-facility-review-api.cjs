@@ -1,4 +1,4 @@
-const {chromium}=require('C:/Users/Admin/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'C:/Users/laptop/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const assert=require('node:assert/strict');
 const base=process.env.REVIEW_FRONTEND_URL||'http://127.0.0.1:5173';
 const ids={facility:'a'.repeat(24),profile:'b'.repeat(24),customer:'c'.repeat(24),reservation:'d'.repeat(24),other:'e'.repeat(24)};
@@ -28,7 +28,7 @@ const ids={facility:'a'.repeat(24),profile:'b'.repeat(24),customer:'c'.repeat(24
     throw Error('Unexpected API '+method+' '+path);
    });
    const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
-   const go=async(path)=>{await page.goto(base+path);await page.locator('h1, main h2').first().waitFor();};
+   const go=async(path)=>{await page.goto(base+path);await page.locator('h1, main h2').first().waitFor();const demo=await page.evaluate(async()=> (await import('/src/lib/managerDemoStore.js')).managerDemoEnabled);assert.equal(demo,false,'This API fixture suite requires a dev frontend started with VITE_USE_MOCK=false; demo-mode labels are not API-mode labels.');};
    return {context,page,go,requests,flags,errors};
   }
   let x=await setup();await x.go('/manager/customers');await x.page.getByText('Nguyen Van An',{exact:true}).waitFor();

@@ -13,12 +13,13 @@ mongoose.set('bufferCommands', false);
 const Facility = require('../dist/models/facilities/facility.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
+const ImageUpload = require('../dist/models/inventory-items/inventory-image-upload.model').default;
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
 const { InventoryItemService: service } = require('../dist/services/inventory-items/inventory-item.service');
 const { parseCreate, parseUpdate, InventoryItemError } = require('../dist/services/inventory-items/inventory-item.validation');
-const { requireActiveManagedInventoryReservation } = require('../dist/services/reservations/managed-inventory-reservation.guard');
+const { requireActiveManagedInventoryReservation, requireManagedInventoryReservationForRegistration } = require('../dist/services/reservations/managed-inventory-reservation.guard');
 
 const facilityId = '507f1f77bcf86cd799439011';
 const reservationId = '507f1f77bcf86cd799439021';
@@ -50,7 +51,7 @@ const itemBody = (overrides = {}) => ({
   itemCode: 'customer-lot-01', name: 'Archive cartons', category: 'DOCUMENTS',
   description: 'Identical cartons', quantity: 2, quantityUnit: 'carton', unitWeightKg: 20,
   unitDimensionsM: { widthM: 0.25, depthM: 0.3, heightM: 0.2 },
-  images: ['https://example.test/carton.jpg'], ...overrides,
+  images: [], ...overrides,
 });
 const itemDoc = (overrides = {}) => new Item({
   _id: oid(itemId), facilityId: oid(facilityId), customerId: userId,
@@ -65,7 +66,8 @@ function mockEligibility(t, reservation = managedReservation(), facility = { sta
   t.mock.method(Reservation, 'findOne', filter => {
     assert.equal(String(filter.customerId), userId.toString());
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
-    assert.equal(filter.status, 'ACTIVE');
+    if (filter.$or) { assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date); }
+    else assert.equal(filter.status, 'ACTIVE');
     return new Query(reservation);
   });
   t.mock.method(Facility, 'findOne', () => new Query(facility ? { _id: oid(facilityId), ...facility } : null));
@@ -96,6 +98,54 @@ test('registration derives lot totals, keeps currentCellId null, and writes no p
   assert.equal(result.customerId, undefined, 'customer DTO omits internal owner field');
   assert.equal(saved.facilityId.toString(), facilityId);
   assert.equal(saved.createdBy.toString(), userId.toString());
+});
+
+test('version 2 DEPOSIT_PAID owner may register an item before activation without writing physical stock', async t => {
+  const reservation = managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 });
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    return new Query(reservation);
+  });
+  t.mock.method(Facility, 'findOne', () => new Query({ _id: oid(facilityId), status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  let saved;
+  t.mock.method(Item.prototype, 'save', async function () { saved = this; return this; });
+  const created = await service.create(itemBody(), actor());
+  assert.equal(created.status, 'REGISTERED'); assert.equal(created.currentCellId, null);
+  assert.equal(saved.managedReservationId.toString(), reservationId);
+});
+
+test('new Item registration cannot attach an arbitrary HTTP URL without upload ownership metadata', async t => {
+  mockEligibility(t);
+  const session = { withTransaction: async work => work(), endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  t.mock.method(ImageUpload, 'findOne', () => new Query(null));
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('unowned URL must fail before saving Item'); });
+  await assert.rejects(service.create(itemBody({ images: ['https://res.cloudinary.com/other-customer/item.jpg'] }), actor()), { status: 403 });
+});
+
+test('CHECKIN_READY does not allow new item registration after the contract and balance snapshot is complete', async t => {
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
+  await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
+});
+
+test('version 2 DEPOSIT_PAID owner may request inbound before activation without confirming physical occupancy', async t => {
+  const item = itemDoc();
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  t.mock.method(Item, 'findOneAndUpdate', filter => {
+    assert.equal(filter.status, 'REGISTERED');
+    return new Query(itemDoc({ status: 'PENDING_INBOUND' }));
+  });
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(filter.$or[0].status, 'ACTIVE'); assert.ok(filter.$or[0].startDate.$lte instanceof Date); assert.ok(filter.$or[0].endDate.$gt instanceof Date);
+    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    return new Query(managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 }));
+  });
+  t.mock.method(Reservation, 'exists', () => new Query(null));
+  t.mock.method(Facility, 'findOne', () => new Query({ status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const result = await service.requestInbound(itemId, actor());
+  assert.equal(result.status, 'PENDING_INBOUND');
+  assert.equal(result.currentCellId, null);
 });
 
 test('request cannot spoof customer/facility, derived totals, status, or Mongo operators', () => {
@@ -132,6 +182,14 @@ test('Managed rental guard accepts only owned active MI rental with valid m3 all
   await assert.rejects(requireActiveManagedInventoryReservation(reservationId, userId), { status: 409 });
 });
 
+test('item metadata and placement preview remain ACTIVE-only after a deposit', async t => {
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.status, 'ACTIVE');
+    return new Query(null);
+  });
+  await assert.rejects(requireActiveManagedInventoryReservation(reservationId, userId), { status: 404 });
+});
+
 test('registration rejects Self Storage, inactive MI rentals, and absent rentals', async t => {
   t.mock.method(Reservation, 'findOne', filter => {
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
@@ -164,6 +222,16 @@ test('customer edits only REGISTERED metadata and totals are recalculated', asyn
   await assert.rejects(service.update(itemId, { facilityId }, actor()), { status: 400 });
 });
 
+test('editing keeps a legacy HTTP image already owned by that Item', async t => {
+  mockEligibility(t);
+  const legacy = 'https://legacy.example.test/old-item-photo.jpg';
+  const item = itemDoc({ images: [legacy] });
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  t.mock.method(Item.prototype, 'save', async function () { return this; });
+  const updated = await service.update(itemId, { name: 'Archive cartons updated', images: [legacy] }, actor());
+  assert.deepEqual(updated.images, [legacy]);
+});
+
 test('owner can read historical item after its Managed reservation closes', async t => {
   const closedReservation = managedReservation({ status: 'CLOSED' });
   t.mock.method(Item, 'findOne', () => new Query(itemDoc()));
@@ -186,7 +254,8 @@ test('GET /me lists owner history regardless of current reservation status', asy
 
 test('closed Managed reservation cannot authorize new registration or metadata edits', async t => {
   t.mock.method(Reservation, 'findOne', filter => {
-    assert.equal(filter.status, 'ACTIVE');
+    if (filter.$or) { assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date); }
+    else assert.equal(filter.status, 'ACTIVE');
     return new Query(null);
   });
   await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
@@ -287,10 +356,14 @@ test('all inventory-item routes require authentication and role gates match the 
     handlers: layer.route.stack.map(entry => entry.handle.name),
   }));
   assert.equal(router.stack[0].handle.name, 'requireAuth', 'router-level authentication runs before every endpoint');
-  assert.ok(routes.every(route => route.handlers.length === 2), 'each route has a role gate before its controller');
+  assert.ok(routes.every(route => route.handlers.length >= 2), 'each route has a role gate before its controller; upload routes may add rate-limit and multipart middleware');
   for (const expected of [
+    'POST /image-uploads', 'DELETE /image-uploads/:uploadId',
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
-    'POST /:id/inbound-request', 'POST /:id/confirm-inbound', 'POST /:id/reject-inbound', 'GET /:id/movements',
+    'POST /:id/inbound-request', 'POST /:id/outbound-request', 'POST /:id/confirm-inbound',
+    'POST /:id/confirm-outbound', 'POST /:id/reject-inbound', 'POST /:id/reject-outbound', 'GET /:id/movements',
+    'POST /:id/relocate',
+    'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 10);
+  assert.equal(routes.length, 17);
 });

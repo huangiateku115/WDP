@@ -3,6 +3,10 @@ import { FacilityServiceType } from './facility.type';
 
 export enum ReservationStatus {
   RESERVED = 'RESERVED',
+  /** Version 2 Managed flow: advance rent deposit is settled; rental is not active. */
+  DEPOSIT_PAID = 'DEPOSIT_PAID',
+  /** Version 2 Managed flow: contract and advance rent balance are settled; handover is pending. */
+  CHECKIN_READY = 'CHECKIN_READY',
   CONTRACTED = 'CONTRACTED',
   PAID = 'PAID',
   ACTIVE = 'ACTIVE',
@@ -25,6 +29,8 @@ export interface IReservation extends Document {
   facilityId: Types.ObjectId;
   
   serviceType: FacilityServiceType;
+  /** Absent on legacy records. Version 2 is never inferred from legacy status/payment fields. */
+  bookingFlowVersion?: 2;
   storageUnitId?: Types.ObjectId;
   /** Cells exclusively allocated to this Managed Inventory reservation. */
   allocatedCellIds?: Types.ObjectId[];
@@ -35,6 +41,12 @@ export interface IReservation extends Document {
   inventoryVersion?: number;
   managedPricingSnapshot?: Record<string, unknown>;
   paymentSimulation?: { simulated: boolean; provider: 'MOCK'; paidAt: Date; actorId: Types.ObjectId };
+  balanceSettledAt?: Date;
+  balanceSettledBy?: Types.ObjectId;
+  depositPaymentId?: Types.ObjectId;
+  balancePaymentId?: Types.ObjectId;
+  handoverByStaffId?: Types.ObjectId;
+  handoverAt?: Date;
   storageCondition?: string;
   
   startDate: Date;

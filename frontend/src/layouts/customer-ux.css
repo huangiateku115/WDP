@@ -1,0 +1,35 @@
+/* Phase 3: focused Customer usability fixes, preserving Phase 2 layout. */
+.customer-portal .customer-ux-dialog{margin:auto;inset:0;width:min(900px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:auto;border:1px solid #dfe6dc;border-radius:14px;background:#fff;color:#202c25;padding:20px;box-shadow:0 24px 80px #123d2a30}
+.customer-portal .customer-ux-dialog::backdrop{background:#0c241dc9;backdrop-filter:blur(3px)}
+.customer-portal .customer-ux-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.customer-portal .customer-ux-dialog h2{font-size:20px;line-height:1.4;font-weight:650;color:#123d2a;overflow-wrap:anywhere}
+.customer-portal .customer-dialog-description{font-size:12px;line-height:1.7;color:#637267;margin:12px 0 16px}
+.customer-portal .customer-image-stage{display:grid;place-items:center;min-height:160px;background:#f5f7f2;border-radius:10px;overflow:hidden}
+.customer-portal .customer-image-stage img{width:100%;max-height:60dvh;object-fit:contain}
+.customer-portal .customer-image-stage p{padding:24px;text-align:center;font-size:14px;color:#637267}
+.customer-portal .customer-image-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px}
+.customer-portal .customer-image-controls>span{font-size:12px;white-space:nowrap;color:#637267}
+.customer-portal .customer-confirm-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}
+.customer-portal .customer-ux-dialog button{min-height:40px}
+.customer-portal [aria-label="Inventory item images"] .customer-image-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.customer-portal .customer-image-actions>button{min-width:0;min-height:38px;border:1px solid #dfe6dc;border-radius:7px;background:white;font-size:16px}
+.customer-portal .customer-image-actions>button:last-child{grid-column:1/-1;font-size:12px}
+.customer-portal .customer-image-actions>button:disabled{opacity:.45}
+.customer-portal [aria-label="Inventory item images"] :is(progress+span,progress~button){font-size:12px}
+.customer-portal [aria-label="Inventory item images"] button.underline{min-height:38px;padding:6px 8px}
+.customer-portal .customer-resource-loading{padding:16px;border:1px solid #dfe6dc;border-radius:10px;background:white;color:#637267;font-size:13px}
+.customer-portal .customer-skeleton-lines{display:grid;gap:9px;margin-top:14px}
+.customer-portal .customer-skeleton-lines i{height:10px;border-radius:5px;background:#eaf0e4}
+.customer-portal .customer-skeleton-lines i:nth-child(2){width:78%}
+.customer-portal .customer-skeleton-lines i:last-child{width:54%}
+.customer-portal .customer-resource-error{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.customer-portal .customer-resource-error>p{flex:1;min-width:0;overflow-wrap:anywhere}
+.customer-portal .portal-notification p{overflow-wrap:anywhere}
+.customer-portal .customer-screen :is([role=status],[role=alert]){scroll-margin-top:150px}
+@media(max-width:389px){
+ .customer-portal .customer-ux-dialog{padding:14px}
+ .customer-portal .customer-ux-dialog h2{font-size:18px}
+ .customer-portal .customer-image-controls{gap:6px;flex-wrap:wrap}
+ .customer-portal .customer-image-controls button{padding-inline:10px;font-size:12px}
+ .customer-portal .customer-image-controls>span{font-size:11px}
+}

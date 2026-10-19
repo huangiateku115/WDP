@@ -1,31 +1,13 @@
-import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
-import { Menu, Phone, X } from "lucide-react";
-import Brand from "@/components/common/Brand";
-import { Button } from "@/components/ui/button";
-
-const nav = [
-  ["Storage", "/"], ["Facilities", "/facilities"], ["How It Works", "/how-it-works"],
-  ["Pricing", "/pricing"], ["Support", "/support"],
-];
+import {useEffect,useRef,useState} from 'react';
+import {Link,NavLink,useLocation} from 'react-router-dom';
+import {ArrowUpRight,Menu,MapPin,X} from 'lucide-react';
+import Brand from '@/components/common/Brand';
+import {Button} from '@/components/ui/button';
+const nav=[['Home','/'],['Facilities','/facilities'],['How It Works','/how-it-works'],['Pricing','/pricing'],['Support','/support']];
 export default function PublicHeader(){
-  const [open,setOpen]=useState(false);
-  const cls=({isActive})=>`px-3 py-2 text-sm font-semibold transition ${isActive?"text-[#176B3A]":"text-[#425047] hover:text-[#176B3A]"}`;
-  return <>
-    <div className="bg-[#173D28] text-white"><div className="page-container flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-[11px]">
-      <span>Secure self-storage across Ho Chi Minh City</span><Link to="/facilities" className="flex shrink-0 items-center gap-1.5 font-semibold"><Phone size={12}/>Facility contacts</Link>
-    </div></div>
-    <header className="sticky top-0 z-50 border-b border-[#E5EAE5] bg-white/95 backdrop-blur">
-      <div className="page-container flex h-[74px] items-center justify-between gap-5">
-        <Link to="/"><Brand/></Link>
-        <nav className="hidden items-center gap-1 lg:flex">{nav.map(([label,to])=><NavLink key={to} to={to} className={cls}>{label}</NavLink>)}</nav>
-        <div className="flex items-center gap-2">
-          <Link to="/login" className="hidden px-3 text-sm font-semibold text-[#425047] sm:block">Sign in</Link>
-          <Button asChild className="hidden bg-[#F28C28] px-5 font-bold text-white hover:bg-[#D96F12] sm:inline-flex"><Link to="/facilities">Find a storage</Link></Button>
-          <button onClick={()=>setOpen(!open)} className="grid h-10 w-10 place-items-center rounded-lg lg:hidden">{open?<X/>:<Menu/>}</button>
-        </div>
-      </div>
-      {open&&<nav className="page-container flex flex-col border-t py-3 lg:hidden">{nav.map(([label,to])=><NavLink onClick={()=>setOpen(false)} key={to} to={to} className={cls}>{label}</NavLink>)}<Button asChild className="mt-2 bg-[#F28C28] hover:bg-[#D96F12]"><Link to="/facilities">Find a storage</Link></Button></nav>}
-    </header>
-  </>;
+ const [open,setOpen]=useState(false),location=useLocation(),toggle=useRef(null),header=useRef(null);
+ useEffect(()=>setOpen(false),[location.pathname]);
+ useEffect(()=>{if(!open)return;const outside=e=>{if(!header.current?.contains(e.target))setOpen(false);};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[open]);
+ const closeWithEscape=e=>{if(e.key==='Escape'&&open){setOpen(false);toggle.current?.focus();}};
+ return <><a className="vs-skip" href="#public-main">Skip to content</a><div className="vs-topline"><div className="page-container"><span>A little more space. A lot more possibility.</span><Link to="/facilities"><MapPin size={12}/>Explore our facilities <ArrowUpRight size={12}/></Link></div></div><header className="vs-header" ref={header} onKeyDown={closeWithEscape}><div className="page-container vs-header-inner"><Link to="/" aria-label="VaultSpace home"><Brand/></Link><nav className="vs-desktop-nav" aria-label="Main navigation">{nav.map(([label,to])=><NavLink end={to==='/'} key={to} to={to} className="vs-nav-link">{label}</NavLink>)}</nav><div className="vs-header-actions"><Link className="vs-signin" to="/login">Sign in</Link><Button asChild className="vs-button vs-button-orange"><Link to="/facilities">Find Storage <ArrowUpRight size={16}/></Link></Button><button ref={toggle} type="button" className="vs-menu-toggle" aria-label={open?'Close navigation menu':'Open navigation menu'} aria-expanded={open} aria-controls="public-mobile-menu" onClick={()=>setOpen(v=>!v)}>{open?<X size={22}/>:<Menu size={22}/>}</button></div></div><nav id="public-mobile-menu" hidden={!open} className="page-container vs-mobile-nav" aria-label="Mobile navigation">{nav.map(([label,to])=><NavLink end={to==='/'} key={to} to={to} onClick={()=>setOpen(false)} className="vs-nav-link">{label}</NavLink>)}<Button asChild className="vs-button vs-button-orange"><Link to="/facilities" onClick={()=>setOpen(false)}>Find Storage <ArrowUpRight size={16}/></Link></Button></nav></header></>;
 }

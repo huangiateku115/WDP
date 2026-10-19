@@ -7,5 +7,5 @@ export const corsOptions: CorsOptions = {
     callback(null, !origin || env.corsOrigins.includes(origin));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
 };

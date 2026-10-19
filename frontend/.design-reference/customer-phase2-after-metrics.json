@@ -1,0 +1,290 @@
+[
+  {
+    "name": "units",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "units",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "units",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "units",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "units",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "units",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "inventory",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "inventory",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "inventory",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "inventory",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "inventory",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "inventory",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "contracts",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "contracts",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "contracts",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "contracts",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "contracts",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "contracts",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "payments",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "payments",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "payments",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "payments",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "payments",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "payments",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "warehouse",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "warehouse",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "notifications",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "notifications",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "notifications",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "notifications",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "notifications",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "notifications",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "profile",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "profile",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "profile",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "profile",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "profile",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "profile",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  },
+  {
+    "name": "support",
+    "width": 320,
+    "scrollWidth": 320,
+    "title": "24px"
+  },
+  {
+    "name": "support",
+    "width": 390,
+    "scrollWidth": 390,
+    "title": "24px"
+  },
+  {
+    "name": "support",
+    "width": 768,
+    "scrollWidth": 768,
+    "title": "24px"
+  },
+  {
+    "name": "support",
+    "width": 1024,
+    "scrollWidth": 1024,
+    "title": "24px"
+  },
+  {
+    "name": "support",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "title": "30px"
+  },
+  {
+    "name": "support",
+    "width": 1920,
+    "scrollWidth": 1920,
+    "title": "30px"
+  }
+]

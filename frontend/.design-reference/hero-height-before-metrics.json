@@ -1,0 +1,330 @@
+[
+  {
+    "width": 390,
+    "scrollWidth": 390,
+    "hero": {
+      "x": 0,
+      "y": 109,
+      "width": 390,
+      "height": 904.25,
+      "right": 390,
+      "bottom": 1013.25,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "title": {
+      "x": 20,
+      "y": 179.6875,
+      "width": 350,
+      "height": 136,
+      "right": 370,
+      "bottom": 315.6875,
+      "font": "40px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "photo": {
+      "x": 20,
+      "y": 627.25,
+      "width": 350,
+      "height": 350,
+      "right": 370,
+      "bottom": 977.25,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "image": {
+      "x": 20,
+      "y": 627.25,
+      "width": 350,
+      "height": 350,
+      "right": 370,
+      "bottom": 977.25,
+      "font": "15px",
+      "fit": "cover",
+      "position": "55% 50%"
+    },
+    "caption": {
+      "x": 32,
+      "y": 902.453125,
+      "width": 326,
+      "height": 62.796875,
+      "right": 358,
+      "bottom": 965.25,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "trust": {
+      "x": 20,
+      "y": 1013.25,
+      "width": 350,
+      "height": 244.34375,
+      "right": 370,
+      "bottom": 1257.59375,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "header": {
+      "x": 0,
+      "y": 32,
+      "width": 390,
+      "height": 77,
+      "right": 390,
+      "bottom": 109,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "source": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85"
+  },
+  {
+    "width": 768,
+    "scrollWidth": 768,
+    "hero": {
+      "x": 0,
+      "y": 125,
+      "width": 768,
+      "height": 572.828125,
+      "right": 768,
+      "bottom": 697.828125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "title": {
+      "x": 32,
+      "y": 208.6875,
+      "width": 337,
+      "height": 149.578125,
+      "right": 369,
+      "bottom": 358.265625,
+      "font": "44px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "photo": {
+      "x": 399,
+      "y": 205.21875,
+      "width": 337,
+      "height": 404.390625,
+      "right": 736,
+      "bottom": 609.609375,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "image": {
+      "x": 399,
+      "y": 205.21875,
+      "width": 337,
+      "height": 404.390625,
+      "right": 736,
+      "bottom": 609.609375,
+      "font": "15px",
+      "fit": "cover",
+      "position": "55% 50%"
+    },
+    "caption": {
+      "x": 413,
+      "y": 492.234375,
+      "width": 309,
+      "height": 103.375,
+      "right": 722,
+      "bottom": 595.609375,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "trust": {
+      "x": 32,
+      "y": 697.828125,
+      "width": 704,
+      "height": 142.96875,
+      "right": 736,
+      "bottom": 840.796875,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "header": {
+      "x": 0,
+      "y": 34,
+      "width": 768,
+      "height": 91,
+      "right": 768,
+      "bottom": 125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "source": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85"
+  },
+  {
+    "width": 1440,
+    "scrollWidth": 1440,
+    "hero": {
+      "x": 0,
+      "y": 125,
+      "width": 1440,
+      "height": 601.703125,
+      "right": 1440,
+      "bottom": 726.703125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "title": {
+      "x": 100,
+      "y": 208.6875,
+      "width": 540,
+      "height": 205.640625,
+      "right": 640,
+      "bottom": 414.328125,
+      "font": "60.48px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "photo": {
+      "x": 742,
+      "y": 176.84375,
+      "width": 598,
+      "height": 490,
+      "right": 1340,
+      "bottom": 666.84375,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "image": {
+      "x": 742,
+      "y": 176.84375,
+      "width": 598,
+      "height": 490,
+      "right": 1340,
+      "bottom": 666.84375,
+      "font": "15px",
+      "fit": "cover",
+      "position": "55% 50%"
+    },
+    "caption": {
+      "x": 760,
+      "y": 568.65625,
+      "width": 562,
+      "height": 80.1875,
+      "right": 1322,
+      "bottom": 648.84375,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "trust": {
+      "x": 100,
+      "y": 726.703125,
+      "width": 1240,
+      "height": 100.484375,
+      "right": 1340,
+      "bottom": 827.1875,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "header": {
+      "x": 0,
+      "y": 34,
+      "width": 1440,
+      "height": 91,
+      "right": 1440,
+      "bottom": 125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "source": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85"
+  },
+  {
+    "width": 1920,
+    "scrollWidth": 1920,
+    "hero": {
+      "x": 0,
+      "y": 125,
+      "width": 1920,
+      "height": 640.828125,
+      "right": 1920,
+      "bottom": 765.828125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "title": {
+      "x": 340,
+      "y": 208.6875,
+      "width": 540,
+      "height": 244.765625,
+      "right": 880,
+      "bottom": 453.453125,
+      "font": "72px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "photo": {
+      "x": 982,
+      "y": 196.40625,
+      "width": 598,
+      "height": 490,
+      "right": 1580,
+      "bottom": 686.40625,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "image": {
+      "x": 982,
+      "y": 196.40625,
+      "width": 598,
+      "height": 490,
+      "right": 1580,
+      "bottom": 686.40625,
+      "font": "15px",
+      "fit": "cover",
+      "position": "55% 50%"
+    },
+    "caption": {
+      "x": 1000,
+      "y": 588.21875,
+      "width": 562,
+      "height": 80.1875,
+      "right": 1562,
+      "bottom": 668.40625,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "trust": {
+      "x": 340,
+      "y": 765.828125,
+      "width": 1240,
+      "height": 100.484375,
+      "right": 1580,
+      "bottom": 866.3125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "header": {
+      "x": 0,
+      "y": 34,
+      "width": 1920,
+      "height": 91,
+      "right": 1920,
+      "bottom": 125,
+      "font": "15px",
+      "fit": "fill",
+      "position": "50% 50%"
+    },
+    "source": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85"
+  }
+]

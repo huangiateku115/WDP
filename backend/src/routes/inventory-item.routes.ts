@@ -3,20 +3,31 @@ import * as controller from '../controllers/inventory-items/inventory-item.contr
 import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
+import * as checkinController from '../controllers/reservations/managed-checkin.controller';
+import rateLimit from 'express-rate-limit';
+import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
 
 const router = Router();
 const customer = requireRole([UserRole.CUSTOMER]);
 const readers = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]);
 const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.CUSTOMER]);
+const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
 
 router.use(requireAuth);
+router.post('/image-uploads', customer, inventoryImageUploadLimiter, uploadInventoryImageFile, controller.uploadImage);
+router.delete('/image-uploads/:uploadId', customer, controller.removeImageUpload);
 router.post('/', customer, controller.create);
 router.get('/me', customer, controller.listMine);
 router.get('/', readers, controller.list);
 router.get('/:id/placement-preview', itemReaders, controller.placementPreview);
 router.post('/:id/inbound-request', customer, controller.requestInbound);
+router.post('/:id/outbound-request', customer, controller.requestOutbound);
 router.post('/:id/confirm-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmInbound);
+router.post('/:id/confirm-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.confirmOutbound);
+router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), checkinController.inspectItem);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
+router.post('/:id/reject-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectOutbound);
+router.post('/:id/relocate', requireRole([UserRole.FACILITY_STAFF]), controller.relocate);
 router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, controller.get);
 router.patch('/:id', customer, controller.update);
