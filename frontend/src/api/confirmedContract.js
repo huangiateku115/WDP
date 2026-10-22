@@ -89,6 +89,8 @@ export function assertConfirmedRequest(config) {
       /^(maintenance-tickets|support-requests)\/[^/]+(\/status)?$/.test(path));
   const managedIntake =
     (method === "GET" && path === "inventory-items") ||
+    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(path)) ||
     (method === "POST" &&
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
@@ -106,7 +108,8 @@ export function assertConfirmedRequest(config) {
     /^reservations\/managed\/[a-f\d]{24}\/deposit\/mock-confirm$/i.test(path);
   const movementHistory =
     method === "GET" && /^inventory-items\/[a-f\d]{24}\/movements$/i.test(path);
-  const allowed =
+  const facilityHandover = (method === "GET" && /^(contracts\/reservation\/[a-f\d]{24}|contracts\/[a-f\d]{24}\/print)$/i.test(path)) || (method === "POST" && /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(path));
+  const allowed = facilityHandover ||
     (method === "POST" && path === "inventory-items/image-uploads") ||
     (method === "DELETE" &&
       /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||

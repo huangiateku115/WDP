@@ -1,3 +1,122 @@
+# Kiểm thử demo thực tế — 22/10/2026
+
+- Backend health: database connected. Đã đăng nhập Manager và Staff bằng trình duyệt.
+- PASS dữ liệu thật: Manager duyệt đơn; Customer ký và mock-pay để chuẩn bị; Staff tạo/hoàn tất CHECK_IN, rồi CHECK_OUT. Đã kiểm tra ACTIVE/OCCUPIED và CHECKED_OUT/AVAILABLE.
+- PASS dữ liệu thật: tạo, phân công và xử lý maintenance/support đến CLOSED; gửi ghi chú nội bộ và đăng xuất cả hai vai trò.
+- BLOCKED: upload hợp đồng giấy trả `cloud_name is disabled`. Cần người phụ trách backend/Cloudinary khôi phục dịch vụ ảnh. Frontend hiển thị lỗi rõ ràng; chưa xác nhận live luồng giấy → balance → handover.
+- Chỉ dùng bản ghi thử mới trong lượt này. Đơn `BKG-261022-LLUY` đã CHECKED_OUT; không dùng lại để demo thao tác mới. Các ticket thử đã CLOSED.
+- Hướng dẫn trình bày: `StaffManagerDemoTrenLop.docx`, gồm đường dẫn, dữ liệu nhập, thao tác và lời trình bày. Không lưu mật khẩu trong tài liệu.
+- Các kết quả fixture và ghi chú lịch sử bên dưới không thay thế kết quả live ở mục này.
+
+---
+
+# Bản demo chỉ dùng API — sau khi kiểm tra dev, 22/10/2026
+
+Đã chạy `git fetch origin` và `git pull --ff-only origin dev` trên nhánh làm việc Frontend. Kết quả Already up to date; HEAD và origin/dev cùng `a3b03fa`. Không có API backend mới từ dev trong lượt này. Giữ nguyên thay đổi frontend chưa commit.
+
+## Các trang đang hiển thị
+
+| Nội dung | Staff | Manager |
+| --- | --- | --- |
+| Khách hàng | [Mở](http://localhost:5173/staff/customers) | [Mở](http://localhost:5173/manager/customers) |
+| Đặt chỗ và hợp đồng | [Mở](http://localhost:5173/staff/reservations) | [Mở](http://localhost:5173/manager/reservations) |
+| Nhận kho luồng cũ | [Mở](http://localhost:5173/staff/check-ins) | [Mở](http://localhost:5173/manager/work/CHECK_IN) |
+| Bàn giao hợp đồng giấy | [Mở](http://localhost:5173/staff/handovers) | [Mở](http://localhost:5173/manager/work/HANDOVER) |
+| Biên bản hiện trạng | [Mở](http://localhost:5173/staff/inspections) | [Mở](http://localhost:5173/manager/work/INSPECTION) |
+| Trả kho — vừa nối API | [Mở](http://localhost:5173/staff/checkouts) | [Mở](http://localhost:5173/manager/work/CHECKOUT) |
+| Bảo trì | [Mở](http://localhost:5173/staff/maintenance) | [Mở](http://localhost:5173/manager/maintenance) |
+| Hỗ trợ | [Mở](http://localhost:5173/staff/support) | [Mở](http://localhost:5173/manager/support) |
+
+Trang mặc định/logo dẫn về Reservations. Dashboard, công việc/phân công tổng hợp, hoàn tiền, gia hạn, phí, báo cáo, kho/vị trí và inventory tạm ẩn trong hai workspace. Phân công ticket vẫn ở trang Maintenance/Support. Code cũ và workspace Customer/Admin/BOM giữ nguyên. Đây là giới hạn hiển thị tạm thời, không thay thế kiểm soát quyền backend. Cấu hình phạm vi nằm trong `src/lib/facilityWorkspace.js`.
+
+## Demo trả kho mới
+
+1. Sau khi đã bàn giao, mở trang **Trả kho** đúng vai trò ở bảng trên. Chọn một đơn Self Storage ACTIVE hoặc OVERDUE thuộc cơ sở; tủ phải OCCUPIED.
+2. Chọn hiện trạng GOOD/EXCELLENT nếu tốt, DAMAGED nếu hỏng, NEEDS_CLEANING nếu cần dọn dẹp. Nhập ghi chú; có thể thêm tối đa ba URL ảnh đã lưu. Chưa có upload ảnh riêng cho Inspection này.
+3. Tích checklist → **Lưu biên bản trả kho**. Backend tạo CHECK_OUT DRAFT, chưa đổi trạng thái đơn/tủ. Trang chi tiết dùng Inspection ID, không phải Reservation ID.
+4. Kiểm tra lại hiện trạng trong trang chi tiết, tích checklist → **Hoàn tất trả kho → Xác nhận trả kho**.
+5. Frontend đọc lại điều kiện và gọi `PATCH /inspections/<inspectionId>/complete`, sau đó đọc lại đơn/tủ. Kết quả cần thấy:
+   - Đơn CHECKED_OUT; tủ AVAILABLE khi GOOD/EXCELLENT.
+   - Đơn CHECKED_OUT; tủ MAINTENANCE khi DAMAGED/NEEDS_CLEANING.
+6. Tải lại trang: biên bản COMPLETED và không có nút trả kho lần nữa. Nếu có nháp sẵn, mở nháp đó, không tạo thêm. Khi lỗi hoặc đơn/tủ chưa đồng bộ, dừng thao tác và kiểm tra backend.
+
+Lời trình bày: “Nhân viên ghi nhận hiện trạng khi khách trả kho. Hệ thống kết thúc sử dụng và xác định tủ có thể cho thuê tiếp hay phải bảo trì. Phí hư hỏng và hoàn cọc thuộc luồng riêng, không tự xử lý ở bước này.”
+
+**Kiểm chứng:** build PASS, bốn bộ browser fixture (review, inspection, facility operations, checkout) kiểm tra luồng API. Không ghi dữ liệu thật và chưa chạy E2E Atlas/Cloudinary trong lượt này. Backend vẫn cần kiểm soát scope/trạng thái/transaction ở completeInspection; frontend không sửa backend.
+
+---
+
+# Demo Staff / Facility Manager — API thật (cập nhật 22/10/2026)
+
+Phần này thay thế các ghi chú API cũ bên dưới. Hướng dẫn dữ liệu mẫu ở cuối file chỉ dùng khi bật mock; không dùng mã REF/RES/STASK mẫu trong chế độ API thật.
+
+## Chuẩn bị
+
+- Backend chạy tại `http://localhost:5000`; frontend chạy trong thư mục `frontend` bằng `npm run dev`.
+- `.env.local`: `VITE_USE_MOCK=false`, địa chỉ API `http://localhost:5000/api/v1`. Không đưa file môi trường hoặc mật khẩu lên Git.
+- Mở [đăng nhập](http://localhost:5173/login). Manager: `pdat0702@gmail.com`; Staff: `dattpse182773@fpt.edu.vn`. Dùng hai hồ sơ trình duyệt riêng để giữ hai phiên đăng nhập độc lập.
+- Cả hai tài khoản cần `assignedFacilityId` đúng cơ sở của đơn. Dùng Mongo ID thật; lấy từ trang chi tiết. Không dùng lại đơn cũ đã hết hạn hoặc đã ACTIVE để demo thao tác lần đầu.
+- Các đường dẫn dưới dùng cổng 5173. Nếu Vite in cổng khác, thay cổng tương ứng.
+
+## 1. Khách hàng và đặt chỗ
+
+1. Manager mở [Customers](http://localhost:5173/manager/customers), chọn hồ sơ cần kiểm tra và xác minh nếu còn PENDING. Chỉ xác minh khi dữ liệu hợp lệ.
+2. Manager mở [Reservations](http://localhost:5173/manager/reservations), chọn đơn Self Storage thuộc cơ sở. Với luồng cũ RESERVED, xem chi tiết rồi duyệt/từ chối. Đơn DEPOSIT_PAID theo luồng mới chuyển sang xử lý hợp đồng giấy; không duyệt lại.
+3. Staff mở [Reservations](http://localhost:5173/staff/reservations), chọn cùng đơn. Staff đọc được đơn và hợp đồng; không có nút duyệt/từ chối của Manager.
+4. Sau thao tác ở cửa sổ Manager, chuyển lại cửa sổ Staff hoặc bấm tải lại để lấy trạng thái backend. Đây là đọc lại dữ liệu, không phải WebSocket thời gian thực.
+
+Lời trình bày: “Manager kiểm tra và quyết định đặt chỗ. Staff theo dõi cùng dữ liệu trong cơ sở để thực hiện nghiệp vụ tại quầy.”
+
+## 2. Hợp đồng giấy → thanh toán còn lại → bàn giao Self Storage
+
+1. Mở chi tiết đơn từ danh sách trên. Khối **Hợp đồng giấy và bàn giao** tự tìm hợp đồng theo Reservation ID, kiểm tra đúng khách và cơ sở.
+2. Bấm **Xem dữ liệu in hợp đồng → Xác nhận**. Đây là dữ liệu hợp đồng từ API, chưa phải mẫu hợp đồng PDF pháp lý hoàn chỉnh.
+3. Với đơn CONTRACTED/DEPOSIT_PAID chưa có bằng chứng, chọn ảnh JPEG/PNG/WEBP hoặc PDF hợp đồng đã ký, tối đa 10 MB. Điền số hợp đồng giấy nếu có.
+4. Tích xác nhận đã kiểm tra → **Xác nhận hợp đồng giấy → Xác nhận**. Frontend gửi field `proofFile`, đọc lại hợp đồng SIGNED/có bằng chứng và đơn CHECKIN_READY.
+5. **Bước Customer:** khách thanh toán số dư. Frontend Staff/Manager không nhận tiền thay khách và không tự đặt PAID. Hiện trang Customer Self Storage chưa nối endpoint balance mới; để demo xuyên suốt cần người phụ trách Customer hoàn thiện hoặc dùng Postman với token Customer:
+   - `POST /reservations/<reservationId>/balance`: xem khoản còn phải trả.
+   - `POST /reservations/<reservationId>/balance/mock-confirm`: xác nhận thanh toán mô phỏng, chỉ dùng dữ liệu demo development; không gọi lặp hoặc coi là chuyển tiền thật.
+6. Trở lại chi tiết đơn, bấm **Tải lại hợp đồng**. Chỉ khi backend trả PAID, hợp đồng SIGNED và có bằng chứng mới xuất hiện **Bàn giao kho**.
+7. Kiểm tra thực tế, tích xác nhận → **Bàn giao kho → Xác nhận**. Frontend kiểm tra lại đơn/tủ, gọi API handover rồi đọc lại ACTIVE/OCCUPIED. Nếu lỗi hoặc trạng thái chưa đồng bộ, không báo thành công.
+8. Có thể mở trực tiếp [Staff Handover](http://localhost:5173/staff/handovers) hoặc [Manager Handover](http://localhost:5173/manager/work/HANDOVER), nhập Reservation ID thật.
+
+Lời trình bày: “Em xác nhận bằng chứng hợp đồng đã ký. Khách thanh toán phần còn lại, sau đó nhân viên bàn giao và kiểm tra trạng thái sử dụng kho từ backend.”
+
+**Phân biệt luồng cũ:** [Staff Check-in](http://localhost:5173/staff/check-ins), [Staff Inspection](http://localhost:5173/staff/inspections), [Manager Check-in](http://localhost:5173/manager/work/CHECK_IN) dùng CHECK_IN DRAFT → COMPLETED cho đơn Self Storage cũ. Contract ID tự lấy theo đơn. Không dùng completeInspection để bỏ qua luồng hợp đồng giấy hoặc Managed V2; frontend chặn các trường hợp đó. Handover mới không tự hoàn tất một biên bản Inspection riêng.
+
+## 3. Bảo trì: tạo → giao việc → xử lý → đóng
+
+1. Staff mở [Maintenance](http://localhost:5173/staff/maintenance), điền tiêu đề, mô tả, nhóm, ưu tiên; Storage Unit ID không bắt buộc. Bấm **Lưu yêu cầu**. Ghi lại ID được trả về.
+2. Yêu cầu mới OPEN chưa xuất hiện trong danh sách cá nhân của Staff cho tới khi được giao. Manager mở [Maintenance](http://localhost:5173/manager/maintenance), tìm yêu cầu rồi mở chi tiết.
+3. Manager nhập **Staff User ID** thật thuộc cơ sở → **Phân công → Xác nhận**. Đây là User ID, không phải email hay Customer Profile ID. Chưa có danh bạ Staff trong màn hình này.
+4. Staff tải lại trang, mở yêu cầu được giao → **Chuyển sang IN_PROGRESS → Xác nhận**.
+5. Sau xử lý, nhập **Kết quả xử lý**, ví dụ “Đã kiểm tra và thay khóa cửa kho” → **Chuyển sang RESOLVED → Xác nhận**.
+6. Kiểm tra kết quả → **Chuyển sang CLOSED → Xác nhận**. Tải lại để thấy dữ liệu vẫn được lưu.
+7. Case phụ: Manager sửa nội dung khi chưa CLOSED; **Bỏ phân công** khi ASSIGNED đưa về OPEN. Staff không có nút phân công.
+
+Lời trình bày: “Manager phân công nhân viên cùng cơ sở. Staff chỉ thấy và xử lý ticket được giao, ghi rõ kết quả trước khi đóng.”
+
+## 4. Hỗ trợ: phân công và trao đổi
+
+1. Manager mở [Support](http://localhost:5173/manager/support), chọn yêu cầu có sẵn hoặc tạo mới bằng Customer User ID thật.
+2. Phân công Staff như bảo trì. Staff mở [Support](http://localhost:5173/staff/support), chọn yêu cầu được giao.
+3. Trong **Trao đổi**, nhập ghi chú. Mặc định là **Ghi chú nội bộ**. Bấm **Gửi tin nhắn → Xác nhận**, kiểm tra nội dung đọc lại.
+4. Nếu cần trả lời khách, chọn **Gửi cho khách hàng** và kiểm tra phạm vi trong hộp xác nhận trước khi gửi. Không đưa thông tin nội bộ vào tin công khai.
+5. Xử lý ASSIGNED → IN_PROGRESS → nhập kết quả → RESOLVED → CLOSED. Dùng tìm kiếm, lọc trạng thái và phân trang khi cần.
+
+## 5. Mức kiểm chứng và việc tiếp theo
+
+- Đã kiểm thử frontend bằng trình duyệt với API giả lập: quyền Staff/Manager, tự lấy hợp đồng, upload multipart, điều kiện thanh toán/bàn giao, sai cơ sở, lỗi HTTP, phản hồi không đồng bộ, tạo/sửa/phân công/bỏ phân công và đóng ticket, tin nội bộ, màn hình hẹp.
+- Chưa nghiệm thu end-to-end với Atlas/Cloudinary hoặc giao dịch thật trong lượt này. Không sửa backend, không tạo đơn hay thanh toán trên database chung.
+- Trong phạm vi Staff/Manager, CHECK_OUT đã nối API ở bản cập nhật đầu tài liệu. Tiếp theo cần kiểm thử thực tế ảnh ký giấy, trạng thái sau thanh toán/trả kho và bổ sung chọn nhân viên thuận tiện khi có API danh bạ phù hợp.
+- Phối hợp người làm Customer để nối thanh toán Self Storage mới. Đây là phụ thuộc để demo xuyên suốt, không tính màn hình thanh toán Customer là phần Staff/Manager.
+- Hoàn tiền/gia hạn/phí phát sinh vẫn chờ API tương ứng; không trình bày dữ liệu demo là dữ liệu backend.
+- Tài liệu Word ngày 19/10 dùng nhiều snapshot 09–12/10: quyền Staff và luồng mới phải đối chiếu source hiện tại. Managed Receiving, ảnh chứng cứ, Confirm Inbound có liên quan role Staff nhưng không tự suy ra thuộc phần được giao trong Excel; giữ phần của nhóm, chỉ mở rộng khi xác nhận phân công.
+
+---
+
+# Phụ lục: kịch bản mock lịch sử (không dùng cho API thật)
+
 # Kịch bản demo tiếng Việt — M4, Iteration 1–3
 
 > **Cập nhật 12/10/2026:** hướng dẫn phía dưới dành cho dữ liệu demo khi `VITE_USE_MOCK=true`. Frontend hiện có chế độ API thật cho khách hàng/xác minh và đặt chỗ Manager khi `VITE_USE_MOCK=false`. File `.env.local` trên máy đang chọn API thật, base URL `http://localhost:5000/api/v1`; file này không đưa lên Git.

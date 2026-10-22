@@ -133,6 +133,7 @@ const ZonePlane = memo(function ZonePlane({
   rackId,
   onSelect,
   registerZone,
+  onSelectZone,
 }) {
   const racks = useMemo(() => zone.aisles.flatMap((a) => a.racks), [zone]),
     x = useMemo(() => warehouseAxis(racks.map((r) => r.mapX)), [racks]),
@@ -148,7 +149,7 @@ const ZonePlane = memo(function ZonePlane({
       aria-label={`Zone ${zone.code}`}
     >
       <div className="wm-zone-heading">
-        <h3>{zone.code}</h3>
+        <h3><button type="button" onClick={()=>onSelectZone(zone._id)} aria-label={`Open zone ${zone.code}`}>{zone.code}</button></h3>
         <span>{zone.name}</span>
       </div>
       {(x.condensed || y.condensed) && (
@@ -231,8 +232,10 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     zones = useRef(new Map()),
     cache = useRef(new Map()),
     drag = useRef(null),
+    floorScroll = useRef({left:0,top:0}),
     pendingZone = useRef(null);
   const [rackId, setRackId] = useState(initialRackId || ""),
+    [view, setView] = useState(initialRackId ? "rack-detail" : "floorplan"),
     [cell, setCell] = useState(null),
     [zoneId, setZoneId] = useState(""),
     [query, setQuery] = useState(""),
@@ -285,6 +288,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
   );
   useEffect(() => {
     setRackId(initialRackId || "");
+    setView(initialRackId ? "rack-detail" : "floorplan");
     setCell(null);
   }, [initialRackId]);
   useEffect(() => {
@@ -320,11 +324,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
   }, []);
   useEffect(() => {
     if (!floor.current) return;
-    const measure = () =>
+    const measure = () => {if(!floor.current?.offsetWidth)return;
       setBounds({
         width: floor.current?.offsetWidth || 1,
         height: floor.current?.offsetHeight || 1,
-      });
+      });};
     const observer = new ResizeObserver(measure);
     observer.observe(floor.current);
     measure();
@@ -403,6 +407,9 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     else zones.current.delete(id);
   }, []);
   const selectRack = useCallback((id) => {
+    if(viewport.current?.getClientRects().length)floorScroll.current={left:viewport.current.scrollLeft,top:viewport.current.scrollTop};
+    setView("rack-detail");
+    if(innerWidth<1200)setSidebar(false);
     setRackId(id);
     setCell(null);
     setDrawer(false);
@@ -419,11 +426,14 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       });
   const selectZone = (id) => {
     setZoneId(id);
-    if (zones.current.has(id)) scrollZone(id);
-    else {
-      pendingZone.current = id;
-      setQuery("");
-    }
+    if(viewport.current?.getClientRects().length)floorScroll.current={left:viewport.current.scrollLeft,top:viewport.current.scrollTop};
+    setView('rack-detail');
+    if(innerWidth<1200)setSidebar(false);
+    if(!filtered.some(zone=>zone._id===id))setQuery('');
+    setCell(null);setDrawer(false);
+    const racks=map.data?.zones.find(zone=>zone._id===id)?.aisles.flatMap(aisle=>aisle.racks)||[];
+    setRackId(racks.length===1?racks[0]._id:'');
+
   };
   useEffect(() => {
     if (pendingZone.current && zones.current.has(pendingZone.current)) {
@@ -431,6 +441,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       pendingZone.current = null;
     }
   }, [filtered]);
+  useEffect(()=>{if(view!=="floorplan")return;const frame=requestAnimationFrame(()=>viewport.current?.scrollTo(floorScroll.current));return()=>cancelAnimationFrame(frame);},[view]);
+  const centralScroll=useRef(null);
+  useEffect(()=>{if(centralScroll.current)centralScroll.current.scrollTop=0;},[view,rackId,zoneId]);
+  const activeZone=map.data?.zones.find(zone=>zone._id===zoneId);
+  const zoneRacks=activeZone?.aisles.flatMap(aisle=>aisle.racks)||[];
   const refresh = () => {
     if (map.loading || detail.loading) return;
     cache.current.clear();
@@ -508,7 +523,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
         <>
           {!map.error && <ResourceState resource={detail} />}
           {!map.error &&
-            detail.data &&
+            !detail.loading && detail.data?.rack._id===rackId &&
             (cell ? (
               <>
                 <CellInformation
@@ -542,20 +557,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     >
       <header className="wm-header">
         <div>
-          <p className="wm-eyebrow">
-            <MapIcon size={14} /> WAREHOUSE EXPLORER · MI-01
-          </p>
           <h1>Digital Warehouse Map</h1>
-          <p>Explore warehouse zones, racks and storage cells.</p>
-          <WarehouseBreadcrumbs
-            facilityId={validId(facilityId) ? facilityId : undefined}
-            facilityName={facility.data?.name}
-            rackCode={
-              initialRackId
-                ? detail.data?.rack.rackCode || "Rack Detail"
-                : undefined
-            }
-          />
           <p className="wm-facility">{facility.data?.name || facilityId}</p>
           {facility.loading && (
             <small role="status">Loading facility context…</small>
@@ -566,9 +568,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               backend.
             </small>
           )}
-          {updated && (
-            <small>Last updated {updated.toLocaleTimeString()}</small>
-          )}
+
         </div>
         <div className="wm-header-actions">
           <Button asChild variant="outline" className="wm-button">
@@ -594,30 +594,12 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             <RefreshCw size={15} />
             Refresh
           </Button>
-          <Button
-            variant="outline"
-            className="wm-button"
-            onClick={toggleFullscreen}
-          >
-            {fullscreen || expanded ? (
-              <Minimize2 size={15} />
-            ) : (
-              <Maximize2 size={15} />
-            )}
-            <span>
-              {fullscreen || expanded ? "Exit fullscreen" : "Fullscreen"}
-            </span>
-          </Button>
+
         </div>
       </header>
-      <p className="wm-notice">
-        {booking.period.range
-          ? "Availability for the selected UTC rental interval."
-          : "Current-time warehouse overview. Choose a rental period to check booking availability."}{" "}
-        Reserving Cells is separate from Staff-confirmed physical occupancy.
-      </p>
       <details className="wm-booking-drawer">
         <summary>Rental period &amp; Cell selection</summary>
+        <p className="wm-notice">Availability follows the selected UTC rental interval. Cell reservation is separate from physical inventory occupancy.</p>
       <CellBookingPanel
         booking={booking}
         facilityId={facilityId}
@@ -728,10 +710,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           <div className="wm-section-heading">
             <h2>
               <MapIcon size={16} />
-              Warehouse floorplan
+              {view==='floorplan'?'Warehouse floorplan':`Rack Structure — ${activeZone?.code||'Rack'}`}
             </h2>
-            <span>Coordinates: X → · Y ↓</span>
+            {view==='floorplan'?<span>Coordinates: X → · Y ↓</span>:<Button className="wm-button" variant="outline" onClick={()=>{setView('floorplan');setDrawer(false);}}>← Back to Floorplan</Button>}
           </div>
+          <div hidden={view!=="floorplan"} className="wm-floorplan-view">
           <ResourceState resource={map} />
           {map.data && !allRacks.length && (
             <p className="wm-map-empty">
@@ -806,6 +789,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                         }
                         onSelect={selectRack}
                         registerZone={registerZone}
+                        onSelectZone={selectZone}
                       />
                     ))}
                     {!filtered.length && (
@@ -858,12 +842,16 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               </div>
             </>
           )}
+          </div>
+          {view==='rack-detail' && <div className="wm-drilldown-content" ref={centralScroll}>
+            <ResourceState resource={map}/>
+            {!map.error&&activeZone&&zoneRacks.length!==1&&<div className="wm-rack-picker"><p>{zoneRacks.length?'Choose a Rack in this Zone.':'No racks are available in this zone yet.'}</p>{zoneRacks.map(rack=><Button key={rack._id} type="button" className="wm-button" variant="outline" aria-pressed={rackId===rack._id} onClick={()=>selectRack(rack._id)}>{rack.rackCode}</Button>)}</div>}
           {rackId && (
             <div className="wm-selected-rack">
               <div className="wm-rack-inline-state">
                 {!map.error && <ResourceState resource={detail} />}
               </div>
-              {!map.error && detail.data && (
+              {!map.error && !detail.loading && detail.data?.rack._id===rackId && (
                 <WarehouseCells
                   key={`${rackId}:${updated?.getTime() || 0}`}
                   data={detail.data}
@@ -880,6 +868,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               )}
             </div>
           )}
+          </div>}
         </section>
         <aside
           className="wm-inspector wm-panel"
