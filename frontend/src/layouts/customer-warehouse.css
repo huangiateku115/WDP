@@ -4,7 +4,7 @@
 .customer-warehouse-back {display:inline-flex;align-items:center;gap:6px;color:#176b3a;font-size:13px;font-weight:600;white-space:nowrap;}
 .customer-warehouse-back:focus-visible,.customer-warehouse-layout summary:focus-visible {outline:3px solid #f28c28;outline-offset:3px;}
 .customer-warehouse-main {min-width:0;}
-.customer-warehouse-layout .warehouse-dashboard {max-width:none;width:100%;margin:0;padding:12px;border:0;border-radius:0;box-shadow:none;min-height:calc(100dvh - 60px);}
+.customer-warehouse-layout .warehouse-dashboard {max-width:none;width:100%;margin:0;padding:12px;border:0;border-radius:0;box-shadow:none;min-height:100dvh;}
 .customer-warehouse-layout .wm-header {gap:12px;}
 .customer-warehouse-layout .wm-header h1 {font-size:22px;}
 .customer-warehouse-layout .wm-header p,.customer-warehouse-layout .wm-notice {margin-block:4px;}
@@ -12,7 +12,7 @@
 .customer-warehouse-layout .wm-stat {padding:10px;}
 .customer-warehouse-layout .wm-booking-drawer {margin-block:8px;position:relative;}
 .customer-warehouse-layout .wm-booking-drawer summary {cursor:pointer;color:#fff;border:1px solid #59735e;border-radius:8px;padding:10px 14px;background:#214936;width:fit-content;font-weight:600;}
-.customer-warehouse-layout .wm-booking-drawer[open] {position:fixed;right:12px;top:72px;z-index:70;width:440px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 88px);overflow:auto;background:#103325;border:1px solid #647a68;border-radius:12px;padding:10px;box-shadow:0 16px 48px #0006;}
+.customer-warehouse-layout .wm-booking-drawer[open] {position:fixed;right:12px;top:12px;z-index:70;width:440px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);overflow:auto;background:#103325;border:1px solid #647a68;border-radius:12px;padding:10px;box-shadow:0 16px 48px #0006;}
 .customer-warehouse-layout .wm-booking-drawer[open] summary {position:sticky;top:0;z-index:1;width:100%;}
 .customer-warehouse-layout .wm-booking-panel {margin-bottom:0;}
 .customer-warehouse-layout .wm-center {min-width:0;}
@@ -33,7 +33,19 @@
  .customer-warehouse-back {font-size:12px;}
 }
 @media(min-width:1200px){
- .customer-warehouse-layout .wm-map-viewport {height:calc(100dvh - 530px);min-height:280px;}
- .customer-warehouse-layout .wm-zone-sidebar,.customer-warehouse-layout .wm-inspector {max-height:calc(100dvh - 440px);}
+ .customer-warehouse-layout .wm-map-viewport {height:calc(100dvh - 330px);min-height:280px;}
+ .customer-warehouse-layout .wm-zone-sidebar,.customer-warehouse-layout .wm-inspector {max-height:calc(100dvh - 240px);}
 }
-.customer-warehouse-layout .customer-warehouse-main > .customer-screen {max-width:none;margin:0;min-height:calc(100dvh - 60px);background:#f6f8f3;}
+.customer-warehouse-layout .customer-warehouse-main > .customer-screen {max-width:none;margin:0;min-height:100dvh;background:#f6f8f3;}
+.customer-warehouse-layout .wm-search-wrap {position:relative;min-width:0;}
+.customer-warehouse-layout .wm-search-wrap > svg {position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;}
+.customer-warehouse-layout input.wm-search {width:100%;min-width:0;padding-left:34px;padding-right:8px;box-sizing:border-box;}
+.customer-warehouse-layout .wm-floorplan-view[hidden] {display:none;}
+.customer-warehouse-layout .wm-drilldown-content {height:calc(100dvh - 330px);min-height:300px;overflow:auto;min-width:0;}
+.customer-warehouse-layout .wm-drilldown-content .wm-selected-rack {max-height:none;overflow:visible;margin-top:0;}
+.customer-warehouse-layout .wm-rack-picker {display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+.customer-warehouse-layout .wm-rack-picker p {width:100%;}
+.customer-warehouse-layout .wm-zone-heading button:focus-visible {outline:2px solid #f28c28;outline-offset:3px;}
+@media(max-width:1199px){.customer-warehouse-layout .wm-drilldown-content {height:65dvh;}}
+/* Override the Customer compact form padding only for the icon-bearing map search. */
+.customer-warehouse-layout .wm-search-wrap input.wm-search {padding-inline:34px 8px !important;}
