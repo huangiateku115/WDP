@@ -13,6 +13,7 @@ export async function checkInEligibility({reservationId,contractId,facilityId,in
  const reservation=apiRecord(reservationResponse),contract=apiRecord(contractResponse),inspections=apiRows(inspectionResponse).map(inspectionRecord);
  const unitId=recordId(reservation.storageUnitId);
  if(recordId(reservation)!==reservationId||recordId(reservation.facilityId)!==facilityId||reservation.serviceType!=='SELF_STORAGE')throw Error('Đơn không thuộc Self Storage trong cơ sở được giao.');
+ if(contract.signedProofUrl||reservation.bookingFlowVersion===2)throw Error('Đơn theo luồng hợp đồng giấy/Managed mới: dùng trang bàn giao phù hợp, không hoàn tất qua Inspection cũ.');
  if(reservation.status!=='PAID')throw Error('Chỉ đơn PAID mới đủ điều kiện nhận kho; không được check-in lại đơn ACTIVE.');
  if(recordId(contract)!==contractId||recordId(contract.reservationId)!==reservationId||recordId(contract.customerId)!==recordId(reservation.customerId)||contract.status!=='SIGNED'||!contract.signedByCustomerAt)throw Error('Cần hợp đồng SIGNED đúng đơn và đúng khách.');
  if(!objectId(unitId))throw Error('Backend chưa cung cấp Storage Unit ID hợp lệ.');
