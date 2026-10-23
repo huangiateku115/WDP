@@ -7,6 +7,10 @@ const supportApi = {
   listReal: config=>axiosClient.get('/support-requests',config),
   detailReal: (id,config)=>axiosClient.get(`/support-requests/${encodeURIComponent(id)}`,config),
   messagesReal: (id,config)=>axiosClient.get(`/support-requests/${encodeURIComponent(id)}/messages`,config),
+  assign: (id,staffId)=>axiosClient.post(`/support-requests/${encodeURIComponent(id)}/assign`,{staffId}),
+  unassign: id=>axiosClient.post(`/support-requests/${encodeURIComponent(id)}/unassign`),
+  setStatus: (id,payload)=>axiosClient.patch(`/support-requests/${encodeURIComponent(id)}/status`,payload),
+  escalate: id=>axiosClient.post(`/support-requests/${encodeURIComponent(id)}/escalate`),
   getMine: async () => USE_MOCK ? { data: [] } : axiosClient.get("/support/me"),
   create: async (payload) => USE_MOCK
     ? { data: { id: `SUP-${Date.now()}`, status: "OPEN", ...payload } }

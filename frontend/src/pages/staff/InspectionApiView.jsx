@@ -25,18 +25,20 @@ function InspectionContent({type,manager}){
  const contractResource=useFacilityResource(contractLoad,hasFacility&&objectId(linkedReservation));
  useEffect(()=>{setContract(contractResource.data&&recordId(contractResource.data.reservationId)===linkedReservation?recordId(contractResource.data):'');},[contractResource.data,linkedReservation]);
  const run=async work=>{if(busy.current)return;busy.current=true;setSaving(true);setFeedback({});try{await work();}catch(error){setFeedback({error:reviewError(error)});if([404,409].includes(error?.response?.status))resource.reload();}finally{busy.current=false;setSaving(false);}};
- const complete=async event=>{event.preventDefault();if(!row||!isManager||!checks.every(Boolean)||!objectId(contractId)||row.status!=='DRAFT'||row.type!=='CHECK_IN')return;await run(async()=>{
-  await checkInEligibility({reservationId:row.reservation,contractId,facilityId,inspectionId:row.id});
+ const complete=async event=>{event.preventDefault();if(!row||!isManager||!checks.every(Boolean)||row.status!=='DRAFT'||row.type!=='CHECK_IN')return;await run(async()=>{
+  await checkInEligibility({reservationId:row.reservation,facilityId,inspectionId:row.id});
   const completed=inspectionRecord(apiRecord(await inspectionApi.complete(row.id)));
   if(completed.id!==row.id||completed.status!=='COMPLETED'||completed.type!=='CHECK_IN'||completed.reservation!==row.reservation||completed.unit!==row.unit||completed.facility!==facilityId)throw Error('Backend chưa xác nhận đúng biên bản đã hoàn tất. Không xác nhận nhận kho thành công.');
   setModal(false);announceReviewChange();
-  const [reservationResponse,unitResponse]=await Promise.all([facilityReservationApi.detail(row.reservation,false),storageApi.unitDetail(row.unit)]);
+  // Verify one record at a time instead of firing both GETs together (keeps backend load low).
+  const reservationResponse=await facilityReservationApi.detail(row.reservation,false);
+  const unitResponse=await storageApi.unitDetail(row.unit);
   const rental=apiRecord(reservationResponse),unit=apiRecord(unitResponse);
   if(recordId(rental)!==row.reservation||recordId(rental.facilityId)!==facilityId||recordId(unit)!==row.unit||recordId(unit.facilityId)!==facilityId||rental.status!=='ACTIVE'||unit.status!=='OCCUPIED')throw Error('Biên bản đã COMPLETED nhưng backend chưa xác nhận đơn ACTIVE và tủ OCCUPIED. Không gửi lại lệnh hoàn tất; cần kiểm tra backend.');
   setFeedback({success:'Backend xác nhận biên bản COMPLETED, đơn ACTIVE và tủ OCCUPIED.'});
  });};
  const create=async event=>{event.preventDefault();if(!isManager||!checks.every(Boolean)||!notes.trim())return;await run(async()=>{
-  const urls=imageUrls(images),eligible=await checkInEligibility({reservationId,contractId,facilityId});
+  const urls=imageUrls(images),eligible=await checkInEligibility({reservationId,facilityId});
   if(!inspectionConditions.includes(condition))throw Error('Tình trạng tủ không hợp lệ.');
   const body={reservationId,facilityId,storageUnitId:recordId(eligible.unit),type:'CHECK_IN',condition,notes:notes.trim()+'\nChecklist:\n'+checkInChecklist.map(text=>'- '+text+': đã kiểm tra').join('\n'),images:urls};
   const created=inspectionRecord(apiRecord(await inspectionApi.create(body)));

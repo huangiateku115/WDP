@@ -19,12 +19,6 @@ const saveOne = (item) => {
 };
 
 const reservationApi = {
-  estimateReal: ({ startDate, endDate, pricingPolicyId }, config) =>
-    axiosClient.post(
-      "/reservations/estimate",
-      { startDate, endDate, pricingPolicyId },
-      config,
-    ),
   createManaged: (payload) =>
     axiosClient.post("/reservations/managed", payload),
   createReal: (
@@ -50,6 +44,17 @@ const reservationApi = {
         estimatedRent,
         depositAmount,
       },
+      config,
+    ),
+  // Public route (no auth): POST /reservations/estimate {startDate,endDate,pricingPolicyId}
+  // -> {estimatedRent,depositAmount,taxAmount,durationDays,basePrice}. Consumed by
+  // selfStorageEstimate() in lib/selfStorageReservation.js and by RentalPeriodIntegration.
+  // Restored after a shared-file rewrite dropped it (the rental wizard failed with
+  // "reservationApi.estimateReal is not a function").
+  estimateReal: ({ startDate, endDate, pricingPolicyId } = {}, config) =>
+    axiosClient.post(
+      "/reservations/estimate",
+      { startDate, endDate, pricingPolicyId },
       config,
     ),
   mineReal: (config) => axiosClient.get("/reservations/me", config),

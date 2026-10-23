@@ -1,0 +1,340 @@
+- generic [ref=f1e3]:
+  - generic [ref=f1e5]:
+    - generic [ref=f1e6]: Secure self-storage across Ho Chi Minh City
+    - link "Facility contacts" [ref=f1e7] [cursor=pointer]:
+      - /url: /facilities
+  - banner [ref=f1e10]:
+    - generic [ref=f1e11]:
+      - link "VaultSpace Self Storage Vietnam" [ref=f1e12] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f1e18]:
+          - generic [ref=f1e19]: VaultSpace
+          - generic [ref=f1e20]: Self Storage Vietnam
+      - navigation [ref=f1e21]:
+        - link "Storage" [ref=f1e22] [cursor=pointer]:
+          - /url: /
+        - link "Facilities" [ref=f1e23] [cursor=pointer]:
+          - /url: /facilities
+        - link "How It Works" [ref=f1e24] [cursor=pointer]:
+          - /url: /how-it-works
+        - link "Pricing" [ref=f1e25] [cursor=pointer]:
+          - /url: /pricing
+        - link "Support" [ref=f1e26] [cursor=pointer]:
+          - /url: /support
+      - generic [ref=f1e27]:
+        - link "Sign in" [ref=f1e28] [cursor=pointer]:
+          - /url: /login
+        - link "Find a storage" [ref=f1e29] [cursor=pointer]:
+          - /url: /facilities
+  - main [ref=f1e30]:
+    - generic [ref=f1e31]:
+      - generic [ref=f1e33]:
+        - generic [ref=f1e34]:
+          - generic [ref=f1e35]: Safe • Flexible • Easy access
+          - heading "More space. Less clutter. Life made easier." [level=1] [ref=f1e39]: More space.Less clutter.Life made easier.
+          - paragraph [ref=f1e40]: Secure self-storage for your home or business in Ho Chi Minh City. Choose your size, reserve online and move in when you're ready.
+          - generic [ref=f1e41]:
+            - text: Choose a facility
+            - combobox "Home facility" [ref=f1e42]:
+              - option "Browse all facilities" [selected]
+              - option "Ha Noi Facility 02"
+              - option "Ho Chi Minh Facility"
+              - option "Ho Chi Minh Facility 3"
+              - option "Ho Chi Minh Facility 4"
+              - option "WDP Hanoi Facility"
+          - generic [ref=f1e43]:
+            - link "Find a storage" [ref=f1e45] [cursor=pointer]:
+              - /url: /facilities
+            - link "View prices" [ref=f1e48] [cursor=pointer]:
+              - /url: /pricing
+          - generic [ref=f1e49]:
+            - generic [ref=f1e50]: Flexible monthly rental
+            - generic [ref=f1e54]: 24/7 monitored facilities
+            - generic [ref=f1e58]: Personal & business storage
+        - generic [ref=f1e62]:
+          - img "Self storage warehouse" [ref=f1e64]
+          - generic [ref=f1e66]:
+            - generic [ref=f1e71]:
+              - paragraph [ref=f1e72]: Storage near you
+              - paragraph [ref=f1e73]: Browse active facilities
+            - link "View storage facilities" [ref=f1e74] [cursor=pointer]:
+              - /url: /facilities
+      - generic [ref=f1e78]:
+        - generic [ref=f1e80]:
+          - paragraph [ref=f1e81]: Storage for real life
+          - heading "Need more room? We have space for it." [level=2] [ref=f1e82]: Need more room?We have space for it.
+          - paragraph [ref=f1e83]: Whether you're moving, renovating or growing a business, choose a secure space that fits what you need today.
+        - generic [ref=f1e84]:
+          - generic [ref=f1e86]:
+            - heading "Moving home" [level=3] [ref=f1e91]
+            - paragraph [ref=f1e92]: Keep furniture and boxes safe between moves.
+          - generic [ref=f1e94]:
+            - heading "Renovating" [level=3] [ref=f1e99]
+            - paragraph [ref=f1e100]: Clear your home while renovation work is underway.
+          - generic [ref=f1e102]:
+            - heading "Business stock" [level=3] [ref=f1e108]
+            - paragraph [ref=f1e109]: Flexible overflow space for products and equipment.
+          - generic [ref=f1e111]:
+            - heading "Documents" [level=3] [ref=f1e116]
+            - paragraph [ref=f1e117]: Store records and archives in a clean secure space.
+          - generic [ref=f1e119]:
+            - heading "Travel & luggage" [level=3] [ref=f1e126]
+            - paragraph [ref=f1e127]: A practical home for suitcases while you are away.
+          - generic [ref=f1e129]:
+            - heading "Decluttering" [level=3] [ref=f1e141]
+            - paragraph [ref=f1e142]: Make room at home without throwing away what matters.
+      - generic [ref=f1e143]:
+        - generic [ref=f1e144]:
+          - paragraph [ref=f1e145]: Popular Storage Solutions
+          - heading "Storage designed around what you need." [level=2] [ref=f1e146]
+          - paragraph [ref=f1e147]: Choose secure personal rooms or flexible smart lockers across the SelfStorage network.
+        - generic [ref=f1e148]:
+          - article [ref=f1e149]:
+            - generic [ref=f1e150]:
+              - generic [ref=f1e151]:
+                - img "Mini Storage (3–9 m²)" [ref=f1e152]
+                - generic [ref=f1e153]: MOST POPULAR
+              - generic [ref=f1e154]:
+                - heading "Mini Storage (3–9 m²)" [level=3] [ref=f1e159]
+                - paragraph [ref=f1e160]: Private rooms with secure PIN entry, ideal for moving, renovation, seasonal belongings or business inventory.
+                - generic [ref=f1e161]:
+                  - generic [ref=f1e162]: Clean, ventilated compartments
+                  - generic [ref=f1e166]: Ground-level & elevator access
+                  - generic [ref=f1e170]: 24/7 CCTV and digital entry
+                - generic [ref=f1e174]:
+                  - generic [ref=f1e175]:
+                    - paragraph [ref=f1e176]: Pricing varies by facility and term
+                    - link "View published facility rates" [ref=f1e177] [cursor=pointer]:
+                      - /url: /pricing
+                  - link "View Storage" [ref=f1e178] [cursor=pointer]:
+                    - /url: /facilities
+          - article [ref=f1e181]:
+            - generic [ref=f1e182]:
+              - generic [ref=f1e183]:
+                - img "Smart Lockers & Micro Storage" [ref=f1e184]
+                - generic [ref=f1e185]: FLEXIBLE STORAGE
+              - generic [ref=f1e186]:
+                - heading "Smart Lockers & Micro Storage" [level=3] [ref=f1e192]
+                - paragraph [ref=f1e193]: Compact lockers for luggage, documents, parcels and smaller belongings with digital self-service access.
+                - generic [ref=f1e194]:
+                  - generic [ref=f1e195]: PIN and smart access
+                  - generic [ref=f1e199]: Flexible short-term rental
+                  - generic [ref=f1e203]: Secure monitored facility
+                - generic [ref=f1e207]:
+                  - generic [ref=f1e208]:
+                    - paragraph [ref=f1e209]: Pricing varies by facility and term
+                    - link "View published facility rates" [ref=f1e210] [cursor=pointer]:
+                      - /url: /pricing
+                  - link "View Storage" [ref=f1e211] [cursor=pointer]:
+                    - /url: /facilities
+      - generic [ref=f1e215]:
+        - generic [ref=f1e216]:
+          - paragraph [ref=f1e217]: Why VaultSpace
+          - heading "Your things deserve a better place." [level=2] [ref=f1e218]
+          - paragraph [ref=f1e219]: Clean facilities, straightforward rental and practical security for personal and business storage.
+        - generic [ref=f1e220]:
+          - article [ref=f1e221]:
+            - heading "Easy access" [level=3] [ref=f1e226]
+            - paragraph [ref=f1e227]: Digital access to your storage facility.
+          - article [ref=f1e228]:
+            - heading "24/7 security" [level=3] [ref=f1e233]
+            - paragraph [ref=f1e234]: CCTV and controlled entry across the facility.
+          - article [ref=f1e235]:
+            - heading "Flexible rental" [level=3] [ref=f1e241]
+            - paragraph [ref=f1e242]: Choose a period that works for your plans.
+      - generic [ref=f1e244]:
+        - generic [ref=f1e245]:
+          - paragraph [ref=f1e246]: Space Calculator
+          - heading "Not sure how much room you need?" [level=2] [ref=f1e247]
+          - paragraph [ref=f1e248]: Start with what you plan to store and compare our most common unit sizes. These are illustrative size guides; actual unit dimensions are shown during selection.
+        - generic [ref=f1e249]:
+          - generic [ref=f1e250]:
+            - heading "Few boxes & bags" [level=3] [ref=f1e255]
+            - paragraph [ref=f1e256]: Locker / Micro Storage
+            - strong [ref=f1e258]: 1–2 m²
+          - generic [ref=f1e261]:
+            - heading "Studio / 1-room apt." [level=3] [ref=f1e267]
+            - paragraph [ref=f1e268]: Mini Storage
+            - strong [ref=f1e270]: 3–4 m²
+          - generic [ref=f1e273]:
+            - heading "1–2 Bedroom Home" [level=3] [ref=f1e278]
+            - paragraph [ref=f1e279]: Standard Storage
+            - strong [ref=f1e281]: 6–9 m²
+          - generic [ref=f1e284]:
+            - heading "Commercial Inventory" [level=3] [ref=f1e290]
+            - paragraph [ref=f1e291]: Business Storage
+            - strong [ref=f1e293]: 12+ m²
+        - link "Find My Storage Size" [ref=f1e297] [cursor=pointer]:
+          - /url: /facilities
+      - generic [ref=f1e299]:
+        - generic [ref=f1e300]:
+          - paragraph [ref=f1e301]: Our Network
+          - heading "Facilities across Ho Chi Minh City." [level=2] [ref=f1e302]
+          - paragraph [ref=f1e303]: Choose the SelfStorage location that works best for your home, office or moving route.
+        - generic [ref=f1e304]:
+          - article [ref=f1e305]:
+            - generic [ref=f1e307]:
+              - text: Ha Noi
+              - heading "Ha Noi Facility 02" [level=3] [ref=f1e308]
+              - generic [ref=f1e309]: 123, Nguyen Ai Quoc, Tay Ho, Ha Noi, Vietnam
+              - generic [ref=f1e313]: SELF_STORAGE
+              - generic [ref=f1e315]:
+                - generic [ref=f1e316]: Facility information
+                - link "View Facility" [ref=f1e320] [cursor=pointer]:
+                  - /url: /facilities/6ac8e8858ceefb756b8142a6
+          - article [ref=f1e323]:
+            - generic [ref=f1e325]:
+              - text: Ho Chi Minh City
+              - heading "Ho Chi Minh Facility" [level=3] [ref=f1e326]
+              - generic [ref=f1e327]: 123 Nguyen Van Linh, District 7, Ho Chi Minh City, VN
+              - generic [ref=f1e331]: SELF_STORAGE · MANAGED_INVENTORY
+              - generic [ref=f1e333]:
+                - generic [ref=f1e334]: Facility information
+                - link "View Facility" [ref=f1e338] [cursor=pointer]:
+                  - /url: /facilities/6ac29e8c72e5062a4e646ccd
+          - article [ref=f1e341]:
+            - generic [ref=f1e343]:
+              - text: Ho Chi Minh City
+              - heading "Ho Chi Minh Facility 3" [level=3] [ref=f1e344]
+              - generic [ref=f1e345]: 122 Nguyen Van Linh, District 7, Ho Chi Minh City, VN
+              - generic [ref=f1e349]: SELF_STORAGE · MANAGED_INVENTORY
+              - generic [ref=f1e351]:
+                - generic [ref=f1e352]: Facility information
+                - link "View Facility" [ref=f1e356] [cursor=pointer]:
+                  - /url: /facilities/6ac4561b9a1f0501dfd90243
+          - article [ref=f1e359]:
+            - generic [ref=f1e361]:
+              - text: Ho Chi Minh City
+              - heading "Ho Chi Minh Facility 4" [level=3] [ref=f1e362]
+              - generic [ref=f1e363]: 122 Nguyen Van Linh, District 7, Ho Chi Minh City, VN
+              - generic [ref=f1e367]: MANAGED_INVENTORY
+              - generic [ref=f1e369]:
+                - generic [ref=f1e370]: Facility information
+                - link "View Facility" [ref=f1e374] [cursor=pointer]:
+                  - /url: /facilities/6ac45f179a1f0501dfd9024b
+          - article [ref=f1e377]:
+            - generic [ref=f1e379]:
+              - text: Hanoi
+              - heading "WDP Hanoi Facility" [level=3] [ref=f1e380]
+              - generic [ref=f1e381]: 1 Example Street, Ward 1, Ba Dinh, Hanoi, Vietnam
+              - generic [ref=f1e385]: SELF_STORAGE
+              - generic [ref=f1e387]:
+                - generic [ref=f1e388]: Facility information
+                - link "View Facility" [ref=f1e392] [cursor=pointer]:
+                  - /url: /facilities/6ac85638f784f9f01a7aa10c
+      - generic [ref=f1e395]:
+        - generic [ref=f1e396]:
+          - paragraph [ref=f1e397]: Simple Online Rental
+          - heading "Storage in four simple steps." [level=2] [ref=f1e398]
+        - generic [ref=f1e399]:
+          - article [ref=f1e401]:
+            - generic [ref=f1e402]: "01"
+            - heading "Choose Space" [level=3] [ref=f1e403]
+            - paragraph [ref=f1e404]: Browse storage sizes, facilities and live availability.
+          - article [ref=f1e405]:
+            - generic [ref=f1e406]: "02"
+            - heading "Select Dates" [level=3] [ref=f1e407]
+            - paragraph [ref=f1e408]: Choose your move-in date and rental period.
+          - article [ref=f1e409]:
+            - generic [ref=f1e410]: "03"
+            - heading "Approval, Sign & Demo Pay" [level=3] [ref=f1e411]
+            - paragraph [ref=f1e412]: Wait for approval, review your contract and make demo payment.
+          - article [ref=f1e413]:
+            - generic [ref=f1e414]: "04"
+            - heading "Handover & Active Access" [level=3] [ref=f1e415]
+            - paragraph [ref=f1e416]: Wait for facility handover before ACTIVE rental access.
+        - link "See How It Works" [ref=f1e418] [cursor=pointer]:
+          - /url: /how-it-works
+      - generic [ref=f1e422]:
+        - generic [ref=f1e423]:
+          - paragraph [ref=f1e424]: Customer Stories
+          - heading "Real voices. More room." [level=2] [ref=f1e425]
+        - generic [ref=f1e426]:
+          - article [ref=f1e427]:
+            - paragraph [ref=f1e439]: “The facility is extremely clean and the online booking process was much easier than I expected.”
+            - generic [ref=f1e440]:
+              - paragraph [ref=f1e441]: Thao Nguyen
+              - paragraph [ref=f1e442]: District 1 Customer
+          - article [ref=f1e443]:
+            - paragraph [ref=f1e455]: “We use SelfStorage for inventory and documents. The security is exactly what we needed.”
+            - generic [ref=f1e456]:
+              - paragraph [ref=f1e457]: Minh Tran
+              - paragraph [ref=f1e458]: Small Business Owner
+          - article [ref=f1e459]:
+            - paragraph [ref=f1e471]: “Clear pricing, helpful support and convenient access. Extending my rental was straightforward.”
+            - generic [ref=f1e472]:
+              - paragraph [ref=f1e473]: Quang Le
+              - paragraph [ref=f1e474]: Long-Term Tenant
+      - generic [ref=f1e475]:
+        - generic [ref=f1e476]:
+          - paragraph [ref=f1e477]: Got Questions?
+          - heading "Frequently Asked Questions" [level=2] [ref=f1e478]
+        - generic [ref=f1e479]:
+          - article [ref=f1e480]:
+            - button "What is the minimum rental duration?" [ref=f1e481] [cursor=pointer]
+            - paragraph [ref=f1e485]: Rental periods depend on the selected unit and facility. Available options are shown before reservation.
+          - article [ref=f1e486]:
+            - button "Can I access my unit outside normal business hours?" [ref=f1e487] [cursor=pointer]
+          - article [ref=f1e491]:
+            - button "Are my items protected while stored?" [ref=f1e492] [cursor=pointer]
+          - article [ref=f1e496]:
+            - button "Do I need to pay a deposit?" [ref=f1e497] [cursor=pointer]
+      - generic [ref=f1e503]:
+        - generic [ref=f1e504]:
+          - paragraph [ref=f1e505]: Ready when you are
+          - heading "Ready to make more room?" [level=2] [ref=f1e506]
+          - paragraph [ref=f1e507]: Browse available storage near you or speak with our team for help choosing the right size.
+        - generic [ref=f1e508]:
+          - link "Find Storage" [ref=f1e509] [cursor=pointer]:
+            - /url: /facilities
+          - link "Talk to Us" [ref=f1e512] [cursor=pointer]:
+            - /url: /support
+  - contentinfo [ref=f1e515]:
+    - generic [ref=f1e516]:
+      - generic [ref=f1e517]:
+        - generic [ref=f1e518]:
+          - link "VaultSpace Self Storage Vietnam" [ref=f1e519] [cursor=pointer]:
+            - /url: /
+            - generic [ref=f1e525]:
+              - generic [ref=f1e526]: VaultSpace
+              - generic [ref=f1e527]: Self Storage Vietnam
+          - paragraph [ref=f1e528]: Clean, secure and flexible self-storage for homes and businesses across Ho Chi Minh City.
+          - link "Facility contact information" [ref=f1e529] [cursor=pointer]:
+            - /url: /facilities
+        - generic [ref=f1e532]:
+          - heading "Storage" [level=3] [ref=f1e533]
+          - generic [ref=f1e534]:
+            - link "Personal storage" [ref=f1e535] [cursor=pointer]:
+              - /url: /facilities
+            - link "Business storage" [ref=f1e536] [cursor=pointer]:
+              - /url: /facilities
+            - link "Storage sizes" [ref=f1e537] [cursor=pointer]:
+              - /url: /pricing
+        - generic [ref=f1e538]:
+          - heading "Explore" [level=3] [ref=f1e539]
+          - generic [ref=f1e540]:
+            - link "Facilities" [ref=f1e541] [cursor=pointer]:
+              - /url: /facilities
+            - link "How it works" [ref=f1e542] [cursor=pointer]:
+              - /url: /how-it-works
+            - link "Pricing" [ref=f1e543] [cursor=pointer]:
+              - /url: /pricing
+            - link "Help center" [ref=f1e544] [cursor=pointer]:
+              - /url: /support
+        - generic [ref=f1e545]:
+          - heading "Facility Information" [level=3] [ref=f1e546]
+          - generic [ref=f1e547]:
+            - link "Active facilities" [ref=f1e548] [cursor=pointer]:
+              - /url: /facilities
+            - link "Published rates" [ref=f1e549] [cursor=pointer]:
+              - /url: /pricing
+            - link "Rental workflow" [ref=f1e550] [cursor=pointer]:
+              - /url: /how-it-works
+            - link "Customer support" [ref=f1e551] [cursor=pointer]:
+              - /url: /support
+      - generic [ref=f1e552]:
+        - paragraph [ref=f1e553]: © 2026 VaultSpace Self-Storage Vietnam.
+        - generic [ref=f1e554]:
+          - generic [ref=f1e555]: 24/7 monitored
+          - generic [ref=f1e559]: Secure facilities
+          - generic [ref=f1e563]: Ho Chi Minh City

@@ -54,6 +54,10 @@ export function assertConfirmedRequest(config) {
       /^reservations\/managed\/[a-f\d]{24}\/mock-pay$/i.test(path));
   const contractDetail =
     method === "GET" && /^contracts\/[a-f\d]{24}$/i.test(path);
+  const contractByReservation =
+    method === "GET" && /^contracts\/reservation\/[a-f\d]{24}$/i.test(path);
+  const userFacilityAssignment =
+    (method === "PATCH" || method === "DELETE") && /^users\/[a-f\d]{24}\/facility-assignment$/i.test(path);
   const inventoryCustomer =
     (method === "POST" &&
       (path === "inventory-items" ||
@@ -108,8 +112,87 @@ export function assertConfirmedRequest(config) {
     /^reservations\/managed\/[a-f\d]{24}\/deposit\/mock-confirm$/i.test(path);
   const movementHistory =
     method === "GET" && /^inventory-items\/[a-f\d]{24}\/movements$/i.test(path);
-  const facilityHandover = (method === "GET" && /^(contracts\/reservation\/[a-f\d]{24}|contracts\/[a-f\d]{24}\/print)$/i.test(path)) || (method === "POST" && /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(path));
-  const allowed = facilityHandover ||
+  const bomAdminResource =
+    (method === "GET" &&
+      (/^facilities(\/[^/]+)?$/.test(path) ||
+        /^pricing-rules(\/[^/]+)?$/.test(path) ||
+        /^policies(\/[^/]+)?$/.test(path) ||
+        /^inventory-items$/.test(path) ||
+        /^warehouse-zones(\/[^/]+)?$/.test(path) ||
+        /^racks(\/[^/]+)?$/.test(path) ||
+        /^rack-cells(\/[^/]+)?$/.test(path) ||
+        /^reservations\/managed\/capacity\/[^/]+$/.test(path) ||
+        /^audit\/(admin|bom)\/(login-history|audit-logs)\/[^/]+$/.test(path))) ||
+    (method === "POST" &&
+      (/^facilities$/.test(path) ||
+        /^facilities\/[^/]+\/(restore|storage-units)$/.test(path) ||
+        /^pricing-rules$/.test(path) ||
+        /^policies$/.test(path) ||
+        /^storage-units\/[^/]+\/restore$/.test(path) ||
+        /^users$/.test(path) ||
+        /^(maintenance-tickets|support-requests)\/[^/]+\/(assign|unassign|escalate)$/.test(
+          path,
+        ))) ||
+    (method === "PUT" &&
+      (/^users\/(?!me$)[^/]+$/.test(path) ||
+        /^reservations\/managed\/capacity\/[^/]+$/.test(path))) ||
+    (method === "PATCH" &&
+      (/^facilities\/[^/]+(\/status)?$/.test(path) ||
+        /^pricing-rules\/[^/]+(\/status)?$/.test(path) ||
+        /^policies\/[^/]+(\/status)?$/.test(path) ||
+        /^storage-units\/[^/]+(\/status)?$/.test(path) ||
+        /^users\/[^/]+\/reactivate$/.test(path) ||
+        /^(maintenance-tickets|support-requests)\/[^/]+\/status$/.test(path))) ||
+    (method === "DELETE" &&
+      (/^facilities\/[^/]+$/.test(path) ||
+        /^storage-units\/[^/]+$/.test(path)));
+  const bomStorageUnitWrite =
+    (method === "POST" &&
+      (/^facilities\/[^/]+\/storage-units$/.test(path) ||
+        /^storage-units\/[^/]+\/restore$/.test(path))) ||
+    (method === "PATCH" && /^storage-units\/[^/]+(\/status)?$/.test(path)) ||
+    (method === "DELETE" && /^storage-units\/[^/]+$/.test(path));
+  const bomWarehouseWrite =
+    (method === "POST" &&
+      (/^warehouse-zones$/.test(path) ||
+        /^warehouse-zones\/[^/]+\/restore$/.test(path) ||
+        /^racks$/.test(path) ||
+        /^racks\/[^/]+\/restore$/.test(path))) ||
+    (method === "PATCH" &&
+      (/^warehouse-zones\/[^/]+$/.test(path) ||
+        /^racks\/[^/]+$/.test(path) ||
+        /^rack-cells\/[^/]+$/.test(path))) ||
+    (method === "DELETE" &&
+      (/^warehouse-zones\/[^/]+$/.test(path) ||
+        /^racks\/[^/]+$/.test(path)));
+  const bomCapacityAdmin =
+    (method === "PUT" &&
+      /^reservations\/managed\/capacity\/[^/]+$/i.test(path)) ||
+    (method === "GET" &&
+      /^reservations\/managed\/capacity\/[^/]+$/i.test(path));
+  const bomReservationAdmin =
+    (method === "GET" &&
+      (/^reservations\/[^/]+$/.test(path) ||
+        /^reservations\/managed\/[^/]+$/.test(path))) ||
+    (method === "PATCH" &&
+      (/^reservations\/[^/]+\/(approve|reject)$/.test(path) ||
+        /^reservations\/managed\/[^/]+\/(approve|reject|activate)$/.test(
+          path,
+        ))) ||
+    (method === "POST" &&
+      (/^reservations\/[^/]+\/mock-pay$/.test(path) ||
+        /^reservations\/managed\/[^/]+\/mock-pay$/.test(path)));
+  const bomInventoryRead =
+    method === "GET" &&
+    (/^inventory-items\/[^/]+$/.test(path) ||
+      /^inventory-items\/[^/]+\/movements$/.test(path));
+  const allowed =
+    bomInventoryRead ||
+    bomReservationAdmin ||
+    bomStorageUnitWrite ||
+    bomWarehouseWrite ||
+    bomCapacityAdmin ||
+    bomAdminResource ||
     (method === "POST" && path === "inventory-items/image-uploads") ||
     (method === "DELETE" &&
       /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
@@ -124,6 +207,8 @@ export function assertConfirmedRequest(config) {
     inventoryCustomer ||
     managedCustomer ||
     contractDetail ||
+    contractByReservation ||
+    userFacilityAssignment ||
     warehouseRead ||
     customerAllowed ||
     (method === "GET" &&
