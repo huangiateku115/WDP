@@ -13,6 +13,7 @@ export async function checkInEligibility({reservationId,facilityId,inspectionId,
  // on the previous result, so opening an inspection never bursts the API with parallel calls.
  const reservation=apiRecord(await facilityReservationApi.detail(reservationId,false,{signal}));
  if(recordId(reservation)!==reservationId||recordId(reservation.facilityId)!==facilityId||reservation.serviceType!=='SELF_STORAGE')throw Error('Đơn không thuộc Self Storage trong cơ sở được giao.');
+ if(contract.signedProofUrl||reservation.bookingFlowVersion===2)throw Error('Đơn theo luồng hợp đồng giấy/Managed mới: dùng trang bàn giao phù hợp, không hoàn tất qua Inspection cũ.');
  if(reservation.status!=='PAID')throw Error('Chỉ đơn PAID mới đủ điều kiện nhận kho; không được check-in lại đơn ACTIVE.');
  const contract=apiRecord(await inspectionApi.contractByReservation(reservationId,{signal}));
  if(recordId(contract.reservationId)!==reservationId||recordId(contract.customerId)!==recordId(reservation.customerId)||contract.status!=='SIGNED'||!contract.signedByCustomerAt)throw Error('Cần hợp đồng SIGNED đúng đơn và đúng khách.');

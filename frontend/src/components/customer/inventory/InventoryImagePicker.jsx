@@ -4,6 +4,7 @@ import { getAccessToken } from '@/lib/authSession';
 import { httpImage } from '@/lib/inventoryRegistration';
 import {INVENTORY_IMAGE_LIMIT,validateInventoryImageFile,validateInventoryImageDimensions,uploadedInventoryImage,inventoryImagesReady} from '@/lib/inventoryImages';
 import {Button} from '@/components/ui/button';
+import {Upload} from 'lucide-react';
 import {CustomerDialog,CustomerImagePreview} from '../CustomerMediaUI';
 
 const MAX_IMAGES = INVENTORY_IMAGE_LIMIT;
@@ -16,6 +17,15 @@ export default function InventoryImagePicker({ reservationId, value = [], disabl
   async function confirmDiscard(){if(discardBusy.current||!discard)return;discardBusy.current=true;const image=discard;setDiscard(null);try{await remove(image);}finally{discardBusy.current=false;requestAnimationFrame(()=>{if(mounted.current&&!disabled)picker.current?.focus();});}}
   const [expired,setExpired]=useState(false);
   const [notice, setNotice] = useState('');
+  const [dragging,setDragging]=useState(false);
+  const dragDepth=useRef(0);
+  const canAdd=!disabled&&!!reservationId&&images.length<MAX_IMAGES;
+  useEffect(()=>{if(!canAdd){dragDepth.current=0;setDragging(false);}},[canAdd]);
+  const hasImageFiles=event=>Array.from(event.dataTransfer.items||[]).some(item=>item.kind==='file'&&['image/jpeg','image/png','image/webp'].includes(item.type));
+  function dragEnter(event){event.preventDefault();event.stopPropagation();dragDepth.current++;if(canAdd&&hasImageFiles(event))setDragging(true);}
+  function dragOver(event){event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect=canAdd?'copy':'none';}
+  function dragLeave(event){event.preventDefault();event.stopPropagation();dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}
+  function drop(event){event.preventDefault();event.stopPropagation();dragDepth.current=0;setDragging(false);if(!disabled&&reservationId)handleFilesSelected(event.dataTransfer.files);}
   const controllers = useRef(new Map());
   const imagesRef = useRef(images);
   const mounted = useRef(true);
@@ -76,10 +86,15 @@ export default function InventoryImagePicker({ reservationId, value = [], disabl
   }
 
   function choose(event) {
-    if(disabled)return;
-    setNotice('');
     const files = Array.from(event.target.files || []);
     event.target.value = '';
+    handleFilesSelected(files);
+  }
+
+  function handleFilesSelected(fileList) {
+    if(disabled||!reservationId)return;
+    setNotice('');
+    const files=Array.from(fileList||[]);
     const available = MAX_IMAGES - imagesRef.current.length;
     if (files.length > available) setNotice(`You can add ${Math.max(available, 0)} more image(s); the limit is 10.`);
     const fingerprints=new Set(imagesRef.current.filter(image=>image.file).map(image=>JSON.stringify([image.file.name,image.file.size,image.file.lastModified])));
@@ -114,9 +129,12 @@ export default function InventoryImagePicker({ reservationId, value = [], disabl
   }
 
   return <section aria-label="Inventory item images" className="space-y-3">
-    <div className="flex flex-wrap items-center gap-3">
+    <div aria-label="Image upload drop zone" onDragEnter={dragEnter} onDragOver={dragOver} onDragLeave={dragLeave} onDrop={drop} className={`rounded-xl border-2 border-dashed p-3 focus-within:ring-2 focus-within:ring-emerald-600 ${dragging?'border-emerald-600 bg-emerald-50':'border-emerald-200 bg-white'}`}>
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-800" role="status"><Upload size={18} aria-hidden="true"/>{dragging?'Drop images to upload':'Drag & drop images here'}</p>
+      <div className="flex flex-wrap items-center gap-3">
       <input ref={picker} className="max-w-full rounded-lg border border-emerald-200 p-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-emerald-800" aria-label="Choose item images" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={disabled || images.length >= MAX_IMAGES || !reservationId} onChange={choose}/>
       <span className="text-sm text-slate-600">{images.length}/{MAX_IMAGES} images · JPEG, PNG, WebP · max 8 MiB each</span>
+      </div>
     </div>
     <p className="text-sm text-slate-500">Upload first, then save the Item to attach images. Maximum 6000 px per side / 24 MP. Backend validates image contents and single-frame format. Uploaded photos use public delivery URLs; use non-sensitive development photos only.</p>
     {notice && <p role="status" className="text-sm text-amber-700">{notice}</p>}

@@ -1,3 +1,62 @@
+# Kiểm thử demo thực tế — 22/10/2026
+
+- Backend health: database connected. Đã đăng nhập Manager và Staff bằng trình duyệt.
+- PASS dữ liệu thật: Manager duyệt đơn; Customer ký và mock-pay để chuẩn bị; Staff tạo/hoàn tất CHECK_IN, rồi CHECK_OUT. Đã kiểm tra ACTIVE/OCCUPIED và CHECKED_OUT/AVAILABLE.
+- PASS dữ liệu thật: tạo, phân công và xử lý maintenance/support đến CLOSED; gửi ghi chú nội bộ và đăng xuất cả hai vai trò.
+- BLOCKED: upload hợp đồng giấy trả `cloud_name is disabled`. Cần người phụ trách backend/Cloudinary khôi phục dịch vụ ảnh. Frontend hiển thị lỗi rõ ràng; chưa xác nhận live luồng giấy → balance → handover.
+- Chỉ dùng bản ghi thử mới trong lượt này. Đơn `BKG-261022-LLUY` đã CHECKED_OUT; không dùng lại để demo thao tác mới. Các ticket thử đã CLOSED.
+- Hướng dẫn trình bày: `StaffManagerDemoTrenLop.docx`, gồm đường dẫn, dữ liệu nhập, thao tác và lời trình bày. Không lưu mật khẩu trong tài liệu.
+- Các kết quả fixture và ghi chú lịch sử bên dưới không thay thế kết quả live ở mục này.
+
+---
+
+# Kiểm tra dev và nối CHECK_OUT — 22/10/2026
+
+- Fetch remote và pull fast-forward origin/dev vào nhánh làm việc Frontend: Already up to date. HEAD = origin/dev = `a3b03fa`; không có thay đổi backend mới so với lần triển khai trước. Remote Frontend có commit giao diện Customer mới `8506a43`; không tự merge nhánh đó vì yêu cầu lần này là dev.
+- API CHECK_OUT đã tồn tại: GET/POST `/inspections`, PATCH `/inspections/:id/complete`, đọc reservation/unit. Đã nối màn hình Staff `/staff/checkouts` và Manager `/manager/work/CHECKOUT`.
+- Trước khi tạo/complete, frontend đọc lại đúng facility/service/đơn ACTIVE hoặc OVERDUE/tủ OCCUPIED, biên bản CHECK_OUT DRAFT, không có bản hoàn tất/trùng nháp. Không tự gửi actor, status hoặc phí thiệt hại. Sau complete đọc lại CHECKED_OUT và AVAILABLE/MAINTENANCE theo condition; không báo thành công nếu thiếu đồng bộ.
+- Backend completeInspection vẫn thiếu enforcement facility scope, trạng thái đơn trước thao tác và transaction. Các kiểm tra frontend không bảo vệ được lời gọi trực tiếp đến server; không sửa backend trong lượt này.
+- Tạm giới hạn navigation/deep links của Staff/Manager bằng `facilityWorkspace.js`. Chỉ giữ customers/reservations/check-in/handover/inspection/checkout/maintenance/support; ẩn dashboard/task tổng hợp/refunds/extensions/charges/reports/storage/inventory. Không xóa code hoặc thay đổi workspace role khác.
+- API mới không có nghĩa là giao diện đã E2E: các kiểm thử dùng fixture, không tạo hoặc đóng đơn trong database chung.
+- Các kết luận CHECK_OUT chưa tích hợp ở mục lịch sử dưới đây đã được thay thế bởi bản cập nhật này.
+- Kiểm chứng cuối lượt: build PASS (cảnh báo bundle >500 kB); npm test 10/10 PASS; bốn browser fixture review/inspection/facility-operations/checkout PASS; git diff --check PASS. Chưa commit/push.
+
+---
+
+# Cập nhật Staff / Manager — 22/10/2026
+
+Đối chiếu source backend hiện có và tài liệu `WDP_API_Tung_Request_Va_Luong_Thuc_Hanh (1).docx` (cập nhật 19/10). Các mục cũ dưới đây là lịch sử; không dùng kết luận “Staff chưa đọc được đơn/hợp đồng” hoặc “desk UI chưa hoàn thiện” cho phiên bản hiện tại.
+
+| Nhóm | Frontend hiện tại | Giới hạn |
+| --- | --- | --- |
+| Staff reservation/contract | Đọc đơn theo cơ sở; tự GET contracts/reservation/:id; Staff không duyệt đơn | Manager quyết định approve/reject |
+| Hợp đồng giấy | GET contracts/:id/print, POST contracts/:id/confirm-signed-paper với proofFile và paperContractNumber | In dữ liệu cơ bản, chưa mẫu PDF pháp lý; upload thật chưa E2E |
+| Handover Self Storage | POST reservations/:id/handover; chỉ cho PAID + SIGNED + proof; kiểm tra lại ACTIVE/OCCUPIED | Customer balance UI Self Storage chưa nối; mock-confirm thuộc Customer, không gọi từ Staff |
+| Inspection cũ | Staff/Manager tự lấy Contract ID; tạo/hoàn tất CHECK_IN; chặn giấy/Managed V2 | CHECK_OUT chưa tích hợp hoàn chỉnh; handover không hoàn tất inspection riêng |
+| Maintenance/Support | List/detail/search/status/page/create/edit/assign/unassign/status; support messages internal/public | Staff chỉ ticket được giao; nhập Staff User ID, chưa picker danh bạ |
+| Managed receiving hồi quy | Bổ sung allowlist đúng 3 route receiving-inspection/context, image-uploads, receiving-inspection đã có trong backend | Giữ nguyên màn hình/logic nhóm; không nhận là phạm vi Excel cá nhân |
+
+## Rủi ro còn thuộc backend / phụ thuộc nhóm
+
+- Contract print/confirm và handover còn cần backend enforce facility scope, trạng thái hợp lệ và cập nhật transaction. Frontend kiểm tra lại nhưng không thay thế quyền server.
+- Balance mock-confirm hiện tạo payment với key theo thời gian; không tự retry thanh toán hoặc gọi lặp. Chỉ demo development đã thống nhất dữ liệu.
+- Customer Self Storage mới: cần nối deposit/balance trên giao diện Customer; endpoint Managed balance hiện tại không dùng thay Self Storage.
+- GET print trả JSON, không trả tài liệu pháp lý. Handover mới không sinh/complete Inspection.
+- Refund/extension/extra-charge chưa thấy route phù hợp trong source hiện tại; để trạng thái chờ backend.
+
+## Ưu tiên tiếp theo theo tài liệu và vai trò
+
+1. Nghiệm thu trên dữ liệu development được chọn: Staff ký giấy/upload, Customer balance, Staff handover; kiểm thử khác cơ sở và mất phiên.
+2. Hoàn thiện CHECK_OUT trong phần Staff/Manager khi thống nhất contract mới, kiểm tra ảnh/hiện trạng và trạng thái unit sau trả.
+3. Đồng bộ phân công: UI chọn nhân viên cần nguồn danh bạ được phép cho Manager; API gán cơ sở không phải API phân công ticket.
+4. Managed Receiving / ảnh evidence / Confirm Inbound được tài liệu giao cho Staff, nhưng thuộc phạm vi inventory; xác nhận phân công Excel với nhóm trước khi mở rộng. Không coi API cho role là toàn bộ bài cá nhân.
+
+Kiểm thử frontend bằng API fixture tách biệt dữ liệu thật. Hướng dẫn thao tác và URL: `StaffManagerDemoVI.md`.
+
+Kết quả 22/10: `npm test` 10/10 PASS; `check-facility-review-api.cjs`, `check-inspection-api.cjs`, `check-facility-operations-api.cjs` PASS; `npm run build` PASS (còn cảnh báo bundle trên 500 kB); `git diff --check` PASS. Browser fixtures không chứng minh upload Cloudinary, thanh toán hoặc transaction trên database thật. Chưa commit/push.
+
+---
+
 # Frontend integration check — 13/10/2026
 
 Integrated Staff/Manager changes onto origin/Frontend e10a702, which already includes dev 1b1dbbd. Preserved upstream Customer UI, Cloudinary settings and Customer/warehouse/inventory API permissions. Resolved overlaps in .env.example, confirmedContract.js and CustomersPage.jsx; no backend source changes.

@@ -363,7 +363,8 @@ test('all inventory-item routes require authentication and role gates match the 
     'POST /:id/inbound-request', 'POST /:id/outbound-request', 'POST /:id/confirm-inbound',
     'POST /:id/confirm-outbound', 'POST /:id/reject-inbound', 'POST /:id/reject-outbound', 'GET /:id/movements',
     'POST /:id/relocate',
+    'GET /:itemId/receiving-inspection/context', 'POST /:itemId/receiving-inspection/image-uploads',
     'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 17);
+  assert.equal(routes.length, 19);
 });

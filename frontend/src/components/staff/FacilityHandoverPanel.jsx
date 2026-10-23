@@ -1,0 +1,63 @@
+import {useCallback,useRef,useState} from 'react';
+import api from '@/api/facilityHandoverApi';
+import {facilityReservationApi} from '@/api/facilityReviewApi';
+import storageApi from '@/api/storageApi';
+import {useAuthSession} from '@/lib/authSession';
+import useFacilityResource,{announceReviewChange} from '@/lib/useFacilityResource';
+import {apiRecord,recordId,objectId,reviewError} from '@/lib/facilityReview';
+import {Panel,Details,Status,Button,Field,Input,Message,Dialog,money} from '@/components/manager/ManagerUI';
+
+export default function FacilityHandoverPanel({reservationId}) {
+ const {user}=useAuthSession(),facilityId=user?.assignedFacilityId;
+ const permitted=['FACILITY_STAFF','FACILITY_MANAGER'].includes(user?.role)&&objectId(facilityId)&&objectId(reservationId);
+ const [file,setFile]=useState(null),[number,setNumber]=useState(''),[confirmed,setConfirmed]=useState(false),[saving,setSaving]=useState(false),[action,setAction]=useState(null),[feedback,setFeedback]=useState({}),[printData,setPrintData]=useState(null),busy=useRef(false);
+ const load=useCallback(async signal=>{
+  const reservation=apiRecord(await facilityReservationApi.detail(reservationId,false,{signal}));
+  if(recordId(reservation)!==reservationId||recordId(reservation.facilityId)!==facilityId||reservation.serviceType!=='SELF_STORAGE')throw Error('Đơn không thuộc Self Storage trong cơ sở được giao.');
+  const contract=apiRecord(await api.contract(reservationId,{signal}));
+  if(!objectId(recordId(contract))||recordId(contract.reservationId)!==reservationId||recordId(contract.customerId)!==recordId(reservation.customerId))throw Error('Hợp đồng không khớp đơn hoặc khách hàng.');
+  return {reservation,contract};
+ },[reservationId,facilityId]);
+ const resource=useFacilityResource(load,permitted),data=resource.data;
+ const paperEligible=d=>['CONTRACTED','DEPOSIT_PAID'].includes(d.reservation.status)&&!d.contract.signedProofUrl;
+ const handoverEligible=d=>d.reservation.status==='PAID'&&d.contract.status==='SIGNED'&&!!d.contract.signedProofUrl;
+ async function run(event){event?.preventDefault();if(busy.current||!data)return;busy.current=true;setSaving(true);setFeedback({});try{
+  const fresh=await load();
+  if(action==='paper'){
+   if(!paperEligible(fresh)||!confirmed)throw Error('Đơn chưa đủ điều kiện hoặc đã có bằng chứng ký. Hãy tải lại.');
+   if(!file||!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type)||file.size===0||file.size>10*1024*1024)throw Error('Chọn JPEG/PNG/WEBP/PDF, tối đa 10 MB.');
+   await api.confirmPaper(recordId(fresh.contract),file,number);
+   const updated=await load();
+   if(updated.contract.status!=='SIGNED'||!updated.contract.signedProofUrl||updated.reservation.status!=='CHECKIN_READY')throw Error('Backend chưa xác nhận hợp đồng SIGNED và đơn CHECKIN_READY. Tải lại trước khi gửi tiếp.');
+   setFile(null);setConfirmed(false);setFeedback({success:'Đã lưu bằng chứng. Khách hàng có thể thanh toán phần còn lại.'});
+  }else if(action==='handover'){
+   if(!handoverEligible(fresh)||!confirmed)throw Error('Cần đơn PAID và bằng chứng hợp đồng giấy đã ký.');
+   const unitId=recordId(fresh.reservation.storageUnitId),unit=apiRecord(await storageApi.unitDetail(unitId));
+   if(recordId(unit.facilityId)!==facilityId||!['AVAILABLE','HELD'].includes(unit.status))throw Error('Tủ không thuộc cơ sở hoặc chưa sẵn sàng bàn giao.');
+   const response=apiRecord(await api.handover(reservationId));
+   if(recordId(response.reservation)!==reservationId||response.reservation.status!=='ACTIVE')throw Error('Backend chưa xác nhận bàn giao đúng đơn.');
+   const updated=await load(),updatedUnit=apiRecord(await storageApi.unitDetail(unitId));
+   if(updated.reservation.status!=='ACTIVE'||recordId(updatedUnit)!==unitId||updatedUnit.status!=='OCCUPIED')throw Error('Đơn/tủ chưa đồng bộ. Không gửi lại bàn giao; tải lại để kiểm tra.');
+   setConfirmed(false);setFeedback({success:'Backend xác nhận đơn ACTIVE và tủ OCCUPIED.'});
+  }else{
+   const printed=apiRecord(await api.print(recordId(fresh.contract)));
+   if(recordId(printed)!==recordId(fresh.contract)||recordId(printed.reservationId)!==reservationId)throw Error('Dữ liệu in không khớp hợp đồng.');
+   setPrintData(printed);setAction(null);return;
+  }
+  setAction(null);announceReviewChange();
+ }catch(error){const message=reviewError(error);setFeedback({error:/cloud_name is disabled/i.test(message)?'Dịch vụ lưu ảnh hợp đồng đang bị vô hiệu hóa (Cloudinary). Chưa lưu được bằng chứng; cần người phụ trách backend kiểm tra tài khoản dịch vụ ảnh.':message});resource.reload();}finally{busy.current=false;setSaving(false);}}
+ if(!permitted)return <Panel title="Hợp đồng và bàn giao"><p>Cần tài khoản Staff/Manager được gán cơ sở.</p></Panel>;
+ return <Panel title="Hợp đồng giấy và bàn giao"><Message {...feedback}/><Message error={resource.error}/>{resource.loading&&<p role="status">Đang lấy hợp đồng theo đơn…</p>}<Button variant="outline" disabled={saving} onClick={resource.reload}>Tải lại hợp đồng</Button>
+ {data&&<div className="mt-4 space-y-4"><Details values={ [['Contract ID',recordId(data.contract)],['Hợp đồng',data.contract.contractCode],['Trạng thái hợp đồng',<Status value={data.contract.status}/>],['Trạng thái đơn',<Status value={data.reservation.status}/>],['Bằng chứng',data.contract.signedProofUrl?'Đã lưu':'Chưa có']]}/>
+ <Button variant="outline" disabled={saving} onClick={()=>setAction('print')}>Xem dữ liệu in hợp đồng</Button>
+ {paperEligible(data)&&<><Field label="Ảnh hoặc PDF hợp đồng giấy đã ký"><Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={e=>setFile(e.target.files?.[0]||null)}/></Field><Field label="Số hợp đồng giấy (nếu có)"><Input maxLength={100} value={number} disabled={saving} onChange={e=>setNumber(e.target.value)}/></Field></>}
+ {(paperEligible(data)||handoverEligible(data))&&<label className="flex gap-2"><input type="checkbox" checked={confirmed} disabled={saving} onChange={e=>setConfirmed(e.target.checked)}/>Tôi đã kiểm tra đúng khách, hợp đồng và hiện trạng bàn giao.</label>}
+ {paperEligible(data)&&<Button disabled={saving||!file||!confirmed} onClick={()=>setAction('paper')}>Xác nhận hợp đồng giấy</Button>}
+ {handoverEligible(data)&&<Button disabled={saving||!confirmed} onClick={()=>setAction('handover')}>Bàn giao kho</Button>}
+ {data.reservation.status==='CHECKIN_READY'&&<p>Chờ Customer thanh toán phần còn lại. Bấm tải lại sau khi khách thanh toán.</p>}
+ {data.reservation.status==='ACTIVE'&&<p>Đã bàn giao. Không thực hiện lại.</p>}
+ </div>}
+ {action&&<Dialog title={action==='paper'?'Lưu bằng chứng ký giấy':action==='handover'?'Xác nhận bàn giao':'Lấy dữ liệu in'} onClose={()=>{if(!busy.current)setAction(null);}}><form onSubmit={run}><p className="mb-4">Kiểm tra và xác nhận thao tác cho đúng đơn đang mở.</p><Message {...feedback}/><Button disabled={saving}>{saving?'Đang xử lý…':'Xác nhận'}</Button></form></Dialog>}
+ {printData&&<Dialog title="Dữ liệu hợp đồng" onClose={()=>setPrintData(null)}><Details values={ [['Hợp đồng',printData.contractCode],['Khách hàng',printData.customerSnapshot?.fullName||printData.customerId?.email||'—'],['Đơn',printData.reservationId?.reservationCode||reservationId],['Tiền thuê',money(printData.pricingSnapshot?.estimatedRent||0)],['Tiền cọc',money(printData.pricingSnapshot?.depositAmount||0)],['Trạng thái',printData.status]]}/><p className="mt-4">Đây là dữ liệu hợp đồng từ backend; chưa phải mẫu PDF pháp lý.</p><Button variant="outline" onClick={()=>window.print()}>In trang hiện tại</Button></Dialog>}
+ </Panel>;
+}

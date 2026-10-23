@@ -93,6 +93,8 @@ export function assertConfirmedRequest(config) {
       /^(maintenance-tickets|support-requests)\/[^/]+(\/status)?$/.test(path));
   const managedIntake =
     (method === "GET" && path === "inventory-items") ||
+    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(path)) ||
     (method === "POST" &&
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
@@ -192,7 +194,8 @@ export function assertConfirmedRequest(config) {
     bomCapacityAdmin ||
     bomAdminResource ||
     (method === "POST" && path === "inventory-items/image-uploads") ||
-    (method === "DELETE" && /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
+    (method === "DELETE" &&
+      /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
     movementHistory ||
     depositMock ||
     customerDeposit ||

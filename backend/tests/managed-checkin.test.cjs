@@ -17,6 +17,8 @@ const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').defaul
 const Contract = require('../dist/models/contracts/contract.model').default;
 const Payment = require('../dist/models/payments/reservation-payment.model').default;
 const Audit = require('../dist/models/reservations/managed-reservation-audit.model').default;
+const Evidence = require('../dist/models/inventory-items/receiving-inspection-evidence.model').default;
+const { ManagedReceivingEvidenceService } = require('../dist/services/upload/managed-receiving-evidence.service');
 const { ManagedCheckinService: service, ManagedCheckinError } = require('../dist/services/reservations/managed-checkin.service');
 
 const oid = value => new mongoose.Types.ObjectId(value);
@@ -26,6 +28,7 @@ const staffId = oid('507f1f77bcf86cd799439013');
 const reservationId = oid('507f1f77bcf86cd799439014');
 const itemId = oid('507f1f77bcf86cd799439015');
 const cellId = oid('507f1f77bcf86cd799439016');
+let evidenceRows = [], evidenceAttachCalls = 0, auditCalls = 0;
 
 class Query {
   constructor(value) { this.value = value; }
@@ -33,6 +36,7 @@ class Query {
   exec() { return Promise.resolve(this.value); }
 }
 function transaction(t, { serialize = false } = {}) {
+  evidenceRows = []; evidenceAttachCalls = 0; auditCalls = 0;
   let tail = Promise.resolve();
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => {
     if (!serialize) return fn();
@@ -43,7 +47,14 @@ function transaction(t, { serialize = false } = {}) {
     try { return await fn(); } finally { release(); }
   }, endSession: async () => {} }));
   t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ bookingVersion: 2 }));
-  t.mock.method(Audit.prototype, 'save', async function () { return this; });
+  t.mock.method(Audit.prototype, 'save', async function () { auditCalls += 1; return this; });
+  t.mock.method(Evidence, 'findOne', filter => new Query(evidenceRows.find(row => String(row.itemId) === String(filter.itemId) && row.idempotencyKey === filter.idempotencyKey) || null));
+  t.mock.method(Evidence, 'countDocuments', filter => new Query(evidenceRows.filter(row => String(row.itemId) === String(filter.itemId)).length));
+  t.mock.method(Evidence.prototype, 'save', async function () { if (this.isNew) { evidenceRows.push(this); this.isNew = false; } return this; });
+  t.mock.method(ManagedReceivingEvidenceService, 'attach', async (ids, targetItemId, targetFacilityId, targetStaffId, snapshotId) => {
+    evidenceAttachCalls += 1;
+    return ids.map(uploadId => ({ uploadId, secureUrl: 'https://res.cloudinary.com/demo/evidence.jpg', publicId: 'wdp/evidence/test', sha256: 'hash', width: 100, height: 100, format: 'jpg' }));
+  });
 }
 function fixtures(t, { withItem = true, contract = null, reservationStatus = 'DEPOSIT_PAID', depositAmount = 200 } = {}) {
   const reservation = new Reservation({ _id: reservationId, reservationCode: 'M-001', customerId, facilityId,
@@ -101,6 +112,84 @@ test('Staff inspection records custody and measurements without placing inventor
   assert.equal(inspected.receivingInspection.observedUnitWeightKg, 20);
   assert.equal(state.cells[0].usedWeightKg, 0);
   assert.equal(state.cells[0].usedVolumeM3, 0);
+});
+
+test('inspection snapshot atomically retains attached evidence and idempotent replay does not attach or audit twice', async t => {
+  transaction(t);
+  const state = fixtures(t), uploadId = oid('507f1f77bcf86cd799439021');
+  const body = { decision: 'DISCREPANCY', observedQuantity: 1, observedUnitWeightKg: 25,
+    observedUnitDimensionsM: { widthM: .2, depthM: .2, heightM: .2 }, compatibleCellIds: [String(cellId)],
+    packingLayoutVerified: true, note: 'Weight differs', custodyTaken: true,
+    evidenceUploadIds: [String(uploadId)], idempotencyKey: 'inspection-replay-001' };
+  await service.inspectItem(String(itemId), body, { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId });
+  const firstAuditCount = auditCalls;
+  const replay = await service.inspectItem(String(itemId), body, { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId });
+  assert.equal(replay.status, 'RECEIVED_PENDING_ACCEPTANCE');
+  assert.equal(evidenceRows.length, 1);
+  assert.equal(evidenceRows[0].images[0].uploadId.toString(), uploadId.toString());
+  assert.equal(evidenceAttachCalls, 1);
+  assert.equal(auditCalls, firstAuditCount);
+  assert.equal(state.item.receivingInspection.decision, 'DISCREPANCY');
+});
+
+test('same inspection idempotency key with a changed payload conflicts before trying to attach spent evidence', async t => {
+  transaction(t);
+  fixtures(t);
+  const body = { decision: 'DISCREPANCY', observedQuantity: 1, observedUnitWeightKg: 25,
+    observedUnitDimensionsM: { widthM: .2, depthM: .2, heightM: .2 }, compatibleCellIds: [String(cellId)],
+    packingLayoutVerified: true, note: 'Weight differs', custodyTaken: true,
+    evidenceUploadIds: [], idempotencyKey: 'inspection-payload-001' };
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  await service.inspectItem(String(itemId), body, staff);
+  await assert.rejects(service.inspectItem(String(itemId), { ...body, note: 'Changed note' }, staff), { status: 409, message: /different payload/ });
+  assert.equal(evidenceRows.length, 1);
+  assert.equal(evidenceAttachCalls, 1);
+});
+
+test('concurrent Staff submissions with the same key and payload produce one evidence snapshot and one audit', async t => {
+  transaction(t, { serialize: true });
+  fixtures(t);
+  const body = { decision: 'DISCREPANCY', observedQuantity: 1, observedUnitWeightKg: 25,
+    observedUnitDimensionsM: { widthM: .2, depthM: .2, heightM: .2 }, compatibleCellIds: [String(cellId)],
+    packingLayoutVerified: true, note: 'Concurrent evidence review', custodyTaken: true,
+    evidenceUploadIds: [], idempotencyKey: 'inspection-concurrent-001' };
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  const [first, replay] = await Promise.all([
+    service.inspectItem(String(itemId), body, staff),
+    service.inspectItem(String(itemId), body, staff),
+  ]);
+  assert.equal(first.status, 'RECEIVED_PENDING_ACCEPTANCE');
+  assert.equal(replay.status, 'RECEIVED_PENDING_ACCEPTANCE');
+  assert.equal(evidenceRows.length, 1);
+  assert.equal(evidenceAttachCalls, 1);
+  assert.equal(auditCalls, 1);
+});
+
+test('an accepted inspection cannot be overwritten by a later non-idempotent attempt', async t => {
+  transaction(t);
+  const state = fixtures(t), body = { decision: 'ACCEPTED', observedQuantity: 1, observedUnitWeightKg: 20,
+    observedUnitDimensionsM: { widthM: .2, depthM: .2, heightM: .2 }, compatibleCellIds: [String(cellId)],
+    packingLayoutVerified: true, note: 'Accepted', custodyTaken: true };
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  await service.inspectItem(String(itemId), body, staff);
+  await assert.rejects(service.inspectItem(String(itemId), { ...body, note: 'Overwritten' }, staff), { status: 409, message: /cannot be overwritten/ });
+  assert.equal(evidenceRows.length, 1);
+  assert.equal(state.item.receivingInspection.note, 'Accepted');
+});
+
+test('an accepted PENDING_INBOUND inspection may only be followed by the same inspection taking custody', async t => {
+  transaction(t);
+  const state = fixtures(t), base = { decision: 'ACCEPTED', observedQuantity: 1, observedUnitWeightKg: 20,
+    observedUnitDimensionsM: { widthM: .2, depthM: .2, heightM: .2 }, compatibleCellIds: [String(cellId)],
+    packingLayoutVerified: true, note: 'Accepted seal', custodyTaken: false };
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  await service.inspectItem(String(itemId), base, staff);
+  await service.inspectItem(String(itemId), { ...base, custodyTaken: true, evidenceUploadIds: [] }, staff);
+  assert.equal(state.item.status, 'RECEIVED_PENDING_ACCEPTANCE');
+  assert.equal(state.item.receivingCustodyStatus, 'IN_CUSTODY');
+  assert.equal(evidenceRows.length, 2);
+  assert.equal(evidenceRows[0].decision, 'ACCEPTED');
+  assert.equal(evidenceRows[1].decision, 'ACCEPTED');
 });
 
 test('Inspection rejects other-Facility Staff and accepted goods that do not fit an allocated empty Cell', async t => {
