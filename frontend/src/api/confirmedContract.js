@@ -186,7 +186,11 @@ export function assertConfirmedRequest(config) {
     method === "GET" &&
     (/^inventory-items\/[^/]+$/.test(path) ||
       /^inventory-items\/[^/]+\/movements$/.test(path));
+  const facilityHandover =
+    (method === 'GET' && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
+    (method === 'POST' && /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(path));
   const allowed =
+    facilityHandover ||
     bomInventoryRead ||
     bomReservationAdmin ||
     bomStorageUnitWrite ||

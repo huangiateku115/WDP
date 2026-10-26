@@ -7,9 +7,9 @@ import FacilitySessionGate from './FacilitySessionGate';
 export default function RoleWorkspaceOutlet({role}){
  const {pathname}=useLocation(),path=pathname.slice(`/${role}/`.length);
  if(!path||path==='dashboard')return <Navigate to={facilityHome(role)} replace/>;
- if(!facilityPageVisible(role,path))return <div className="manager-screen"><Panel title="Trang tạm ẩn" subtitle="Hiện chỉ hiển thị các nghiệp vụ Staff/Manager đã nối API trong phạm vi demo."><OpenLink to={facilityHome(role)}>Về danh sách đặt chỗ</OpenLink></Panel></div>;
- if(import.meta.env.VITE_USE_MOCK!=='false')return <Panel title="Cần bật dữ liệu backend"><p>Workspace này chỉ dùng API thật. Cấu hình VITE_USE_MOCK=false và khởi động lại frontend.</p></Panel>;
- if(!isM4DemoPage(role,path))return <div className="manager-screen"><Panel title="Tạm ẩn trong bản demo M4" subtitle="Màn hình này nằm ngoài phạm vi Staff / Facility Manager của M4 ở Iteration 1–3. Có thể bật lại sau buổi demo."><OpenLink to={m4DemoHome(role)}>Về màn hình demo</OpenLink></Panel></div>;
+ if(!facilityPageVisible(role,path))return <div className="manager-screen"><Panel title="Page temporarily hidden" subtitle="Only connected Staff and Manager workflows are currently available."><OpenLink to={facilityHome(role)}>Back to reservations</OpenLink></Panel></div>;
+ if(import.meta.env.VITE_USE_MOCK!=='false')return <Panel title="Live data configuration required"><p>This workspace requires live data. Set VITE_USE_MOCK=false and restart the frontend.</p></Panel>;
+ if(!isM4DemoPage(role,path))return <div className="manager-screen"><Panel title="Hidden in this demo" subtitle="This screen is outside the current Staff and Facility Manager demo scope."><OpenLink to={m4DemoHome(role)}>Back to demo</OpenLink></Panel></div>;
  if(import.meta.env.VITE_USE_MOCK==='false')return <FacilitySessionGate role={role}><Outlet/></FacilitySessionGate>;
  return <Outlet/>;
 }
