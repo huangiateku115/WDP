@@ -258,8 +258,9 @@ test('Suite 3.1: createReservation bỏ qua số tiền Client gửi lên, tự 
     return this;
   });
 
-  const futureStart = new Date(Date.now() + 86400000);
-  const futureEnd = new Date(Date.now() + 86400000 * 31); // 30 ngày
+  const fixtureNow = Date.now();
+  const futureStart = new Date(fixtureNow + 86400000);
+  const futureEnd = new Date(fixtureNow + 86400000 * 31); // exactly 30 days between start and end
 
   // Hacker gửi estimatedRent = 1 VNĐ, depositAmount = 1 VNĐ
   const req = {

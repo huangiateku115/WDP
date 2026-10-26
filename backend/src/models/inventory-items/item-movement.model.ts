@@ -7,6 +7,7 @@ const near = (left: number, right: number, tolerance: number) => Number.isFinite
 
 const batchLineSchema = new Schema({
   batchId: { type: String, required: true, trim: true, minlength: 1, maxlength: 128, immutable: true },
+  receiptMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', immutable: true },
   receiptRequestId: { type: Schema.Types.ObjectId, immutable: true },
   receivingInspectionEvidenceId: { type: Schema.Types.ObjectId, ref: 'ReceivingInspectionEvidence', immutable: true },
   action: { type: String, enum: Object.values(MovementBatchAction), required: true, immutable: true },
@@ -78,6 +79,9 @@ schema.pre('validate', function () {
   }
   if (this.schemaVersion === 2) {
     const lines = this.batchLines ?? [];
+    if (this.isNew && this.type === ItemMovementType.OUTBOUND && lines.some(line => !line.receiptMovementId)) {
+      this.invalidate('batchLines', 'New canonical OUTBOUND movements must retain each source receipt movement reference');
+    }
     const expectedAction = this.type === ItemMovementType.INBOUND ? MovementBatchAction.ADD
       : this.type === ItemMovementType.OUTBOUND ? MovementBatchAction.REMOVE : MovementBatchAction.MOVE;
     const linesWeight = lines.reduce((sum, line) => sum + Number(line.actualTotalWeightKg), 0);

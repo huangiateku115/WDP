@@ -1,7 +1,7 @@
 import {CustomerImagePreview} from '../CustomerMediaUI';
 import LoadState from '../CustomerResourceState';
 import InventoryStatus from "./InventoryStatus";
-import { CustomerOutboundAction } from "./CustomerOutbound";
+import CanonicalCustomerOutbound from './CanonicalCustomerOutbound';
 import { useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { useAuthSession } from "@/lib/authSession";
@@ -28,6 +28,7 @@ import {
   useInventoryBackend,
 } from "./InventoryBackendUI";
 import InventoryItemForm from "./InventoryItemForm";
+import RepeatedInboundRequests from './RepeatedInboundRequests';
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -373,12 +374,13 @@ function Detail({ id }) {
           </p>
         </>
       )}
-      <CustomerOutboundAction
+      <CanonicalCustomerOutbound
         item={item}
         rental={rental}
         loading={resource.loading || !!resource.error || rentals.loading}
         onRefresh={refresh}
       />
+          {item.managedReservationId && ['IN_STORAGE', 'CHECKED_OUT'].includes(item.status) && <RepeatedInboundRequests item={item}/>}
     </CustomerScreen>
   );
 }

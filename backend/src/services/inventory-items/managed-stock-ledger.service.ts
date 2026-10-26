@@ -13,6 +13,7 @@ export class ManagedStockReconciliationError extends Error {
 
 type AnyRecord = Record<string, any>;
 type ArithmeticPolicy = 'COMPATIBILITY' | 'CANONICAL_V1';
+export interface ReceiptBatchQuantityAllocation { batchId: string; quantity: number }
 const fail = (code: ManagedStockErrorCode, message: string): never => { throw new ManagedStockReconciliationError(code, message); };
 const identity = (value: any) => value == null ? null : String(value._id ?? value);
 const near = (left: number, right: number, tolerance: number) => Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= tolerance;
@@ -184,14 +185,35 @@ function movementLines(movement: AnyRecord, expectedAction: MovementBatchAction,
   return lines as AnyRecord[];
 }
 
+/** Stable FIFO ordering shared by historical v1 removal reconciliation and canonical outbound holds. */
+export function allocateReceiptBatchesFIFO(batches: readonly StockBatchBalance[], quantity: number,
+  availableQuantity: (batch: StockBatchBalance) => number = batch => batch.quantity) {
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) fail(ManagedStockErrorCode.INVALID_MOVEMENT, 'Removal quantity must be a positive safe integer');
+  let remaining = quantity;
+  const allocations: ReceiptBatchQuantityAllocation[] = [];
+  const ordered = [...batches].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.batchId.localeCompare(b.batchId));
+  for (const batch of ordered) {
+    if (remaining === 0) break;
+    const available = availableQuantity(batch);
+    if (!Number.isSafeInteger(available) || available < 0 || available > batch.quantity) {
+      fail(ManagedStockErrorCode.NEGATIVE_STOCK, 'Receipt batch available quantity is invalid');
+    }
+    const remove = Math.min(remaining, available);
+    if (remove > 0) allocations.push({ batchId: batch.batchId, quantity: remove });
+    remaining -= remove;
+  }
+  if (remaining > 0) fail(ManagedStockErrorCode.NEGATIVE_STOCK, 'Outbound exceeds available receipt batch stock');
+  return allocations;
+}
+
 function allocateLegacyRemoval(batches: Map<string, StockBatchBalance>, quantity: number) {
   let remaining = quantity;
   let removedWeightKg = 0;
   let removedVolumeM3 = 0;
-  const ordered = [...batches.values()].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.batchId.localeCompare(b.batchId));
-  for (const batch of ordered) {
-    if (remaining === 0) break;
-    const remove = Math.min(remaining, batch.quantity);
+  const allocations = allocateReceiptBatchesFIFO([...batches.values()], quantity);
+  for (const allocation of allocations) {
+    const batch = batches.get(allocation.batchId)!;
+    const remove = allocation.quantity;
     removedWeightKg += batch.actualUnitWeightKg * remove;
     removedVolumeM3 += batch.actualUnitDimensionsM.widthM * batch.actualUnitDimensionsM.depthM * batch.actualUnitDimensionsM.heightM * remove;
     batch.quantity -= remove;
@@ -220,7 +242,8 @@ function assertBatchLinesMatchBalance(batches: Map<string, StockBatchBalance>, l
         !near(current.actualUnitDimensionsM.widthM, Number(line.actualUnitDimensionsM?.widthM), 0.000001) ||
         !near(current.actualUnitDimensionsM.depthM, Number(line.actualUnitDimensionsM?.depthM), 0.000001) ||
         !near(current.actualUnitDimensionsM.heightM, Number(line.actualUnitDimensionsM?.heightM), 0.000001));
-    if (!current || current.quantityUnit !== line.quantityUnit ||
+    if (!current || (line.receiptMovementId != null && identity(line.receiptMovementId) !== identity(current.receiptMovementId)) ||
+        current.quantityUnit !== line.quantityUnit ||
         unitMismatch) {
       fail(ManagedStockErrorCode.BATCH_MISMATCH, 'Movement references a missing, depleted, or physically different receipt batch');
     }
@@ -334,7 +357,7 @@ export function reconcileManagedItemStock(item: AnyRecord, inputMovements: AnyRe
   const physicallyStored = ['IN_STORAGE', 'PENDING_OUTBOUND'].includes(String(item.status));
   if (physicallyStored !== (onHandQuantity > 0)) fail(ManagedStockErrorCode.ITEM_PROJECTION_MISMATCH, 'InventoryItem status differs from movement-derived on-hand stock');
   return {
-    itemId: identity(item._id), currentCellId, batches: nonEmpty,
+    itemId: identity(item._id), currentCellId, currentPlacementMovementId: latestPlacementMovementId, batches: nonEmpty,
     onHandQuantity, heldQuantity: 0, actualTotalWeightKg, actualTotalVolumeM3,
     source, reconciledThroughMovementId: lastMovement?._id ?? null,
   };

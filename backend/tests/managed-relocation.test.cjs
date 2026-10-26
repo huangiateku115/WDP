@@ -11,6 +11,8 @@ Object.assign(process.env, {
 const mongoose = require('mongoose');
 mongoose.set('bufferCommands', false);
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
+const InboundRequest = require('../dist/models/inventory-items/inventory-inbound-request.model').default;
+const ManagedOutboundRequest = require('../dist/models/inventory-items/managed-outbound-request.model').default;
 const Movement = require('../dist/models/inventory-items/item-movement.model').default;
 const Facility = require('../dist/models/facilities/facility.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
@@ -137,6 +139,14 @@ function setup(t, options = {}) {
   const state = { item, items: [item], cells, zoneMap, rackMap, allocations, reservation,
     movements: [inbound], audits: [], movementFailure: options.movementFailure ?? false,
     itemLockFailure: options.itemLockFailure ?? false, extraItems: [] };
+  if (options.canonicalHistory) {
+    const canonicalMovement = { ...inbound, _id: oid('507f1f77bcf86cd799439199'),
+      type: options.canonicalHistoryType ?? 'OUTBOUND', schemaVersion: 2,
+      arithmeticPolicy: options.canonicalHistoryPolicy === false ? undefined : 'CANONICAL_V1',
+      batchLines: [{ action: options.canonicalHistoryAction ?? 'REMOVE' }] };
+    if (options.canonicalHistoryPolicy === false) delete canonicalMovement.arithmeticPolicy;
+    state.movements.push(canonicalMovement);
+  }
   let queue = Promise.resolve();
   const session = { withTransaction: async work => {
     const previous = queue; let release;
@@ -167,6 +177,8 @@ function setup(t, options = {}) {
       row.currentCellId && String(row.currentCellId) === String(filter.currentCellId) && ['IN_STORAGE', 'PENDING_OUTBOUND'].includes(row.status)) ?? null);
     return new Query(state.items.find(row => String(row._id) === String(filter._id)) ?? null);
   });
+  t.mock.method(InboundRequest, 'findOne', () => new Query(options.unresolvedReceipt ? { _id: oid('507f1f77bcf86cd799439199') } : null));
+  t.mock.method(ManagedOutboundRequest, 'findOne', () => new Query(options.unresolvedCanonicalOutbound ? { _id: oid('507f1f77bcf86cd799439198') } : null));
   t.mock.method(Item, 'find', filter => new Query(state.items.filter(row =>
     (!filter.managedReservationId || String(row.managedReservationId) === String(filter.managedReservationId)) && row.currentCellId &&
     ['IN_STORAGE', 'PENDING_OUTBOUND'].includes(row.status))));
@@ -183,6 +195,12 @@ function setup(t, options = {}) {
     if (filter.managedReservationId && String(row.managedReservationId) !== String(filter.managedReservationId)) return false;
     if (filter.facilityId && String(row.facilityId) !== String(filter.facilityId)) return false;
     if (filter.customerId && String(row.customerId) !== String(filter.customerId)) return false;
+    if (filter.schemaVersion && row.schemaVersion !== filter.schemaVersion) return false;
+    if (filter['batchLines.receiptRequestId']?.$exists && !row.batchLines?.some(line => line.receiptRequestId)) return false;
+    if (filter.$or && !filter.$or.some(condition =>
+      (condition.arithmeticPolicy && row.arithmeticPolicy === condition.arithmeticPolicy) ||
+      (condition['batchLines.action'] && row.batchLines?.some(line => condition['batchLines.action'].$in.includes(line.action))) ||
+      (condition['batchLines.receiptRequestId']?.$exists && row.batchLines?.some(line => line.receiptRequestId)))) return false;
     return true;
   }) ?? null));
   t.mock.method(Movement.prototype, 'save', async function () {
@@ -283,6 +301,39 @@ test('successful same-Rack relocation uses committed INBOUND measurements and pr
   assert.equal(ctx.allocations.get(cellBId).status, 'OCCUPIED');
   assert.equal(ctx.state.movements.filter(row => row.type === 'RELOCATION').length, 1);
   assert.equal(ctx.state.audits[0].action, 'RELOCATION_CONFIRMED');
+});
+
+test('relocation is blocked by an unresolved repeated-inbound request after the Item token', async t => {
+  const ctx = setup(t, { unresolvedReceipt: true });
+  await assert.rejects(service.relocate(itemId, ctx.body, ctx.staff), { status: 409, message: /unresolved repeated-inbound request/ });
+  assert.equal(ctx.item.status, 'IN_STORAGE');
+  assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
+  assert.equal(ctx.state.movements.filter(row => row.type === 'RELOCATION').length, 0);
+});
+
+test('relocation is blocked while a canonical outbound request holds this Item', async t => {
+  const ctx = setup(t, { unresolvedCanonicalOutbound: true });
+  await assert.rejects(service.relocate(itemId, ctx.body, ctx.staff), { status: 409, message: /canonical outbound request holds stock/ });
+  assert.equal(ctx.state.movements.length, 1); assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
+});
+
+test('legacy relocation is blocked by v2 MOVE history without arithmetic marker', async t => {
+  const ctx = setup(t, { canonicalHistory: true, canonicalHistoryType: 'RELOCATION',
+    canonicalHistoryAction: 'MOVE', canonicalHistoryPolicy: false });
+  await assert.rejects(service.relocate(itemId, ctx.body, ctx.staff), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
+  assert.equal(ctx.state.movements.filter(row => row.type === 'RELOCATION').length, 1, 'only the pre-existing canonical movement remains');
+  assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
+});
+
+test('legacy relocation replay is also blocked after canonical stock history', async t => {
+  const ctx = setup(t, { canonicalHistory: true });
+  ctx.state.movements.push(makeRelocation(cellAId, cellBId, inboundId));
+  await assert.rejects(service.relocate(itemId, ctx.body, ctx.staff), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
+  assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
 });
 
 test('multiple relocations preserve placement lineage and support outbound from the latest Cell', async t => {

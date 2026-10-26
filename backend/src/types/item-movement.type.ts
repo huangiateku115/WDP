@@ -10,6 +10,7 @@ export interface MovementBatchLine {
   /** Stable receipt batch identity. New batches use an ObjectId string. */
   batchId: string;
   /** Origin references are retained on REMOVE/MOVE lines for auditability. */
+  receiptMovementId?: Types.ObjectId;
   receiptRequestId?: Types.ObjectId;
   receivingInspectionEvidenceId?: Types.ObjectId;
   action: MovementBatchAction;

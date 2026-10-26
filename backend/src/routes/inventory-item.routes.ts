@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import * as controller from '../controllers/inventory-items/inventory-item.controller';
+import * as inboundRequestController from '../controllers/inventory-items/inventory-inbound-request.controller';
+import * as outboundRequestController from '../controllers/inventory-items/managed-outbound-request.controller';
 import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
@@ -14,6 +16,11 @@ const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY
 const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
 
 router.use(requireAuth);
+router.post('/:itemId/inbound-requests', customer, inboundRequestController.create);
+router.get('/:itemId/inbound-requests', customer, inboundRequestController.listForItem);
+router.post('/:itemId/outbound-requests', customer, outboundRequestController.create);
+router.get('/:itemId/outbound-requests', customer, outboundRequestController.listForItem);
+router.get('/:itemId/stock-balance', itemReaders, inboundRequestController.stockBalance);
 router.post('/image-uploads', customer, inventoryImageUploadLimiter, uploadInventoryImageFile, controller.uploadImage);
 router.delete('/image-uploads/:uploadId', customer, controller.removeImageUpload);
 router.post('/', customer, controller.create);
@@ -29,6 +36,8 @@ router.post('/:itemId/receiving-inspection/image-uploads', requireRole([UserRole
 router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), checkinController.inspectItem);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectInbound);
 router.post('/:id/reject-outbound', requireRole([UserRole.FACILITY_STAFF]), controller.rejectOutbound);
+router.get('/:id/relocate-canonical/context', requireRole([UserRole.FACILITY_STAFF]), controller.canonicalRelocationContext);
+router.post('/:id/relocate-canonical', requireRole([UserRole.FACILITY_STAFF]), controller.relocateCanonical);
 router.post('/:id/relocate', requireRole([UserRole.FACILITY_STAFF]), controller.relocate);
 router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, controller.get);

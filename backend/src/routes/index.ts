@@ -18,6 +18,8 @@ import accessRoutes from './access.routes';
 import notificationRoutes from './notification.routes';
 import warehouseMapRoutes from './warehouse-map.routes';
 import inventoryItemRoutes from './inventory-item.routes';
+import inventoryInboundRequestRoutes from './inventory-inbound-request.routes';
+import managedOutboundRequestRoutes from './managed-outbound-request.routes';
 
 const router = Router();
 
@@ -35,6 +37,8 @@ router.use('/maintenance-tickets', maintenanceTicketRoutes);
 router.use('/support-requests', supportRequestRoutes);
 router.use(warehouseMapRoutes);
 router.use('/inventory-items', inventoryItemRoutes);
+router.use('/inbound-requests', inventoryInboundRequestRoutes);
+router.use('/outbound-requests', managedOutboundRequestRoutes);
 
 /* GET home page. */
 router.get('/', (req: Request, res: Response, next: NextFunction) => {

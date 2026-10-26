@@ -301,6 +301,54 @@ test('canonical partial removal separates movement quantity volume from before/a
     arithmetic.exactPrecisionUnits(result.actualTotalVolumeM3, 6), 1954n);
 });
 
+test('canonical partial REMOVE preserves the latest placement from legacy inbound history', () => {
+  const received = movement('INBOUND', 1, { quantity: 2, destinationCellId: ids.cellA,
+    actualTotalWeightKg: 20, actualTotalVolumeM3: .2, inspectionNote: 'legacy receipt' });
+  const receiptBatchId = `legacy:${received._id}`;
+  const removeLine = { ...line(receiptBatchId, 'REMOVE', 1), receiptMovementId: received._id };
+  const removed = schema2Movement('OUTBOUND', 2, 1, [removeLine], { sourceCellId: ids.cellA });
+  const projectedItem = item({ currentCellId: ids.cellA, currentPlacementMovementId: received._id });
+
+  const result = stock.reconcileManagedItemStock(projectedItem, [received, removed]);
+
+  assert.equal(result.onHandQuantity, 1);
+  assert.equal(result.currentCellId, ids.cellA);
+  assert.equal(result.currentPlacementMovementId, received._id);
+  assert.equal(result.source, 'LEDGER_V2');
+});
+
+test('canonical partial REMOVE after a legacy relocation keeps the relocation as current placement', () => {
+  const received = movement('INBOUND', 1, { quantity: 2, destinationCellId: ids.cellA,
+    actualTotalWeightKg: 20, actualTotalVolumeM3: .2, inspectionNote: 'legacy receipt' });
+  const moved = movement('RELOCATION', 2, { quantity: 2, sourceCellId: ids.cellA, destinationCellId: ids.cellB,
+    previousPlacementMovementId: received._id, relocationNote: 'legacy relocation' });
+  const removeLine = { ...line(`legacy:${received._id}`, 'REMOVE', 1), receiptMovementId: received._id };
+  const removed = schema2Movement('OUTBOUND', 3, 1, [removeLine], { sourceCellId: ids.cellB });
+  const projectedItem = item({ currentCellId: ids.cellB, currentPlacementMovementId: moved._id });
+
+  const result = stock.reconcileManagedItemStock(projectedItem, [received, moved, removed]);
+
+  assert.equal(result.onHandQuantity, 1);
+  assert.equal(result.currentCellId, ids.cellB);
+  assert.equal(result.currentPlacementMovementId, moved._id);
+});
+
+test('canonical partial REMOVE after repeated-inbound ADD retains the latest receipt placement', () => {
+  const first = movement('INBOUND', 1, { quantity: 2, destinationCellId: ids.cellA,
+    actualTotalWeightKg: 20, actualTotalVolumeM3: .2, inspectionNote: 'first legacy receipt' });
+  const receiptLine = { ...line('repeated-receipt', 'ADD', 2), receiptRequestId: 'request-1' };
+  const repeated = schema2Movement('INBOUND', 2, 2, [receiptLine], { destinationCellId: ids.cellA,
+    inspectionNote: 'repeated receipt' });
+  const removeLine = { ...line('repeated-receipt', 'REMOVE', 1), receiptMovementId: repeated._id, receiptRequestId: 'request-1' };
+  const removed = schema2Movement('OUTBOUND', 3, 1, [removeLine], { sourceCellId: ids.cellA });
+  const projectedItem = item({ currentCellId: ids.cellA, currentPlacementMovementId: repeated._id });
+
+  const result = stock.reconcileManagedItemStock(projectedItem, [first, repeated, removed]);
+
+  assert.equal(result.currentPlacementMovementId, repeated._id);
+  assert.equal(result.onHandQuantity, 3);
+});
+
 test('mixed v1 compatibility and canonical v2 batches retain receipt policy across full relocation', () => {
   const dimensions = { widthM: .125, depthM: .125, heightM: .125 };
   const oldReceipt = movement('INBOUND', 1, { quantity: 100, destinationCellId: ids.cellA, actualUnitWeightKg: 1.5,

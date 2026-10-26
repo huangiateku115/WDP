@@ -11,6 +11,8 @@ Object.assign(process.env, {
 const mongoose = require('mongoose');
 mongoose.set('bufferCommands', false);
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
+const InboundRequest = require('../dist/models/inventory-items/inventory-inbound-request.model').default;
+const ManagedOutboundRequest = require('../dist/models/inventory-items/managed-outbound-request.model').default;
 const Movement = require('../dist/models/inventory-items/item-movement.model').default;
 const Facility = require('../dist/models/facilities/facility.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
@@ -92,9 +94,17 @@ function setup(t, options = {}) {
   const otherInbound = makeOtherInbound();
   const otherItem = makeItem({ _id: otherInbound.itemId, itemCode: 'LOT-2', currentCellId: oid(cellId), status: 'IN_STORAGE',
     inboundMovementId: otherInbound._id });
-  const state = { item, cell, reservation, allocation, inbound, otherInbound, otherItem, outbound: null, audits: [], otherStored: options.otherStored ?? false,
+  const state = { item, cell, reservation, allocation, inbound, otherInbound, otherItem, movements: [inbound, otherInbound], outbound: null, audits: [], otherStored: options.otherStored ?? false,
     itemFindExecution: { active: 0, maxActive: 0, sessions: [] },
     otherAllocation: { status: 'RESERVED', cellId: oid('507f1f77bcf86cd799439042') } };
+  if (options.canonicalHistory) {
+    const canonicalMovement = { ...inbound, _id: oid('507f1f77bcf86cd799439199'),
+      type: options.canonicalHistoryType ?? 'OUTBOUND', schemaVersion: 2,
+      arithmeticPolicy: options.canonicalHistoryPolicy === false ? undefined : 'CANONICAL_V1',
+      batchLines: [{ action: options.canonicalHistoryAction ?? 'REMOVE' }] };
+    if (options.canonicalHistoryPolicy === false) delete canonicalMovement.arithmeticPolicy;
+    state.movements.push(canonicalMovement);
+  }
   let queue = Promise.resolve();
   const session = { withTransaction: async work => {
     const previous = queue; let release;
@@ -122,6 +132,8 @@ function setup(t, options = {}) {
     if (filter.customerId && !item.customerId.equals(filter.customerId)) return new Query(null);
     return new Query(item);
   });
+  t.mock.method(InboundRequest, 'findOne', () => new Query(options.unresolvedReceipt ? { _id: oid('507f1f77bcf86cd799439199') } : null));
+  t.mock.method(ManagedOutboundRequest, 'findOne', () => new Query(options.unresolvedCanonicalOutbound ? { _id: oid('507f1f77bcf86cd799439198') } : null));
   t.mock.method(Item, 'find', () => new Query(state.otherStored ? [item, otherItem] : [item], state.itemFindExecution));
   t.mock.method(Item, 'findOneAndUpdate', () => new Query(item));
   t.mock.method(Item.prototype, 'save', async function () { return this; });
@@ -142,6 +154,13 @@ function setup(t, options = {}) {
   t.mock.method(Allocation, 'findOne', () => new Query(options.allocationMissing ? null : allocation));
   t.mock.method(Allocation.prototype, 'save', async function () { state.allocation.status = this.status; return this; });
   t.mock.method(Movement, 'findOne', filter => {
+    if (filter.schemaVersion) return new Query(state.movements.find(row => row.schemaVersion === filter.schemaVersion &&
+      (!filter.itemId || String(row.itemId) === String(filter.itemId)) &&
+      (!filter.$or || filter.$or.some(condition =>
+        (condition.arithmeticPolicy && row.arithmeticPolicy === condition.arithmeticPolicy) ||
+        (condition['batchLines.action'] && row.batchLines?.some(line => condition['batchLines.action'].$in.includes(line.action))) ||
+        (condition['batchLines.receiptRequestId']?.$exists && row.batchLines?.some(line => line.receiptRequestId))
+      )) && (!filter['batchLines.receiptRequestId']?.$exists || row.batchLines?.some(line => line.receiptRequestId)) ) ?? null);
     if (filter.type === 'INBOUND') return new Query(options.inboundMissing ? null :
       String(filter.itemId) === String(otherItem._id) ? otherInbound : inbound);
     if (filter.idempotencyKey) return new Query(state.outbound?.idempotencyKey === filter.idempotencyKey ? state.outbound : null);
@@ -178,6 +197,28 @@ test('customer requests outbound while retaining its Cell and all physical count
   assert.equal(ctx.state.audits[0].action, 'OUTBOUND_REQUESTED');
 });
 
+test('outbound request is blocked by an unresolved repeated-inbound request after the Item token', async t => {
+  const ctx = setup(t, { unresolvedReceipt: true });
+  await assert.rejects(service.requestOutbound(itemId, ctx.customer), { status: 409, message: /unresolved repeated-inbound request/ });
+  assert.equal(ctx.item.status, 'IN_STORAGE');
+  assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.reservation.usedCapacityM3, .03);
+});
+
+test('legacy outbound request is blocked by a canonical hold after the Item token', async t => {
+  const ctx = setup(t, { unresolvedCanonicalOutbound: true });
+  await assert.rejects(service.requestOutbound(itemId, ctx.customer), { status: 409, message: /canonical outbound request holds stock/ });
+  assert.equal(ctx.item.status, 'IN_STORAGE');
+});
+
+test('legacy outbound request fails closed after any canonical v2 stock movement even with gates off', async t => {
+  const ctx = setup(t, { canonicalHistory: true });
+  await assert.rejects(service.requestOutbound(itemId, ctx.customer), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
+  assert.equal(ctx.item.status, 'IN_STORAGE');
+  assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.reservation.usedCapacityM3, .03);
+});
+
 test('wrong customer and Self-Storage reservation cannot request Managed outbound', async t => {
   const wrong = setup(t, { actorId: otherCustomerId });
   await assert.rejects(service.requestOutbound(itemId, wrong.customer), { status: 404 });
@@ -203,6 +244,47 @@ test('whole-lot quantity mismatch and invalid handover do not change physical ac
   await assert.rejects(service.confirmOutbound(itemId, { ...ctx.body, handoverConfirmed: false }, ctx.staff), { status: 400 });
   assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.cell.usedVolumeM3, .03);
   assert.equal(ctx.reservation.usedCapacityM3, .03);
+});
+
+test('outbound confirmation is blocked by an unresolved repeated-inbound request before accounting writes', async t => {
+  const ctx = setup(t, { status: 'PENDING_OUTBOUND', unresolvedReceipt: true });
+  await assert.rejects(service.confirmOutbound(itemId, ctx.body, ctx.staff), { status: 409, message: /unresolved repeated-inbound request/ });
+  assert.equal(ctx.item.status, 'PENDING_OUTBOUND');
+  assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.reservation.usedCapacityM3, .03);
+  assert.equal(ctx.state.outbound, null);
+});
+
+test('legacy outbound confirmation is blocked by a canonical hold before accounting writes', async t => {
+  const ctx = setup(t, { status: 'PENDING_OUTBOUND', unresolvedCanonicalOutbound: true });
+  await assert.rejects(service.confirmOutbound(itemId, ctx.body, ctx.staff), { status: 409, message: /canonical outbound request holds stock/ });
+  assert.equal(ctx.state.outbound, null); assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.reservation.usedCapacityM3, .03);
+});
+
+test('legacy confirmation and rejection cannot mutate canonical-history Items', async t => {
+  const confirm = setup(t, { status: 'PENDING_OUTBOUND', canonicalHistory: true });
+  await assert.rejects(service.confirmOutbound(itemId, confirm.body, confirm.staff), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
+  assert.equal(confirm.state.outbound, null); assert.equal(confirm.cell.usedWeightKg, 40);
+
+  const reject = setup(t, { status: 'PENDING_OUTBOUND', canonicalHistory: true });
+  await assert.rejects(service.rejectOutbound(itemId, { reason: 'not accepted' }, reject.staff), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
+  assert.equal(reject.item.status, 'PENDING_OUTBOUND');
+});
+
+test('legacy whole-lot confirmation replay is blocked for canonical movement history', async t => {
+  const ctx = setup(t, { status: 'CHECKED_OUT', currentCellId: null, canonicalHistory: true });
+  const canonical = ctx.state.movements.find(row => row.schemaVersion === 2);
+  canonical.idempotencyKey = ctx.body.idempotencyKey;
+  canonical.handoverNote = ctx.body.handoverNote;
+  canonical.quantity = ctx.body.verifiedQuantity;
+  ctx.state.outbound = canonical;
+  ctx.item.outboundMovementId = canonical._id;
+  await assert.rejects(service.confirmOutbound(itemId, ctx.body, ctx.staff), {
+    status: 409, message: /Canonical stock history requires the canonical partial-stock workflow/,
+  });
 });
 
 test('successful outbound creates one immutable movement from the original Cell to outside and releases only physical usage', async t => {
@@ -280,6 +362,12 @@ test('Staff rejection returns item to IN_STORAGE without changing location or co
   assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.cell.usedVolumeM3, .03);
   assert.equal(ctx.reservation.usedCapacityM3, .03); assert.equal(ctx.allocation.status, 'OCCUPIED');
   assert.equal(ctx.state.audits[0].action, 'OUTBOUND_REJECTED');
+});
+
+test('legacy outbound rejection cannot change an Item while canonical holds exist', async t => {
+  const ctx = setup(t, { status: 'PENDING_OUTBOUND', unresolvedCanonicalOutbound: true });
+  await assert.rejects(service.rejectOutbound(itemId, { reason: 'test rejection' }, ctx.staff), { status: 409, message: /canonical outbound request holds stock/ });
+  assert.equal(ctx.item.status, 'PENDING_OUTBOUND'); assert.equal(ctx.cell.usedWeightKg, 40);
 });
 
 test('legacy version 1 Managed reservation remains eligible during its active term', async t => {
