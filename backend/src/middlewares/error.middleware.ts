@@ -1,6 +1,7 @@
 import { ErrorRequestHandler, RequestHandler } from 'express';
 import { STATUS_CODES } from 'http';
 import { env } from '../config/env';
+import { ManagedStockErrorCode } from '../types/managed-stock.type';
 
 export const notFound: RequestHandler = (_req, res) => {
   res.status(404).json({ success: false, message: 'Not Found' });
@@ -15,6 +16,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     message: env.nodeEnv === 'production'
       ? STATUS_CODES[status] || 'Internal Server Error'
       : err?.message || STATUS_CODES[status] || 'Internal Server Error',
+    ...(typeof err?.code === 'string' && Object.values(ManagedStockErrorCode).includes(err.code) ? { code: err.code } : {}),
     ...(env.nodeEnv === 'development' ? { error: err } : {}),
   });
 };

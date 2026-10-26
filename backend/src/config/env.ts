@@ -1,4 +1,7 @@
 import dotenv from 'dotenv';
+import { resolveMi06BRepeatedInboundGate } from './mi06b-feature-gate';
+import { resolveMi06CanonicalOutboundConfirmationGate, resolveMi06CanonicalOutboundGate } from './mi06-canonical-outbound-gate';
+import { resolveMi06CanonicalRelocationGate } from './mi06-canonical-relocation-gate';
 dotenv.config({ quiet: true });
 
 export class ConfigurationError extends Error {}
@@ -43,6 +46,19 @@ function loadEnvironment() {
   const issuer = httpUrl('KEYCLOAK_ISSUER', process.env.KEYCLOAK_ISSUER || `${baseUrl}/realms/${realm}`);
   return {
     port, mongoUrl, nodeEnv, corsOrigins,
+    // MI-06 ledger writes remain explicitly opt-in and are never enabled in production in this phase.
+    mi06StockLedgerWritesEnabled: nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
+    // MI-06B repeated inbound is an independent, non-operational foundation gate.
+    mi06RepeatedInboundEnabled: resolveMi06BRepeatedInboundGate(nodeEnv, process.env.MI06_REPEATED_INBOUND_ENABLED),
+    // Canonical outbound request/hold writes are independently gated and require the stock write gate too.
+    mi06CanonicalOutboundRequestsEnabled: resolveMi06CanonicalOutboundGate(nodeEnv, process.env.MI06_CANONICAL_OUTBOUND_REQUESTS_ENABLED) &&
+      nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
+    // Canonical outbound confirmation is independent and opt-in; never active in production.
+    mi06CanonicalOutboundConfirmationsEnabled: resolveMi06CanonicalOutboundConfirmationGate(nodeEnv, process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED) &&
+      nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
+    // Canonical relocation is independently opt-in and remains forced off in production.
+    mi06CanonicalRelocationsEnabled: resolveMi06CanonicalRelocationGate(nodeEnv, process.env.MI06_CANONICAL_RELOCATIONS_ENABLED) &&
+      nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
     keycloak: {
       baseUrl, realm, issuer,
       jwksUri: httpUrl('KEYCLOAK_JWKS_URI', process.env.KEYCLOAK_JWKS_URI || `${issuer}/protocol/openid-connect/certs`),

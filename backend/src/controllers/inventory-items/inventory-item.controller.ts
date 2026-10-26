@@ -1,6 +1,7 @@
 import { RequestHandler } from 'express';
 import { InventoryItemService as service } from '../../services/inventory-items/inventory-item.service';
 import { ManagedInventoryImageService } from '../../services/upload/managed-inventory-image.service';
+import { ManagedCanonicalRelocationService } from '../../services/inventory-items/managed-canonical-relocation.service';
 
 export const create: RequestHandler = async (req, res, next) => {
   try { res.status(201).json({ success: true, data: await service.create(req.body, req.user!) }); } catch (error) { next(error); }
@@ -34,6 +35,16 @@ export const rejectOutbound: RequestHandler = async (req, res, next) => {
 };
 export const relocate: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.relocate(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }
+};
+export const relocateCanonical: RequestHandler = async (req, res, next) => {
+  try {
+    const data = await ManagedCanonicalRelocationService.relocate(req.params.id, req.body, req.get('Idempotency-Key'), req.user!);
+    res.status(200).json({ success: true, data });
+  } catch (error) { next(error); }
+};
+export const canonicalRelocationContext: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await ManagedCanonicalRelocationService.context(req.params.id, req.user!) }); }
+  catch (error) { next(error); }
 };
 export const confirmInbound: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.confirmInbound(req.params.id, req.body, req.user!) }); } catch (error) { next(error); }

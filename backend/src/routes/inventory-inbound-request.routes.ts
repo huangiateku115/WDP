@@ -1,0 +1,23 @@
+import { Router } from 'express';
+import { requireAuth } from '../middlewares/auth/requireAuth';
+import { requireRole } from '../middlewares/auth/requireRole';
+import * as controller from '../controllers/inventory-items/inventory-inbound-request.controller';
+import { UserRole } from '../types/user.type';
+import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
+import rateLimit from 'express-rate-limit';
+
+const router = Router();
+const customer = requireRole([UserRole.CUSTOMER]);
+const staff = requireRole([UserRole.FACILITY_STAFF]);
+const evidenceLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+router.use(requireAuth);
+router.get('/receiving-queue', staff, controller.receivingQueue);
+router.get('/:requestId/receiving', staff, controller.receivingDetail);
+router.post('/:requestId/evidence-uploads', staff, evidenceLimiter, uploadInventoryImageFile, controller.uploadRepeatedEvidence);
+router.post('/:requestId/inspection', staff, controller.inspectRepeatedReceipt);
+router.post('/:requestId/return-completed', staff, controller.completeRepeatedReturn);
+router.post('/:requestId/confirm', staff, controller.confirmRepeatedReceipt);
+router.get('/:requestId', customer, controller.get);
+router.patch('/:requestId', customer, controller.amend);
+router.post('/:requestId/cancel', customer, controller.cancel);
+export default router;

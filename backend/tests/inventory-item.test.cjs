@@ -360,11 +360,14 @@ test('all inventory-item routes require authentication and role gates match the 
   for (const expected of [
     'POST /image-uploads', 'DELETE /image-uploads/:uploadId',
     'POST /', 'GET /me', 'GET /', 'GET /:id', 'PATCH /:id', 'GET /:id/placement-preview',
+    'POST /:itemId/inbound-requests', 'GET /:itemId/inbound-requests', 'GET /:itemId/stock-balance',
+    'POST /:itemId/outbound-requests', 'GET /:itemId/outbound-requests',
+    'GET /:id/relocate-canonical/context',
     'POST /:id/inbound-request', 'POST /:id/outbound-request', 'POST /:id/confirm-inbound',
     'POST /:id/confirm-outbound', 'POST /:id/reject-inbound', 'POST /:id/reject-outbound', 'GET /:id/movements',
-    'POST /:id/relocate',
+    'POST /:id/relocate', 'POST /:id/relocate-canonical',
     'GET /:itemId/receiving-inspection/context', 'POST /:itemId/receiving-inspection/image-uploads',
     'POST /:itemId/receiving-inspection',
   ]) assert.ok(routes.some(route => `${route.method} ${route.path}` === expected), expected);
-  assert.equal(routes.length, 19);
+  assert.equal(routes.length, 26);
 });

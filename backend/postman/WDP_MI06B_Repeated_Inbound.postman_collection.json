@@ -1,0 +1,2417 @@
+{
+  "info": {
+    "name": "WDP - MI-06B Repeated Inbound",
+    "description": "Manual Customer and Facility Staff verification for MI-06B repeated receipts, canonical partial outbound, and MI-06D canonical relocation. Use disposable development/test data. New writes require their independent gates plus MI06_STOCK_LEDGER_WRITES_ENABLED=true. All new production writes remain forced OFF. Includes Staff partial confirmation, canonical REMOVE and MOVE movement checks. See MI_06B_POSTMAN.md and MI_06D_CANONICAL_RELOCATION.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    },
+    {
+      "key": "otherCustomerToken",
+      "value": ""
+    },
+    {
+      "key": "otherStaffToken",
+      "value": ""
+    },
+    {
+      "key": "facilityId",
+      "value": ""
+    },
+    {
+      "key": "reservationId",
+      "value": ""
+    },
+    {
+      "key": "itemId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "cellId",
+      "value": ""
+    },
+    {
+      "key": "sourceCellId",
+      "value": ""
+    },
+    {
+      "key": "destinationCellId",
+      "value": ""
+    },
+    {
+      "key": "createKey",
+      "value": "mi06b-create-000001"
+    },
+    {
+      "key": "inspectKey",
+      "value": "mi06b-inspect-000001"
+    },
+    {
+      "key": "confirmKey",
+      "value": "mi06b-confirm-000001"
+    },
+    {
+      "key": "requestVersion",
+      "value": "0"
+    },
+    {
+      "key": "uploadId",
+      "value": ""
+    },
+    {
+      "key": "outboundConfirmKey",
+      "value": "mi06b-outbound-confirm-0001"
+    },
+    {
+      "key": "outboundConfirmQuantity",
+      "value": "2"
+    },
+    {
+      "key": "remainingCurrentQty",
+      "value": ""
+    },
+    {
+      "key": "outboundZeroCreateKey",
+      "value": "mi06b-outbound-zero-create-0001"
+    },
+    {
+      "key": "outboundZeroConfirmKey",
+      "value": "mi06b-outbound-zero-confirm-0001"
+    },
+    {
+      "key": "outboundZeroRequestId",
+      "value": ""
+    },
+    {
+      "key": "outboundZeroVersion",
+      "value": "0"
+    },
+    {
+      "key": "postRelocationFinalOutboundKey",
+      "value": "mi06d-final-outbound-create-0001"
+    },
+    {
+      "key": "postRelocationFinalOutboundRequestId",
+      "value": ""
+    },
+    {
+      "key": "postRelocationFinalOutboundVersion",
+      "value": "0"
+    },
+    {
+      "key": "postRelocationFinalOutboundConfirmKey",
+      "value": "mi06d-final-outbound-confirm-0001"
+    },
+    {
+      "key": "zeroReInboundCreateKey",
+      "value": "mi06d-zero-reinbound-create-0001"
+    },
+    {
+      "key": "zeroReInboundInspectKey",
+      "value": "mi06d-zero-reinbound-inspect-0001"
+    },
+    {
+      "key": "zeroReInboundConfirmKey",
+      "value": "mi06d-zero-reinbound-confirm-0001"
+    },
+    {
+      "key": "zeroReInboundEvidenceKey",
+      "value": "mi06d-zero-reinbound-evidence-0001"
+    },
+    {
+      "key": "zeroReInboundRequestId",
+      "value": ""
+    },
+    {
+      "key": "zeroReInboundVersion",
+      "value": "0"
+    },
+    {
+      "key": "zeroReInboundUploadId",
+      "value": ""
+    },
+    {
+      "key": "zeroReInboundDestinationCellId",
+      "value": ""
+    },
+    {
+      "key": "outboundSecondConfirmKey",
+      "value": "mi06b-outbound-second-confirm-0001"
+    },
+    {
+      "key": "outboundSecondActualQty",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Customer lifecycle",
+      "item": [
+        {
+          "name": "Prerequisite - Customer login/token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me",
+            "description": "Authenticate using the project's normal login flow, then copy the access token into customerToken. This request only validates the token; it does not persist credentials."
+          }
+        },
+        {
+          "name": "List my eligible Items",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/me?page=1&limit=100"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Customer inventory returned', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create repeated inbound",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 4,\n  \"quantityUnit\": \"box\",\n  \"declaredUnitWeightKg\": 2.5,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 }\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Created or replayed', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "const j=pm.response.json(); if(j.data?._id) pm.environment.set('requestId', j.data._id); if(j.data?.version!==undefined) pm.environment.set('requestVersion', String(j.data.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay same CREATE key and payload (expect 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 4,\n  \"quantityUnit\": \"box\",\n  \"declaredUnitWeightKg\": 2.5,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 }\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Idempotent replay is HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same key with changed payload (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 5,\n  \"quantityUnit\": \"box\",\n  \"declaredUnitWeightKg\": 2.5,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 }\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Changed payload conflicts', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET request history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests?page=1&limit=20"
+          }
+        },
+        {
+          "name": "GET request detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "AMEND before inspection",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-amend-000001"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 4,\n  \"declaredUnitWeightKg\": 2.6,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 }\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Amend succeeded', () => pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); if(j.data?.version!==undefined) pm.environment.set('requestVersion', String(j.data.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CANCEL scenario (use a separate uninspected request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-cancel-000001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/cancel",
+            "description": "Run only against a separate uninspected, no-custody request. This closes it as CANCELLED and cannot then be inspected."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Canonical partial outbound request and hold",
+      "description": "Requires a disposable Item with positive reconciled StockBalance. New holds require MI06_CANONICAL_OUTBOUND_REQUESTS_ENABLED=true and MI06_STOCK_LEDGER_WRITES_ENABLED=true. Staff confirmation requires MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED=true plus the stock ledger gate. All gates default OFF and are forced OFF in production.",
+      "item": [
+        {
+          "name": "Create partial outbound request (expect 201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{outboundCreateKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+            "description": "Creates a FIFO hold. CurrentQty and physical counters must remain unchanged."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('New request is HTTP 201', () => pm.response.to.have.status(201));",
+                  "const j=pm.response.json(); if(j.data?._id) pm.environment.set('outboundRequestId', j.data._id); if(j.data?.version!==undefined) pm.environment.set('outboundVersion', String(j.data.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay same CREATE key and payload (expect 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{outboundCreateKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+            "description": "Returns the original event snapshot; does not increase holds again."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Attempt another oversized request (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-outbound-extra-0001"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 999999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+            "description": "An unresolved request exists; must not reserve more stock."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Legacy whole-lot outbound blocked while hold is unresolved (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request",
+            "description": "Confirms legacy outbound cannot move an Item while canonical held stock exists."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET outbound request history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests?page=1&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET outbound request detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify StockBalance held quantity (Staff token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance",
+            "description": "Inspect per-batch heldQuantity and onHandQuantity; available is onHand minus held."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer safe CANCEL and release all holds",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{outboundVersion}}\""
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{outboundCancelKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/cancel",
+            "description": "Run on a disposable pending request. This is safe with the creation gate OFF."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cancellation committed', () => pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); if(j.data?.version!==undefined) pm.environment.set('outboundVersion', String(j.data.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay same CANCEL key after completion (expect 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"0\""
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{outboundCancelKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/cancel",
+            "description": "Returns the original committed cancellation snapshot without releasing twice."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Other Customer cannot read request (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherCustomerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feature gate OFF blocks new CREATE (expect 503)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-outbound-gateoff-01"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+            "description": "Run against an instance with MI06_CANONICAL_OUTBOUND_REQUESTS_ENABLED=false or NODE_ENV=production. Existing GET and safe CANCEL remain available."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 503', () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff Facility-scoped pending outbound queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/outbound-requests/staff-queue?state=PENDING&page=1&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Staff queue returns HTTP 200',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json(),id=pm.environment.get('outboundRequestId'),r=j.data?.data?.find(x=>x._id===id); pm.test('Created request appears in assigned Facility queue',()=>pm.expect(r).to.exist); if(r?.version!==undefined)pm.environment.set('outboundVersion',String(r.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff Facility-scoped outbound detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/staff-detail"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Staff detail returns HTTP 200',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); pm.test('Detail includes request and stock quantities',()=>pm.expect(j.data).to.have.property('request')); pm.test('Detail returns version ETag',()=>pm.expect(pm.response.headers.get('ETag')).to.eql('\\\"'+j.data.request.version+'\\\"'));",
+                  "const j=pm.response.json(); pm.test('Detail includes request and stock quantities',()=>pm.expect(j.data).to.have.property('request')); pm.test('Detail returns version ETag',()=>pm.expect(pm.response.headers.get('ETag')).to.eql(JSON.stringify(j.data.request.version)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Phase C Staff partial confirmation and REMOVE verification",
+          "description": "Use the pending outbound request created above. Staff token must belong to facilityId. Confirmation uses If-Match and Idempotency-Key headers; body quantity is the actual delivered amount and handover confirmation is required.",
+          "item": [
+            {
+              "name": "Confirm partial delivery (expect 200)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{outboundConfirmKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundConfirmQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Staff confirmed actual handover\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/confirm",
+                "description": "Consumes delivered FIFO receipt batches and releases the unused hold atomically."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Confirmation committed', () => pm.response.to.have.status(200));",
+                      "const j=pm.response.json(); if(j.data?.version!==undefined) pm.environment.set('confirmedOutboundVersion',String(j.data.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Replay same confirmation key and payload (expect 200)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{outboundConfirmKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundConfirmQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Staff confirmed actual handover\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/confirm",
+                "description": "Returns the immutable committed event snapshot without changing stock a second time."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Replay returns committed snapshot', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Different confirmation key after terminal state (expect 409)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{confirmedOutboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "mi06b-outbound-confirm-second-0001"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundConfirmQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Second attempt must not remove stock\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/confirm",
+                "description": "A new key cannot confirm an already terminal request."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Second logical confirmation rejected', () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify StockBalance CurrentQty/HeldQty/AvailableQty",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance",
+                "description": "Verify onHandQuantity, heldQuantity and onHandQuantity minus heldQuantity after confirmation."
+              }
+            },
+            {
+              "name": "Verify REMOVE movement and receipt batch lineage",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/movements",
+                "description": "Confirm one schemaVersion 2 OUTBOUND movement with CANONICAL_V1, REMOVE batch lines and receipt batch IDs."
+              }
+            },
+            {
+              "name": "Wrong Facility cannot confirm (expect 404)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{otherStaffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "mi06b-outbound-confirm-foreign-0001"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundConfirmQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Unauthorized facility test\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/confirm",
+                "description": "otherStaffToken must be assigned to a different Facility; response must not disclose request existence."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Foreign Facility is hidden', () => pm.response.to.have.status(404));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Feature gate OFF rejects new confirmation (expect 503)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "mi06b-outbound-confirm-gateoff-0001"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundConfirmQuantity}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Gate off check\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundRequestId}}/confirm",
+                "description": "Use a disposable pending request on a test server with MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED=false and MI06_STOCK_LEDGER_WRITES_ENABLED=false."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Disabled confirmation gate is enforced', () => pm.response.to.have.status(503));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Read remaining CurrentQty for next request",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance",
+                "description": "Capture the reconciled remaining on-hand amount after the partial delivery."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j=pm.response.json(); pm.test('Remaining stock is positive',()=>pm.expect(j.data.onHandQuantity).to.be.above(0)); pm.environment.set('remainingCurrentQty',String(j.data.onHandQuantity));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create next request for all remaining stock",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customerToken}}"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{outboundZeroCreateKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"requestedQuantity\": {{remainingCurrentQty}}\n}"
+                },
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+                "description": "Requires the first request to have been partially fulfilled. This is a new request for the remaining reconciled stock."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Next request created',()=>pm.expect([200,201]).to.include(pm.response.code)); const j=pm.response.json(); pm.environment.set('outboundZeroRequestId',j.data._id); pm.environment.set('outboundZeroVersion',String(j.data.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Confirm full remaining quantity to zero",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundZeroVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{outboundZeroConfirmKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{remainingCurrentQty}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Confirmed final remaining stock\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundZeroRequestId}}/confirm",
+                "description": "A full delivery of all remaining stock clears Item and StockBalance currentCellId but retains the reservation allocation."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Final removal confirmed',()=>pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ],
+              "description": "Standalone full-withdrawal scenario only. For the end-to-end relocation sequence, instead run “Confirm second request partially to release hold before relocation”, then relocate the remaining positive stock and use the post-relocation final-outbound continuation."
+            },
+            {
+              "name": "Confirm second request partially to release hold before relocation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{outboundZeroVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{outboundSecondConfirmKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{outboundSecondActualQty}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Partial delivery before canonical relocation\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{outboundZeroRequestId}}/confirm",
+                "description": "After creating a second request for all then-remaining stock, confirm a smaller actual quantity. This closes that request and releases unused held quantity, leaving positive on-hand stock eligible for relocation."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Partial second outbound confirmed',()=>pm.response.to.have.status(200));const j=pm.response.json();if(j.data?.version!==undefined)pm.environment.set('outboundZeroVersion',String(j.data.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Read positive quantity after releasing second hold",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance",
+                "description": "Capture the reconciled on-hand amount into remainingCurrentQty before MOVE."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j=pm.response.json();pm.test('Positive stock remains for relocation',()=>pm.expect(j.data.onHandQuantity).to.be.above(0));pm.environment.set('remainingCurrentQty',String(j.data.onHandQuantity));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify zero stock and cleared physical placement",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance",
+                "description": "Check onHandQuantity=0, heldQuantity=0 and currentCellId=null. Verify the allocation remains RESERVED only when no other stored Item occupies that Cell."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j=pm.response.json(); pm.test('Stock is depleted and unheld',()=>{pm.expect(j.data.onHandQuantity).to.equal(0);pm.expect(j.data.heldQuantity).to.equal(0);pm.expect(j.data.currentCellId).to.equal(null);});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Staff acceptance path",
+      "item": [
+        {
+          "name": "Prerequisite - Staff token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me",
+            "description": "Sign in as FACILITY_STAFF assigned to facilityId and copy its token to staffToken."
+          }
+        },
+        {
+          "name": "Receiving queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inbound-requests/receiving-queue?state=PENDING_INSPECTION&page=1&limit=100"
+          }
+        },
+        {
+          "name": "Request detail and allocated Cells",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/receiving"
+          }
+        },
+        {
+          "name": "Upload inspection evidence",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-photo-000001"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/evidence-uploads",
+            "description": "Choose a JPEG, PNG or WebP file in Postman. Development/test only; public Cloudinary URL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j=pm.response.json(); if(j.data?.uploadId) pm.environment.set('uploadId', j.data.uploadId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inspect and accept (snapshot is immutable)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"ACCEPTED\",\n  \"receivedQuantity\": 4,\n  \"actualUnitWeightKg\": 2.6,\n  \"actualUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 },\n  \"compatibleCellIds\": [\"{{cellId}}\"],\n  \"packingLayoutVerified\": true,\n  \"custodyTaken\": true,\n  \"note\": \"Receipt accepted and custody recorded\",\n  \"evidenceUploadIds\": [\"{{uploadId}}\"],\n  \"inspectionKey\": \"{{inspectKey}}\"\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/inspection"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Inspection committed', () => pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); if(j.data?.request?.version!==undefined) pm.environment.set('requestVersion', String(j.data.request.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destinationCellId\": \"{{cellId}}\",\n  \"inspectionNote\": \"Physical receipt confirmed\",\n  \"idempotencyKey\": \"{{confirmKey}}\"\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/confirm"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Receipt confirmed', () => pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); if(j.data?.request?.version!==undefined) pm.environment.set('requestVersion', String(j.data.request.version));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repeat same confirmation safely",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destinationCellId\": \"{{cellId}}\",\n  \"inspectionNote\": \"Physical receipt confirmed\",\n  \"idempotencyKey\": \"{{confirmKey}}\"\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/confirm",
+            "description": "Uses the original key and exact payload; should replay the committed snapshot."
+          }
+        },
+        {
+          "name": "Verify StockBalance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance"
+          }
+        },
+        {
+          "name": "Verify movement ledger",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/movements"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff rejection and discrepancy scenarios",
+      "item": [
+        {
+          "name": "Inspect discrepancy (then create a new attempt)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"DISCREPANCY\",\n  \"receivedQuantity\": 3,\n  \"actualUnitWeightKg\": 2.5,\n  \"actualUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 },\n  \"compatibleCellIds\": [],\n  \"packingLayoutVerified\": false,\n  \"custodyTaken\": true,\n  \"note\": \"One unit missing; goods held pending review\",\n  \"evidenceUploadIds\": [],\n  \"inspectionKey\": \"mi06b-discrepancy-0001\"\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/inspection"
+          }
+        },
+        {
+          "name": "Inspect rejected; custody means RETURN_PENDING",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"REJECTED\",\n  \"receivedQuantity\": 4,\n  \"actualUnitWeightKg\": 2.5,\n  \"actualUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 },\n  \"compatibleCellIds\": [],\n  \"packingLayoutVerified\": false,\n  \"custodyTaken\": true,\n  \"note\": \"Goods rejected; return required\",\n  \"evidenceUploadIds\": [],\n  \"inspectionKey\": \"mi06b-reject-000001\"\n}"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/inspection"
+          }
+        },
+        {
+          "name": "Complete explicit return",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{requestVersion}}\""
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-return-000001"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"returnNote\": \"Customer received returned goods; handover recorded\" }"
+            },
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/return-completed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authorization, conflicts and feature gate",
+      "item": [
+        {
+          "name": "Other Customer cannot read request (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherCustomerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "Staff from other Facility cannot read request (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherStaffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inbound-requests/{{requestId}}/receiving"
+          }
+        },
+        {
+          "name": "Outbound conflict while request unresolved",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request"
+          },
+          "description": "Run before confirmation with the unresolved request; expect 409."
+        },
+        {
+          "name": "Relocation conflict while request unresolved",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{cellId}}\",\n  \"verifiedQuantity\": 4,\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Test conflict guard\",\n  \"idempotencyKey\": \"mi06b-relocate-0001\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/relocate"
+          },
+          "description": "Run before confirmation with sourceCellId and a different allocated destination Cell; expect 409 from unresolved receipt guard."
+        },
+        {
+          "name": "Canonical Item legacy outbound fails closed (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-request"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Legacy whole-lot outbound is blocked for canonical receipt stock', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "description": "Use a confirmed canonical repeated-inbound Item with no unresolved receipt request. Expected 409 confirms the legacy whole-lot writer is not used, even with the MI-06B gate OFF. Successful partial Outbound is not implemented yet."
+        },
+        {
+          "name": "Canonical Item legacy relocation fails closed (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"verifiedQuantity\": 4,\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Canonical guard verification\",\n  \"idempotencyKey\": \"mi06b-canonical-relocate-0001\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/relocate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Legacy relocation is blocked for canonical receipt stock', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "description": "Use a confirmed canonical repeated-inbound Item with no unresolved receipt request and a different allocated destination Cell. Expected 409 is the interim safety guard; canonical MOVE is not implemented yet."
+        },
+        {
+          "name": "Outbound confirmation guard (requires seeded PENDING_OUTBOUND plus unresolved request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"verifiedQuantity\": 4,\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Guard verification\",\n  \"idempotencyKey\": \"mi06b-outbound-confirm-0001\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/confirm-outbound"
+          },
+          "description": "Needs a disposable test fixture already in PENDING_OUTBOUND with an unresolved receipt request; expect 409. Normal API flow blocks starting outbound first."
+        },
+        {
+          "name": "Feature gate OFF behavior (expect 503)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "mi06b-gate-off-0001"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": 1,\n  \"quantityUnit\": \"box\",\n  \"declaredUnitWeightKg\": 1,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.1, \"depthM\": 0.1, \"heightM\": 0.1 }\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests"
+          },
+          "description": "Use a test instance with MI06_REPEATED_INBOUND_ENABLED=false; GET history stays available."
+        }
+      ]
+    },
+    {
+      "name": "MI-06 Canonical Relocation (manual Staff verification)",
+      "description": "Requires disposable development/test data, gates enabled only outside production, and a canonical-compatible Item with positive stock and no holds. See MI_06D_CANONICAL_RELOCATION.md.",
+      "item": [
+        {
+          "name": "1. Relocate full canonical stock A → B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{relocationKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Postman MI-06D verification\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/relocate-canonical"
+          },
+          "description": "Expected 200; saves movementId and unchanged current quantity.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('relocation committed',()=>pm.response.to.have.status(200)); const r=pm.response.json().data || pm.response.json(); pm.environment.set('relocationMovementId',r.movement._id); pm.environment.set('relocationCurrentQty',r.currentQuantity); pm.test('whole stock moved',()=>pm.expect(r.movement.quantity).to.eql(r.currentQuantity));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Verify Item currentCellId",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}"
+          },
+          "description": "Expected currentCellId = destinationCellId.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('item read',()=>pm.response.to.have.status(200)); const r=pm.response.json().data || pm.response.json(); pm.test('item is at destination',()=>pm.expect(String(r.currentCellId?._id || r.currentCellId)).to.eql(pm.environment.get('destinationCellId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Verify StockBalance placement and quantity",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance"
+          },
+          "description": "Expected currentCellId moves; onHand/held quantities stay unchanged.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('balance read',()=>pm.response.to.have.status(200)); const r=pm.response.json().data || pm.response.json(); pm.test('balance placement',()=>pm.expect(String(r.currentCellId?._id || r.currentCellId)).to.eql(pm.environment.get('destinationCellId'))); pm.test('quantity unchanged',()=>pm.expect(r.onHandQuantity).to.eql(Number(pm.environment.get('relocationCurrentQty'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Verify canonical MOVE movement and receipt batch lineage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/movements"
+          },
+          "description": "Expected exactly one matching v2 RELOCATION movement with MOVE lines and receipt references.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('movement history read',()=>pm.response.to.have.status(200)); const raw=pm.response.json().data || pm.response.json(); const rows=Array.isArray(raw)?raw:(raw.movements||[]); const m=rows.find(x=>String(x._id)===pm.environment.get('relocationMovementId')); pm.test('canonical MOVE exists',()=>{pm.expect(m).to.exist;pm.expect(m.type).to.eql('RELOCATION');pm.expect(m.schemaVersion).to.eql(2);pm.expect(m.arithmeticPolicy).to.eql('CANONICAL_V1');pm.expect(m.batchLines.length).to.be.above(0);pm.expect(m.batchLines.every(x=>x.action==='MOVE'&&x.receiptMovementId)).to.eql(true);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Replay same relocation key safely",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{relocationKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Postman MI-06D verification\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/relocate-canonical"
+          },
+          "description": "Expected idempotent replay of original committed movement, without another MOVE.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('replay is success',()=>pm.response.to.have.status(200)); const r=pm.response.json().data || pm.response.json(); pm.test('original movement replayed',()=>{pm.expect(r.idempotentReplay).to.eql(true);pm.expect(String(r.movement._id)).to.eql(pm.environment.get('relocationMovementId'));});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Pending outbound hold blocks relocation (fixture required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{relocationHoldTestKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{heldSourceCellId}}\",\n  \"destinationCellId\": \"{{heldDestinationCellId}}\",\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Expected conflict with held stock\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{heldItemId}}/relocate-canonical"
+          },
+          "description": "Use a separate disposable canonical Item prepared with nonzero HeldQty and a pending outbound request; expected 409.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('pending hold conflicts',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Wrong Facility Staff cannot read/relocate Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherStaffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{relocationUnauthorizedKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{sourceCellId}}\",\n  \"destinationCellId\": \"{{destinationCellId}}\",\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Unauthorized scope test\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/relocate-canonical"
+          },
+          "description": "Use staffToken for another Facility; expected 404 to avoid resource disclosure.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('foreign facility hidden',()=>pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Insufficient destination capacity rejected (fixture required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{relocationCapacityTestKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceCellId\": \"{{capacitySourceCellId}}\",\n  \"destinationCellId\": \"{{insufficientCapacityDestinationCellId}}\",\n  \"physicalPackingConfirmed\": true,\n  \"relocationNote\": \"Expected capacity conflict\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{capacityItemId}}/relocate-canonical"
+          },
+          "description": "Use a separate disposable canonical Item and an allocated, valid destination Cell that cannot fit its stock; expected 409.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('insufficient capacity rejected',()=>pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Canonical partial outbound remains available after relocation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{postRelocationOutboundKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedQuantity\": {{outboundConfirmQuantity}},\n  \"quantityUnit\": \"box\"\n}"
+            },
+            "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests"
+          },
+          "description": "Run only after successful MOVE and when canonical outbound gate is enabled; follow existing Staff inspection/confirm requests. Expected 201 or 200 replay.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('outbound request accepted',()=>pm.expect([200,201]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Verify source Cell counters and allocation occupancy projection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/racks/{{sourceRackId}}/detail-map"
+          },
+          "description": "Verify movement-derived physical counters exposed by the Facility-scoped Warehouse Map DTO. Set expected source booking projection to OCCUPIED if another stored Item remains, otherwise RESERVED; destination must be OCCUPIED.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Warehouse Map read succeeds',()=>pm.response.to.have.status(200));",
+                  "const root=pm.response.json().data||pm.response.json(); const levels=root.levels||[]; const cell=levels.flatMap(x=>x.cells||[]).find(x=>String(x._id)===pm.environment.get('sourceCellId'));",
+                  "pm.test('Cell counter and occupancy projection',()=>{pm.expect(cell).to.exist;pm.expect(cell.physicalUsageKnown).to.eql(true);pm.expect(cell.bookingStatus).to.eql(pm.environment.get('sourceExpectedBookingStatus'));pm.expect(Number(cell.usedWeightKg)).to.be.at.least(0);pm.expect(Number(cell.usedVolumeM3)).to.be.at.least(0);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Verify destination Cell counters and allocation occupancy projection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/racks/{{destinationRackId}}/detail-map"
+          },
+          "description": "Verify movement-derived physical counters exposed by the Facility-scoped Warehouse Map DTO. Set expected source booking projection to OCCUPIED if another stored Item remains, otherwise RESERVED; destination must be OCCUPIED.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Warehouse Map read succeeds',()=>pm.response.to.have.status(200));",
+                  "const root=pm.response.json().data||pm.response.json(); const levels=root.levels||[]; const cell=levels.flatMap(x=>x.cells||[]).find(x=>String(x._id)===pm.environment.get('destinationCellId'));",
+                  "pm.test('Cell counter and occupancy projection',()=>{pm.expect(cell).to.exist;pm.expect(cell.physicalUsageKnown).to.eql(true);pm.expect(cell.bookingStatus).to.eql(pm.environment.get('destinationExpectedBookingStatus'));pm.expect(Number(cell.usedWeightKg)).to.be.at.least(0);pm.expect(Number(cell.usedVolumeM3)).to.be.at.least(0);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Verify rental Cell allocation remains after stock reaches zero",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{reservationId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "13–20. Post-relocation final outbound and zero-stock re-inbound",
+          "description": "Run after successful MOVE. Read the current StockBalance and set remainingCurrentQty. Each operation uses a fresh idempotency key; expected creates are 201 and confirmations/reads are 200.",
+          "item": [
+            {
+              "name": "13. Customer requests all remaining stock from destination Cell (expect 201)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customerToken}}"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{postRelocationFinalOutboundKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"requestedQuantity\": {{remainingCurrentQty}},\n  \"quantityUnit\": \"box\"\n}"
+                },
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/outbound-requests",
+                "description": "Use the entire current on-hand quantity read from StockBalance after relocation."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Final outbound request created',()=>pm.response.to.have.status(201)); const j=pm.response.json(); if(j.data?._id)pm.environment.set('postRelocationFinalOutboundRequestId',j.data._id);if(j.data?.version!==undefined)pm.environment.set('postRelocationFinalOutboundVersion',String(j.data.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "14. Staff confirms final delivery to zero (expect 200)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{postRelocationFinalOutboundVersion}}\""
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{postRelocationFinalOutboundConfirmKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actualDeliveredQty\": {{remainingCurrentQty}},\n  \"handoverConfirmed\": true,\n  \"handoverNote\": \"Final post-relocation stock delivered\"\n}"
+                },
+                "url": "{{baseUrl}}/outbound-requests/{{postRelocationFinalOutboundRequestId}}/confirm"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Final outbound confirmed',()=>pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "15. Verify zero balance and retained reservation allocations",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance"
+              }
+            },
+            {
+              "name": "16. Verify reservation still retains allocated Cells",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customerToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/reservations/managed/{{reservationId}}",
+                "description": "Confirm allocatedCellIds still contains the rental Cells after physical stock reaches zero."
+              }
+            },
+            {
+              "name": "17. Customer requests re-inbound after zero stock (expect 201)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{customerToken}}"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{zeroReInboundCreateKey}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"requestedQuantity\": 4,\n  \"quantityUnit\": \"box\",\n  \"declaredUnitWeightKg\": 2.5,\n  \"declaredUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 }\n}"
+                },
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/inbound-requests"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Zero-stock re-inbound created',()=>pm.response.to.have.status(201)); const j=pm.response.json(); if(j.data?._id)pm.environment.set('zeroReInboundRequestId',j.data._id);if(j.data?.version!==undefined)pm.environment.set('zeroReInboundVersion',String(j.data.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "18. Staff uploads evidence for the new receipt attempt",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{zeroReInboundEvidenceKey}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": ""
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/inbound-requests/{{zeroReInboundRequestId}}/evidence-uploads",
+                "description": "Choose a JPEG, PNG or WebP development/test evidence file."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j=pm.response.json();if(j.data?.uploadId)pm.environment.set('zeroReInboundUploadId',j.data.uploadId);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "19. Staff accepts and records immutable evidence (expect 200)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{zeroReInboundVersion}}\""
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"ACCEPTED\",\n  \"receivedQuantity\": 4,\n  \"actualUnitWeightKg\": 2.6,\n  \"actualUnitDimensionsM\": { \"widthM\": 0.2, \"depthM\": 0.3, \"heightM\": 0.4 },\n  \"compatibleCellIds\": [\"{{zeroReInboundDestinationCellId}}\"],\n  \"packingLayoutVerified\": true,\n  \"custodyTaken\": true,\n  \"note\": \"Re-inbound after zero-stock outbound\",\n  \"evidenceUploadIds\": [\"{{zeroReInboundUploadId}}\"],\n  \"inspectionKey\": \"{{zeroReInboundInspectKey}}\"\n}"
+                },
+                "url": "{{baseUrl}}/inbound-requests/{{zeroReInboundRequestId}}/inspection"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Re-inbound inspection accepted',()=>pm.response.to.have.status(200));const j=pm.response.json();if(j.data?.request?.version!==undefined)pm.environment.set('zeroReInboundVersion',String(j.data.request.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "20. Staff confirms receipt and verify new balance/movement",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "\"{{zeroReInboundVersion}}\""
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"destinationCellId\": \"{{zeroReInboundDestinationCellId}}\",\n  \"inspectionNote\": \"Confirm zero-stock re-inbound\",\n  \"idempotencyKey\": \"{{zeroReInboundConfirmKey}}\"\n}"
+                },
+                "url": "{{baseUrl}}/inbound-requests/{{zeroReInboundRequestId}}/confirm",
+                "description": "Expect 200; replay this confirmation with the same key and payload to verify stock is added exactly once."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Zero-stock re-inbound confirmed',()=>pm.response.to.have.status(200));const j=pm.response.json();if(j.data?.request?.version!==undefined)pm.environment.set('zeroReInboundVersion',String(j.data.request.version));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify final StockBalance after re-inbound",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/stock-balance"
+              }
+            },
+            {
+              "name": "Verify immutable receipt/MOVE/REMOVE movement history",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{staffToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/inventory-items/{{itemId}}/movements"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

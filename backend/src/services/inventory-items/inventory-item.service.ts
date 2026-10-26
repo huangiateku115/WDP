@@ -1,6 +1,8 @@
 import mongoose, { ClientSession, Types } from 'mongoose';
 import FacilityModel from '../../models/facilities/facility.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import InventoryInboundRequestModel, { inventoryInboundRequestUnresolvedStates } from '../../models/inventory-items/inventory-inbound-request.model';
+import ManagedOutboundRequestModel from '../../models/inventory-items/managed-outbound-request.model';
 import ItemMovementModel from '../../models/inventory-items/item-movement.model';
 import ContractModel from '../../models/contracts/contract.model';
 import ReservationModel from '../../models/reservations/reservation.model';
@@ -13,7 +15,8 @@ import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model'
 import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import { IInventoryItem, InventoryItemStatus } from '../../types/inventory-item.type';
-import { ItemMovementType } from '../../types/item-movement.type';
+import { ItemMovementType, MovementBatchAction } from '../../types/item-movement.type';
+import { ManagedOutboundRequestState } from '../../types/managed-outbound-request.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { PolicyType } from '../../types/pricing-policy.type';
@@ -31,6 +34,36 @@ import { ManagedInventoryImageService } from '../upload/managed-inventory-image.
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const managementReaders = [UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF];
 const live = { deletedAt: { $exists: false } };
+
+async function assertNoUnresolvedRepeatedInbound(item: IInventoryItem, session: ClientSession): Promise<void> {
+  if (!item.managedReservationId) return;
+  const unresolved = await InventoryInboundRequestModel.findOne({
+    itemId: item._id, reservationId: item.managedReservationId,
+    state: { $in: inventoryInboundRequestUnresolvedStates },
+  }).session(session).select('_id').lean().exec();
+  if (unresolved) throw new InventoryItemError(409, 'An unresolved repeated-inbound request blocks this operation');
+  const pendingOutbound = await ManagedOutboundRequestModel.findOne({ itemId: item._id,
+    state: ManagedOutboundRequestState.PENDING }).session(session).select('_id').lean().exec();
+  if (pendingOutbound) throw new InventoryItemError(409, 'A canonical outbound request holds stock for this Item');
+  await assertNoCanonicalStockChangingHistory(item, session);
+}
+
+/** Legacy writers consume InventoryItem.quantity and cannot safely mutate canonical stock projections. */
+async function assertNoCanonicalStockChangingHistory(item: IInventoryItem, session: ClientSession): Promise<void> {
+  if (!item.managedReservationId) return;
+  const canonicalMovement = await ItemMovementModel.findOne({
+    itemId: item._id,
+    schemaVersion: 2,
+    $or: [
+      { arithmeticPolicy: 'CANONICAL_V1' },
+      { 'batchLines.action': { $in: [MovementBatchAction.ADD, MovementBatchAction.REMOVE, MovementBatchAction.MOVE] } },
+      { 'batchLines.receiptRequestId': { $exists: true } },
+    ],
+  }).session(session).select('_id').lean().exec();
+  if (canonicalMovement) {
+    throw new InventoryItemError(409, 'Canonical stock history requires the canonical partial-stock workflow');
+  }
+}
 
 async function execute<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
@@ -471,6 +504,17 @@ function movementDto(movement: any, includeCustomer = true) {
     ...(movement.handoverNote === undefined ? {} : { handoverNote: movement.handoverNote }),
     ...(movement.relocationNote === undefined ? {} : { relocationNote: movement.relocationNote }),
     ...(movement.physicalPackingConfirmed === undefined ? {} : { physicalPackingConfirmed: movement.physicalPackingConfirmed }),
+    ...(movement.schemaVersion === undefined ? {} : { schemaVersion: movement.schemaVersion }),
+    ...(movement.arithmeticPolicy === undefined ? {} : { arithmeticPolicy: movement.arithmeticPolicy }),
+    ...(Array.isArray(movement.batchLines) ? { batchLines: movement.batchLines.map((line: any) => ({
+      batchId: line.batchId,
+      ...(line.receiptMovementId ? { receiptMovementId: line.receiptMovementId } : {}),
+      ...(line.receiptRequestId ? { receiptRequestId: line.receiptRequestId } : {}),
+      ...(line.receivingInspectionEvidenceId ? { receivingInspectionEvidenceId: line.receivingInspectionEvidenceId } : {}),
+      action: line.action, quantity: line.quantity, quantityUnit: line.quantityUnit,
+      actualUnitWeightKg: line.actualUnitWeightKg, actualUnitDimensionsM: line.actualUnitDimensionsM,
+      actualTotalWeightKg: line.actualTotalWeightKg, actualTotalVolumeM3: line.actualTotalVolumeM3,
+    })) } : {}),
     createdAt: movement.createdAt,
   };
 }
@@ -903,6 +947,7 @@ export class InventoryItemService {
         currentCellId: current.currentCellId, ...live,
       }, { $inc: { __v: 1 } }, { new: true, session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound request');
+      await assertNoUnresolvedRepeatedInbound(item, session);
 
       const cell = await WarehouseCellModel.findOne({ _id: item.currentCellId, facilityId: item.facilityId, ...live }).session(session).exec();
       if (!cell) throw new InventoryItemError(409, 'Current Cell is missing or outside the item Facility');
@@ -941,6 +986,7 @@ export class InventoryItemService {
       if (current.status === InventoryItemStatus.CHECKED_OUT) {
         const prior = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
         if (prior?.type === ItemMovementType.OUTBOUND && current.outboundMovementId?.equals(prior._id)) {
+          await assertNoCanonicalStockChangingHistory(current, session);
           if (outboundReplayMatches(prior, data)) return { item: dto(current, true), movement: movementDto(prior), idempotentReplay: true };
           throw new InventoryItemError(409, 'Idempotency key was already used with a different outbound payload');
         }
@@ -955,6 +1001,7 @@ export class InventoryItemService {
         status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
       { $inc: { __v: 1 } }, { new: true, session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound confirmation');
+      await assertNoUnresolvedRepeatedInbound(item, session);
 
       const cell = await WarehouseCellModel.findOne({ _id: item.currentCellId, facilityId: item.facilityId, ...live }).session(session).exec();
       if (!cell) throw new InventoryItemError(409, 'Current Cell is missing or outside the item Facility');
@@ -1057,6 +1104,7 @@ export class InventoryItemService {
         status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
       { $inc: { __v: 1 } }, { new: true, session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound rejection');
+      await assertNoUnresolvedRepeatedInbound(item, session);
       const reservation = await ReservationModel.findOne({ _id: item.managedReservationId,
         facilityId: item.facilityId, customerId: item.customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).session(session).exec();
       if (!reservation) throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
@@ -1082,6 +1130,7 @@ export class InventoryItemService {
 
       const prior = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
       if (prior) {
+        await assertNoCanonicalStockChangingHistory(current, session);
         if (relocationReplayMatches(prior, data)) {
           return { item: dto(current, true), movement: movementDto(prior), idempotentReplay: true };
         }
@@ -1101,11 +1150,13 @@ export class InventoryItemService {
       if (!item) {
         const racedMovement = await ItemMovementModel.findOne({ itemId: current._id, idempotencyKey: data.idempotencyKey }).session(session).exec();
         if (racedMovement && relocationReplayMatches(racedMovement, data)) {
+          await assertNoCanonicalStockChangingHistory(current, session);
           const latest = await InventoryItemModel.findOne({ _id: current._id, ...live }).session(session).exec();
           return { item: dto(latest ?? current, true), movement: movementDto(racedMovement), idempotentReplay: true };
         }
         throw new InventoryItemError(409, 'Inventory item changed; reload and retry relocation');
       }
+      await assertNoUnresolvedRepeatedInbound(item, session);
 
       const sourcePreflight = await WarehouseCellModel.findOne({ _id: data.sourceCellId, facilityId: item.facilityId, ...live }).session(session).exec();
       if (!sourcePreflight || !sourcePreflight._id.equals(item.currentCellId)) throw new InventoryItemError(409, 'Source Cell does not match the current Item location');

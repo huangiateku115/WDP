@@ -175,6 +175,30 @@ export function parseRelocation(value: unknown): RelocationInput {
   };
 }
 
+export interface CanonicalRelocationInput {
+  sourceCellId: string;
+  destinationCellId: string;
+  physicalPackingConfirmed: boolean;
+  relocationNote: string;
+  idempotencyKey: string;
+}
+
+/** Canonical relocation derives quantity and physical values from reconciled stock, never from the client. */
+export function parseCanonicalRelocation(value: unknown, idempotencyKeyInput: unknown): CanonicalRelocationInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype ||
+      Reflect.ownKeys(value).some(key => typeof key !== 'string' || !['sourceCellId', 'destinationCellId', 'physicalPackingConfirmed', 'relocationNote'].includes(key)) ||
+      Reflect.ownKeys(value).length !== 4) invalid('Canonical relocation payload must contain only sourceCellId, destinationCellId, physicalPackingConfirmed and relocationNote');
+  const input = value as Record<string, unknown>;
+  if (typeof input.physicalPackingConfirmed !== 'boolean') invalid('physicalPackingConfirmed must be a boolean');
+  const sourceCellId = parseId(input.sourceCellId, 'sourceCellId');
+  const destinationCellId = parseId(input.destinationCellId, 'destinationCellId');
+  if (sourceCellId === destinationCellId) invalid('sourceCellId and destinationCellId must differ');
+  const idempotencyKey = text(idempotencyKeyInput, 'Idempotency-Key', 128);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{7,127}$/.test(idempotencyKey)) invalid('Idempotency-Key contains unsupported characters');
+  return { sourceCellId, destinationCellId, physicalPackingConfirmed: input.physicalPackingConfirmed,
+    relocationNote: text(input.relocationNote, 'relocationNote', 1000), idempotencyKey };
+}
+
 export function parseList(value: unknown) {
   const input = record(value, ['facilityId', 'customerId', 'category', 'status', 'search', 'page', 'limit'], 'query');
   const page = queryInteger(input.page, 'page', 1, 1_000_000, 1);
