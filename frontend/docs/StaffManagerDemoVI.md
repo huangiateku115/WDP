@@ -1,3 +1,26 @@
+# Hướng dẫn cho giao diện tiếng Anh
+
+Bản hướng dẫn hiện hành: [StaffManagerWorkflowDemo.docx](StaffManagerWorkflowDemo.docx), gồm 8 trang phân biệt quyền, các trang chồng lặp, đường dẫn và thao tác demo bằng tên nút tiếng Anh. Các nhãn tiếng Việt trong phần lịch sử bên dưới không còn khớp giao diện hiện tại.
+
+Staff và Manager dùng chung dữ liệu; Manager duyệt đặt chỗ/phân công, Staff xử lý vận hành. Check-in và Inspection hiện còn chồng lặp giao diện; không demo lặp thao tác. Chưa thay đổi quyền hay bỏ trang trong lượt đổi ngôn ngữ.
+
+Kiểm chứng: 14/14 test, 5 bộ browser fixture và build PASS. Không xác nhận live database hoặc Cloudinary trong lượt này. Nội dung khách nhập và dữ liệu lịch sử giữ nguyên ngôn ngữ.
+
+---
+
+# Cập nhật ngày 26/10/2026
+
+Đã bổ sung bảng công việc và mô phỏng truy cập dùng API. Xem [phạm vi triển khai và giới hạn backend](StaffManagerImplementation.md).
+
+- Manager: `/manager/operations` xem việc theo ngày, `/manager/tasks` mở ticket để phân công.
+- Staff: `/staff/tasks` xem việc và ticket được giao.
+- Hai vai trò: `/manager/access` hoặc `/staff/access`, chọn đơn ACTIVE, nhập PIN mô phỏng, xác nhận gửi. Đây là mô phỏng phần mềm.
+- Đã sửa lỗi nhận kho đọc contract trước khi khởi tạo và khôi phục ba API hợp đồng giấy bị mất trong allowlist sau merge.
+- Không dùng phần hướng dẫn mock/lịch sử bên dưới để khẳng định hoàn tiền, gia hạn hay phí phát sinh đã có API.
+- Word ngày 22/10 là kịch bản cũ, chưa chứa các trang mới này. Lượt 26/10 kiểm tra bằng fixture, chưa xác minh lại Cloudinary/database thật.
+
+---
+
 # Kiểm thử demo thực tế — 22/10/2026
 
 - Backend health: database connected. Đã đăng nhập Manager và Staff bằng trình duyệt.
