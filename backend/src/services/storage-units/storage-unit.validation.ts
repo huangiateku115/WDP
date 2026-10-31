@@ -16,6 +16,10 @@ function object(value: unknown, allowed: string[]): Record<string, unknown> {
 }
 function text(value: unknown, max: number): string {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) invalid('Invalid string');
+  return value;
+}
+function trimmedText(value: unknown, max: number): string {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) invalid('Invalid string');
   return value.trim();
 }
 export const managementStatuses = [
@@ -45,8 +49,8 @@ export function parseUnit(value: unknown, partial = false): Partial<StorageUnitI
     for (const key of ['unitCode', 'size', 'dimensions']) if (!(key in input)) invalid(`${key} is required`);
   }
   const output: Partial<StorageUnitInput> & { status?: StorageUnitStatus } = {};
-  if ('unitCode' in input) output.unitCode = text(input.unitCode, 100).toUpperCase();
-  if ('description' in input) output.description = text(input.description, 2000);
+  if ('unitCode' in input) output.unitCode = trimmedText(input.unitCode, 100).toUpperCase();
+  if ('description' in input) output.description = trimmedText(input.description, 2000);
   if ('images' in input) {
     if (!Array.isArray(input.images) || input.images.length > MAX_RESOURCE_IMAGES || !input.images.every(isHttpImageUrl)) {
       invalid('images must contain at most 10 non-empty HTTP(S) URLs');
@@ -69,7 +73,7 @@ export function parseUnit(value: unknown, partial = false): Partial<StorageUnitI
   return output;
 }
 export function parseList(value: unknown) {
-  const input = object(value, ['page', 'limit', 'status', 'size', 'search']);
+  const input = object(value, ['page', 'limit', 'status', 'size', 'search', 'startDate', 'endDate', 'availableOnly']);
   function integer(key: string, fallback: number, max: number) {
     if (input[key] === undefined) return fallback;
     if (typeof input[key] !== 'string' || !/^[1-9]\d*$/.test(input[key] as string)) invalid(`Invalid ${key}`);
@@ -89,8 +93,20 @@ export function parseList(value: unknown) {
     filter.size = input.size;
   }
   if (input.search !== undefined) {
-    const search = text(input.search, 100);
+    const search = trimmedText(input.search, 100);
     filter.unitCode = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+  }
+  if (input.startDate !== undefined || input.endDate !== undefined) {
+    if (typeof input.startDate !== 'string' || typeof input.endDate !== 'string') {
+      invalid('startDate and endDate must both be provided as valid date strings');
+    }
+    const startDate = new Date(input.startDate);
+    const endDate = new Date(input.endDate);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || endDate <= startDate) {
+      invalid('Invalid date range');
+    }
+    const availableOnly = input.availableOnly === 'true' || input.availableOnly === true;
+    return { page, limit, filter, dateRange: { startDate, endDate, availableOnly } };
   }
   return { page, limit, filter };
 }

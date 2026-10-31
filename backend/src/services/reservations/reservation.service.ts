@@ -7,16 +7,70 @@ import PolicyModel from '../../models/pricing-policy/policy.model';
 import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
+import { StorageUnitStatus } from '../../types/storage-unit.type';
+
+export interface SuggestedStorageUnit {
+  _id: Types.ObjectId | string;
+  unitCode: string;
+  size: string;
+  volumeM3?: number;
+  dimensions?: {
+    lengthM: number;
+    widthM: number;
+    heightM: number;
+  };
+  sameSize: boolean;
+}
 
 export class ReservationError extends Error {
-  constructor(public code: number, message: string) {
+  constructor(
+    public code: number,
+    message: string,
+    public details?: { suggestedUnits?: SuggestedStorageUnit[] }
+  ) {
     super(message);
     this.name = 'ReservationError';
   }
 }
 
 export class ReservationService {
-  
+  /**
+   * Bộ lọc kiểm tra giao cắt khoảng thời gian (Overlap Filter) cho Kho Tự Quản.
+   * Hai khoảng thời gian [S1, E1] và [S2, E2] giao nhau khi: S1 < E2 VÀ E1 > S2.
+   * Các đơn ở trạng thái khác ngày (S2 >= E1 hoặc E2 <= S1) sẽ không bao giờ bị chặn.
+   */
+  static buildOverlapFilter(startDate: Date, endDate: Date, now = new Date()) {
+    const committedStatuses = [
+      ReservationStatus.DEPOSIT_PAID,
+      ReservationStatus.CHECKIN_READY,
+      ReservationStatus.PAID,
+      ReservationStatus.ACTIVE,
+      ReservationStatus.OVERDUE,
+    ];
+    const temporaryHoldStatuses = [
+      ReservationStatus.RESERVED,
+      ReservationStatus.CONTRACTED,
+    ];
+
+    return {
+      // Đơn mới bắt đầu TRƯỚC khi đơn cũ kết thúc VÀ kết thúc SAU khi đơn cũ bắt đầu
+      startDate: { $lt: endDate },
+      endDate: { $gt: startDate },
+      // Chỉ xét các trạng thái đang chiếm dụng kho
+      status: {
+        $in: [...committedStatuses, ...temporaryHoldStatuses],
+      },
+      // Lọc bỏ các đơn RESERVED/CONTRACTED đã quá hạn (expiresAt <= now)
+      $or: [
+        { status: { $in: committedStatuses } },
+        {
+          status: { $in: temporaryHoldStatuses },
+          expiresAt: { $gt: now },
+        },
+      ],
+    };
+  }
+
   /**
    * Thuật toán kiểm tra đụng lịch (Overlap)
    * Trả về true nếu bị trùng lịch, false nếu an toàn.
@@ -27,35 +81,109 @@ export class ReservationService {
     endDate: Date,
     session: ClientSession
   ): Promise<boolean> {
-    const now = new Date();
-
     const overlapQuery = {
       storageUnitId,
-      // Đơn mới bắt đầu TRƯỚC khi đơn cũ kết thúc VÀ kết thúc SAU khi đơn cũ bắt đầu
-      startDate: { $lt: endDate },
-      endDate: { $gt: startDate },
-      // Chỉ xét các trạng thái đang chiếm dụng kho
-      status: { 
-        $in: [
-          ReservationStatus.RESERVED, 
-          ReservationStatus.CONTRACTED, 
-          ReservationStatus.PAID, 
-          ReservationStatus.ACTIVE, 
-          ReservationStatus.OVERDUE
-        ] 
-      },
-      // Lọc bỏ các đơn RESERVED/CONTRACTED đã quá hạn (expiresAt < now)
-      $or: [
-        { status: { $in: [ReservationStatus.PAID, ReservationStatus.ACTIVE, ReservationStatus.OVERDUE] } },
-        { 
-          status: { $in: [ReservationStatus.RESERVED, ReservationStatus.CONTRACTED] }, 
-          expiresAt: { $gt: now } 
-        }
-      ]
+      ...this.buildOverlapFilter(startDate, endDate),
     };
 
     const overlappingBooking = await ReservationModel.exists(overlapQuery).session(session).exec();
     return overlappingBooking !== null;
+  }
+
+  /**
+   * Tìm danh sách các kho khả thi khác (Alternative Units) trong cùng cơ sở
+   * không bị trùng lịch trong khoảng thời gian [startDate, endDate].
+   * Ưu tiên gợi ý kho cùng kích thước (sameSize: true) trước, sau đó đến kích thước khác.
+   */
+  static async findAvailableAlternatives(
+    facilityId: string | Types.ObjectId,
+    excludeUnitId: string | Types.ObjectId,
+    preferredSize: string | undefined,
+    startDate: Date,
+    endDate: Date,
+    session?: ClientSession
+  ): Promise<SuggestedStorageUnit[]> {
+    try {
+      const facilityObjectId = typeof facilityId === 'string' ? new Types.ObjectId(facilityId) : facilityId;
+      const overlapFilter = {
+        facilityId: facilityObjectId,
+        serviceType: FacilityServiceType.SELF_STORAGE,
+        ...this.buildOverlapFilter(startDate, endDate),
+      };
+
+      let resQuery: any = ReservationModel.find(overlapFilter);
+      if (session && typeof resQuery?.session === 'function') {
+        resQuery = resQuery.session(session);
+      }
+      if (typeof resQuery?.select === 'function') {
+        resQuery = resQuery.select('storageUnitId');
+      }
+      if (typeof resQuery?.lean === 'function') {
+        resQuery = resQuery.lean();
+      }
+      const overlappingReservations = typeof resQuery?.exec === 'function' ? await resQuery.exec() : await resQuery;
+
+      const occupiedIds = new Set<string>([excludeUnitId.toString()]);
+      if (Array.isArray(overlappingReservations)) {
+        for (const r of overlappingReservations) {
+          if (r?.storageUnitId) {
+            occupiedIds.add(r.storageUnitId.toString());
+          }
+        }
+      }
+
+      const occupiedObjectIds = Array.from(occupiedIds)
+        .filter(id => /^[a-fA-F0-9]{24}$/.test(id))
+        .map(id => new Types.ObjectId(id));
+
+      const unitFilter = {
+        facilityId: facilityObjectId,
+        status: StorageUnitStatus.AVAILABLE,
+        deletedAt: { $exists: false },
+        _id: { $nin: occupiedObjectIds },
+      };
+
+      let unitQuery: any = StorageUnitModel.find(unitFilter);
+      if (session && typeof unitQuery?.session === 'function') {
+        unitQuery = unitQuery.session(session);
+      }
+      if (typeof unitQuery?.select === 'function') {
+        unitQuery = unitQuery.select('_id unitCode size volumeM3 dimensions status');
+      }
+      if (typeof unitQuery?.lean === 'function') {
+        unitQuery = unitQuery.lean();
+      }
+      const rawCandidates = typeof unitQuery?.exec === 'function' ? await unitQuery.exec() : await unitQuery;
+
+      const availableCandidates = (Array.isArray(rawCandidates) ? rawCandidates : []).filter(
+        (u: any) =>
+          u &&
+          u._id &&
+          !occupiedIds.has(u._id.toString()) &&
+          (!u.status || u.status === StorageUnitStatus.AVAILABLE) &&
+          !u.deletedAt
+      );
+
+      availableCandidates.sort((a: any, b: any) => {
+        const aSameSize = preferredSize && a.size === preferredSize ? 1 : 0;
+        const bSameSize = preferredSize && b.size === preferredSize ? 1 : 0;
+        if (aSameSize !== bSameSize) {
+          return bSameSize - aSameSize;
+        }
+        return String(a.unitCode || '').localeCompare(String(b.unitCode || ''));
+      });
+
+      return availableCandidates.slice(0, 5).map((u: any) => ({
+        _id: u._id,
+        unitCode: u.unitCode,
+        size: u.size,
+        ...(u.volumeM3 !== undefined ? { volumeM3: u.volumeM3 } : {}),
+        ...(u.dimensions !== undefined ? { dimensions: u.dimensions } : {}),
+        sameSize: Boolean(preferredSize && u.size === preferredSize),
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -164,7 +292,7 @@ export class ReservationService {
           throw new ReservationError(400, 'Kho này đang bị khóa hoặc bảo trì, không thể đặt.');
         }
 
-        // 4. THUẬT TOÁN KIỂM TRA OVERLAP
+        // 4. THUẬT TOÁN KIỂM TRA OVERLAP & GỢI Ý KHO THAY THẾ
         const isOverlapping = await this.checkOverlap(
           unit._id as Types.ObjectId, 
           startDate, 
@@ -173,7 +301,30 @@ export class ReservationService {
         );
 
         if (isOverlapping) {
-          throw new ReservationError(409, 'Kho này đã có người đặt trong khoảng thời gian bạn chọn. Vui lòng chọn ngày hoặc kho khác.');
+          const suggestedUnits = await this.findAvailableAlternatives(
+            data.facilityId,
+            unit._id as Types.ObjectId,
+            unit.size,
+            startDate,
+            endDate,
+            session
+          );
+
+          const formatDate = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().join('/');
+          const rangeText = `${formatDate(startDate)} đến ${formatDate(endDate)}`;
+          const unitLabel = unit.unitCode ? `Kho ${unit.unitCode}` : 'Kho này';
+
+          let conflictMessage: string;
+          if (suggestedUnits.length > 0) {
+            const suggestionLabels = suggestedUnits
+              .map(u => `${u.unitCode} (${u.size})`)
+              .join(', ');
+            conflictMessage = `${unitLabel} đã có người đặt trong khoảng thời gian từ ${rangeText}. Gợi ý các kho khả dụng khác trong khoảng thời gian này: ${suggestionLabels}.`;
+          } else {
+            conflictMessage = `${unitLabel} đã có người đặt trong khoảng thời gian từ ${rangeText}. Hiện tại cơ sở này không còn kho trống nào khác trong khoảng thời gian bạn chọn, vui lòng chọn khoảng thời gian khác.`;
+          }
+
+          throw new ReservationError(409, conflictMessage, { suggestedUnits });
         }
 
         // 5. TẠO ĐƠN ĐẶT CHỖ

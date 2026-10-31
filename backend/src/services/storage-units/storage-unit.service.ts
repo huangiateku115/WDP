@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import FacilityModel from '../../models/facilities/facility.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
+import ReservationModel from '../../models/reservations/reservation.model';
+import { ReservationService } from '../reservations/reservation.service';
 import { FacilityServiceType, FacilityStatus, IFacility } from '../../types/facility.type';
 import { IUser, UserRole } from '../../types/user.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
@@ -69,14 +71,57 @@ export class StorageUnitService {
   static async getStorageUnits(facilityId: unknown, input: unknown, actor: Actor) {
     validateId(facilityId);
     scope(actor, facilityId);
-    const { page, limit, filter } = parseList(input);
+    const parsed = parseList(input);
+    const { page, limit, filter } = parsed;
+    const dateRange = (parsed as any).dateRange as { startDate: Date; endDate: Date; availableOnly: boolean } | undefined;
     return execute(async () => {
       await facilityById(facilityId);
-      const scopedFilter = { ...filter, deletedAt: { $exists: false }, facilityId: new Types.ObjectId(facilityId) };
-      const [data, total] = await Promise.all([
+      const facilityObjectId = new Types.ObjectId(facilityId);
+      const scopedFilter: Record<string, unknown> = { ...filter, deletedAt: { $exists: false }, facilityId: facilityObjectId };
+
+      if (!dateRange) {
+        const [data, total] = await Promise.all([
+          StorageUnitModel.find(scopedFilter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
+          StorageUnitModel.countDocuments(scopedFilter).exec(),
+        ]);
+        return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+      }
+
+      const overlapFilter = {
+        facilityId: facilityObjectId,
+        serviceType: FacilityServiceType.SELF_STORAGE,
+        ...ReservationService.buildOverlapFilter(dateRange.startDate, dateRange.endDate),
+      };
+      let resQuery: any = ReservationModel.find(overlapFilter);
+      if (typeof resQuery?.select === 'function') resQuery = resQuery.select('storageUnitId');
+      if (typeof resQuery?.lean === 'function') resQuery = resQuery.lean();
+      const overlapping = typeof resQuery?.exec === 'function' ? await resQuery.exec() : await resQuery;
+
+      const occupiedIds = new Set<string>(
+        (Array.isArray(overlapping) ? overlapping : [])
+          .filter((r: any) => r?.storageUnitId)
+          .map((r: any) => r.storageUnitId.toString())
+      );
+
+      if (dateRange.availableOnly) {
+        if (scopedFilter.status === undefined) {
+          scopedFilter.status = StorageUnitStatus.AVAILABLE;
+        }
+        if (occupiedIds.size > 0) {
+          scopedFilter._id = { $nin: Array.from(occupiedIds).map(id => new Types.ObjectId(id)) };
+        }
+      }
+
+      const [rawUnits, total] = await Promise.all([
         StorageUnitModel.find(scopedFilter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
         StorageUnitModel.countDocuments(scopedFilter).exec(),
       ]);
+
+      const data = rawUnits.map((u: any) => ({
+        ...u,
+        isAvailableInRange: (!u.status || u.status === StorageUnitStatus.AVAILABLE) && !occupiedIds.has(String(u._id)),
+      }));
+
       return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
     });
   }

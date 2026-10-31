@@ -53,7 +53,7 @@ export const completeInspection = async (req: Request, res: Response) => {
     );
     if (!inspection) return res.status(404).json({ success: false, message: 'Inspection not found or already completed' });
     
-    // Nếu là CHECK_IN hoàn tất -> Update Reservation thành ACTIVE và StorageUnit thành OCCUPIED
+    // Nếu là CHECK_IN hoàn tất -> Update Reservation thành ACTIVE (giữ nguyên trạng thái vận hành AVAILABLE của StorageUnit để cho phép đặt lịch các ngày khác)
     if (inspection.type === InspectionType.CHECK_IN) {
       await ReservationModel.findByIdAndUpdate(inspection.reservationId, {
         status: ReservationStatus.ACTIVE,
@@ -64,9 +64,6 @@ export const completeInspection = async (req: Request, res: Response) => {
             reason: 'Hoàn tất bàn giao kho (CHECK_IN)'
           }
         }
-      });
-      await StorageUnitModel.findByIdAndUpdate(inspection.storageUnitId, {
-        status: StorageUnitStatus.OCCUPIED
       });
     } else if (inspection.type === InspectionType.CHECK_OUT) {
       // Nếu là CHECK_OUT hoàn tất -> Chuyển Reservation thành CHECKED_OUT và dọn dẹp StorageUnit

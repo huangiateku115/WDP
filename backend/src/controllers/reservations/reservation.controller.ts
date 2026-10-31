@@ -6,8 +6,6 @@ import { ReservationService, ReservationError } from '../../services/reservation
 import { ReservationStatus } from '../../types/reservation.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { UserRole } from '../../types/user.type';
-import StorageUnitModel from '../../models/storage-units/storage-unit.model';
-import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import { PaymentPurpose, PaymentStatus, PaymentProvider } from '../../types/payment.type';
@@ -35,7 +33,11 @@ export const createReservation = async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, data: reservation });
   } catch (error: any) {
     if (error instanceof ReservationError) {
-      return res.status(error.code).json({ success: false, message: error.message });
+      return res.status(error.code).json({
+        success: false,
+        message: error.message,
+        ...(error.details ? error.details : {})
+      });
     }
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -514,6 +516,7 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
 
 /**
  * Staff bàn giao kho và kích hoạt đơn hàng (Handover)
+ * Giữ nguyên trạng thái vận hành vật lý của StorageUnit (AVAILABLE) để không khóa cứng các đơn đặt ở khung ngày khác.
  */
 export const handoverReservation = async (req: Request, res: Response) => {
   try {
@@ -539,10 +542,6 @@ export const handoverReservation = async (req: Request, res: Response) => {
     });
     await reservation.save();
 
-    if (reservation.storageUnitId) {
-      await StorageUnitModel.findByIdAndUpdate(reservation.storageUnitId, { status: StorageUnitStatus.OCCUPIED });
-    }
-
     return res.json({
       success: true,
       message: 'Bàn giao kho thành công. Đơn hàng đã chuyển sang trạng thái ACTIVE.',
@@ -555,4 +554,3 @@ export const handoverReservation = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-
