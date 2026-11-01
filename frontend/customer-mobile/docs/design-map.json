@@ -1,0 +1,710 @@
+{
+  "source": "VaultSpace_Stitch_23_Screens_Handoff",
+  "implemented": [
+    {
+      "screen": "01",
+      "title": "Customer Dashboard",
+      "html": "screens/01_customer_dashboard.html",
+      "sourceSha256": "6e64343ad24fb9e185667b37092eaf1c5fe36b4ca580144dd94a0b3657bb97a7",
+      "route": "/(tabs) (Home URL /)",
+      "componentPaths": [
+        "src/screens/DashboardScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(tabs)/index.tsx"
+      ],
+      "entryPoint": "Login/demo root redirect; Home tab",
+      "dataSource": "customer.ts; existing bookings/rental fixtures",
+      "tests": "screens.test.tsx; smoke-preview.cjs; smoke-care.cjs bell",
+      "auditTests": "screens.test.tsx; smoke-preview.cjs; smoke-care.cjs bell",
+      "limitations": "No real summary/notifications or live rental data",
+      "components": [
+        "DashboardScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "02",
+      "title": "Explore Facilities",
+      "html": "screens/02_explore_facilities.html",
+      "sourceSha256": "ba721399d0c68100f1b4a7809bbfbb1c92ab0200592be10f0c1df934801e56dc",
+      "route": "/(tabs)/explore",
+      "componentPaths": [
+        "src/screens/ExploreScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(tabs)/explore.tsx"
+      ],
+      "entryPoint": "Explore tab; Dashboard CTA",
+      "dataSource": "customer.ts facilities",
+      "tests": "screens.test.tsx; smoke-preview/booking/managed.cjs",
+      "auditTests": "screens.test.tsx; smoke-preview/booking/managed.cjs",
+      "limitations": "Local search/filter and sample facilities/prices only",
+      "components": [
+        "ExploreScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "03",
+      "title": "Facility Detail",
+      "html": "screens/03_facility_detail.html",
+      "sourceSha256": "e13e2b5a0692a367a50804b1f0ce79b273850dab70d4ed2b1ed331ca918e5044",
+      "phase": 2,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/preview/facility/:id",
+      "components": [
+        "FacilityDetailScreen",
+        "WarehouseArt",
+        "Card",
+        "BackAction"
+      ],
+      "tests": "facility render/loading/missing, managed-only service, CTA stack",
+      "dataSource": "src/fixtures/customer.ts + src/fixtures/booking.ts; in-memory booking draft",
+      "backendDependency": "No API integration. Availability, quote, creation, payment, signing and lifecycle need future verified Backend contracts.",
+      "componentPaths": [
+        "src/screens/FacilityDetailScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/preview/[kind]/[id].tsx"
+      ],
+      "entryPoint": "Explore/FacilityCard",
+      "auditTests": "booking.test.tsx; smoke-booking/managed.cjs",
+      "limitations": "No live service availability",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "04",
+      "title": "Self Storage Unit Selection",
+      "html": "screens/04_self_storage_unit_selection.html",
+      "sourceSha256": "15fc6a7e64a123e6062b977f5dec2cc39d7cf3bc4f176f666e9e5ce84b84e3d0",
+      "phase": 2,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/booking/:facilityId/units",
+      "components": [
+        "UnitSelectionScreen",
+        "UnitCard",
+        "UnitSizeFilter",
+        "RentalPeriodSelector"
+      ],
+      "tests": "size filter, unavailable unit, exact one selection, interval overlap, invalid IDs",
+      "dataSource": "src/fixtures/customer.ts + src/fixtures/booking.ts; in-memory booking draft",
+      "backendDependency": "No API integration. Availability, quote, creation, payment, signing and lifecycle need future verified Backend contracts.",
+      "componentPaths": [
+        "src/screens/UnitSelectionScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/booking/[facilityId]/units.tsx"
+      ],
+      "entryPoint": "Facility Detail Self Storage CTA",
+      "auditTests": "booking.test.tsx; smoke-booking.cjs",
+      "limitations": "Fixture availability only, no HOLD",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "05",
+      "title": "Rental Period & Pricing Review",
+      "html": "screens/05_rental_period_pricing_review.html",
+      "sourceSha256": "31cca077f77cb0c4f5843cd1e143bc38157cb5c55b3fcee59b530ba0fdc8b591",
+      "phase": 2,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/booking/:facilityId/review",
+      "components": [
+        "BookingReviewScreen",
+        "RentalPeriodSelector",
+        "PricingSummary",
+        "BookingSteps"
+      ],
+      "tests": "manual date validation, Vietnam UTC boundary, duration/quote arithmetic, consent, back/draft preservation",
+      "dataSource": "src/fixtures/customer.ts + src/fixtures/booking.ts; in-memory booking draft",
+      "backendDependency": "No API integration. Availability, quote, creation, payment, signing and lifecycle need future verified Backend contracts.",
+      "componentPaths": [
+        "src/screens/BookingReviewScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/booking/[facilityId]/review.tsx"
+      ],
+      "entryPoint": "Unit Selection → review",
+      "auditTests": "booking.test.tsx; smoke-booking.cjs",
+      "limitations": "UI pricing/date policy, no Backend quote",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "06",
+      "title": "Reservation Confirmation",
+      "html": "screens/06_reservation_confirmation.html",
+      "sourceSha256": "64a8c9337cb43f8371a369c99330958fcf9664c0ff2ec9ab94daa868467758d0",
+      "phase": 2,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/booking/:facilityId/confirmation",
+      "components": [
+        "BookingConfirmationScreen",
+        "PricingSummary",
+        "BookingSteps"
+      ],
+      "tests": "preview only, no real reservation/payment, duplicate prevention, missing draft",
+      "dataSource": "src/fixtures/customer.ts + src/fixtures/booking.ts; in-memory booking draft",
+      "backendDependency": "No API integration. Availability, quote, creation, payment, signing and lifecycle need future verified Backend contracts.",
+      "supportingManagedRoute": "/managed/:facilityId/confirmation",
+      "phase3Reuse": "PrototypeConfirmationHeader + existing PricingSummary; typed Managed draft revalidation and local fingerprint, no new design screen counted.",
+      "componentPaths": [
+        "src/screens/BookingConfirmationScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/booking/[facilityId]/confirmation.tsx"
+      ],
+      "entryPoint": "Self review → local preview; Managed supporting confirmation route",
+      "auditTests": "booking/managed-booking.test.tsx; smoke-booking/managed.cjs",
+      "limitations": "Preview only, no real reservation/payment",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "07",
+      "title": "Warehouse Map & Cell Selection",
+      "html": "screens/07_warehouse_map.html",
+      "sourceSha256": "fbdb39f75037597ba0965dfcf80bca450a1e5342bbdc82406a6e279f2be5ee26",
+      "phase": 3,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/managed/:facilityId/map",
+      "components": [
+        "WarehouseMapScreen",
+        "WarehouseFloorplan",
+        "RackElevation",
+        "CellDetail",
+        "AvailabilityLegend",
+        "ManagedBookingSummary",
+        "RentalPeriodSelector"
+      ],
+      "tests": "hierarchy/variable levels; interval/ownership/physical fail-closed eligibility; multi-Rack/Zone selection; period invalidation; zoom/reset; sticky summary; loading/error/missing; responsive smoke",
+      "dataSource": "src/fixtures/managedWarehouse.ts; independent in-memory useManagedBookingStore",
+      "backendDependency": "No live availability, HOLD, reservation or payment. Future verified Backend contracts required.",
+      "componentPaths": [
+        "src/screens/WarehouseMapScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/managed/[facilityId]/map.tsx"
+      ],
+      "entryPoint": "Facility Detail Managed CTA",
+      "auditTests": "managed-booking.test.tsx; smoke-managed.cjs",
+      "limitations": "Physical geometry from fixtures; no live availability/HOLD",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "08",
+      "title": "Managed Booking Review",
+      "html": "screens/08_managed_booking_review.html",
+      "sourceSha256": "451696f371f2c41eff1b17974694061e30d0bef829920a7f2a8b2a5369c6a1d8",
+      "phase": 3,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/managed/:facilityId/review",
+      "components": [
+        "ManagedBookingReviewScreen",
+        "ManagedBookingSummary",
+        "PricingSummary"
+      ],
+      "tests": "capacity and integer pricing; missing quote; native Back/edit; explicit consent; snapshot revalidation; preview only",
+      "dataSource": "src/fixtures/managedWarehouse.ts; independent in-memory useManagedBookingStore",
+      "backendDependency": "No live availability, HOLD, reservation or payment. Future verified Backend contracts required.",
+      "componentPaths": [
+        "src/screens/ManagedBookingReviewScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/managed/[facilityId]/review.tsx"
+      ],
+      "entryPoint": "Map → multi-Cell review",
+      "auditTests": "managed-booking.test.tsx; smoke-managed.cjs",
+      "limitations": "No reservation creation, capacity enforcement or payment",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "09",
+      "title": "My Rentals & Lifecycle",
+      "html": "screens/09_my_rentals.html",
+      "sourceSha256": "e038300beb3085cabcf21d73d14484997df20f2c3648869a61bff5db46a93f27",
+      "route": "/(tabs)/rentals",
+      "componentPaths": [
+        "src/screens/RentalsScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(tabs)/rentals.tsx"
+      ],
+      "entryPoint": "My Rentals tab; Dashboard CTA",
+      "dataSource": "customer.ts rentals",
+      "tests": "screens/booking.test.tsx; smoke-booking/financial.cjs",
+      "auditTests": "screens/booking.test.tsx; smoke-booking/financial.cjs",
+      "limitations": "Static owned demo rentals, no Backend sync",
+      "components": [
+        "RentalsScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "10",
+      "title": "Rental Detail & Lifecycle",
+      "html": "screens/10_rental_detail.html",
+      "sourceSha256": "2d9c85f72300ae3771f0e0988a7a560741051686fb0971ec107c60129081cd48",
+      "phase": 2,
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/preview/rental/:id",
+      "components": [
+        "RentalDetailScreen",
+        "RentalLifecycleTimeline",
+        "Value"
+      ],
+      "tests": "both services, independent statuses, ACTIVE+handover, CLOSED no access, missing ID",
+      "dataSource": "src/fixtures/customer.ts + src/fixtures/booking.ts; in-memory booking draft",
+      "backendDependency": "No API integration. Availability, quote, creation, payment, signing and lifecycle need future verified Backend contracts.",
+      "componentPaths": [
+        "src/screens/RentalDetailScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/preview/[kind]/[id].tsx"
+      ],
+      "entryPoint": "My Rentals → RentalCard; notification target",
+      "auditTests": "booking/rental-documents.test.tsx; smoke-booking/financial/care.cjs",
+      "limitations": "Independent fixture evidence, no activation/handover/access credentials",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "11",
+      "title": "Contract Review & Signing",
+      "html": "screens/11_contract_review_signing.html",
+      "sourceSha256": "2f26431a894e410695e530a2cd1292cb19e89777b0b997bfb5e29f9368948f20",
+      "phase": "5A",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/rentals/:id/contract",
+      "components": [
+        "ContractReviewScreen",
+        "ContractProgressCard",
+        "ContractSignatureStatus",
+        "FinancialBreakdown",
+        "FinancialScenarioPicker"
+      ],
+      "domainModels": "domain/rentalDocuments.ts: ContractDocument, PartySignature, FinancialSnapshot, DemoPayment, RentalDocumentScenario",
+      "dataSource": "fixtures/rentalDocuments.ts; deep-frozen owned snapshots, independent illustrative examples; original rentalFacts unchanged",
+      "tests": "tests/rental-documents.test.tsx (65 tests); scripts/smoke-financial.cjs at 320/375/390/430/768",
+      "backendDependency": "Not integrated. Future confirmed snapshot/version/signatures, ownership, availability and separate payment-purpose contracts required. Axios transport blocked.",
+      "limitations": "Read-only prototype. No signing/certificates/OTP/hash/PDF/email/payment/QR/provider/polling/activation. Local acknowledgement cannot unlock actions.",
+      "componentPaths": [
+        "src/screens/ContractReviewScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/rentals/[id]/contract.tsx"
+      ],
+      "entryPoint": "Rental Detail; contract notification",
+      "auditTests": "rental-documents.test.tsx; smoke-financial/care.cjs",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "12",
+      "title": "Payment Detail",
+      "html": "screens/12_payment_detail.html",
+      "sourceSha256": "73e3b1009b7614ed806ed4de8b8f8261fb2ccf365891d362558fae030ca4c1ed",
+      "phase": "5A",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/rentals/:id/payment",
+      "components": [
+        "PaymentDetailScreen",
+        "FinancialBreakdown",
+        "PaymentTimeline",
+        "FinancialScenarioPicker"
+      ],
+      "domainModels": "domain/rentalDocuments.ts: ContractDocument, PartySignature, FinancialSnapshot, DemoPayment, RentalDocumentScenario",
+      "dataSource": "fixtures/rentalDocuments.ts; deep-frozen owned snapshots, independent illustrative examples; original rentalFacts unchanged",
+      "tests": "tests/rental-documents.test.tsx (65 tests); scripts/smoke-financial.cjs at 320/375/390/430/768",
+      "backendDependency": "Not integrated. Future confirmed snapshot/version/signatures, ownership, availability and separate payment-purpose contracts required. Axios transport blocked.",
+      "limitations": "Read-only prototype. No signing/certificates/OTP/hash/PDF/email/payment/QR/provider/polling/activation. Local acknowledgement cannot unlock actions.",
+      "componentPaths": [
+        "src/screens/PaymentDetailScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/rentals/[id]/payment.tsx"
+      ],
+      "entryPoint": "Rental Detail; payment notification",
+      "auditTests": "rental-documents.test.tsx; smoke-financial/care.cjs",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "13",
+      "title": "Managed Inventory",
+      "html": "screens/13_managed_inventory.html",
+      "sourceSha256": "261ad4044b7378767bf738412146b7dd9891dc05ba51b23ae5ee15f4327d6f94",
+      "route": "/(tabs)/inventory",
+      "componentPaths": [
+        "src/screens/InventoryScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(tabs)/inventory.tsx"
+      ],
+      "entryPoint": "Inventory tab; Dashboard CTA",
+      "dataSource": "customer.ts + inventory.ts metadata",
+      "tests": "screens/inventory.test.tsx; smoke-inventory.cjs",
+      "auditTests": "screens/inventory.test.tsx; smoke-inventory.cjs",
+      "limitations": "Fixture stock, no live ledger",
+      "components": [
+        "InventoryScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "14",
+      "title": "Inventory Item Detail",
+      "html": "screens/14_inventory_item_detail.html",
+      "sourceSha256": "4107d1074909529dc7674955f85f7fab0b41663b2e625679ccc14400b1ef9e1f",
+      "phase": "4A",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/preview/item/:id",
+      "components": [
+        "InventoryItemDetailScreen",
+        "ItemGallery",
+        "StockBalance",
+        "BatchOverview"
+      ],
+      "tests": "own/missing item; registered vs canonical stock; unknown/unit consistency; batches; eligible edit and read-only actions",
+      "dataSource": "customer.ts original items/stock + inventory.ts owned detail/batches/rental contexts/movements; memory-only drafts separate",
+      "backendDependency": "Future verified ownership, edit/registration DTOs, eligibility, canonical ledger, movement pagination and image upload APIs. No integration in this phase.",
+      "componentPaths": [
+        "src/screens/InventoryItemDetailScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/preview/[kind]/[id].tsx"
+      ],
+      "entryPoint": "InventoryCard; validated item notification/support link",
+      "auditTests": "inventory.test.tsx; smoke-inventory/care.cjs",
+      "limitations": "Read-only physical location/stock, no live operations",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "15",
+      "title": "Register & Edit Inventory Item",
+      "html": "screens/15_inventory_register_edit.html",
+      "sourceSha256": "16a146d8e383bd07da0bf55c2040f9c265a6d85d7e1664e8c239812ef453975d",
+      "phase": "4A",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/inventory/register; /inventory/edit/:id",
+      "components": [
+        "InventoryFormScreen",
+        "IllustrationDraft",
+        "DiscardDraftDialog"
+      ],
+      "tests": "RHF/Zod fields; numeric precision; explicit eligible rentals; preferred Cell; native unsaved guard; memory draft restore/stale/logout; no upload/record creation",
+      "dataSource": "customer.ts original items/stock + inventory.ts owned detail/batches/rental contexts/movements; memory-only drafts separate",
+      "backendDependency": "Future verified ownership, edit/registration DTOs, eligibility, canonical ledger, movement pagination and image upload APIs. No integration in this phase.",
+      "componentPaths": [
+        "src/screens/InventoryFormScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/inventory/register.tsx",
+        "app/inventory/edit/[id].tsx"
+      ],
+      "entryPoint": "Inventory register; registered Item edit",
+      "auditTests": "inventory.test.tsx; smoke-inventory.cjs",
+      "limitations": "Memory draft/illustrations only, no item creation/image upload",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "16",
+      "title": "Repeated Inbound Requests",
+      "html": "screens/16_repeated_inbound_requests.html",
+      "sourceSha256": "fd16b5cb1d78b25bd3f88fd221fde2977adc0b48332ebf7e94f1095380c73b71",
+      "phase": "4B",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/inventory/:id/inbound",
+      "components": [
+        "InventoryRequestScreen(INBOUND)",
+        "RequestWorkspace",
+        "InventoryRequestCard",
+        "RequestDetails",
+        "RequestConfirmation"
+      ],
+      "tests": "repeat vs first intake; explicit eligibility/gates; quantity/unit/measurements; saved/stale/unsaved draft; amend/cancel version guard; immutable stock",
+      "supportingDetailRoute": "/inventory/:id/requests/:requestId",
+      "dataSource": "fixtures/inventoryRequests.ts + immutable Phase 4A stock/item data; separate useRequestDraftStore",
+      "backendDependency": "Future confirmed endpoints/gates/ownership/DTOs/version preconditions/idempotency/conflict re-fetch. No HTTP requests or stock/movement writes in this phase.",
+      "componentPaths": [
+        "src/screens/InventoryRequestScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/inventory/[id]/inbound.tsx"
+      ],
+      "entryPoint": "Eligible Item Detail → inbound; request amendment",
+      "auditTests": "inventory-requests.test.tsx; smoke-requests.cjs",
+      "limitations": "Preview/draft only; no real inbound, version or idempotency protocol",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "17",
+      "title": "Canonical Outbound Requests",
+      "html": "screens/17_canonical_outbound_requests.html",
+      "sourceSha256": "0ad14c0b5a4764fdd3abc2c2b64dc5f9ad408b6f4c2be6bdbfa163ede600aec2",
+      "phase": "4B",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/inventory/:id/outbound",
+      "components": [
+        "InventoryRequestScreen(OUTBOUND)",
+        "StockBalance",
+        "RequestWorkspace",
+        "RequestConfirmation",
+        "InventoryRequestDetailScreen"
+      ],
+      "tests": "canonical stock 60/15/45 vs registered 99; partial/zero/missing/unit mismatch; duplicate/stale preview; partial request history/cancel; no legacy fallback",
+      "supportingDetailRoute": "/inventory/:id/requests/:requestId",
+      "dataSource": "fixtures/inventoryRequests.ts + immutable Phase 4A stock/item data; separate useRequestDraftStore",
+      "backendDependency": "Future confirmed endpoints/gates/ownership/DTOs/version preconditions/idempotency/conflict re-fetch. No HTTP requests or stock/movement writes in this phase.",
+      "componentPaths": [
+        "src/screens/InventoryRequestScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/inventory/[id]/outbound.tsx"
+      ],
+      "entryPoint": "Eligible Item Detail → outbound",
+      "auditTests": "inventory-requests.test.tsx; smoke-requests.cjs",
+      "limitations": "No canonical/legacy API fallback, stock mutation or physical outbound",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "18",
+      "title": "Inventory Movement History",
+      "html": "screens/18_inventory_movement_history.html",
+      "sourceSha256": "cf35846f1681859dc7e7f86e9e000abde888b688a729164ee9df01b4acde3f5c",
+      "phase": "4A",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "route": "/inventory/:id/history",
+      "components": [
+        "InventoryHistoryScreen",
+        "InventoryMovementCard",
+        "BatchDetails"
+      ],
+      "tests": "FlatList; chronological filters; legacy/single/multiple batches; nullable and unknown types; per-batch measurements/units; customer read-only",
+      "dataSource": "customer.ts original items/stock + inventory.ts owned detail/batches/rental contexts/movements; memory-only drafts separate",
+      "backendDependency": "Future verified ownership, edit/registration DTOs, eligibility, canonical ledger, movement pagination and image upload APIs. No integration in this phase.",
+      "componentPaths": [
+        "src/screens/InventoryHistoryScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/inventory/[id]/history.tsx"
+      ],
+      "entryPoint": "Item Detail → movement history",
+      "auditTests": "inventory.test.tsx; smoke-inventory.cjs",
+      "limitations": "Read-only sample history, no pagination/network operations",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "19",
+      "title": "Notification Center",
+      "html": "screens/19_notifications.html",
+      "sourceSha256": "337b287ef04ddca3f364a79d977c28a227378d349628bbc70be99910b3f2ef3b",
+      "phase": "5B",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "domainModels": "src/domain/customerCare.ts; src/forms/support.ts; src/forms/auth.ts",
+      "backendDependency": "Future verified mobile API DTOs/auth/ownership/feature gates/lifecycles; no endpoints assumed or transport enabled.",
+      "route": "/notifications",
+      "components": [
+        "NotificationsScreen",
+        "NotificationCard",
+        "NotificationBell",
+        "CareList"
+      ],
+      "componentPaths": [
+        "src/screens/NotificationsScreen.tsx",
+        "src/components/customerCare.tsx"
+      ],
+      "routeFiles": [
+        "app/notifications.tsx"
+      ],
+      "entryPoint": "Home CustomerHeader bell; Profile → Trung tâm thông báo",
+      "tests": "tests/customer-care.test.tsx: notifications; scripts/smoke-care.cjs all five widths",
+      "dataSource": "src/fixtures/customerCare.ts customerNotifications (deep frozen); useCareSessionStore readOverrides only",
+      "limitations": "No push/token/SMS/email/polling/Backend read receipt; local read presentation only.",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "20",
+      "title": "Customer Support Center",
+      "html": "screens/20_support_center.html",
+      "sourceSha256": "e4f8120aa2909f1f86104c894b7bc43b71cbccc00de93fd7b008055e667c2108",
+      "phase": "5B",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "domainModels": "src/domain/customerCare.ts; src/forms/support.ts; src/forms/auth.ts",
+      "backendDependency": "Future verified mobile API DTOs/auth/ownership/feature gates/lifecycles; no endpoints assumed or transport enabled.",
+      "route": "/support; /support/new; /support/:requestId",
+      "components": [
+        "SupportScreen",
+        "SupportFormScreen",
+        "SupportDetailScreen",
+        "CareList",
+        "CareDraftDialog"
+      ],
+      "componentPaths": [
+        "src/screens/SupportScreen.tsx",
+        "src/screens/SupportFormScreen.tsx",
+        "src/screens/SupportDetailScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/support/index.tsx",
+        "app/support/new.tsx",
+        "app/support/[requestId].tsx"
+      ],
+      "entryPoint": "Profile → Trung tâm hỗ trợ; category/new/detail actions; support notification",
+      "tests": "tests/customer-care.test.tsx: support/ownership/schema/memory draft/native dirty guard; scripts/smoke-care.cjs",
+      "dataSource": "src/fixtures/customerCare.ts customerSupportRequests; existing owned Inventory/Rental contexts; useCareSessionStore drafts",
+      "limitations": "No ticket submission/number generation/reply/Staff controls/SLA; memory draft only.",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "21",
+      "title": "Customer Profile",
+      "html": "screens/21_customer_profile.html",
+      "sourceSha256": "4a9f8a4b025ea5c89511b92cb8a9fdd7a39dca97fda3666dbe7d199100966334",
+      "route": "/(tabs)/profile",
+      "componentPaths": [
+        "src/screens/ProfileScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(tabs)/profile.tsx"
+      ],
+      "entryPoint": "Profile tab; CustomerHeader avatar",
+      "dataSource": "customer.ts; useCustomerStore preferences",
+      "tests": "screens.test.tsx; smoke-preview/care.cjs",
+      "auditTests": "screens.test.tsx; smoke-preview/care.cjs",
+      "limitations": "Demo profile/preferences/logout only, no real identity verification",
+      "components": [
+        "ProfileScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "22",
+      "title": "Login",
+      "html": "screens/22_login.html",
+      "sourceSha256": "906f851ad196b1064e70209d6cd8f51bf8154a1059468d2282b801ea282a301c",
+      "route": "/(auth)/login (URL /login)",
+      "componentPaths": [
+        "src/screens/LoginScreen.tsx"
+      ],
+      "routeFiles": [
+        "app/(auth)/login.tsx"
+      ],
+      "entryPoint": "Root redirect/Registration Back/logout",
+      "dataSource": "RHF local form; loginSchema; demoSession",
+      "tests": "foundation/screens.test.tsx; all smoke scripts",
+      "auditTests": "foundation/screens.test.tsx; all smoke scripts",
+      "limitations": "No authentication/JWT/password reset or live credentials",
+      "components": [
+        "LoginScreen"
+      ],
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    },
+    {
+      "screen": "23",
+      "title": "Customer Registration",
+      "html": "screens/23_registration.html",
+      "sourceSha256": "a47ca7014cde1997eeae1e0fa30b3ec3eec5526afcde0883c3e9d1b20df538e3",
+      "phase": "5B",
+      "status": "IMPLEMENTED — OFFLINE UI/FIXTURE ONLY",
+      "domainModels": "src/domain/customerCare.ts; src/forms/support.ts; src/forms/auth.ts",
+      "backendDependency": "Future verified mobile API DTOs/auth/ownership/feature gates/lifecycles; no endpoints assumed or transport enabled.",
+      "route": "/(auth)/register (URL /register)",
+      "components": [
+        "RegisterScreen",
+        "RegistrationPasswordField",
+        "PasswordStrengthHint"
+      ],
+      "componentPaths": [
+        "src/screens/RegisterScreen.tsx",
+        "src/forms/auth.ts"
+      ],
+      "routeFiles": [
+        "app/(auth)/register.tsx"
+      ],
+      "entryPoint": "Login → Khám phá đăng ký; native Back/Login fallback",
+      "tests": "tests/customer-care.test.tsx: registration validation/visibility/consent/no session/password clear; foundation/screens existing tests; smoke-care.cjs",
+      "dataSource": "RHF local form only; Zod registrationSchema; no account fixture inserted",
+      "limitations": "No account/JWT/session/email/OTP/official terms endpoint; UI validation only, never stores credentials.",
+      "backendIntegrationStatus": "NOT INTEGRATED — OFFLINE FIXTURES",
+      "nativeDeviceTesting": "PENDING — no simulator/device E2E",
+      "securityReview": "PENDING — advisory remediation/API ownership/native review",
+      "interactionStatus": "COMPLETE within documented offline prototype scope"
+    }
+  ],
+  "scaffolds": [],
+  "remaining": [],
+  "completion": {
+    "uiDesigns": 23,
+    "totalDesigns": 23,
+    "backendIntegrated": false,
+    "productionReady": false
+  }
+}

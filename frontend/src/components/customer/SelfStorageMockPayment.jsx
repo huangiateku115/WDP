@@ -9,6 +9,7 @@ import {BackendScreen,Card,CardContent,Button,Link,Details,LoadState,RentalSumma
 
 export function SelfPaymentNavigation({contract,reservation}){
   if(reservation?.serviceType!=='SELF_STORAGE')return null;
+  if(['RESERVED','DEPOSIT_PAID','CHECKIN_READY'].includes(reservation.status))return <Button asChild className="mt-4"><Link to={`/portal/payments/${recordId(reservation)}`}>Review Deposit & Balance</Link></Button>;
   if(reservation.status==='PAID')return <div className="mt-4 space-y-3"><p className="font-semibold text-brand">Payment Completed · simulated reservation status</p><Button asChild variant="outline"><Link to={`/portal/reservations/${recordId(reservation)}`}>View Reservation</Link></Button></div>;
   return canPaySelfStorage(reservation,contract)?<Button asChild className="mt-4"><Link to={`/portal/payments/${recordId(reservation)}`}>Proceed to Payment</Link></Button>:null;
 }

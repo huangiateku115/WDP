@@ -1,0 +1,53 @@
+# Phase 6A — Customer Security, Roles & Ownership
+
+Evidence IDs/precise source lines: PHASE6A_CONTRACT_EVIDENCE.md. Operation-level method/DTO/header/scope/error/retry details: CSV. This is source inspection, no unauthorized live experiment or Backend test execution.
+
+## Authentication conclusions
+
+VERIFIED_FROM_BACKEND_SOURCE (E-AUTH/E-USER): login POST /api/v1/auth/login takes email/password, Backend executes Keycloak password grant using its server configuration, verifies issuer/JWKS and local User; missing/inactive users rejected. Response is JSON `{success,data:{accessToken,refreshToken,user}}`. Auth middleware only reads Authorization Bearer; cookieParser is mounted but no auth cookie/session handler was found. React Native can supply a bearer token without browser HttpOnly cookies at the source-contract level. Deployment/Keycloak networking and actual token acceptance are UNVERIFIED.
+
+`requireAuth` verifies JWT signature/issuer and normal JWT time constraints via jose, then reloads local user by keycloakSub and checks isActive; `requireRole` uses Mongo User.role, not UI/Keycloak cached display role. Source roles: CUSTOMER, FACILITY_STAFF, FACILITY_MANAGER, BOM, ADMIN. Mobile must require CUSTOMER even when login API issues tokens to another active role. A Customer with unverified identity profile may read own data; Managed creation separately requires VERIFIED profile.
+
+No application refresh route, refresh rotation contract or refresh-token expiry/revocation error DTO exists in inspected router. A returned refreshToken alone is not proof mobile can refresh. Confidential Keycloak client_secret stays server-side. Logout requires unexpired access Bearer plus refreshToken body; provider failure is500, not guaranteed success. Service does not explicitly verify supplied refreshToken belongs to req.user. Access JWT validation is not provider session introspection: logout/revoked refresh does not prove already-issued access JWT immediately stops working. Expired/invalid JWT returns401, inactive local User403. Actual token lifetimes, audience/client settings, rotation and logout session policy remain deployment unknowns.
+
+Security review needed: no explicit audience verification option in requireAuth; global limiter max10000/15min differs from stale comment “100”; forgot-password max3/5min/IP exists, login/reset/register no dedicated limiter in router. forgotPassword uses Math.random OTP, reset queries email+otp without createdAt expiry. `src/models/auth/otp.model.ts:13` specifies expires:30000 while comment says300 seconds. TTL deletion timing alone is not explicit OTP expiry validation. `KeycloakService.createUser` sets emailVerified:true without Customer email-verification workflow. These are evidenced concerns (E-AUTH/E-USER plus extra anchors in Evidence), not live exploit claims. Do not claim registration verifies email or resets sessions securely until reviewed.
+
+## Cross-resource matrix
+
+| Resource / operation family | Auth/roles | List scope | Detail / ID substitution | Mutation ownership / transaction | Customer integration decision |
+|---|---|---|---|---|---|
+| User profile | Bearer, all active roles / native Customer only | GET users/me uses req.user | No arbitrary profile ID | self keycloakSub; Mongo/provider update non-atomic | Read ready; separate self-edit task. Never use cached identity as authorization. E-USER |
+| Customer identity profile | CUSTOMER | userId=actor | self-only route | PUT resets verification; GET may create missing profile | Partial, not strictly read-only GET. Lock/race/V2 statuses need review. E-PROFILE |
+| Facilities | Public sanitized active/nondeleted catalog | allowlisted fields | arbitrary facility ID is public discovery,404 missing | Customer cannot management-write | Ready reads; no fabricated amenities. E-CATALOG |
+| Storage Units | Bearer; management writes only | facility filter, paging | Customer may browse exact Units; not private owner data | Self create derives actor owner | Read ready, period availability absent. E-UNITS/E-SELF |
+| Warehouse Map | Bearer, Customer sanitized map only | active Managed Facility structure | any Customer may browse without reservation; only own flags returned | No Customer map CRUD | Use two map routes; generic Zone/Rack/Cell CRUD disallows Customer. E-MAP |
+| Self reservations | CUSTOMER create/list/cancel; shared detail roles | /me owner includes both services | detail checks owner but populated String comparison suspect; foreign403 | create actor owner; cancel atomic owner+service+status; no create replay key | Writes blocked for overlap/pricing issues; detail partial. E-SELF |
+| Managed reservations | CUSTOMER or authorized scoped management | /me owner | Managed get owner mismatch404 | owner filters in capacity/Cell transaction; VERIFIED identity create | Safe read; V2 production/capability unknown. E-MANAGED |
+| Contracts | CUSTOMER personal reads/sign; Staff separate | /me customerId | safe get/by-reservation owner checked; print NO owner check | V2 Customer sign owner in tx; Facility sign assigned scope; legacy path weaker | READ_ONLY safe detail; print/sign blocked. E-CONTRACT/E-CHECKIN |
+| Payments | Customer stage commands | No Customer payment list route | No verified owner-scoped payment detail/status/history endpoint | Managed owner in transaction, key+amount/purpose checked; Self mocks non-atomic/ungated | No production payment activation. E-DEPOSIT/E-CHECKIN/E-SELF_PAYMENT |
+| Inventory Item | Customer create/me/update; shared itemReaders | customerId fixed, private scope query rejected | loadItem + assertItemReadAccess: foreign404 | create uses owned eligible reservation; update owner/state checked, image branch transactional | Read ready; code/edit DTO gaps require future task. E-ITEM |
+| Stock / batches | Customer + authorized itemReaders | Via owned Item, not global Customer list | stockBalance Item query includes customerId; missing404 | Customer cannot write stock; transaction operations Staff | Read initialized projection only, no fallback0. E-STOCK |
+| Movement | Customer read only | Parent Item permission before query | foreign Item404; Customer DTO omits performedBy/customerId | Operational Staff transaction only | Read ready; parent relation is security boundary, not event ID guessing. E-ITEM |
+| Repeated inbound request | CUSTOMER create/list/detail/amend/cancel | Item owner + request customerId | own request query,foreign404 | owner locks/If-Match/events; amend gated; cancel separately permitted under pre-inspection conditions | Read ready; create/amend production blocked, cancel conditionally source-ready. E-INBOUND |
+| Canonical outbound request | CUSTOMER create/list/detail/cancel | Item owner/request customerId | own request query,foreign404 | transactional owned Item/rental/allocation/ledger; key/version; FIFO holds; Staff fulfill separate | Read/cancel source-ready; new creation production blocked; no legacy fallback. E-OUTBOUND |
+| Notification | All authenticated roles personal inbox | userId=actor | no detail route; mark-one {_id,userId},foreign404 | atomic isRead=true; no bulk route | Personal read/mark ready, resource targets unsupported. E-NOTIFICATION |
+| Support request/message | Customer and scoped Staff APIs | Customer owner forced, foreign customerId filter403 | assertCanAccess foreign404; public messages filter isInternal:false | create derives Customer; self-edit OPEN; reply owner and internal=false | Text/reply source-supported, private related refs gap; drop internal/admin fields. E-SUPPORT |
+
+IDOR is established as a missing check on contract print source, not by probing another account. Other owned APIs reject substituted IDs at source, but **live A/B acceptance remains required**. 403 versus404 and invalid-ID500 differ; do not claim uniform non-disclosure.
+
+Additional shared-role findings: Contract byReservation Staff/FM branch lacks assignedFacility scope of getById; signed-paper and Self handover lack explicit same-facility/service/version check; stockBalance only narrows FACILITY_STAFF assignment, not FACILITY_MANAGER. These are Backend security review items, not permission to add Staff controls to Customer mobile. Customer stock owner query itself is explicitly tested in source.
+
+Support relatedEntity permits generic RENTAL/ITEM/PAYMENT/LOCATION/OTHER ID text; service validates FACILITY/STORAGE_UNIT existence/facility only. Ticket ownership does not prove linked private resource ownership. Server does not dereference and reveal those private records in this path, so do not overstate it as demonstrated private-data disclosure. It is an association-validation gap. Client safe route lookups cannot replace a server owner guarantee.
+
+## Native session design — proposal only
+
+1. Keep passwords only in local form, never logs/Zustand/AsyncStorage/navigation. No Keycloak admin/client secret in app.
+2. Bootstrap a real session through verified login and GET users/me; explicitly reject non-CUSTOMER. Cached profile is display-only. Current demoSession is not auth and will not be re-used as security evidence.
+3. Access token in memory; any persisted credential requires reviewed OS-backed secure storage adapter (Keychain/Keystore), not website sessionStorage/localStorage. No package installed now. Persist refresh only when a usable approved refresh/rotation policy exists; otherwise product-approved re-login on expiry with no fake refresh.
+4. Session epoch cancels in-flight requests and clears all feature data, drafts, read overrides on logout/account switch. Capture immutable request-owner identity; discard late replies from an old session. Never mix demo records with authenticated real data.
+5. If a refresh contract is later verified, single-flight refresh synchronization, bounded one replay only for eligible reads/safe commands, rotation atomically stored,401/invalid/revoked terminal -> clear/re-login. Do not add a guessed /auth/refresh.
+6. Logout clears local state even on network error; report server invalidation uncertain, do not claim provider logout succeeded. Never restore expired/other-role session from cache.
+
+## Disabled until dependencies close
+
+Contract print (owner check); review-bound contract signing (expected version/hash); Self mock-confirm/legacy fallback; production provider payments; production V2/MI06 writes; arbitrary notification deep links; private-linked Support submissions without verified association ownership; all Staff physical or signing controls. No live requests, secrets, account creation, token persistence or package changes were made in this audit.

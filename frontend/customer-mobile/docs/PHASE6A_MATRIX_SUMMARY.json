@@ -1,0 +1,18 @@
+{
+  "operationRows": 108,
+  "uniqueSourceEndpoints": 86,
+  "designsMapped": 23,
+  "levels": {
+    "READY_FOR_INTEGRATION": 17,
+    "PARTIALLY_SUPPORTED": 18,
+    "BACKEND_BLOCKED": 17,
+    "READ_ONLY_READY": 30,
+    "NOT_SUPPORTED": 19,
+    "SECURITY_BLOCKED": 7
+  },
+  "verification": {
+    "VERIFIED_FROM_BACKEND_SOURCE": 86,
+    "UNSUPPORTED": 20,
+    "MOBILE_FIXTURE_ONLY": 2
+  }
+}

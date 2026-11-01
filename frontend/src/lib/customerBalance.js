@@ -3,6 +3,14 @@ import {customerManagedContractState} from './customerManagedContractState.js';
 import {inventoryId as id,validInventoryId} from './inventoryRegistration.js';
 
 export const balanceKey=reservationId=>`wdp-balance-${reservationId}`;
+// Confirmation omits the outer amount/currency present in initiation responses.
+export function confirmedBalanceSettlement(result,reservation,user,payment){
+  if(!payment||id(result?.payment)!==id(payment)||result?.payment?.status!=='SUCCEEDED'||!Number.isFinite(Date.parse(result.payment.succeededAt)))throw Error('Balance settlement response could not be verified. Refresh before retrying.');
+  return confirmedBalanceResult({...result,amount:result.payment.amount,currency:result.payment.currency},reservation,user);
+}
+export function verifiedPendingBalance(payment,reservation,user){
+  try{return payment?.status==='PENDING'&&confirmedBalanceResult({reservation,payment,amount:payment.amount,currency:payment.currency},reservation,user)==='PENDING';}catch{return false;}
+}
 export function customerBalanceState(reservation,contract,user){
   const disabled=reason=>({eligible:false,reason});
   if(!isV2Rental(reservation)||!validInventoryId(id(reservation)))return disabled('A verified Managed Inventory V2 reservation is required.');

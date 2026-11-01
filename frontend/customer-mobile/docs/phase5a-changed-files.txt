@@ -1,0 +1,28 @@
+Phase 5A — Customer mobile only
+Paths relative to frontend/customer-mobile; generated artifacts/.expo/node_modules excluded.
+MODIFIED (5)
+README.md
+app/_layout.tsx
+docs/ARCHITECTURE.md
+docs/design-map.json
+src/screens/RentalDetailScreen.tsx
+
+ADDED (15)
+app/rentals/[id]/contract.tsx
+app/rentals/[id]/payment.tsx
+app/rentals/_layout.tsx
+docs/PHASE5A_REPORT.md
+docs/phase5a-changed-files.txt
+docs/phase5a-mobile-baseline.json
+docs/phase5a-preservation-result.json
+scripts/smoke-financial.cjs
+scripts/verify-phase5a-preservation.cjs
+src/components/rentalDocuments.tsx
+src/domain/rentalDocuments.ts
+src/fixtures/rentalDocuments.ts
+src/screens/ContractReviewScreen.tsx
+src/screens/PaymentDetailScreen.tsx
+tests/rental-documents.test.tsx
+
+No website/BE-REF/backend changes. Full source preservation: docs/phase5a-preservation-result.json.
+Generated screenshots/results: artifacts/phase5a; native bundles: artifacts/native.
