@@ -95,13 +95,24 @@ export function assertConfirmedRequest(config) {
     (method === "GET" && path === "inventory-items") ||
     (method === "GET" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(path)) ||
     (method === "POST" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/confirm-inbound$/i.test(path)) ||
     (method === "POST" &&
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
       /^contracts\/[a-f\d]{24}\/sign\/facility$/i.test(path));
+  const selfStoragePayment = method === "POST" &&
+    (/^reservations\/[a-f\d]{24}\/(deposit|balance)$/i.test(path) ||
+      // Fail closed: these Backend callbacks have no verified environment gate.
+      (false &&
+       /^reservations\/[a-f\d]{24}\/(deposit|balance)\/mock-confirm$/i.test(path)));
   const customerBalance =
     method === "POST" &&
     /^reservations\/managed\/[a-f\d]{24}\/balance$/i.test(path);
+  const balanceMock =
+    import.meta.env?.DEV === true &&
+    import.meta.env?.VITE_ENABLE_MANAGED_BALANCE_MOCK === "true" &&
+    method === "POST" &&
+    /^reservations\/managed\/[a-f\d]{24}\/balance\/mock-confirm$/i.test(path);
   const customerDeposit =
     method === "POST" &&
     /^reservations\/managed\/[a-f\d]{24}\/deposit$/i.test(path);
@@ -112,6 +123,16 @@ export function assertConfirmedRequest(config) {
     /^reservations\/managed\/[a-f\d]{24}\/deposit\/mock-confirm$/i.test(path);
   const movementHistory =
     method === "GET" && /^inventory-items\/[a-f\d]{24}\/movements$/i.test(path);
+  // Customer MI-06 routes verified in BE-REF. Backend retains role, ownership,
+  // feature-gate, Idempotency-Key and If-Match enforcement.
+  const customerInventoryRequests =
+    (["GET", "POST"].includes(method) &&
+      /^inventory-items\/[a-f\d]{24}\/(inbound-requests|outbound-requests)$/i.test(path)) ||
+    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/stock-balance$/i.test(path)) ||
+    (["GET", "PATCH"].includes(method) && /^inbound-requests\/[a-f\d]{24}$/i.test(path)) ||
+    (method === "POST" && /^inbound-requests\/[a-f\d]{24}\/cancel$/i.test(path)) ||
+    (method === "GET" && /^outbound-requests\/[a-f\d]{24}$/i.test(path)) ||
+    (method === "POST" && /^outbound-requests\/[a-f\d]{24}\/cancel$/i.test(path));
   const bomAdminResource =
     (method === "GET" &&
       (/^facilities(\/[^/]+)?$/.test(path) ||
@@ -190,6 +211,7 @@ export function assertConfirmedRequest(config) {
     (method === 'GET' && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
     (method === 'POST' && /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(path));
   const allowed =
+    customerInventoryRequests ||
     facilityHandover ||
     bomInventoryRead ||
     bomReservationAdmin ||
@@ -202,8 +224,9 @@ export function assertConfirmedRequest(config) {
       /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
     movementHistory ||
     depositMock ||
+    balanceMock ||
     customerDeposit ||
-    customerBalance ||
+    customerBalance || selfStoragePayment ||
     managedIntake ||
     deskAllowed ||
     inspectionAllowed ||

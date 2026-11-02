@@ -1,0 +1,15 @@
+{
+  "checked": 122,
+  "changed": [
+    "app/_layout.tsx",
+    "docs/ARCHITECTURE.md",
+    "docs/design-map.json",
+    "README.md",
+    "src/screens/RentalDetailScreen.tsx"
+  ],
+  "missing": [],
+  "unexpected": [],
+  "unchanged": 117,
+  "scope": "Existing mobile source/docs/config before Phase 5A; excludes generated artifacts/node_modules/.expo/.env. Website verified separately.",
+  "result": "PASS"
+}
