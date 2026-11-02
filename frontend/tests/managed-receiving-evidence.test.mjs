@@ -9,10 +9,13 @@ const picker=fileURLToPath(new URL('../src/components/staff/ReceivingEvidencePic
 const gallery=fileURLToPath(new URL('../src/components/staff/ReceivingEvidenceGallery.jsx',import.meta.url));
 const item='507f1f77bcf86cd799439015';
 
-test('confirmed API allows only the Managed receiving context, upload and decision routes',()=>{
+test('confirmed API allows the scoped receiving and first inbound routes',()=>{
  assert.doesNotThrow(()=>assertConfirmedRequest({method:'get',url:`/inventory-items/${item}/receiving-inspection/context`}));
  assert.doesNotThrow(()=>assertConfirmedRequest({method:'post',url:`/inventory-items/${item}/receiving-inspection/image-uploads`}));
  assert.doesNotThrow(()=>assertConfirmedRequest({method:'post',url:`/inventory-items/${item}/receiving-inspection`}));
+ assert.doesNotThrow(()=>assertConfirmedRequest({method:'post',url:`/inventory-items/${item}/confirm-inbound`}));
+ assert.throws(()=>assertConfirmedRequest({method:'get',url:`/inventory-items/${item}/confirm-inbound`}));
+ assert.throws(()=>assertConfirmedRequest({method:'post',url:'/inventory-items/not-an-id/confirm-inbound'}));
  assert.throws(()=>assertConfirmedRequest({method:'post',url:`/inventory-items/${item}/receiving-inspection/context`}));
  assert.throws(()=>assertConfirmedRequest({method:'get',url:`/inventory-items/${item}/receiving-inspection/image-uploads`}));
 });
@@ -21,6 +24,9 @@ test('Staff Receiving Queue uses Facility-scoped backend context and actual evid
  const source=await readFile(staffPage,'utf8');
  assert.match(source,/managedIntakeApi\.receivingContext/);
  assert.match(source,/managedIntakeApi\.inspectItem/);
+ assert.match(source,/managedIntakeApi\.confirmFirstInbound/);
+ assert.match(source,/reservation\.status==='CHECKIN_READY'/);
+ assert.match(source,/latest\.data\.data\?\.reservation\?\.status!=='ACTIVE'/);
  assert.match(source,/assigned Facility/);
  assert.match(source,/ReceivingEvidencePicker/);
  assert.match(source,/ReceivingEvidenceGallery/);

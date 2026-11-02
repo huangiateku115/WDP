@@ -95,6 +95,7 @@ export function assertConfirmedRequest(config) {
     (method === "GET" && path === "inventory-items") ||
     (method === "GET" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(path)) ||
     (method === "POST" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/confirm-inbound$/i.test(path)) ||
     (method === "POST" &&
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
@@ -102,6 +103,11 @@ export function assertConfirmedRequest(config) {
   const customerBalance =
     method === "POST" &&
     /^reservations\/managed\/[a-f\d]{24}\/balance$/i.test(path);
+  const balanceMock =
+    import.meta.env?.DEV === true &&
+    import.meta.env?.VITE_ENABLE_MANAGED_BALANCE_MOCK === "true" &&
+    method === "POST" &&
+    /^reservations\/managed\/[a-f\d]{24}\/balance\/mock-confirm$/i.test(path);
   const customerDeposit =
     method === "POST" &&
     /^reservations\/managed\/[a-f\d]{24}\/deposit$/i.test(path);
@@ -202,6 +208,7 @@ export function assertConfirmedRequest(config) {
       /^inventory-items\/image-uploads\/[a-f\d]{24}$/i.test(path)) ||
     movementHistory ||
     depositMock ||
+    balanceMock ||
     customerDeposit ||
     customerBalance ||
     managedIntake ||

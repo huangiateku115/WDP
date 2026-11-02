@@ -32,3 +32,18 @@ export function confirmedBalanceResult(result,reservation,user){
   if(p.status==='PENDING'&&(result.reservation.status!=='DEPOSIT_PAID'||result.reservation.balanceSettledAt))return fail();
   return p.status;
 }
+
+export function canMockConfirmBalance(reservation,contract,user,payment){
+  const state=customerBalanceState(reservation,contract,user);
+  if(!state.eligible||state.amounts.balanceDue<=0||payment?.status!=='PENDING')return false;
+  try{return confirmedBalanceResult({reservation,payment,amount:payment.amount,currency:payment.currency},reservation,user)==='PENDING';}catch{return false;}
+}
+
+export function confirmedMockBalanceResult(result,reservation,user,pendingPayment){
+  const payment=result?.payment,updated=result?.reservation;
+  if(!isV2Rental(updated)||id(updated)!==id(reservation)||id(updated.customerId)!==id(user)||id(payment)!==id(pendingPayment)||payment?.status!=='SUCCEEDED'||updated.status!=='CHECKIN_READY'||!Number.isFinite(Date.parse(updated.balanceSettledAt)))throw Error('Mock Balance response could not be verified. Use GET refresh only.');
+  if(payment.facilityId&&id(payment.facilityId)!==id(reservation.facilityId))throw Error('Mock Balance Facility does not match this reservation.');
+  const amount=reservation.managedPricingSnapshot?.amountBreakdown?.balanceDue;
+  if(id(payment.reservationId)!==id(reservation)||id(payment.customerId)!==id(user)||payment.serviceType!=='MANAGED_INVENTORY'||payment.purpose!=='BALANCE'||payment.provider!=='MOCK'||payment.amount!==amount||payment.currency!=='VND'||payment.idempotencyKey!==balanceKey(id(reservation)))throw Error('Mock Balance receipt does not match this reservation.');
+  return 'SUCCEEDED';
+}

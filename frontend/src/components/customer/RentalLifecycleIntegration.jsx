@@ -237,7 +237,7 @@ export function ReservationDetailIntegration() {
           {isManagedV2(resource.data)&&<Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity",typeof allocated==='number'&&Number.isFinite(allocated)&&allocated>=0?volumeText(allocated):'Not returned'],["Used capacity",typeof used==='number'&&Number.isFinite(used)&&used>=0?volumeText(used):'Not returned'],["Remaining capacity",capacityKnown?volumeText(Math.max(0,allocated-used)):'Not available — capacity data is missing or invalid']]}/></CardContent></Card>}
           {isManagedV2(resource.data)&&<CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>reservationApi.detailForCustomer(id,config).then(record)} onReservationRefresh={resource.retry}/>}
           {isManagedV2(resource.data)&&<CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>contractContext(id,config)} onReservationRefresh={resource.retry}/>}
-          <ManagedCellSummary reservation={resource.data}/>{isManagedV2(resource.data)&&<div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data)&&<Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status==='RESERVED'&&<p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
+          <ManagedCellSummary reservation={resource.data}/>{isManagedV2(resource.data)&&<div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data)&&<Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Deposit and balance</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status==='RESERVED'&&<p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
           <p>
             {reservationLifecycle(resource.data).description}
           </p>
@@ -482,8 +482,6 @@ export function PaymentIntegration() {
   const { reservationId } = useParams(),
     now = useCurrentTime(),
     enabled = managedMockEnabled(import.meta.env);
-  const [depositInitiated, setDepositInitiated] = useState(false);
-  const depositKey = useRef(`managed-deposit-${reservationId}`);
   const resource = useBackend(
     (config) =>
       validId(reservationId)
@@ -493,7 +491,6 @@ export function PaymentIntegration() {
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
   const managedDeposit = isManagedV2(resource.data);
-  const managedDepositEnabled = import.meta.env.DEV === true && import.meta.env.VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED === "true";
   const contracts = useBackend(
     (config) =>
       isLegacyManaged(resource.data) ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
@@ -503,23 +500,26 @@ export function PaymentIntegration() {
     (c) => recordId(c.reservationId) === reservationId,
   );
   if (serviceType(resource.data) === SELF_STORAGE) return <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
+  if (managedDeposit) return (
+    <BackendScreen title="Managed Inventory payments" description="The Backend confirms each payment stage. Deposit is advance rent credited toward the balance.">
+      <LoadState resource={resource} />
+      {resource.data && <>
+        <RentalSummary item={resource.data} localizeManagedV2 />
+        <CustomerDepositPayment key={`deposit:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config=>reservationApi.detailForCustomer(reservationId,config).then(record)} onReservationRefresh={resource.retry}/>
+        <CustomerBalancePayment key={`balance:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config=>contractContext(reservationId,config)} onReservationRefresh={resource.retry}/>
+        <Button asChild variant="outline"><Link to={`/portal/reservations/${reservationId}`}>View reservation</Link></Button>
+      </>}
+    </BackendScreen>
+  );
   return (
     <BackendScreen
-      title={managedDeposit ? "Managed V2 payment status" : "Simulated Payment"}
-      description={managedDeposit ? "Read-only status. No payment action is implemented in this phase." : "Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."}
+      title="Simulated Payment"
+      description="Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."
     >
       <LoadState resource={resource} />
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
-          {managedDeposit && (
-            <Card><CardContent><h2 className="text-xl font-bold">Advance rent deposit</h2>
-              <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. Payment actions are unavailable in this phase.</p>
-              <ManagedFinancialSummary reservation={resource.data}/>
-              <p className="mt-3 text-sm">{reservationLifecycle(resource.data).description}</p>
-              <p className="mt-3 text-sm text-slate-500">Deposit and balance actions are not available in this phase. Review intake signatures under Contracts. No payment can be submitted here.</p>
-             </CardContent></Card>
-          )}
           {!hasLegacyRentalFlow(resource.data) ? null : resource.data.status === "PAID" ? (
             <Message success="Backend reservation status: Đã thanh toán." />
           ) : (
