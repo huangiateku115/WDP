@@ -3,6 +3,14 @@ import {customerManagedContractState} from './customerManagedContractState.js';
 import {inventoryId as id,validInventoryId} from './inventoryRegistration.js';
 
 export const balanceKey=reservationId=>`wdp-balance-${reservationId}`;
+// Confirmation omits the outer amount/currency present in initiation responses.
+export function confirmedBalanceSettlement(result,reservation,user,payment){
+  if(!payment||id(result?.payment)!==id(payment)||result?.payment?.status!=='SUCCEEDED'||!Number.isFinite(Date.parse(result.payment.succeededAt)))throw Error('Balance settlement response could not be verified. Refresh before retrying.');
+  return confirmedBalanceResult({...result,amount:result.payment.amount,currency:result.payment.currency},reservation,user);
+}
+export function verifiedPendingBalance(payment,reservation,user){
+  try{return payment?.status==='PENDING'&&confirmedBalanceResult({reservation,payment,amount:payment.amount,currency:payment.currency},reservation,user)==='PENDING';}catch{return false;}
+}
 export function customerBalanceState(reservation,contract,user){
   const disabled=reason=>({eligible:false,reason});
   if(!isV2Rental(reservation)||!validInventoryId(id(reservation)))return disabled('A verified Managed Inventory V2 reservation is required.');
@@ -31,19 +39,4 @@ export function confirmedBalanceResult(result,reservation,user){
   if(p.status==='SUCCEEDED'&&(!['CHECKIN_READY','ACTIVE'].includes(result.reservation.status)||!Number.isFinite(Date.parse(result.reservation.balanceSettledAt))))return fail();
   if(p.status==='PENDING'&&(result.reservation.status!=='DEPOSIT_PAID'||result.reservation.balanceSettledAt))return fail();
   return p.status;
-}
-
-export function canMockConfirmBalance(reservation,contract,user,payment){
-  const state=customerBalanceState(reservation,contract,user);
-  if(!state.eligible||state.amounts.balanceDue<=0||payment?.status!=='PENDING')return false;
-  try{return confirmedBalanceResult({reservation,payment,amount:payment.amount,currency:payment.currency},reservation,user)==='PENDING';}catch{return false;}
-}
-
-export function confirmedMockBalanceResult(result,reservation,user,pendingPayment){
-  const payment=result?.payment,updated=result?.reservation;
-  if(!isV2Rental(updated)||id(updated)!==id(reservation)||id(updated.customerId)!==id(user)||id(payment)!==id(pendingPayment)||payment?.status!=='SUCCEEDED'||updated.status!=='CHECKIN_READY'||!Number.isFinite(Date.parse(updated.balanceSettledAt)))throw Error('Mock Balance response could not be verified. Use GET refresh only.');
-  if(payment.facilityId&&id(payment.facilityId)!==id(reservation.facilityId))throw Error('Mock Balance Facility does not match this reservation.');
-  const amount=reservation.managedPricingSnapshot?.amountBreakdown?.balanceDue;
-  if(id(payment.reservationId)!==id(reservation)||id(payment.customerId)!==id(user)||payment.serviceType!=='MANAGED_INVENTORY'||payment.purpose!=='BALANCE'||payment.provider!=='MOCK'||payment.amount!==amount||payment.currency!=='VND'||payment.idempotencyKey!==balanceKey(id(reservation)))throw Error('Mock Balance receipt does not match this reservation.');
-  return 'SUCCEEDED';
 }

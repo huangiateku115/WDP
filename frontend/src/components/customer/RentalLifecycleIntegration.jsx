@@ -7,6 +7,8 @@ import CustomerDepositPayment from './CustomerDepositPayment';
 import {volumeText} from '@/lib/managedCellBooking';
 import {eligibleInventoryRegistration} from '@/lib/inventoryRegistration';
 import SelfStorageMockPayment,{SelfPaymentNavigation} from './SelfStorageMockPayment';
+import SelfStorageStagedPayment from './SelfStorageStagedPayment';
+import {usesSelfStorageStagedPayment} from '@/lib/selfStorageStagedPayment';
 import {canPaySelfStorage} from '@/lib/selfStoragePayment';
 import ManagedCellSummary from './warehouse/ManagedCellSummary';
 import {clearMapAvailability} from './warehouse/ManagedCellBooking';
@@ -499,7 +501,7 @@ export function PaymentIntegration() {
   const contract = contracts.data?.find(
     (c) => recordId(c.reservationId) === reservationId,
   );
-  if (serviceType(resource.data) === SELF_STORAGE) return <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
+  if (serviceType(resource.data) === SELF_STORAGE) return usesSelfStorageStagedPayment(resource.data) ? <SelfStorageStagedPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} /> : <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
   if (managedDeposit) return (
     <BackendScreen title="Managed Inventory payments" description="The Backend confirms each payment stage. Deposit is advance rent credited toward the balance.">
       <LoadState resource={resource} />

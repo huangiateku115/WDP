@@ -1,0 +1,20 @@
+{
+  "mobile": {
+    "checked": 152,
+    "changed": [],
+    "missing": []
+  },
+  "beRef": {
+    "checked": 221,
+    "changed": [],
+    "missing": []
+  },
+  "axiosGuard": {
+    "path": "src/api/client.ts",
+    "before": "cfc5016fd0b5cd0e60183f7a73adf1ca30e2de6ff97ebbedfdbfdcb1b500d774",
+    "after": "cfc5016fd0b5cd0e60183f7a73adf1ca30e2de6ff97ebbedfdbfdcb1b500d774"
+  },
+  "sourceFingerprint": "5645f40a8e30dd6d31dfc2bfe7875f145e09c46bac9c3aaa750e1c40d757ad21",
+  "result": "PASS",
+  "notes": "BE-REF scoped to221 src/tests/docs files, no .env/symlink/git access. No existing mobile/website source edited. New audit docs only."
+}

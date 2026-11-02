@@ -1,0 +1,21 @@
+{
+  "checked": 137,
+  "changed": [
+    "app/_layout.tsx",
+    "docs/ARCHITECTURE.md",
+    "docs/design-map.json",
+    "README.md",
+    "src/components/booking.tsx",
+    "src/components/customer.tsx",
+    "src/forms/auth.ts",
+    "src/screens/DashboardScreen.tsx",
+    "src/screens/ProfileScreen.tsx",
+    "src/screens/RegisterScreen.tsx",
+    "src/state/useCustomerStore.ts"
+  ],
+  "missing": [],
+  "unexpected": [],
+  "unchanged": 126,
+  "result": "PASS",
+  "scope": "Existing source/docs/config before Phase 5B; excludes .env, node_modules, .expo, artifacts. Website has independent 1074-file baseline."
+}
