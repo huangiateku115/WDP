@@ -2,8 +2,11 @@ import {useEffect,useSyncExternalStore} from 'react';
 import userApi from '@/api/userApi';
 import {getAccessToken,useAuthSession} from '@/lib/authSession';
 import {apiErrorMessage} from '@/lib/apiError';
-// Only the two literal roles supplied in Postman are defaults. Other roles must be observed in real user data.
-export const confirmedAdminUserRoles=['FACILITY_MANAGER','FACILITY_STAFF','BOM'];
+import {ROLES} from '@/lib/roles';
+// Only the roles the backend can actually assign are offered here. ADMIN cannot be created
+// or granted through the API (backend user.service.ts:79,128) and CUSTOMER accounts are
+// customer-managed, so neither is a default option.
+export const confirmedAdminUserRoles=[ROLES.FACILITY_MANAGER,ROLES.FACILITY_STAFF,ROLES.BOM];
 const empty=()=>({users:[],roles:[...confirmedAdminUserRoles],status:'idle',error:'',notice:'',sessionToken:null});
 let state=empty(),generation=0,controller=null,inflight=null;
 const listeners=new Set(),publish=next=>{state=next;listeners.forEach(fn=>fn())};
@@ -24,5 +27,5 @@ export async function changeAdminUserRole(id,role){const token=requireSession();
 export async function deactivateAdminUser(id){const token=requireSession();targetUser(id);if(isInactive(state.users.find(u=>userId(u)===id)))throw Error('This account is already inactive according to the loaded backend data.');await userApi.deactivateUser(id);await refreshAfterAction(token,'Account deactivation request completed. The collection was requested again.');}
 export async function reactivateAdminUser(id){const token=requireSession();targetUser(id);if(!isInactive(state.users.find(u=>userId(u)===id)))throw Error('This account is already active according to the loaded backend data.');await userApi.reactivateUser(id);await refreshAfterAction(token,'Account reactivation request completed. The collection was requested again.');}
 export async function updateAdminUser(id,values){const token=requireSession();targetUser(id);const payload={displayName:(values.displayName||'').trim(),phone:(values.phone||'').trim(),email:(values.email||'').trim()};if(!payload.displayName||!payload.email)throw Error('Display name and email are required.');await userApi.updateUser(id,payload);await refreshAfterAction(token,'User profile updated through the backend API. The collection was requested again.');}
-export async function assignAdminUserFacility(id,facilityId){const token=requireSession();targetUser(id);const row=state.users.find(u=>userId(u)===id);if(!['FACILITY_MANAGER','FACILITY_STAFF'].includes(row.role))throw Error('Only Facility Managers and Facility Staff can be assigned to a Facility.');if(!/^[a-f\d]{24}$/i.test(facilityId||''))throw Error('Select a valid Facility.');if(facilityIdOf(row)===facilityId)throw Error('This Facility is already assigned.');await userApi.assignFacility(id,facilityId);await refreshAfterAction(token,'Facility scope updated through the backend API. The collection was requested again.');}
+export async function assignAdminUserFacility(id,facilityId){const token=requireSession();targetUser(id);const row=state.users.find(u=>userId(u)===id);if(![ROLES.FACILITY_MANAGER,ROLES.FACILITY_STAFF].includes(row.role))throw Error('Only Facility Managers and Facility Staff can be assigned to a Facility.');if(!/^[a-f\d]{24}$/i.test(facilityId||''))throw Error('Select a valid Facility.');if(facilityIdOf(row)===facilityId)throw Error('This Facility is already assigned.');await userApi.assignFacility(id,facilityId);await refreshAfterAction(token,'Facility scope updated through the backend API. The collection was requested again.');}
 export async function unassignAdminUserFacility(id){const token=requireSession();targetUser(id);const row=state.users.find(u=>userId(u)===id);if(!facilityIdOf(row))throw Error('This account has no assigned Facility.');await userApi.unassignFacility(id);await refreshAfterAction(token,'Facility scope cleared through the backend API. The collection was requested again.');}

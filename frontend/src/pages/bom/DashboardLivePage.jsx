@@ -94,7 +94,7 @@ export default function DashboardLivePage() {
               ]} />
               <div className="mt-5 flex flex-wrap gap-3">
                 <Button asChild variant="outline"><Link to="/bom/oversight">Open oversight</Link></Button>
-                <Button asChild variant="outline"><Link to="/bom/reports">Open reports (demo)</Link></Button>
+                <Button asChild variant="outline"><Link to="/bom/reports">Open reports</Link></Button>
               </div>
             </Panel>
           </>

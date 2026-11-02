@@ -9,6 +9,7 @@ import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilityReservations } from "@/lib/bomApiData";
 import { countBy } from "@/lib/bomMetrics";
+import { canMockPayReservations, canReviewReservations } from "@/lib/roles";
 
 // Reservation oversight shared by Admin and BOM.
 // Backend contract:
@@ -27,8 +28,8 @@ const day = (value) => (value ? String(value).slice(0, 10) : "—");
 export default function ReservationsOversightPage() {
   const { user } = useAuthSession();
   const role = user?.role;
-  const canReview = role === "ADMIN";
-  const canMockPay = role === "ADMIN" || role === "BOM";
+  const canReview = canReviewReservations(role);
+  const canMockPay = canMockPayReservations(role);
 
   const directory = useAsyncData(loadFacilities, []);
   const { pathname } = useLocation();

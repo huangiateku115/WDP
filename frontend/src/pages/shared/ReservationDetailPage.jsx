@@ -8,6 +8,7 @@ import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/Live
 import { useAsyncData } from "@/lib/useAsyncData";
 import { bomReservationApi, bomReservationWriteApi } from "@/api/bomApi";
 import { responseData } from "@/lib/bomMappers";
+import { canMockPayReservations, canReviewReservations } from "@/lib/roles";
 
 // Dedicated detail page for a reservation. The list pages link here instead of expanding
 // detail/actions inline, matching /facilities/:id and /inventory/:id.
@@ -33,8 +34,8 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
   const { id } = useParams();
   const nav = useNavigate();
   const { user } = useAuthSession();
-  const canReview = user?.role === "ADMIN";
-  const canMockPay = user?.role === "ADMIN" || user?.role === "BOM";
+  const canReview = canReviewReservations(user?.role);
+  const canMockPay = canMockPayReservations(user?.role);
   const [decision, setDecision] = useState(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
