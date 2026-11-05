@@ -88,6 +88,7 @@ function setup(t, options = {}) {
     serviceType: options.serviceType ?? 'MANAGED_INVENTORY', status: options.reservationStatus ?? 'ACTIVE',
     startDate: new Date(Date.now() - 60_000), endDate: new Date(Date.now() + 86_400_000),
     usedCapacityM3: options.usedCapacityM3 ?? (options.otherStored ? .06 : .03), allocatedCapacity: 1.5, inventoryVersion: 0,
+    ...(options.closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439199') } : {}),
     save: async function () { return this; } };
   const allocation = { _id: oid('507f1f77bcf86cd799439111'), facilityId: oid(facilityId), cellId: oid(cellId),
     reservationId: oid(reservationId), customerId, status: 'OCCUPIED', save: async function () { state.allocation.status = this.status; return this; } };
@@ -195,6 +196,15 @@ test('customer requests outbound while retaining its Cell and all physical count
   assert.equal(ctx.reservation.usedCapacityM3, .03);
   assert.equal(ctx.allocation.status, 'OCCUPIED');
   assert.equal(ctx.state.audits[0].action, 'OUTBOUND_REQUESTED');
+});
+
+test('legacy outbound request and confirmation remain available under an active closure within the existing term rules', async t => {
+  const ctx = setup(t, { closurePending: true });
+  const requested = await service.requestOutbound(itemId, ctx.customer);
+  assert.equal(requested.status, 'PENDING_OUTBOUND');
+  const confirmed = await service.confirmOutbound(itemId, ctx.body, ctx.staff);
+  assert.equal(confirmed.item.status, 'CHECKED_OUT');
+  assert.equal(ctx.state.outbound?.type, 'OUTBOUND');
 });
 
 test('outbound request is blocked by an unresolved repeated-inbound request after the Item token', async t => {
@@ -362,6 +372,14 @@ test('Staff rejection returns item to IN_STORAGE without changing location or co
   assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.cell.usedVolumeM3, .03);
   assert.equal(ctx.reservation.usedCapacityM3, .03); assert.equal(ctx.allocation.status, 'OCCUPIED');
   assert.equal(ctx.state.audits[0].action, 'OUTBOUND_REJECTED');
+});
+
+test('legacy outbound rejection remains available during closure and advances the Reservation fence', async t => {
+  const ctx = setup(t, { closurePending: true });
+  await service.requestOutbound(itemId, ctx.customer);
+  const rejected = await service.rejectOutbound(itemId, { reason: 'Handover unavailable' }, ctx.staff);
+  assert.equal(rejected.status, 'IN_STORAGE');
+  assert.equal(ctx.cell.usedWeightKg, 40); assert.equal(ctx.reservation.usedCapacityM3, .03);
 });
 
 test('legacy outbound rejection cannot change an Item while canonical holds exist', async t => {

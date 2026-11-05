@@ -27,6 +27,10 @@ export const getStorageUnitById: RequestHandler = async (req, res, next) => {
   try { res.json({ success: true, data: await service.getStorageUnitById(req.params.id, req.user) }); }
   catch (error) { next(error); }
 };
+export const getUnitAvailability: RequestHandler = async (req, res, next) => {
+  try { res.json({ success: true, data: await service.getUnitAvailability(req.params.id, req.query, req.user) }); }
+  catch (error) { next(error); }
+};
 export const updateStorageUnit: RequestHandler = async (req, res, next) => {
   try { 
     const result = await service.updateStorageUnit(req.params.id, req.body, req.user);

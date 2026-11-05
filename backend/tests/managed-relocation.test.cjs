@@ -117,6 +117,7 @@ function setup(t, options = {}) {
     serviceType: options.serviceType ?? 'MANAGED_INVENTORY', bookingFlowVersion: options.bookingFlowVersion ?? 2,
     status: options.reservationStatus ?? 'ACTIVE', startDate: new Date(Date.now() - 60_000), endDate: new Date(Date.now() + 86_400_000),
     allocatedCapacity: 1.5, usedCapacityM3: options.usedCapacityM3 ?? .03, inventoryVersion: 0,
+    ...(options.closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439199') } : {}),
     save: async function () { return this; } };
   const cells = new Map([[cellAId, sourceCell], [cellBId, destinationCell], [cellCId, thirdCell]]);
   const zoneMap = new Map([[zoneAId, { _id: oid(zoneAId), facilityId: oid(facilityId), isActive: options.sourceZoneActive ?? true, structureVersion: 0 }],
@@ -245,7 +246,11 @@ function setup(t, options = {}) {
     return new Query(row);
   });
   t.mock.method(Reservation, 'findOne', filter => new Query(options.reservationMissing || reservation.serviceType !== filter.serviceType ? null : reservation));
-  t.mock.method(Reservation, 'findOneAndUpdate', filter => new Query(options.reservationMissing || reservation.status !== filter.status ? null : reservation));
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    const requiredStatus = filter.status ?? filter.$and?.find(row => row.status)?.status;
+    const closureBlocked = filter.activeClosureRequestId === null && reservation.activeClosureRequestId != null;
+    return new Query(options.reservationMissing || closureBlocked || (requiredStatus && reservation.status !== requiredStatus) ? null : reservation);
+  });
   t.mock.method(Capacity, 'findOneAndUpdate', () => new Query(options.capacityMissing ? null : { facilityId: oid(facilityId), bookingVersion: 1 }));
   t.mock.method(Facility, 'findOne', () => new Query(options.facilityMissing ? null : {
     _id: oid(facilityId), status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'],
@@ -309,6 +314,13 @@ test('relocation is blocked by an unresolved repeated-inbound request after the 
   assert.equal(ctx.item.status, 'IN_STORAGE');
   assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
   assert.equal(ctx.state.movements.filter(row => row.type === 'RELOCATION').length, 0);
+});
+
+test('legacy relocation is blocked by an active closure marker before counter or movement writes', async t => {
+  const ctx = setup(t, { closurePending: true });
+  await assert.rejects(service.relocate(itemId, ctx.body, ctx.staff), { status: 409, message: /closure is pending/ });
+  assert.equal(ctx.state.movements.filter(row => row.type === 'RELOCATION').length, 0);
+  assert.equal(ctx.sourceCell.usedWeightKg, 40); assert.equal(ctx.destinationCell.usedWeightKg, 0);
 });
 
 test('relocation is blocked while a canonical outbound request holds this Item', async t => {

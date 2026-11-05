@@ -7,6 +7,9 @@ const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 const storageApi = {
   listUnits: (facilityId,config)=>axiosClient.get(`/facilities/${encodeURIComponent(facilityId)}/storage-units`,config),
   unitDetail: (id,config)=>axiosClient.get(`/storage-units/${encodeURIComponent(id)}`,config),
+  availability: (id,{month,startDate,endDate,signal}={})=>axiosClient.get(`/storage-units/${encodeURIComponent(id)}/availability`,{
+    params:{month,...(startDate&&endDate?{startDate,endDate}:{})},signal,
+  }),
   getAvailable: async ({ facilityId, serviceType } = {}) => {
     if (USE_MOCK) {
       await delay();

@@ -58,6 +58,73 @@ async function unitById(id: string, actor: Actor, write = false) {
   return unit;
 }
 export class StorageUnitService {
+  static async getUnitAvailability(id: unknown, input: unknown, actor: Actor) {
+    validateId(id);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new StorageUnitError(400, 'Invalid availability query');
+    const query = input as Record<string, unknown>;
+    const month = query.month;
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new StorageUnitError(400, 'month must use YYYY-MM');
+    }
+    const monthStart = new Date(`${month}-01T00:00:00.000Z`);
+    if (!Number.isFinite(monthStart.getTime()) || monthStart.toISOString().slice(0, 7) !== month) {
+      throw new StorageUnitError(400, 'month is invalid');
+    }
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+    const hasStart = query.startDate !== undefined;
+    const hasEnd = query.endDate !== undefined;
+    if (hasStart !== hasEnd) throw new StorageUnitError(400, 'startDate and endDate must be provided together');
+    const parseUtcDate = (value: unknown, field: string) => {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new StorageUnitError(400, `${field} must use YYYY-MM-DD`);
+      const date = new Date(`${value}T00:00:00.000Z`);
+      if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new StorageUnitError(400, `${field} is invalid`);
+      return date;
+    };
+    const rangeStart = hasStart ? parseUtcDate(query.startDate, 'startDate') : undefined;
+    const rangeEnd = hasEnd ? parseUtcDate(query.endDate, 'endDate') : undefined;
+    if (rangeStart && rangeEnd && rangeEnd <= rangeStart) throw new StorageUnitError(400, 'endDate must be after startDate');
+
+    return execute(async () => {
+      const unit = await unitById(id, actor);
+      const facility = await facilityById(unit.facilityId.toString());
+      const unitUnavailable = facility.status !== FacilityStatus.ACTIVE ||
+        !facility.serviceTypes.includes(FacilityServiceType.SELF_STORAGE) ||
+        [StorageUnitStatus.INACTIVE, StorageUnitStatus.MAINTENANCE].includes(unit.status);
+      const stateFor = async (startDate: Date, endDate: Date) => {
+        const reservations: any[] = await ReservationModel.find({
+          storageUnitId: unit._id,
+          facilityId: unit.facilityId,
+          serviceType: FacilityServiceType.SELF_STORAGE,
+          ...ReservationService.buildOverlapFilter(startDate, endDate),
+        }).select('startDate endDate').sort({ startDate: 1, _id: 1 }).limit(501).lean().exec();
+        if (reservations.length > 500) return { unknown: true, reservations: [] as any[] };
+        return { unknown: false, reservations };
+      };
+      const monthResult = unitUnavailable ? { unknown: false, reservations: [] as any[] } : await stateFor(monthStart, monthEnd);
+      const intervals = monthResult.unknown ? [] : monthResult.reservations.map(reservation => ({
+        startDate: new Date(Math.max(new Date(reservation.startDate).getTime(), monthStart.getTime())).toISOString(),
+        endDate: new Date(Math.min(new Date(reservation.endDate).getTime(), monthEnd.getTime())).toISOString(),
+      }));
+      let rangeAvailability: 'AVAILABLE' | 'CONFLICT' | 'UNIT_UNAVAILABLE' | 'UNKNOWN' | null = null;
+      if (unitUnavailable) rangeAvailability = 'UNIT_UNAVAILABLE';
+      else if (rangeStart && rangeEnd) {
+        const rangeResult = await stateFor(rangeStart, rangeEnd);
+        rangeAvailability = rangeResult.unknown ? 'UNKNOWN' : rangeResult.reservations.length ? 'CONFLICT' : 'AVAILABLE';
+      }
+      if (monthResult.unknown && !rangeAvailability) rangeAvailability = 'UNKNOWN';
+      if (monthResult.unknown && rangeAvailability === 'AVAILABLE') rangeAvailability = 'UNKNOWN';
+      return {
+        storageUnitId: unit._id,
+        month,
+        intervals,
+        availabilityState: unitUnavailable ? 'UNIT_UNAVAILABLE' : monthResult.unknown ? 'UNKNOWN' : 'VERIFIED',
+        rangeAvailability,
+        requestedRange: rangeStart && rangeEnd ? { startDate: rangeStart.toISOString(), endDate: rangeEnd.toISOString() } : null,
+        evaluatedAt: new Date().toISOString(),
+      };
+    });
+  }
+
   static async createStorageUnit(facilityId: unknown, input: unknown, actor: Actor) {
     validateId(facilityId);
     scope(actor, facilityId, true);

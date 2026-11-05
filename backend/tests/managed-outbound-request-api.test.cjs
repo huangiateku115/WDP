@@ -55,6 +55,7 @@ function setup(t, options = {}) {
   const reservation = { _id: item.managedReservationId, customerId: item.customerId, facilityId: item.facilityId,
     serviceType: 'MANAGED_INVENTORY', status: 'ACTIVE', startDate: new Date('2026-10-01'), endDate: new Date('2026-12-01'),
     allocatedCellIds: [item.currentCellId], inventoryVersion: 0, usedCapacityM3: .05,
+    ...(options.closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439199') } : {}),
     async save() { return this; },
     toObject() { return { ...this, toObject: undefined }; } };
   const cell = { _id: oid(ids.cell), facilityId: item.facilityId, rackId: oid('507f1f77bcf86cd799439008'),
@@ -84,9 +85,10 @@ function setup(t, options = {}) {
   });
   t.mock.method(Item, 'find', () => new Query([item]));
   t.mock.method(Reservation, 'findOneAndUpdate', (filter, update, opts) => {
-    ops.push('Reservation.token'); assert.equal(filter.status, 'ACTIVE'); assert.equal(update.$inc.inventoryVersion, 1); assert.equal(opts.session, session);
+    ops.push('Reservation.token'); assert.ok(filter.$and?.length); assert.equal(update.$inc.inventoryVersion, 1); assert.equal(opts.session, session);
     reservation.inventoryVersion += 1; return new Query(reservation);
   });
+  t.mock.method(Reservation, 'findOne', () => new Query(reservation));
   t.mock.method(Facility, 'findOne', () => new Query({ _id: item.facilityId }));
   t.mock.method(Allocation, 'findOne', () => new Query(allocation));
   t.mock.method(Cell, 'findOne', () => new Query(cell));
@@ -187,6 +189,28 @@ test('safe CANCEL releases exactly the held quantity and preserves on-hand stock
   assert.equal(cancelled.replayed, false); assert.equal(cancelled.data.state, 'CANCELLED'); assert.equal(cancelled.data.heldQuantity, 0);
   assert.equal(ctx.stock.onHandQuantity, 5); assert.equal(ctx.stock.heldQuantity, 0); assert.equal(ctx.stock.batches[0].heldQuantity, 0);
   assert.equal(ctx.savedEvents.filter(row => row.operation === 'CANCEL').length, 1);
+});
+
+test('canonical outbound CREATE, CANCEL and CONFIRM remain fenced but allowed during an active closure', async t => {
+  const ctx = setup(t, { closurePending: true }); const customer = { _id: oid(ids.customer), role: 'CUSTOMER' };
+  const oldConfirmationGate = process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED;
+  t.after(() => { if (oldConfirmationGate === undefined) delete process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED;
+    else process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED = oldConfirmationGate; });
+  const created = await service.create(ids.item, { requestedQuantity: 2 }, 'closure-outbound-create-01', customer);
+  assert.equal(created.data.state, 'PENDING');
+  assert.ok(ctx.ops.indexOf('Item.token') < ctx.ops.indexOf('Reservation.token'));
+  const cancelled = await service.cancel(created.data._id, '"0"', 'closure-outbound-cancel-01', customer);
+  assert.equal(cancelled.data.state, 'CANCELLED');
+  assert.equal(ctx.stock.heldQuantity, 0); assert.equal(ctx.stock.onHandQuantity, 5);
+  assert.equal(ctx.stock.actualTotalWeightKg, 10, 'cancelling a hold does not change physical accounting');
+
+  const second = await service.create(ids.item, { requestedQuantity: 2 }, 'closure-outbound-create-02', customer);
+  process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED = 'true';
+  const confirmed = await service.confirm(second.data._id, { actualDeliveredQty: 1, handoverConfirmed: true,
+    handoverNote: 'Delivered during approved clearance' }, 'closure-outbound-confirm-01', '"0"',
+  { _id: oid(ids.staff), role: 'FACILITY_STAFF', assignedFacilityId: oid(ids.facility) });
+  assert.equal(confirmed.data.state, 'PARTIALLY_FULFILLED');
+  assert.equal(ctx.stock.onHandQuantity, 4); assert.equal(ctx.savedMovements.length, 1);
 });
 
 test('Staff confirmation consumes actual FIFO delivery, releases unused hold and commits one REMOVE event link', async t => {

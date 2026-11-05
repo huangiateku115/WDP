@@ -58,10 +58,10 @@ async function loadV2Reservation(reservationId: Types.ObjectId, session: ClientS
   return reservation;
 }
 async function currentContent(reservation: any, session: ClientSession) {
-  const [items, facility] = await Promise.all([
-    InventoryItemModel.find({ managedReservationId: reservation._id, ...live }).sort({ itemCode: 1 }).session(session).lean().exec(),
-    FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).lean().exec(),
-  ]);
+  const items = await InventoryItemModel.find({ managedReservationId: reservation._id, ...live })
+    .sort({ itemCode: 1 }).session(session).lean().exec();
+  const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+    serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).lean().exec();
   if (!facility) fail(409, 'Active Managed Facility required for contract');
   const expectedCellIds = (reservation.allocatedCellIds ?? []).map((cell: Types.ObjectId) => String(cell)).sort();
   const accepted = items.filter((item: any) => item.receivingInspection?.decision === ReceivingInspectionDecision.ACCEPTED);
@@ -253,10 +253,8 @@ export class ManagedCheckinService {
       let contract = await ContractModel.findOne({ reservationId }).session(session).exec();
       const snapshot = await currentContent(reservation, session);
       if (!snapshot.ready) fail(409, 'Resolve all receiving discrepancies or rejected inspections and inspect at least one requested item before generating the contract');
-      const [profile, customer] = await Promise.all([
-        CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec(),
-        UserModel.findById(reservation.customerId).session(session).exec(),
-      ]);
+      const profile = await CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec();
+      const customer = await UserModel.findById(reservation.customerId).session(session).exec();
       if (!profile || !customer) fail(409, 'Customer profile is unavailable for contract snapshot');
       if (!contract) {
         const content = snapshot.content;

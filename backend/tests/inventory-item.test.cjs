@@ -14,6 +14,7 @@ const Facility = require('../dist/models/facilities/facility.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
 const ImageUpload = require('../dist/models/inventory-items/inventory-image-upload.model').default;
+const ManagedInventoryImageService = require('../dist/services/upload/managed-inventory-image.service').ManagedInventoryImageService;
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const Zone = require('../dist/models/warehouse-map/warehouse-zone.model').default;
@@ -72,6 +73,66 @@ function mockEligibility(t, reservation = managedReservation(), facility = { sta
   });
   t.mock.method(Facility, 'findOne', () => new Query(facility ? { _id: oid(facilityId), ...facility } : null));
 }
+function mockTransaction(t, onTransactionOptions = () => {}, onAbort = () => {}) {
+  const session = {
+    withTransaction: async (work, options) => {
+      onTransactionOptions(options);
+      try { return await work(); } catch (error) { onAbort(error); throw error; }
+    },
+    endSession: async () => {},
+  };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  return session;
+}
+function mockMetadataItemToken(t, item, session) {
+  t.mock.method(Item, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(String(filter._id), itemId);
+    assert.equal(filter.status, 'REGISTERED'); assert.equal(filter.currentCellId, null);
+    assert.strictEqual(options.session, session);
+    item.__v = (item.__v ?? 0) + update.$inc.__v;
+    return new Query(item);
+  });
+}
+function mockMetadataFence(t, item, reservation, session) {
+  mockMetadataItemToken(t, item, session);
+  t.mock.method(Reservation, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(filter.activeClosureRequestId, null);
+    assert.ok(filter.$and?.length);
+    assert.equal(update.$inc.inventoryVersion, 1);
+    assert.strictEqual(options.session, session);
+    reservation.inventoryVersion = (reservation.inventoryVersion ?? 0) + 1;
+    return new Query(reservation);
+  });
+}
+function mockRegistrationFence(t, reservation = managedReservation(), onAcquire = () => {}) {
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(String(filter._id), reservationId);
+    assert.equal(String(filter.customerId), userId.toString());
+    assert.equal(String(filter.facilityId), facilityId);
+    assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
+    assert.equal(filter.activeClosureRequestId, null);
+    assert.ok(filter.$or.some(row => row.inventoryVersion === 0));
+    assert.ok(filter.$or.some(row => row.inventoryVersion.$exists === false));
+    onAcquire();
+    return new Query(reservation);
+  });
+}
+function observedQuery(value, name, tracker, expectedSession) {
+  let boundSession;
+  return {
+    session(session) { boundSession = session; return this; },
+    exec() {
+      assert.strictEqual(boundSession, expectedSession, `${name} uses the expected transaction session`);
+      tracker.active += 1;
+      tracker.maxActive = Math.max(tracker.maxActive, tracker.active);
+      return Promise.resolve(value).then(result => {
+        tracker.order.push(name);
+        tracker.active -= 1;
+        return result;
+      }, error => { tracker.active -= 1; throw error; });
+    },
+  };
+}
 
 test('model reserves stable itemCode per facility and supports derived registered-item fields', async () => {
   const indexes = Item.schema.indexes();
@@ -82,10 +143,30 @@ test('model reserves stable itemCode per facility and supports derived registere
   await item.validate();
 });
 
+test('Reservation lifecycle marker is an optional ObjectId reference and leaves existing reservations unmarked', async () => {
+  const markerPath = Reservation.schema.path('activeClosureRequestId');
+  assert.ok(markerPath);
+  assert.equal(markerPath.instance, 'ObjectId');
+  const reservation = new Reservation({
+    reservationCode: 'WDP-TEST-RES', customerId: userId, facilityId: oid(facilityId),
+    serviceType: 'MANAGED_INVENTORY', startDate: new Date(), endDate: new Date(Date.now() + 86400000),
+    status: 'ACTIVE', pricingPolicyId: oid('507f1f77bcf86cd799439081'), estimatedRent: 100,
+    depositAmount: 0,
+  });
+  assert.equal(reservation.activeClosureRequestId, undefined);
+});
+
 test('registration derives lot totals, keeps currentCellId null, and writes no physical placement', async t => {
   mockEligibility(t);
+  mockTransaction(t, options => {
+    assert.equal(options.timeoutMS, 15_000);
+    assert.deepEqual(options.readConcern, { level: 'snapshot' });
+    assert.deepEqual(options.writeConcern, { w: 'majority' });
+  });
+  let reservationFenceAcquired = false;
+  mockRegistrationFence(t, managedReservation(), () => { reservationFenceAcquired = true; });
   let saved;
-  t.mock.method(Item.prototype, 'save', async function () { saved = this; return this; });
+  t.mock.method(Item.prototype, 'save', async function (options) { assert.ok(reservationFenceAcquired, 'Reservation token precedes Item insertion'); assert.ok(options.session); saved = this; return this; });
   t.mock.method(Cell, 'updateMany', () => { assert.fail('registration must not write physical stock or cell usage'); });
   t.mock.method(Rack, 'findOneAndUpdate', () => { assert.fail('registration must not reserve or lock a rack'); });
   const result = await service.create(itemBody(), actor());
@@ -102,11 +183,13 @@ test('registration derives lot totals, keeps currentCellId null, and writes no p
 
 test('version 2 DEPOSIT_PAID owner may register an item before activation without writing physical stock', async t => {
   const reservation = managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 });
+  mockTransaction(t);
   t.mock.method(Reservation, 'findOne', filter => {
     assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
     return new Query(reservation);
   });
   t.mock.method(Facility, 'findOne', () => new Query({ _id: oid(facilityId), status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  mockRegistrationFence(t, reservation);
   let saved;
   t.mock.method(Item.prototype, 'save', async function () { saved = this; return this; });
   const created = await service.create(itemBody(), actor());
@@ -116,6 +199,7 @@ test('version 2 DEPOSIT_PAID owner may register an item before activation withou
 
 test('new Item registration cannot attach an arbitrary HTTP URL without upload ownership metadata', async t => {
   mockEligibility(t);
+  mockRegistrationFence(t);
   const session = { withTransaction: async work => work(), endSession: async () => {} };
   t.mock.method(mongoose, 'startSession', async () => session);
   t.mock.method(ImageUpload, 'findOne', () => new Query(null));
@@ -123,8 +207,177 @@ test('new Item registration cannot attach an arbitrary HTTP URL without upload o
   await assert.rejects(service.create(itemBody({ images: ['https://res.cloudinary.com/other-customer/item.jpg'] }), actor()), { status: 403 });
 });
 
+test('registration with images attaches uploads and inserts Item in the same fenced transaction', async t => {
+  mockEligibility(t);
+  const session = { withTransaction: async work => work(), endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  let fence = false, attached = false;
+  mockRegistrationFence(t, managedReservation(), () => { fence = true; });
+  t.mock.method(ManagedInventoryImageService, 'attachNewImages', async (_urls, _current, _itemId, _customerId, _reservationId, usedSession) => {
+    assert.ok(fence, 'Reservation fence precedes image attachment');
+    assert.strictEqual(usedSession, session);
+    attached = true;
+  });
+  t.mock.method(Item.prototype, 'save', async function (options) {
+    assert.ok(attached, 'image attachment occurs before Item save');
+    assert.strictEqual(options.session, session);
+    return this;
+  });
+  const result = await service.create(itemBody({ images: ['https://res.cloudinary.com/wdp-dev/image/upload/v1/item.jpg'] }), actor());
+  assert.equal(result.images.length, 1);
+});
+
+test('preferred Cell, Zone and Rack reads are sequential on the registration transaction session', async t => {
+  mockEligibility(t);
+  const tracker = { active: 0, maxActive: 0, order: [] };
+  const session = { withTransaction: async work => work(), endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  mockRegistrationFence(t);
+  t.mock.method(Cell, 'findOne', filter => {
+    assert.equal(String(filter.facilityId), facilityId);
+    return observedQuery({ _id: oid(cellId), facilityId: oid(facilityId), zoneId: oid(zoneId), rackId: oid(rackId), operationalStatus: 'AVAILABLE' }, 'cell', tracker, session);
+  });
+  t.mock.method(Zone, 'findOne', filter => {
+    assert.equal(String(filter.facilityId), facilityId);
+    assert.equal(filter.isActive, true);
+    return observedQuery({ _id: oid(zoneId), facilityId: oid(facilityId), isActive: true }, 'zone', tracker, session);
+  });
+  t.mock.method(Rack, 'findOne', filter => {
+    assert.equal(String(filter.facilityId), facilityId);
+    assert.equal(String(filter.zoneId), zoneId);
+    assert.equal(filter.operationalStatus, 'AVAILABLE');
+    return observedQuery({ _id: oid(rackId), facilityId: oid(facilityId), zoneId: oid(zoneId), operationalStatus: 'AVAILABLE' }, 'rack', tracker, session);
+  });
+  t.mock.method(Item.prototype, 'save', async function (options) { assert.strictEqual(options.session, session); return this; });
+
+  await service.create(itemBody({ preferredCellId: cellId }), actor());
+  assert.deepEqual(tracker.order, ['cell', 'zone', 'rack']);
+  assert.equal(tracker.maxActive, 1, 'no concurrent operations share the transaction session');
+});
+
+test('preferred Cell validation failure aborts registration before Item insertion', async t => {
+  mockEligibility(t);
+  let aborted = false;
+  mockTransaction(t, undefined, () => { aborted = true; });
+  mockRegistrationFence(t);
+  t.mock.method(Cell, 'findOne', () => new Query(null));
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('invalid preferred Cell must not insert an Item'); });
+  await assert.rejects(service.create(itemBody({ preferredCellId: cellId }), actor()), { status: 404 });
+  assert.equal(aborted, true, 'failed validation propagates out of the transaction callback');
+});
+
+test('preferred Cell metadata validation shares the Item/Reservation transaction session and reads Zone/Rack sequentially', async t => {
+  mockEligibility(t);
+  const session = mockTransaction(t);
+  const tracker = { active: 0, maxActive: 0, order: [] };
+  const item = itemDoc();
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  mockMetadataFence(t, item, managedReservation(), session);
+  t.mock.method(Cell, 'findOne', () => observedQuery({
+    _id: oid(cellId), facilityId: oid(facilityId), zoneId: oid(zoneId), rackId: oid(rackId), operationalStatus: 'AVAILABLE',
+  }, 'cell', tracker, session));
+  t.mock.method(Zone, 'findOne', () => observedQuery({ _id: oid(zoneId), facilityId: oid(facilityId), isActive: true }, 'zone', tracker, session));
+  t.mock.method(Rack, 'findOne', () => observedQuery({
+    _id: oid(rackId), facilityId: oid(facilityId), zoneId: oid(zoneId), operationalStatus: 'AVAILABLE',
+  }, 'rack', tracker, session));
+  t.mock.method(Item.prototype, 'save', async function () { return this; });
+
+  const result = await service.update(itemId, { preferredCellId: cellId }, actor());
+  assert.equal(String(result.preferredCellId), cellId);
+  assert.deepEqual(tracker.order, ['cell', 'zone', 'rack']);
+  assert.equal(tracker.maxActive, 1, 'transaction session reads are sequential');
+});
+
+test('registration without images aborts its transaction when Item insertion fails', async t => {
+  mockEligibility(t);
+  let aborted = false;
+  mockTransaction(t, undefined, () => { aborted = true; });
+  mockRegistrationFence(t);
+  t.mock.method(Item.prototype, 'save', async function (options) {
+    assert.ok(options.session);
+    throw new Error('simulated Item insert failure');
+  });
+  await assert.rejects(service.create(itemBody(), actor()), { status: 500 });
+  assert.equal(aborted, true);
+});
+
+test('image registration aborts attachment and Item writes together when Item insertion fails', async t => {
+  mockEligibility(t);
+  let aborted = false, attachmentStaged = false;
+  const session = {
+    withTransaction: async work => {
+      try { return await work(); } catch (error) { aborted = true; throw error; }
+    },
+    endSession: async () => {},
+  };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  mockRegistrationFence(t);
+  t.mock.method(ManagedInventoryImageService, 'attachNewImages', async (_urls, _current, _itemId, _customerId, _reservationId, usedSession) => {
+    assert.strictEqual(usedSession, session);
+    attachmentStaged = true;
+  });
+  t.mock.method(Item.prototype, 'save', async function (options) {
+    assert.ok(attachmentStaged);
+    assert.strictEqual(options.session, session);
+    throw new Error('simulated Item insert failure after image attachment');
+  });
+  await assert.rejects(service.create(itemBody({ images: ['https://res.cloudinary.com/wdp-dev/image/upload/v1/item.jpg'] }), actor()), { status: 500 });
+  assert.equal(attachmentStaged, true);
+  assert.equal(aborted, true, 'both writes share the transaction that aborts');
+});
+
+test('registration fails closed when an active Closure marker prevents Reservation CAS', async t => {
+  mockEligibility(t);
+  mockTransaction(t);
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(filter.activeClosureRequestId, null);
+    assert.ok(filter.$or.some(row => row.inventoryVersion === 0));
+    return new Query(null);
+  });
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('Item must not be inserted after failed Reservation CAS'); });
+  await assert.rejects(service.create(itemBody(), actor()), { status: 409 });
+});
+
+test('registration fails closed when Reservation inventoryVersion changed after eligibility read', async t => {
+  const reservation = managedReservation({ inventoryVersion: 9 });
+  mockTransaction(t);
+  t.mock.method(Reservation, 'findOne', () => new Query(reservation));
+  t.mock.method(Facility, 'findOne', () => new Query({ _id: oid(facilityId), status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }));
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(filter.inventoryVersion, 9, 'CAS is bound to the eligibility snapshot');
+    assert.equal(filter.activeClosureRequestId, null);
+    return new Query(null);
+  });
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('stale Reservation must not insert an Item'); });
+  await assert.rejects(service.create(itemBody(), actor()), { status: 409 });
+});
+
+test('unknown commit result is propagated as an error, never returned as a successful registration', async t => {
+  mockEligibility(t);
+  const unknownCommit = Object.assign(new Error('unknown commit result'), { hasErrorLabel: label => label === 'UnknownTransactionCommitResult' });
+  const session = { withTransaction: async work => { await work(); throw unknownCommit; }, endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  mockRegistrationFence(t);
+  let stagedItem = false;
+  t.mock.method(Item.prototype, 'save', async function (options) { assert.strictEqual(options.session, session); stagedItem = true; return this; });
+  await assert.rejects(service.create(itemBody(), actor()), { status: 500 });
+  assert.equal(stagedItem, true, 'write callback ran, but uncertain commit is not reported as success');
+});
+
 test('CHECKIN_READY does not allow new item registration after the contract and balance snapshot is complete', async t => {
+  mockTransaction(t);
   t.mock.method(Reservation, 'findOne', () => new Query(null));
+  await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
+});
+
+test('expired DEPOSIT_PAID reservation cannot register a new Item', async t => {
+  mockTransaction(t);
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID');
+    assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    return new Query(null);
+  });
+  t.mock.method(Item.prototype, 'save', async () => { assert.fail('expired Reservation cannot insert an Item'); });
   await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
 });
 
@@ -136,8 +389,14 @@ test('version 2 DEPOSIT_PAID owner may request inbound before activation without
     return new Query(itemDoc({ status: 'PENDING_INBOUND' }));
   });
   t.mock.method(Reservation, 'findOneAndUpdate', filter => {
-    assert.equal(filter.$or[0].status, 'ACTIVE'); assert.ok(filter.$or[0].startDate.$lte instanceof Date); assert.ok(filter.$or[0].endDate.$gt instanceof Date);
-    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
+    assert.equal(filter.activeClosureRequestId, null);
+    const eligibility = filter.$and[0].$or;
+    assert.equal(eligibility[0].status, 'ACTIVE'); assert.ok(eligibility[0].startDate.$lte instanceof Date); assert.ok(eligibility[0].endDate.$gt instanceof Date);
+    assert.equal(eligibility[1].status, 'DEPOSIT_PAID'); assert.equal(eligibility[1].bookingFlowVersion, 2); assert.ok(eligibility[1].endDate.$gt instanceof Date);
+    return new Query(managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 }));
+  });
+  t.mock.method(Reservation, 'findOne', filter => {
+    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID');
     return new Query(managedReservation({ status: 'DEPOSIT_PAID', bookingFlowVersion: 2 }));
   });
   t.mock.method(Reservation, 'exists', () => new Query(null));
@@ -146,6 +405,20 @@ test('version 2 DEPOSIT_PAID owner may request inbound before activation without
   const result = await service.requestInbound(itemId, actor());
   assert.equal(result.status, 'PENDING_INBOUND');
   assert.equal(result.currentCellId, null);
+});
+
+test('first inbound request is blocked by an active closure marker before Reservation CAS', async t => {
+  mockTransaction(t);
+  const item = itemDoc({ status: 'REGISTERED', currentCellId: null });
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  t.mock.method(Item, 'findOneAndUpdate', () => new Query(itemDoc({ status: 'PENDING_INBOUND', currentCellId: null })));
+  t.mock.method(Reservation, 'findOne', () => new Query(managedReservation({
+    status: 'ACTIVE', activeClosureRequestId: oid('507f1f77bcf86cd799439099'),
+  })));
+  let reservationCasCalled = false;
+  t.mock.method(Reservation, 'findOneAndUpdate', () => { reservationCasCalled = true; return new Query(null); });
+  await assert.rejects(service.requestInbound(itemId, actor()), { status: 409, message: /closure is pending/ });
+  assert.equal(reservationCasCalled, false);
 });
 
 test('request cannot spoof customer/facility, derived totals, status, or Mongo operators', () => {
@@ -167,6 +440,8 @@ test('request cannot spoof customer/facility, derived totals, status, or Mongo o
 
 test('duplicate facility itemCode becomes a safe conflict', async t => {
   mockEligibility(t);
+  mockTransaction(t);
+  mockRegistrationFence(t);
   t.mock.method(Item.prototype, 'save', async () => { throw Object.assign(new Error('duplicate details'), { code: 11000 }); });
   await assert.rejects(service.create(itemBody(), actor()), { status: 409 });
 });
@@ -191,6 +466,7 @@ test('item metadata and placement preview remain ACTIVE-only after a deposit', a
 });
 
 test('registration rejects Self Storage, inactive MI rentals, and absent rentals', async t => {
+  mockTransaction(t);
   t.mock.method(Reservation, 'findOne', filter => {
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
     return new Query(null); // Self Storage is excluded by the reusable guard query.
@@ -203,6 +479,7 @@ test('registration rejects Self Storage, inactive MI rentals, and absent rentals
 });
 
 test('customer cannot read or update another customer item', async t => {
+  mockTransaction(t);
   const other = oid('507f1f77bcf86cd799439099');
   t.mock.method(Item, 'findOne', () => new Query(itemDoc({ customerId: other })));
   await assert.rejects(service.get(itemId, actor()), { status: 404 });
@@ -211,8 +488,10 @@ test('customer cannot read or update another customer item', async t => {
 
 test('customer edits only REGISTERED metadata and totals are recalculated', async t => {
   mockEligibility(t);
+  const session = mockTransaction(t);
   const item = itemDoc();
   t.mock.method(Item, 'findOne', () => new Query(item));
+  mockMetadataFence(t, item, managedReservation(), session);
   t.mock.method(Item.prototype, 'save', async function () { return this; });
   const updated = await service.update(itemId, { quantity: 3, unitWeightKg: 15 }, actor());
   assert.equal(updated.totalWeightKg, 45);
@@ -224,12 +503,32 @@ test('customer edits only REGISTERED metadata and totals are recalculated', asyn
 
 test('editing keeps a legacy HTTP image already owned by that Item', async t => {
   mockEligibility(t);
+  const session = mockTransaction(t);
   const legacy = 'https://legacy.example.test/old-item-photo.jpg';
   const item = itemDoc({ images: [legacy] });
   t.mock.method(Item, 'findOne', () => new Query(item));
+  mockMetadataFence(t, item, managedReservation(), session);
   t.mock.method(Item.prototype, 'save', async function () { return this; });
   const updated = await service.update(itemId, { name: 'Archive cartons updated', images: [legacy] }, actor());
   assert.deepEqual(updated.images, [legacy]);
+});
+
+test('active closure marker blocks metadata and image attachment after Item CAS', async t => {
+  const session = mockTransaction(t);
+  const item = itemDoc();
+  const reservation = managedReservation({ activeClosureRequestId: oid('507f1f77bcf86cd799439098'), inventoryVersion: 4 });
+  mockEligibility(t, reservation);
+  t.mock.method(Item, 'findOne', () => new Query(item));
+  mockMetadataItemToken(t, item, session);
+  let imageAttachCalls = 0;
+  t.mock.method(ManagedInventoryImageService, 'attachNewImages', async () => { imageAttachCalls += 1; });
+  t.mock.method(Reservation, 'findOneAndUpdate', filter => {
+    assert.equal(filter.activeClosureRequestId, null);
+    return new Query(null);
+  });
+  await assert.rejects(service.update(itemId, { name: 'Changed' }, actor()), { status: 409, message: /closure is pending/ });
+  await assert.rejects(service.update(itemId, { images: ['https://res.cloudinary.com/wdp-dev/image/upload/v1/new.jpg'] }, actor()), { status: 409, message: /closure is pending/ });
+  assert.equal(imageAttachCalls, 0);
 });
 
 test('owner can read historical item after its Managed reservation closes', async t => {
@@ -253,6 +552,7 @@ test('GET /me lists owner history regardless of current reservation status', asy
 });
 
 test('closed Managed reservation cannot authorize new registration or metadata edits', async t => {
+  const session = mockTransaction(t);
   t.mock.method(Reservation, 'findOne', filter => {
     if (filter.$or) { assert.equal(filter.$or[0].status, 'ACTIVE'); assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date); }
     else assert.equal(filter.status, 'ACTIVE');
@@ -260,7 +560,9 @@ test('closed Managed reservation cannot authorize new registration or metadata e
   });
   await assert.rejects(service.create(itemBody(), actor()), { status: 404 });
 
-  t.mock.method(Item, 'findOne', () => new Query(itemDoc()));
+  const editItem = itemDoc();
+  t.mock.method(Item, 'findOne', () => new Query(editItem));
+  mockMetadataItemToken(t, editItem, session);
   await assert.rejects(service.update(itemId, { name: 'Changed name' }, actor()), { status: 404 });
 });
 

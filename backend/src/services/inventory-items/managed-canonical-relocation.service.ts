@@ -162,12 +162,23 @@ async function lockCell(cellId: Types.ObjectId, facilityId: Types.ObjectId, avai
 }
 
 async function lockReservation(item: IInventoryItem, session: ClientSession, now: Date) {
-  const reservation = await ReservationModel.findOneAndUpdate({ _id: item.managedReservationId,
-    customerId: item.customerId, facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
+  const identity = { _id: item.managedReservationId, customerId: item.customerId,
+    facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
+  const current = await ReservationModel.findOne(identity).session(session).exec();
+  if (!current || current.status !== ReservationStatus.ACTIVE || current.startDate > now || current.endDate <= now) {
+    return fail(409, ManagedStockErrorCode.CANONICAL_RELOCATION_INVALID,
+      'Canonical relocation requires an in-term ACTIVE Managed Inventory reservation');
+  }
+  const version = Number(current.inventoryVersion ?? 0);
+  const versionFilter = version === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const reservation = await ReservationModel.findOneAndUpdate({ ...identity, status: ReservationStatus.ACTIVE,
+    startDate: { $lte: now }, endDate: { $gt: now }, activeClosureRequestId: null, $and: [versionFilter] },
   { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
-  if (!reservation) return fail(409, ManagedStockErrorCode.CANONICAL_RELOCATION_INVALID,
-    'Canonical relocation requires an in-term ACTIVE Managed Inventory reservation');
+  if (!reservation) return fail(409, current.activeClosureRequestId
+    ? ManagedStockErrorCode.CANONICAL_RELOCATION_CONFLICT : ManagedStockErrorCode.CANONICAL_RELOCATION_INVALID,
+  current.activeClosureRequestId ? 'Relocation is blocked while reservation closure is pending'
+    : 'Reservation lifecycle changed; retry canonical relocation');
   return reservation;
 }
 

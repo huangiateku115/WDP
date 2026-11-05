@@ -1,29 +1,98 @@
-import {useStaffData} from '@/lib/staffDemoStore';
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ReceiptText } from 'lucide-react';
-import { useCustomerData, customerDemoEnabled, timestampLabel } from '@/lib/customerDemoStore';
-import { formatMoney } from '@/lib/booking';
-import { CustomerScreen, StatusBadge, EmptyState, Details, Select } from '@/components/common/CustomerScreen';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import {useManagerData,money} from '@/lib/managerDemoStore';
-export default function PaymentHistoryPage(){
- const operationsDemo=useStaffData();const facilityDemo=useManagerData(),[sharedReceipt,setSharedReceipt]=useState(null);
- const sharedRefunds=customerDemoEnabled?facilityDemo.refunds.filter(r=>r.customerId==='CUS-001'&&r.processingStatus==='COMPLETED'):[];
- const demoReceipt=sharedRefunds.find(r=>r.id===sharedReceipt);
- const data=useCustomerData();const [query,setQuery]=useState('');const [status,setStatus]=useState('All');const [params,setParams]=useSearchParams();
- const payments=useMemo(()=>{const saved=[];if(customerDemoEnabled){for(let index=0;index<sessionStorage.length;index++){const key=sessionStorage.key(index);if(!key?.startsWith('payment_'))continue;try{const payment=JSON.parse(sessionStorage.getItem(key));if(payment?.id)saved.push({...payment,reference:payment.reference||payment.id,rentalId:payment.rentalId||payment.reservationId,type:payment.type||'Reservation payment',date:payment.paidAt||payment.createdAt});}catch{/* Ignore malformed old demo payments. */}}}return [...saved,...data.payments.filter(payment=>!saved.some(savedPayment=>savedPayment.id===payment.id))];},[data.payments]);
- const filtered=payments.filter(payment=>(status==='All'||payment.status===status)&&[payment.id,payment.reference,payment.rentalId,payment.contract,payment.type].join(' ').toLowerCase().includes(query.toLowerCase()));
- const selected=payments.find(payment=>payment.id===params.get('receipt'));
- return <CustomerScreen notice={customerDemoEnabled?'Demo payment history: sample and browser records, separate from your real account payments. These receipts are not proof of a Backend transaction.':'Payment history is not connected to a confirmed Backend history API. No real transactions are loaded on this page.'} title="Payments & Receipts" description="Track your payment history, rental invoices and financial adjustments.">
-  <div className="grid gap-4 sm:grid-cols-[1fr_220px]"><Input aria-label="Search payments" placeholder="Search payment reference, rental or contract…" value={query} onChange={event=>setQuery(event.target.value)}/><Select label="Payment status" value={status} onChange={event=>setStatus(event.target.value)} options={['All','PAID','PENDING','FAILED','REFUNDED']}/></div>
-  {customerDemoEnabled&&<Card><CardContent><h2 className="text-xl font-bold">Facility demo refund receipts</h2><p className="mt-2 text-sm text-slate-500">Sample customer: Nguyen Van An. Receipts appear here after Facility Manager approval and Staff confirmation. These browser demo records are separate from your signed-in account.</p><div className="mt-4 flex flex-wrap gap-3">{sharedRefunds.map(r=><Button key={r.id} variant="outline" onClick={()=>setSharedReceipt(r.id)}>View demo refund receipt · {money(r.calculatedRefund)}</Button>)}{!sharedRefunds.length&&<p className="text-sm text-slate-500">No completed facility demo refund for this sample customer.</p>}</div>{demoReceipt&&<div className="mt-5"><Details values={[["Receipt",demoReceipt.receiptId],["Original payment",demoReceipt.paymentId],["Refund amount",money(demoReceipt.calculatedRefund)],["Transfer method",demoReceipt.transferMethod],["Reference",demoReceipt.reference],["Processed at",timestampLabel(demoReceipt.processedAt)],["Status",<StatusBadge status="REFUNDED"/>]]}/><p className="mt-4 text-sm text-slate-500">Demo receipt only. No funds were transferred.</p></div>}</CardContent></Card>}
-  {customerDemoEnabled&&<Card><CardContent><h2 className="text-xl font-bold">Iteration 3 facility demo adjustments</h2><p className="mt-2 text-sm text-slate-500">Sample customer Le Thu Ha (SCUS-003). This is a browser fixture preview, separate from your signed-in account.</p>{operationsDemo.charges.filter(c=>operationsDemo.rentals.some(r=>r.id===c.rentalId&&r.customerId==='SCUS-003')).map(c=><div className="mt-4" key={c.id}><b>{c.rentalId} � {money(c.amount)}</b><p>{c.reason} � {c.status}</p></div>)}{operationsDemo.notifications.filter(n=>n.customerId==='SCUS-003').map(n=><p className="mt-3" key={n.id}>{n.note}</p>)}</CardContent></Card>}
-  {selected&&<Card><CardContent><div className="flex flex-wrap items-center justify-between gap-4"><h2 className="text-xl font-bold"><ReceiptText className="mr-2 inline" size={22}/>{selected.status==='PAID'?'Payment receipt':'Payment details'}</h2><Button variant="ghost" onClick={()=>setParams({})}>Close detail</Button></div><div className="mt-5"><Details values={[["Reference",selected.reference],["Payment ID",selected.id],["Rental / reservation",selected.rentalId],["Contract",selected.contract||'Not provided'],["Payment type",selected.type],["Amount",`${formatMoney(selected.amount)} VND`],["Status",<StatusBadge status={selected.status}/>],["Payment date",timestampLabel(selected.date)],["Provider",selected.provider||'Not provided']]}/></div>{selected.status!=='PAID'&&<p className="mt-5 text-sm text-slate-500">A settled receipt is available only after payment is completed.</p>}</CardContent></Card>}
-  {params.has('receipt')&&!selected&&<EmptyState title="Payment not found" description="This receipt is not available in the current customer workspace."/>}
-  {filtered.length?<Card><div className="customer-table-scroll"><table className="customer-table"><caption className="sr-only">Customer payment history</caption><thead><tr>{['Reference / rental','Type','Amount','Status','Date','Provider','Detail'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{filtered.map(payment=><tr key={payment.id}><td><b>{payment.reference}</b><div className="mt-1 text-xs text-slate-500">{payment.rentalId}<br/>{payment.contract}</div></td><td>{payment.type}</td><td className="font-bold">{formatMoney(payment.amount)} VND</td><td><StatusBadge status={payment.status}/></td><td>{timestampLabel(payment.date)}</td><td>{payment.provider||'—'}</td><td><Button variant="outline" size="sm" onClick={()=>setParams({receipt:payment.id})}>{payment.status==='PAID'?'View receipt':'View detail'}</Button></td></tr>)}</tbody></table></div></Card>:<EmptyState title="No payments found" description="Try another search or status filter. Payment history will appear here when available."/>}
-  <Card><CardContent><h2 className="text-xl font-bold">Refunds & additional charges</h2><p className="mt-2 text-sm text-slate-500">Review adjustment status and any additional payment requirements.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{data.refunds.map(item=><Link className="soft-panel p-4" key={item.id} to={`/portal/refunds/${item.id}`}><b>{item.reference} · Refund</b><div className="mt-2 flex flex-wrap justify-between gap-2"><span>{formatMoney(item.amount)} VND</span><StatusBadge status={item.status}/></div></Link>)}{data.charges.map(item=><Link className="soft-panel p-4" key={item.id} to={`/portal/charges/${item.id}`}><b>{item.reference} · {item.type}</b><div className="mt-2 flex flex-wrap justify-between gap-2"><span>{formatMoney(item.amount)} VND</span><StatusBadge status={item.status}/></div></Link>)}</div>{!data.refunds.length&&!data.charges.length&&<p className="mt-4 text-sm text-slate-500">No financial adjustments to display.</p>}</CardContent></Card>
- </CustomerScreen>;
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import reservationApi from "@/api/reservationApi";
+import paymentApi from "@/api/paymentApi";
+import { useAuthSession, getAccessToken } from "@/lib/authSession";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { formatMoney } from "@/lib/booking";
+import { SELF_STORAGE, serviceType } from "@/lib/customerReservationService";
+import { BackendScreen, LoadState, Message, recordId, rows, useBackend } from "@/components/customer/RentalBackendUI";
+
+function ReservationHistory({ reservationId }) {
+  const session = useAuthSession();
+  const resource = useBackend(
+    () => paymentApi.listPayosPaymentsForReservation(reservationId),
+    [reservationId],
+  );
+  const [page, setPage] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setPage(null);
+    setError("");
+  }, [reservationId, session.accessToken]);
+
+  useEffect(() => {
+    if (!resource.data) return;
+    setPage(resource.data);
+  }, [resource.data]);
+
+  async function loadOlder() {
+    if (!page?.nextCursor || loadingMore) return;
+    const token = getAccessToken();
+    setLoadingMore(true);
+    setError("");
+    try {
+      const next = await paymentApi.listPayosPaymentsForReservation(reservationId, { cursor: page.nextCursor });
+      if (getAccessToken() !== token) return;
+      const ids = new Set(page.items.map((payment) => payment.id));
+      setPage({ items: [...page.items, ...next.items.filter((payment) => !ids.has(payment.id))], nextCursor: next.nextCursor });
+    } catch {
+      if (getAccessToken() === token) setError("Could not load older Backend payment records. Please retry.");
+    } finally {
+      if (getAccessToken() === token) setLoadingMore(false);
+    }
+  }
+
+  const payments = page?.items || [];
+  return (
+    <Card><CardContent>
+      <h2 className="text-xl font-bold">Backend PayOS history</h2>
+      <p className="mt-2 text-sm text-slate-600">These are payment records returned by the Backend, not bank receipts. Refund and adjustment history is unavailable here.</p>
+      <LoadState resource={resource} />
+      {error && <Message error={error} />}
+      {payments.length > 0 && <div className="mt-5 overflow-x-auto"><table className="customer-table w-full">
+        <caption className="sr-only">Backend PayOS payment history</caption>
+        <thead><tr><th>Payment ID</th><th>Purpose</th><th>Amount</th><th>Provider settlement</th><th>Reservation application</th><th>Created</th><th>Action</th></tr></thead>
+        <tbody>{payments.map((payment) => <tr key={payment.id}>
+          <td className="font-mono text-xs">{payment.id}</td>
+          <td>{payment.purpose}</td>
+          <td>{formatMoney(payment.amount)} {payment.currency}</td>
+          <td>{payment.providerSettlementStatus}</td>
+          <td>{payment.applicationStatus}</td>
+          <td>{new Date(payment.createdAt).toLocaleString()}</td>
+          <td><Link className="text-brand underline" to={`/portal/payments/${reservationId}`}>View status</Link></td>
+        </tr>)}</tbody>
+      </table></div>}
+      {!resource.loading && !resource.error && !payments.length && <p className="mt-5 text-sm text-slate-600">No PayOS payment records were returned for this Reservation.</p>}
+      {page?.nextCursor && <Button className="mt-5" variant="outline" disabled={loadingMore} onClick={loadOlder}>{loadingMore ? "Loading…" : "Load older records"}</Button>}
+    </CardContent></Card>
+  );
+}
+
+export default function PaymentHistoryPage() {
+  const session = useAuthSession();
+  const reservations = useBackend((config) => reservationApi.mineReal(config).then(rows));
+  const [selectedId, setSelectedId] = useState("");
+  const ownedSelfStorage = (reservations.data || []).filter((reservation) => serviceType(reservation) === SELF_STORAGE && recordId(reservation));
+
+  useEffect(() => { setSelectedId(""); }, [session.accessToken]);
+
+  return (
+    <BackendScreen title="Payment history" description="View PayOS payment records associated with a Reservation owned by your account." notice="Payment results are read from the Backend. Browser redirects and local storage are not settlement evidence.">
+      <LoadState resource={reservations} />
+      {!reservations.loading && !reservations.error && <label className="block max-w-xl text-sm font-medium">
+        Select a Self-Storage Reservation
+        <select className="customer-select mt-2 w-full" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
+          <option value="">Choose a Reservation</option>
+          {ownedSelfStorage.map((reservation) => <option key={recordId(reservation)} value={recordId(reservation)}>{reservation.reservationCode || recordId(reservation)} · {reservation.status}</option>)}
+        </select>
+      </label>}
+      {!reservations.loading && !reservations.error && !ownedSelfStorage.length && <p className="text-sm text-slate-600">No Self-Storage Reservations were returned for your account.</p>}
+      {selectedId && ownedSelfStorage.some((reservation) => recordId(reservation) === selectedId) && <ReservationHistory key={`${session.accessToken}:${selectedId}`} reservationId={selectedId} />}
+      <Card><CardContent><h2 className="text-lg font-semibold">Refunds and adjustments</h2><p className="mt-2 text-sm text-slate-600">Refund and adjustment records are unavailable because no confirmed Customer-owned API is connected to this page.</p></CardContent></Card>
+    </BackendScreen>
+  );
 }
