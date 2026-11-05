@@ -19,6 +19,18 @@ export enum PaymentProvider {
   MOCK = 'MOCK',
 }
 
+export enum PaymentApplicationStatus {
+  NOT_APPLIED = 'NOT_APPLIED',
+  APPLIED = 'APPLIED',
+  MANUAL_REVIEW = 'MANUAL_REVIEW',
+}
+
+/** Provider-verified funds receipt is recorded independently from Reservation application. */
+export enum ProviderSettlementStatus {
+  NOT_VERIFIED = 'NOT_VERIFIED',
+  VERIFIED = 'VERIFIED',
+}
+
 export interface IReservationPayment extends Document {
   reservationId: Types.ObjectId;
   customerId: Types.ObjectId;
@@ -30,6 +42,32 @@ export interface IReservationPayment extends Document {
   idempotencyKey: string;
   provider: PaymentProvider;
   providerReference?: string;
+  checkoutState?: 'NOT_CREATED' | 'CREATING' | 'READY' | 'UNKNOWN' | 'RECONCILIATION_REQUIRED';
+  checkoutUrl?: string;
+  qrCode?: string;
+  providerPaymentLinkId?: string;
+  providerCurrency?: string;
+  providerCaptures?: Array<{
+    eventHash: string;
+    reference: string;
+    amount: number;
+    currency: string;
+    transactionDateTime: string;
+    receivedAt: Date;
+  }>;
+  providerOutcomeEvents?: Array<{
+    eventHash: string;
+    code: string;
+    description: string;
+    reference: string;
+    amount: number;
+    currency: string;
+    paymentLinkId: string;
+    transactionDateTime: string;
+    receivedAt: Date;
+  }>;
+  providerSettlementStatus?: ProviderSettlementStatus;
+  applicationStatus?: PaymentApplicationStatus;
   status: PaymentStatus;
   succeededAt?: Date;
   failedAt?: Date;

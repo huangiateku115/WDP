@@ -39,6 +39,8 @@ export interface IReservation extends Document {
   usedCapacityM3?: number;
   /** Write token serializing inbound usage changes for this rental. */
   inventoryVersion?: number;
+  /** Active Managed Inventory closure request; absent while no closure is pending. */
+  activeClosureRequestId?: Types.ObjectId;
   managedPricingSnapshot?: Record<string, unknown>;
   paymentSimulation?: { simulated: boolean; provider: 'MOCK'; paidAt: Date; actorId: Types.ObjectId };
   balanceSettledAt?: Date;

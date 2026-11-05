@@ -8,6 +8,7 @@ const router = Router();
 const manage = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER]);
 router.post('/facilities/:facilityId/storage-units', requireAuth, manage, controller.createStorageUnit);
 router.get('/facilities/:facilityId/storage-units', requireAuth, controller.getStorageUnits);
+router.get('/storage-units/:id/availability', requireAuth, requireRole([UserRole.CUSTOMER]), controller.getUnitAvailability);
 router.get('/storage-units/:id', requireAuth, controller.getStorageUnitById);
 router.patch('/storage-units/:id', requireAuth, manage, controller.updateStorageUnit);
 router.patch('/storage-units/:id/status', requireAuth, manage, controller.updateStorageUnitStatus);

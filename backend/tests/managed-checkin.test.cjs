@@ -29,11 +29,21 @@ const reservationId = oid('507f1f77bcf86cd799439014');
 const itemId = oid('507f1f77bcf86cd799439015');
 const cellId = oid('507f1f77bcf86cd799439016');
 let evidenceRows = [], evidenceAttachCalls = 0, auditCalls = 0;
+let sessionReadOverlaps = 0;
+const activeSessionReads = new WeakMap();
 
 class Query {
   constructor(value) { this.value = value; }
-  session() { return this; } lean() { return this; } sort() { return this; } select() { return this; }
-  exec() { return Promise.resolve(this.value); }
+  session(session) { this.sessionRef = session; return this; } lean() { return this; } sort() { return this; } select() { return this; }
+  async exec() {
+    if (this.sessionRef) {
+      if (activeSessionReads.get(this.sessionRef)) sessionReadOverlaps += 1;
+      activeSessionReads.set(this.sessionRef, true);
+      await new Promise(resolve => setImmediate(resolve));
+      activeSessionReads.set(this.sessionRef, false);
+    }
+    return this.value;
+  }
 }
 function transaction(t, { serialize = false } = {}) {
   evidenceRows = []; evidenceAttachCalls = 0; auditCalls = 0;
@@ -227,6 +237,18 @@ test('returned rejected goods must be corrected and reinspected before contract 
   assert.equal(state.item.currentCellId, null);
   assert.equal(state.cells[0].usedWeightKg, 0);
   assert.equal(state.allocation.status, 'RESERVED');
+});
+
+test('Managed contract generation performs database reads sequentially on one transaction session', async t => {
+  transaction(t);
+  const state = fixtures(t);
+  state.item.receivingInspection = { decision: 'ACCEPTED', observedQuantity: 1,
+    inspectedAt: new Date('2026-01-01T00:00:00Z'), compatibleWithCellIds: [cellId] };
+  sessionReadOverlaps = 0;
+  await service.createOrRefreshContract(String(reservationId), {
+    _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId,
+  });
+  assert.equal(sessionReadOverlaps, 0, 'no overlapping DB query may use this transaction session');
 });
 
 test('one signature remains DRAFT; owner and same-Facility representative signing one hash completes the contract', async t => {

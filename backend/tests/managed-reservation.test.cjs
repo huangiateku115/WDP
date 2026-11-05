@@ -33,14 +33,24 @@ const oid = value => new mongoose.Types.ObjectId(value);
 const cellA = oid('507f1f77bcf86cd7994390d1');
 const cellB = oid('507f1f77bcf86cd7994390d2');
 const future = '2030-01-01T00:00:00.000Z';
+let sessionReadOverlaps = 0;
+const activeSessionReads = new WeakMap();
 const request = extra => ({ facilityId: String(fid), allocatedCapacityM3: 1.5, startDate: future, term: { value: 1, unit: 'MONTH' }, ...extra });
 const customer = { _id: cid, role: UserRole.CUSTOMER, assignedFacilityId: null };
 const manager = { _id: mid, role: UserRole.FACILITY_MANAGER, assignedFacilityId: fid };
 
 class Query {
   constructor(value) { this.value = value; }
-  session() { return this; } select() { return this; } limit() { return this; } lean() { return this; }
-  exec() { return Promise.resolve(this.value); }
+  session(session) { this.sessionRef = session; return this; } select() { return this; } limit() { return this; } lean() { return this; }
+  async exec() {
+    if (this.sessionRef) {
+      if (activeSessionReads.get(this.sessionRef)) sessionReadOverlaps += 1;
+      activeSessionReads.set(this.sessionRef, true);
+      await new Promise(resolve => setImmediate(resolve));
+      activeSessionReads.set(this.sessionRef, false);
+    }
+    return this.value;
+  }
 }
 function mockQuote(t, options = {}) {
   const cap = options.capacity ?? { _id: oid('507f1f77bcf86cd799439091'), facilityId: fid, sellableCapacityM3: 10, holdDurationMinutes: 30, bookingVersion: 1, isActive: true };
@@ -628,12 +638,14 @@ test('assigned Manager approval transitions once and atomically creates a single
   t.mock.method(Contract.prototype, 'save', async function () { contractCount++; return this; });
   t.mock.method(Reservation.prototype, 'save', async function () { return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+  sessionReadOverlaps = 0;
   const result = await service.approve(String(reservation._id), manager);
   assert.equal(result.reservation.status, 'CONTRACTED');
   assert.equal(result.contract.status, 'DRAFT');
   assert.equal(result.contract.reservationId.toString(), reservation._id.toString());
   assert.deepEqual(result.contract.pricingSnapshot, reservation.managedPricingSnapshot);
   assert.equal(contractCount, 1);
+  assert.equal(sessionReadOverlaps, 0, 'approval DB reads sharing one session must run sequentially');
 });
 
 test('cross-Facility Manager cannot approve a Managed reservation', async t => {
@@ -694,14 +706,25 @@ test('generic Reservation APIs remain self-storage-only for transitions and deta
 });
 
 test('Self Storage mock payment requires owner role and applies customer ownership filter', async t => {
-  process.env.NODE_ENV = 'development';
+  const oldEnv = process.env.NODE_ENV;
+  t.after(() => { if (oldEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldEnv; });
   const controller = require('../dist/controllers/reservations/reservation.controller');
-  let filterSeen;
-  t.mock.method(Reservation, 'findOneAndUpdate', async filter => { filterSeen = filter; return { _id: filter._id }; });
+  const filtersSeen = [];
+  t.mock.method(Reservation, 'findOneAndUpdate', async filter => { filtersSeen.push(filter); return { _id: filter._id }; });
   const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
-  await controller.mockPayReservation({ params: { id: 'r1' }, user: { _id: cid, role: UserRole.CUSTOMER } }, response);
-  assert.equal(String(filterSeen.customerId), String(cid));
-  assert.equal(filterSeen.serviceType, 'SELF_STORAGE');
+  for (const env of ['development', 'test']) {
+    process.env.NODE_ENV = env;
+    const allowedResponse = { ...response };
+    await controller.mockPayReservation({ params: { id: `r-${env}` }, user: { _id: cid, role: UserRole.CUSTOMER } }, allowedResponse);
+    assert.equal(allowedResponse.statusCode, 200, `NODE_ENV=${env}`);
+  }
+  assert.equal(filtersSeen.length, 2);
+  for (const filterSeen of filtersSeen) {
+    assert.equal(String(filterSeen.customerId), String(cid));
+    assert.equal(filterSeen.serviceType, 'SELF_STORAGE');
+    assert.equal(filterSeen.status, 'CONTRACTED');
+  }
+  process.env.NODE_ENV = 'development';
   const denied = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
   await controller.mockPayReservation({ params: { id: 'r2' }, user: { _id: mid, role: UserRole.FACILITY_MANAGER } }, denied);
   assert.equal(denied.statusCode, 403);

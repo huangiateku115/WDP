@@ -28,17 +28,24 @@ export function assertConfirmedRequest(config) {
   };
   const customerAllowed =
     (method === "GET" &&
-      /^(public\/facilities(\/[^/]+(\/(storage-options|pricing))?)?|facilities\/[^/]+\/storage-units|storage-units\/[^/]+|pricing-rules(\/resolve)?|policies(\/resolve)?|reservations\/(me|[^/]+)|contracts\/me|support-requests(\/[^/]+(\/messages)?)?)$/.test(
+        /^(public\/facilities(\/[^/]+(\/(storage-options|pricing))?)?|facilities\/[^/]+\/storage-units|storage-units\/[^/]+|pricing-rules(\/resolve)?|policies(\/resolve)?|reservations\/(me|[^/]+)|contracts\/me|support-requests(\/[^/]+(\/messages)?)?)$/.test(
         path,
       )) ||
+    (method === "GET" && /^storage-units\/[a-f\d]{24}\/availability$/i.test(path)) ||
     (method === "PUT" && path === "customers/me/profile") ||
     (method === "POST" &&
       (path === "reservations" ||
         path === "reservations/estimate" ||
+        /^reservations\/[a-f\d]{24}\/payments\/payos$/i.test(path) ||
         path === "support-requests" ||
         /^support-requests\/[^/]+\/messages$/.test(path) ||
-        path === "access/simulate-unlock" ||
-        /^reservations\/[^/]+\/mock-pay$/.test(path)));
+        path === "access/simulate-unlock"));
+  const customerPayosStatus =
+    method === "GET" &&
+    /^reservations\/[a-f\d]{24}\/payments\/[a-f\d]{24}$/i.test(path);
+  const customerPayosHistory =
+    method === "GET" &&
+    /^reservations\/[a-f\d]{24}\/payments\/payos(?:\?[^#]*)?$/i.test(path);
   const warehouseRead =
     method === "GET" &&
     (path === "warehouse-map" ||
@@ -49,15 +56,14 @@ export function assertConfirmedRequest(config) {
     (method === "GET" &&
       /^reservations\/managed\/(capacity\/)?[a-f\d]{24}$/i.test(path)) ||
     (method === "PATCH" &&
-      /^reservations\/managed\/[a-f\d]{24}\/cancel$/i.test(path)) ||
-    (method === "POST" &&
-      /^reservations\/managed\/[a-f\d]{24}\/mock-pay$/i.test(path));
+      /^reservations\/managed\/[a-f\d]{24}\/cancel$/i.test(path));
   const contractDetail =
     method === "GET" && /^contracts\/[a-f\d]{24}$/i.test(path);
   const contractByReservation =
     method === "GET" && /^contracts\/reservation\/[a-f\d]{24}$/i.test(path);
   const userFacilityAssignment =
-    (method === "PATCH" || method === "DELETE") && /^users\/[a-f\d]{24}\/facility-assignment$/i.test(path);
+    (method === "PATCH" || method === "DELETE") &&
+    /^users\/[a-f\d]{24}\/facility-assignment$/i.test(path);
   const inventoryCustomer =
     (method === "POST" &&
       (path === "inventory-items" ||
@@ -93,18 +99,28 @@ export function assertConfirmedRequest(config) {
       /^(maintenance-tickets|support-requests)\/[^/]+(\/status)?$/.test(path));
   const managedIntake =
     (method === "GET" && path === "inventory-items") ||
-    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(path)) ||
-    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(path)) ||
-    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/confirm-inbound$/i.test(path)) ||
+    (method === "GET" &&
+      /^inventory-items\/[a-f\d]{24}\/receiving-inspection\/context$/i.test(
+        path,
+      )) ||
+    (method === "POST" &&
+      /^inventory-items\/[a-f\d]{24}\/receiving-inspection(\/image-uploads)?$/i.test(
+        path,
+      )) ||
+    (method === "POST" &&
+      /^inventory-items\/[a-f\d]{24}\/confirm-inbound$/i.test(path)) ||
     (method === "POST" &&
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
       /^contracts\/[a-f\d]{24}\/sign\/facility$/i.test(path));
-  const selfStoragePayment = method === "POST" &&
+  const selfStoragePayment =
+    method === "POST" &&
     (/^reservations\/[a-f\d]{24}\/(deposit|balance)$/i.test(path) ||
       // Fail closed: these Backend callbacks have no verified environment gate.
       (false &&
-       /^reservations\/[a-f\d]{24}\/(deposit|balance)\/mock-confirm$/i.test(path)));
+        /^reservations\/[a-f\d]{24}\/(deposit|balance)\/mock-confirm$/i.test(
+          path,
+        )));
   const customerBalance =
     method === "POST" &&
     /^reservations\/managed\/[a-f\d]{24}\/balance$/i.test(path);
@@ -127,12 +143,18 @@ export function assertConfirmedRequest(config) {
   // feature-gate, Idempotency-Key and If-Match enforcement.
   const customerInventoryRequests =
     (["GET", "POST"].includes(method) &&
-      /^inventory-items\/[a-f\d]{24}\/(inbound-requests|outbound-requests)$/i.test(path)) ||
-    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/stock-balance$/i.test(path)) ||
-    (["GET", "PATCH"].includes(method) && /^inbound-requests\/[a-f\d]{24}$/i.test(path)) ||
-    (method === "POST" && /^inbound-requests\/[a-f\d]{24}\/cancel$/i.test(path)) ||
+      /^inventory-items\/[a-f\d]{24}\/(inbound-requests|outbound-requests)$/i.test(
+        path,
+      )) ||
+    (method === "GET" &&
+      /^inventory-items\/[a-f\d]{24}\/stock-balance$/i.test(path)) ||
+    (["GET", "PATCH"].includes(method) &&
+      /^inbound-requests\/[a-f\d]{24}$/i.test(path)) ||
+    (method === "POST" &&
+      /^inbound-requests\/[a-f\d]{24}\/cancel$/i.test(path)) ||
     (method === "GET" && /^outbound-requests\/[a-f\d]{24}$/i.test(path)) ||
-    (method === "POST" && /^outbound-requests\/[a-f\d]{24}\/cancel$/i.test(path));
+    (method === "POST" &&
+      /^outbound-requests\/[a-f\d]{24}\/cancel$/i.test(path));
   const bomAdminResource =
     (method === "GET" &&
       (/^facilities(\/[^/]+)?$/.test(path) ||
@@ -143,7 +165,9 @@ export function assertConfirmedRequest(config) {
         /^racks(\/[^/]+)?$/.test(path) ||
         /^rack-cells(\/[^/]+)?$/.test(path) ||
         /^reservations\/managed\/capacity\/[^/]+$/.test(path) ||
-        /^audit\/(admin|bom)\/(login-history|audit-logs)\/[^/]+$/.test(path))) ||
+        /^audit\/(admin|bom)\/(login-history|audit-logs)\/[^/]+$/.test(
+          path,
+        ))) ||
     (method === "POST" &&
       (/^facilities$/.test(path) ||
         /^facilities\/[^/]+\/(restore|storage-units)$/.test(path) ||
@@ -163,7 +187,9 @@ export function assertConfirmedRequest(config) {
         /^policies\/[^/]+(\/status)?$/.test(path) ||
         /^storage-units\/[^/]+(\/status)?$/.test(path) ||
         /^users\/[^/]+\/reactivate$/.test(path) ||
-        /^(maintenance-tickets|support-requests)\/[^/]+\/status$/.test(path))) ||
+        /^(maintenance-tickets|support-requests)\/[^/]+\/status$/.test(
+          path,
+        ))) ||
     (method === "DELETE" &&
       (/^facilities\/[^/]+$/.test(path) ||
         /^storage-units\/[^/]+$/.test(path)));
@@ -184,8 +210,7 @@ export function assertConfirmedRequest(config) {
         /^racks\/[^/]+$/.test(path) ||
         /^rack-cells\/[^/]+$/.test(path))) ||
     (method === "DELETE" &&
-      (/^warehouse-zones\/[^/]+$/.test(path) ||
-        /^racks\/[^/]+$/.test(path)));
+      (/^warehouse-zones\/[^/]+$/.test(path) || /^racks\/[^/]+$/.test(path)));
   const bomCapacityAdmin =
     (method === "PUT" &&
       /^reservations\/managed\/capacity\/[^/]+$/i.test(path)) ||
@@ -208,11 +233,16 @@ export function assertConfirmedRequest(config) {
     (/^inventory-items\/[^/]+$/.test(path) ||
       /^inventory-items\/[^/]+\/movements$/.test(path));
   const facilityHandover =
-    (method === 'GET' && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
-    (method === 'POST' && /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(path));
+    (method === "GET" && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
+    (method === "POST" &&
+      /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(
+        path,
+      ));
   const allowed =
     customerInventoryRequests ||
     facilityHandover ||
+    customerPayosHistory ||
+    customerPayosStatus ||
     bomInventoryRead ||
     bomReservationAdmin ||
     bomStorageUnitWrite ||
@@ -226,7 +256,8 @@ export function assertConfirmedRequest(config) {
     depositMock ||
     balanceMock ||
     customerDeposit ||
-    customerBalance || selfStoragePayment ||
+    customerBalance ||
+    selfStoragePayment ||
     managedIntake ||
     deskAllowed ||
     inspectionAllowed ||

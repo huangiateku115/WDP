@@ -8,10 +8,4 @@ export default {
   create:(payload,config)=>client.post('/reservations/managed',managedCreateRequest(payload),config),
   detail:(reservationId,config)=>client.get(`/reservations/managed/${id(reservationId)}`,config),
   cancel:reservationId=>client.patch(`/reservations/managed/${id(reservationId)}/cancel`),
-  mockPay:reservationId=>client.post(`/reservations/managed/${id(reservationId)}/mock-pay`),
-  initiateDeposit:(reservationId,{idempotencyKey},config)=>client.post(`/reservations/managed/${id(reservationId)}/deposit`,{idempotencyKey},config),
-  confirmMockDeposit:(reservationId,{idempotencyKey},config)=>{
-    if(import.meta.env.DEV!==true||import.meta.env.VITE_ENABLE_MANAGED_DEPOSIT_MOCK!=='true')throw Error('Deposit mock confirmation requires development and explicit frontend opt-in.');
-    return client.post(`/reservations/managed/${id(reservationId)}/deposit/mock-confirm`,{idempotencyKey},config);
-  },
 };

@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 mongoose.set('bufferCommands', false);
 const Model = require('../dist/models/storage-units/storage-unit.model').default;
 const Facility = require('../dist/models/facilities/facility.model').default;
+const Reservation = require('../dist/models/reservations/reservation.model').default;
 const { StorageUnitService: service } = require('../dist/services/storage-units/storage-unit.service');
 const { parseList, parseUnit } = require('../dist/services/storage-units/storage-unit.validation');
 const facilityId = '507f1f77bcf86cd799439011', otherId = '507f1f77bcf86cd799439012';
@@ -135,6 +136,50 @@ test('get by ID and not found/invalid IDs', async t => {
   t.mock.method(Model, 'findOne', () => query(null));
   await assert.rejects(() => service.getStorageUnitById(id, admin), { status: 404 });
   await assert.rejects(() => service.updateStorageUnit(id, { description: 'x' }, admin), { status: 404 });
+});
+
+test('customer availability calendar returns bounded private intervals and checks the whole requested range', async t => {
+  mockParent(t);
+  t.mock.method(Model, 'findOne', () => query(document({ status: 'OCCUPIED' })));
+  const calls = [];
+  const busy = [{ startDate: new Date('2026-11-10T00:00:00.000Z'), endDate: new Date('2026-11-15T00:00:00.000Z') }];
+  t.mock.method(Reservation, 'find', filter => {
+    calls.push(filter);
+    return {
+      select(fields) { assert.equal(fields, 'startDate endDate'); return this; },
+      sort(value) { assert.deepEqual(value, { startDate: 1, _id: 1 }); return this; },
+      limit(value) { assert.equal(value, 501); return this; },
+      lean() { return this; },
+      exec: async () => busy,
+    };
+  });
+  const result = await service.getUnitAvailability(id, {
+    month: '2026-11', startDate: '2026-11-01', endDate: '2026-12-01',
+  }, customer);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].storageUnitId.toString(), id);
+  assert.equal(calls[0].facilityId.toString(), facilityId);
+  assert.equal(calls[0].serviceType, 'SELF_STORAGE');
+  assert.deepEqual(result.intervals, [{ startDate: '2026-11-10T00:00:00.000Z', endDate: '2026-11-15T00:00:00.000Z' }]);
+  assert.equal(result.availabilityState, 'VERIFIED');
+  assert.equal(result.rangeAvailability, 'CONFLICT');
+  assert.deepEqual(Object.keys(result.intervals[0]).sort(), ['endDate', 'startDate']);
+  assert.equal(result.requestedRange.startDate, '2026-11-01T00:00:00.000Z');
+  assert.ok(result.evaluatedAt);
+});
+
+test('availability rejects malformed ranges and fails closed when bounded query is exceeded', async t => {
+  mockParent(t);
+  t.mock.method(Model, 'findOne', () => query(document()));
+  await assert.rejects(service.getUnitAvailability(id, { month: '2026-13' }, customer), { status: 400 });
+  await assert.rejects(service.getUnitAvailability(id, { month: '2026-11', startDate: '2026-11-02' }, customer), { status: 400 });
+  t.mock.method(Reservation, 'find', () => ({
+    select() { return this; }, sort() { return this; }, limit() { return this; }, lean() { return this; },
+    exec: async () => Array.from({ length: 501 }, () => ({ startDate: new Date('2026-11-01'), endDate: new Date('2026-11-02') })),
+  }));
+  const result = await service.getUnitAvailability(id, { month: '2026-11' }, customer);
+  assert.equal(result.availabilityState, 'UNKNOWN');
+  assert.deepEqual(result.intervals, []);
 });
 
 test('list scopes query to facility and applies status/size/pagination/literal search', async t => {

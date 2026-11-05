@@ -247,15 +247,45 @@ async function preflightItem(itemId: Types.ObjectId, customerId: Types.ObjectId)
   return { itemId, reservationId: item.managedReservationId, facilityId: item.facilityId, customerId };
 }
 
+async function lockItemForRequest(scope: Scope, session: ClientSession) {
+  const item = await InventoryItemModel.findOne({ _id: scope.itemId, customerId: scope.customerId,
+    managedReservationId: scope.reservationId, facilityId: scope.facilityId,
+    status: { $in: ['IN_STORAGE', 'CHECKED_OUT'] }, ...live } as any).select('_id __v').session(session).lean().exec() as any;
+  if (!item) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Item changed or is not eligible for a repeated receipt request');
+  const versionFilter = Number.isSafeInteger(item.__v) ? { __v: item.__v } : { __v: { $exists: false } };
+  const locked = await InventoryItemModel.findOneAndUpdate({ _id: scope.itemId, customerId: scope.customerId,
+    managedReservationId: scope.reservationId, facilityId: scope.facilityId,
+    status: { $in: ['IN_STORAGE', 'CHECKED_OUT'] }, ...versionFilter, ...live } as any,
+  { $inc: { __v: 1 } }, { new: true, session }).exec();
+  if (!locked) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_VERSION_CONFLICT, 'Item changed concurrently; reload and retry');
+  return locked;
+}
+
+async function lockReservationFence(scope: Scope, session: ClientSession, options: { now?: Date; rejectClosure: boolean }) {
+  const identity = { _id: scope.reservationId, customerId: scope.customerId, facilityId: scope.facilityId,
+    serviceType: FacilityServiceType.MANAGED_INVENTORY };
+  const current = await ReservationModel.findOne(identity as any).session(session).exec() as any;
+  if (!current) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Managed reservation is missing or outside Item scope');
+  if (options.rejectClosure && current.activeClosureRequestId) {
+    return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Inbound changes are blocked while reservation closure is pending');
+  }
+  if (options.now && (current.status !== ReservationStatus.ACTIVE || current.startDate > options.now || current.endDate <= options.now)) {
+    return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'An in-term ACTIVE Managed Inventory reservation is required');
+  }
+  const observedVersion = Number(current.inventoryVersion ?? 0);
+  const versionFilter = observedVersion === 0
+    ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: observedVersion };
+  const locked = await ReservationModel.findOneAndUpdate({ ...identity, ...versionFilter,
+    ...(options.now ? { status: ReservationStatus.ACTIVE, startDate: { $lte: options.now }, endDate: { $gt: options.now } } : {}),
+    ...(options.rejectClosure ? { activeClosureRequestId: null } : {}) } as any,
+  { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec() as any;
+  if (!locked) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_VERSION_CONFLICT, 'Reservation lifecycle changed concurrently; reload and retry');
+  return locked;
+}
+
 async function lockActiveReservation(scope: Scope, session: ClientSession, now: Date) {
-  // This is deliberately the first database operation in CREATE/AMEND transactions.
-  const reservation = await ReservationModel.findOneAndUpdate({
-    _id: scope.reservationId, customerId: scope.customerId, facilityId: scope.facilityId,
-    serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE,
-    startDate: { $lte: now }, endDate: { $gt: now },
-  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
-  if (!reservation) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'An in-term ACTIVE Managed Inventory reservation is required');
-  return reservation;
+  return lockReservationFence(scope, session, { now, rejectClosure: true });
 }
 
 async function assertCurrentItemAndStock(scope: Scope, session: ClientSession) {
@@ -328,12 +358,7 @@ export class ManagedInboundRequestService {
     if (unresolved) fail(409, ManagedStockErrorCode.INBOUND_REQUEST_UNRESOLVED_EXISTS, 'An unresolved receipt request already exists for this Item');
     try {
       return await withTransaction(async session => {
-        const itemToken = await InventoryItemModel.findOneAndUpdate({
-          _id: scope.itemId, customerId: scope.customerId, managedReservationId: scope.reservationId,
-          facilityId: scope.facilityId, status: { $in: ['IN_STORAGE', 'CHECKED_OUT'] }, ...live,
-        } as any, { $inc: { __v: 1 } }, { new: true, session }).exec();
-        if (!itemToken) fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE,
-          'Item changed or is not eligible for a repeated receipt request');
+        await lockItemForRequest(scope, session);
         const reservation = await lockActiveReservation(scope, session, new Date());
         const scopeInTxn: Scope = { ...scope, reservationId: reservation._id };
         const { item } = await assertCurrentItemAndStock(scopeInTxn, session);
@@ -405,6 +430,7 @@ export class ManagedInboundRequestService {
     const scope: Scope = { itemId: current.itemId, reservationId: current.reservationId, facilityId: current.facilityId, customerId: actor._id };
     try {
       return await withTransaction(async session => {
+        await lockItemForRequest(scope, session);
         await lockActiveReservation(scope, session, new Date());
         const item = await InventoryItemModel.findOne({ _id: scope.itemId, customerId: actor._id,
           managedReservationId: scope.reservationId, facilityId: scope.facilityId, ...live }).session(session).exec();
@@ -452,8 +478,16 @@ export class ManagedInboundRequestService {
     const replayScope = { scopeType: ScopeType.REQUEST, scopeId: requestId };
     const existing = await findReplay(replayScope.scopeType, requestId, Operation.CANCEL, key, actor._id);
     if (existing) return sameHash(existing, payloadHash);
+    const current = await InventoryInboundRequestModel.findOne({ _id: requestId, customerId: actor._id })
+      .select('itemId reservationId facilityId').lean().exec();
+    if (!current) return fail(404, ManagedStockErrorCode.INBOUND_REQUEST_NOT_FOUND, 'Receipt request not found');
+    const scope: Scope = { itemId: current.itemId, reservationId: current.reservationId, facilityId: current.facilityId, customerId: actor._id };
     try {
       return await withTransaction(async session => {
+        await lockItemForRequest(scope, session);
+        // Cancellation is a safe resolution path even after expiry or while a
+        // closure marker exists, but it still serializes on the same Reservation fence.
+        await lockReservationFence(scope, session, { rejectClosure: false });
         const eventFound = await findReplay(ScopeType.REQUEST, requestId, Operation.CANCEL, key, actor._id, session);
         if (eventFound) throw new ReplayAbort(sameHash(eventFound, payloadHash));
         const request = await InventoryInboundRequestModel.findOne({ _id: requestId, customerId: actor._id }).session(session).exec();

@@ -78,6 +78,7 @@ function setup(t, options = {}) {
     quantity: 900, quantityUnit: 'box', unitWeightKg: 999, unitDimensionsM: { widthM: 9, depthM: 9, heightM: 9 },
     status: options.status ?? 'IN_STORAGE', currentCellId: options.currentCellId === null ? null : oid(ids.cell),
     currentPlacementMovementId: null, outboundMovementId: options.outboundMovementId ? oid(ids.movementOut) : null,
+    __v: 0,
   };
   const inbound = movement();
   const outbound = movement('OUTBOUND', { _id: oid(ids.movementOut), sourceCellId: oid(ids.cell), destinationCellId: null,
@@ -86,7 +87,8 @@ function setup(t, options = {}) {
     requests: [], events: [], transactionOps: [], reservationCalls: 0,
     reservation: { _id: oid(ids.reservation), customerId: oid(ids.customer), facilityId: oid(ids.facility),
       serviceType: 'MANAGED_INVENTORY', status: options.reservationStatus ?? 'ACTIVE',
-      startDate: new Date('2026-10-01T00:00:00Z'), endDate: new Date('2026-12-01T00:00:00Z'), inventoryVersion: 0 },
+      startDate: new Date('2026-10-01T00:00:00Z'), endDate: new Date('2026-12-01T00:00:00Z'), inventoryVersion: 0,
+      activeClosureRequestId: options.closureMarker ? oid('507f1f77bcf86cd799439011') : null },
     item, movements: options.movements ?? (options.status === 'CHECKED_OUT' ? [inbound, outbound] : [inbound]),
   };
   t.mock.method(mongoose, 'startSession', async () => session);
@@ -94,7 +96,8 @@ function setup(t, options = {}) {
     state.transactionOps.push(filter && filter.managedReservationId ? 'Item.read' : 'Item.preflight');
     const plain = { _id: item._id, customerId: item.customerId, facilityId: item.facilityId,
       managedReservationId: item.managedReservationId, quantityUnit: item.quantityUnit };
-    return new Query(options.wrongOwner || (filter.customerId && !oid(filter.customerId).equals(item.customerId)) ? null :
+    const disallowedStatus = filter.status?.$in && options.status && !filter.status.$in.includes(options.status);
+    return new Query(options.wrongOwner || disallowedStatus || (filter.customerId && !oid(filter.customerId).equals(item.customerId)) ? null :
       (filter.managedReservationId ? item : plain));
   });
   t.mock.method(Item, 'findOneAndUpdate', (filter, update, config) => {
@@ -103,16 +106,19 @@ function setup(t, options = {}) {
     assert.equal(String(filter.managedReservationId), ids.reservation); assert.equal(String(filter.facilityId), ids.facility);
     assert.deepEqual(filter.status.$in, ['IN_STORAGE', 'CHECKED_OUT']);
     assert.equal(update.$inc.__v, 1); assert.equal(config.session, session);
-    return new Query(options.status && !filter.status.$in.includes(options.status) ? null : item);
+    const ineligible = options.status && !filter.status.$in.includes(options.status);
+    if (!ineligible) item.__v = (item.__v ?? 0) + (update.$inc?.__v ?? 0);
+    return new Query(ineligible ? null : item);
   });
+  t.mock.method(Reservation, 'findOne', () => new Query(state.reservation));
   t.mock.method(Reservation, 'findOneAndUpdate', (filter, update, config) => {
     state.reservationCalls += 1;
     state.transactionOps.push('Reservation.token');
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
-    assert.equal(filter.status, 'ACTIVE');
-    assert.ok(filter.startDate.$lte instanceof Date); assert.ok(filter.endDate.$gt instanceof Date);
+    if (filter.status) { assert.equal(filter.status, 'ACTIVE'); assert.ok(filter.startDate.$lte instanceof Date); assert.ok(filter.endDate.$gt instanceof Date); }
+    if (filter.activeClosureRequestId !== undefined) assert.equal(filter.activeClosureRequestId, null);
     assert.equal(update.$inc.inventoryVersion, 1); assert.equal(config.session, session);
-    if (options.reservationStatus !== undefined && options.reservationStatus !== 'ACTIVE') return new Query(null);
+    if (options.reservationStatus !== undefined && filter.status && options.reservationStatus !== 'ACTIVE') return new Query(null);
     state.reservation.inventoryVersion += 1;
     return new Query(state.reservation);
   });
@@ -167,7 +173,7 @@ test('CREATE acquires the conditional Item token before Reservation, then persis
   assert.equal(dto.state, 'PENDING_INSPECTION'); assert.equal(dto.version, 0);
   assert.equal(ctx.state.requests.length, 1); assert.equal(ctx.state.events.length, 1);
   assert.equal(ctx.state.events[0].resultingVersion, dto.version);
-  assert.deepEqual(ctx.state.transactionOps.slice(0, 3), ['Item.token', 'Reservation.token', 'Item.read']);
+  assert.deepEqual(ctx.state.transactionOps.slice(0, 4), ['Item.read', 'Item.token', 'Reservation.token', 'Item.read']);
   assert.equal(ctx.state.reservation.inventoryVersion, 1);
 });
 
@@ -211,8 +217,18 @@ test('CREATE accepts positive reconciled IN_STORAGE stock and rejects CHECKED_OU
 test('CREATE refuses PENDING_OUTBOUND and other ineligible Item states before Reservation token', async t => {
   const pending = setup(t, { status: 'PENDING_OUTBOUND' });
   await assert.rejects(service.create(ids.item, payload(), 'receipt-pending-outbound', pending.customer), { code: 'INBOUND_REQUEST_INELIGIBLE' });
-  assert.deepEqual(pending.state.transactionOps.slice(0, 1), ['Item.token']);
+  assert.deepEqual(pending.state.transactionOps.slice(0, 1), ['Item.read']);
   assert.equal(pending.state.reservationCalls, 0);
+});
+
+test('CREATE and AMEND fail closed on an active closure marker, while safe CANCEL still uses the shared fence', async t => {
+  const ctx = setup(t);
+  const created = await service.create(ids.item, payload(), 'receipt-closure-create', ctx.customer);
+  ctx.state.reservation.activeClosureRequestId = oid('507f1f77bcf86cd799439011');
+  await assert.rejects(service.amend(created.data._id, { requestedQuantity: 4 }, '"0"', 'receipt-closure-amend', ctx.customer), { code: 'INBOUND_REQUEST_INELIGIBLE' });
+  const cancelled = await service.cancel(created.data._id, '"0"', 'receipt-closure-cancel', ctx.customer);
+  assert.equal(cancelled.state, 'CANCELLED');
+  await assert.rejects(service.create(ids.item, payload(), 'receipt-closure-create-2', ctx.customer), { code: 'INBOUND_REQUEST_INELIGIBLE' });
 });
 
 test('CREATE and PATCH reject malformed nested dimensions without stripping fields', async t => {
@@ -296,6 +312,7 @@ test('AMEND uses partial payload, If-Match CAS and operation-scoped replay event
   const created = await service.create(ids.item, payload(), 'receipt-create-0011', ctx.customer);
   const amended = await service.amend(created.data._id, { requestedQuantity: 5 }, '"0"', 'receipt-amend-0001', ctx.customer);
   assert.equal(amended.requestedQuantity, 5); assert.equal(amended.version, 1);
+  assert.deepEqual(ctx.state.transactionOps.slice(0, 3), ['Item.read', 'Item.token', 'Reservation.token']);
   assert.equal(ctx.state.events[1].resultingVersion, 1);
   assert.equal((await service.amend(created.data._id, { requestedQuantity: 5 }, '"0"', 'receipt-amend-0001', ctx.customer)).version, 1);
   await assert.rejects(service.amend(created.data._id, { requestedQuantity: 6 }, '"0"', 'receipt-amend-0001', ctx.customer), { code: 'INBOUND_REQUEST_IDEMPOTENCY_CONFLICT' });
@@ -310,13 +327,13 @@ test('AMEND refuses inspection history, custody, wrong owner, and inactive renta
   await assert.rejects(service.get(created.data._id, ctx.otherCustomer), { status: 404 });
 });
 
-test('CANCEL is owner/version scoped and remains available after rental expiry without Reservation lock', async t => {
+test('CANCEL is owner/version scoped and remains available after rental expiry under Item then Reservation fence', async t => {
   const ctx = setup(t);
   const created = await service.create(ids.item, payload(), 'receipt-create-0013', ctx.customer);
   ctx.state.reservation.status = 'CLOSED';
   const cancelled = await service.cancel(created.data._id, '"0"', 'receipt-cancel-0001', ctx.customer);
   assert.equal(cancelled.state, 'CANCELLED'); assert.equal(cancelled.version, 1);
-  assert.equal(ctx.state.reservationCalls, 1, 'only CREATE acquired the reservation token');
+  assert.equal(ctx.state.reservationCalls, 2, 'CREATE and safe CANCEL both acquire the Reservation fence');
   assert.equal(ctx.state.events.at(-1).resultingVersion, 1);
 });
 

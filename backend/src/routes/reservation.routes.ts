@@ -5,6 +5,7 @@ import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
 import * as ManagedReservationController from '../controllers/reservations/managed-reservation.controller';
 import * as ManagedCheckinController from '../controllers/reservations/managed-checkin.controller';
+import * as PayosPaymentController from '../controllers/payments/payos-payment.controller';
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.post('/managed/quote', requireRole([UserRole.CUSTOMER]), ManagedReservati
 router.post('/managed', requireRole([UserRole.CUSTOMER]), ManagedReservationController.create);
 router.get('/managed/capacity/:facilityId', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.getCapacity);
 router.put('/managed/capacity/:facilityId', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.configureCapacity);
+router.get('/managed/:id/closure-readiness', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.getClosureReadiness);
 router.get('/managed/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.get);
 router.patch('/managed/:id/approve', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.approve);
 router.patch('/managed/:id/reject', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.reject);
@@ -32,6 +34,10 @@ router.post('/managed/:id/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.AD
 router.patch('/managed/:id/activate', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.activate);
 
 // Customer Routes
+router.post('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);
+// Keep this literal route before /:paymentId so "payos" is not treated as an ID.
+router.get('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.listSelfStoragePayments);
+router.get('/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]), PayosPaymentController.getSelfStoragePaymentStatus);
 router.post('/', requireRole([UserRole.CUSTOMER]), ReservationController.createReservation);
 router.get('/me', requireRole([UserRole.CUSTOMER]), ReservationController.getMyReservations);
 router.patch('/:id/cancel', requireRole([UserRole.CUSTOMER]), ReservationController.cancelReservation);

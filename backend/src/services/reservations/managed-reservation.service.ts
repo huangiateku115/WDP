@@ -427,11 +427,10 @@ export class ManagedReservationService {
       const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, status: ReservationStatus.RESERVED, expiresAt: { $gt: new Date() } }).session(session).exec();
       if (!reservation) fail(409, 'Managed reservation is missing, expired or not RESERVED');
       assertFacilityScope(actor, reservation.facilityId);
-      const [facility, profile, user] = await Promise.all([
-        FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).session(session).exec(),
-        CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec(),
-        UserModel.findById(reservation.customerId).session(session).exec(),
-      ]);
+      const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).session(session).exec();
+      const profile = await CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec();
+      const user = await UserModel.findById(reservation.customerId).session(session).exec();
       if (!facility || !profile || profile.verificationStatus !== VerificationStatus.VERIFIED) fail(409, 'Verified customer and active Managed Facility are required');
       if (await ContractModel.exists({ reservationId }).session(session).exec()) fail(409, 'Contract already exists for this reservation');
       reservation.status = ReservationStatus.CONTRACTED; reservation.approvedBy = actor._id; reservation.approvedAt = new Date();

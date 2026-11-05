@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IReservationPayment, PaymentProvider, PaymentPurpose, PaymentStatus } from '../../types/payment.type';
+import { IReservationPayment, PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { FacilityServiceType } from '../../types/facility.type';
 
 const reservationPaymentSchema = new Schema<IReservationPayment>({
@@ -13,6 +13,36 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   idempotencyKey: { type: String, required: true, minlength: 1, maxlength: 160, immutable: true },
   provider: { type: String, enum: Object.values(PaymentProvider), required: true, immutable: true },
   providerReference: { type: String, maxlength: 200, immutable: true },
+  // For PAYOS this immutable, already-uniquely-indexed value is the local orderCode.
+  checkoutState: { type: String, enum: ['NOT_CREATED', 'CREATING', 'READY', 'UNKNOWN', 'RECONCILIATION_REQUIRED'] },
+  checkoutUrl: { type: String, maxlength: 2048 },
+  // Raw provider-generated EMV QR payload. It is never synthesized by WDP.
+  qrCode: { type: String, maxlength: 4096, match: /^000201[\x20-\x7E]+$/ },
+  providerPaymentLinkId: { type: String, maxlength: 200 },
+  providerCurrency: { type: String, maxlength: 3 },
+  providerCaptures: [{
+    _id: false,
+    eventHash: { type: String, required: true, maxlength: 64 },
+    reference: { type: String, required: true, maxlength: 200 },
+    amount: { type: Number, required: true, min: 0 },
+    currency: { type: String, required: true, maxlength: 3 },
+    transactionDateTime: { type: String, required: true, maxlength: 64 },
+    receivedAt: { type: Date, required: true },
+  }],
+  providerOutcomeEvents: [{
+    _id: false,
+    eventHash: { type: String, required: true, maxlength: 64 },
+    code: { type: String, required: true, maxlength: 32 },
+    description: { type: String, required: true, maxlength: 500 },
+    reference: { type: String, required: true, maxlength: 200 },
+    amount: { type: Number, required: true, min: 0 },
+    currency: { type: String, required: true, maxlength: 3 },
+    paymentLinkId: { type: String, required: true, maxlength: 200 },
+    transactionDateTime: { type: String, required: true, maxlength: 64 },
+    receivedAt: { type: Date, required: true },
+  }],
+  providerSettlementStatus: { type: String, enum: Object.values(ProviderSettlementStatus), default: ProviderSettlementStatus.NOT_VERIFIED },
+  applicationStatus: { type: String, enum: Object.values(PaymentApplicationStatus) },
   status: { type: String, enum: Object.values(PaymentStatus), required: true, default: PaymentStatus.PENDING },
   succeededAt: { type: Date },
   failedAt: { type: Date },
