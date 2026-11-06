@@ -270,7 +270,7 @@ function Detail({ id }) {
                   values={[
                     ["Item name", item.name],
                     ["Category", item.category],
-                    ["Quantity", `${item.quantity} ${item.quantityUnit}`],
+                    ["Registered quantity (metadata)", `${item.quantity} ${item.quantityUnit}`],
                     ["Unit weight (kg)", item.unitWeightKg],
                     ["Width (m)", item.unitDimensionsM?.widthM],
                     ["Depth (m)", item.unitDimensionsM?.depthM],
@@ -317,6 +317,7 @@ function Detail({ id }) {
                 View Movement History
               </Link>
             </Button>
+            {['IN_STORAGE','CHECKED_OUT'].includes(item.status)&&<Button asChild variant="outline"><Link to={`/portal/inventory/${id}/outbound`}>Outbound requests</Link></Button>}
             </div>
             <div className="inventory-action-group flex flex-wrap gap-2">
             {rental?.bookingFlowVersion === 2 && (
@@ -372,15 +373,15 @@ function Detail({ id }) {
             Registration does not confirm physical stock. For Managed V2,
             Request Inbound sends the item to Staff for receiving inspection.
           </p>
+          <CanonicalCustomerOutbound
+            item={item}
+            rental={rental}
+            loading={resource.loading || !!resource.error || rentals.loading}
+            onRefresh={refresh}
+          />
+          {item.managedReservationId && ['IN_STORAGE', 'CHECKED_OUT'].includes(item.status) && <RepeatedInboundRequests item={item} rental={rental} loading={rentals.loading||!!rentals.error}/>}
         </>
       )}
-      <CanonicalCustomerOutbound
-        item={item}
-        rental={rental}
-        loading={resource.loading || !!resource.error || rentals.loading}
-        onRefresh={refresh}
-      />
-          {item.managedReservationId && ['IN_STORAGE', 'CHECKED_OUT'].includes(item.status) && <RepeatedInboundRequests item={item}/>}
     </CustomerScreen>
   );
 }

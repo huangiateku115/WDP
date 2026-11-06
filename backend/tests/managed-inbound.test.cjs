@@ -74,11 +74,14 @@ function mockRequest(t, overrides = {}) {
   };
   t.mock.method(Reservation, 'findOne', () => new Query(reservation));
   t.mock.method(Reservation, 'findOneAndUpdate', (filter, update, options) => {
-    assert.equal(filter.$or[0].status, 'ACTIVE');
-    assert.equal(filter.$or[1].status, 'DEPOSIT_PAID'); assert.equal(filter.$or[1].bookingFlowVersion, 2); assert.ok(filter.$or[1].endDate.$gt instanceof Date);
-    assert.ok(filter.$or[0].startDate.$lte instanceof Date);
-    assert.ok(filter.$or[0].endDate.$gt instanceof Date);
+    assert.equal(filter.activeClosureRequestId, null);
+    const eligibility = filter.$and[0].$or;
+    assert.equal(eligibility[0].status, 'ACTIVE');
+    assert.equal(eligibility[1].status, 'DEPOSIT_PAID'); assert.equal(eligibility[1].bookingFlowVersion, 2); assert.ok(eligibility[1].endDate.$gt instanceof Date);
+    assert.ok(eligibility[0].startDate.$lte instanceof Date);
+    assert.ok(eligibility[0].endDate.$gt instanceof Date);
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
+    assert.equal(filter.activeClosureRequestId, null);
     assert.deepEqual(update.$inc, { inventoryVersion: 1 });
     assert.equal(options.session, session);
     return new Query(overrides.reservationMismatch ? null : reservation);
@@ -100,7 +103,10 @@ function mockConfirmation(t, options = {}) {
   const session = mockTransaction(t);
   const pending = makeItem({ status: 'PENDING_INBOUND', ...(options.item || {}) });
   t.mock.method(Item, 'findOne', () => new Query(pending));
-  t.mock.method(Reservation, 'findOne', () => new Query({ _id: oid(reservationId), facilityId: oid(facilityId), customerId, serviceType: 'MANAGED_INVENTORY' }));
+  const reservationRead = { _id: oid(reservationId), facilityId: oid(facilityId), customerId, serviceType: 'MANAGED_INVENTORY',
+    status: options.reservationStatus ?? 'ACTIVE', startDate: new Date(Date.now() - 60_000), endDate: new Date(Date.now() + 60_000), inventoryVersion: 0,
+    ...(options.closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439099') } : {}) };
+  t.mock.method(Reservation, 'findOne', () => new Query(reservationRead));
   t.mock.method(Item, 'findOneAndUpdate', (_filter, _update, opts) => {
     assert.equal(opts.session, session);
     return new Query(pending);
@@ -124,9 +130,11 @@ function mockConfirmation(t, options = {}) {
     return new Query(options.zoneInactive ? null : { _id: oid(zoneId) });
   });
   t.mock.method(Reservation, 'findOneAndUpdate', (filter, _update, opts) => {
-    assert.ok(filter.$or[0].startDate.$lte instanceof Date);
-    assert.ok(filter.$or[0].endDate.$gt instanceof Date);
+    assert.equal(filter.activeClosureRequestId, null);
+    assert.ok(filter.$and[0].$or[0].startDate.$lte instanceof Date);
+    assert.ok(filter.$and[0].$or[0].endDate.$gt instanceof Date);
     assert.equal(opts.session, session);
+    assert.equal(filter.activeClosureRequestId, null);
     if (options.reservationInactive) return new Query(null);
     return new Query({
       _id: oid(reservationId), facilityId: oid(facilityId), customerId, allocatedCapacity: options.allocatedCapacity ?? 1.5,
@@ -158,7 +166,7 @@ function mockConfirmation(t, options = {}) {
 
 function mockSuccessfulConfirmation(t, { movementFailure = false, concurrentItem = false, cellMaxWeightKg = 100,
   maxWeightKgPerLevel = 500, rackLevelCount = 4, allocatedCapacity = 1.5, otherLevelWeightKg = 0,
-  otherRackWeightKg = 0, initialCellWeightKg = 0, initialCellVolumeM3 = 0 } = {}) {
+  otherRackWeightKg = 0, initialCellWeightKg = 0, initialCellVolumeM3 = 0, closurePending = false } = {}) {
   const secondItemId = '507f1f77bcf86cd799439032';
   const secondItem = concurrentItem ? makeItem({ _id: oid(secondItemId), itemCode: 'LOT-2', status: 'PENDING_INBOUND' }) : null;
   const state = {
@@ -168,6 +176,7 @@ function mockSuccessfulConfirmation(t, { movementFailure = false, concurrentItem
       code: 'R1-L1-C1', operationalStatus: 'AVAILABLE', maxWeightKg: cellMaxWeightKg, usedWeightKg: initialCellWeightKg, usedVolumeM3: initialCellVolumeM3,
       dimensions: { widthM: .5, depthM: .6, usableHeightM: .5 } },
     reservation: { _id: oid(reservationId), facilityId: oid(facilityId), customerId, allocatedCapacity, usedCapacityM3: initialCellVolumeM3,
+      inventoryVersion: 0, ...(closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439099') } : {}),
       save: async function () { return this; } },
   };
   state.allocation = { _id: oid('507f1f77bcf86cd799439091'), cellId: oid(cellId), reservationId: oid(reservationId), customerId, status: 'RESERVED', save: async function () { return this; } };
@@ -221,7 +230,8 @@ function mockSuccessfulConfirmation(t, { movementFailure = false, concurrentItem
     assert.equal(options.session, session); return new Query({ _id: oid(rackId), facilityId: oid(facilityId), zoneId: oid(zoneId),
       operationalStatus: 'AVAILABLE', levelCount: rackLevelCount, maxWeightKgPerLevel });
   });
-  t.mock.method(Reservation, 'findOneAndUpdate', (_filter, _update, options) => {
+  t.mock.method(Reservation, 'findOneAndUpdate', (filter, _update, options) => {
+    assert.equal(filter.activeClosureRequestId, null);
     assert.equal(options.session, session); return new Query(state.reservation);
   });
   t.mock.method(Reservation, 'findOne', () => new Query(state.reservation));
@@ -248,8 +258,8 @@ function mockSuccessfulConfirmation(t, { movementFailure = false, concurrentItem
 function mockV2FirstInbound(t, { status = 'CHECKIN_READY', itemStatus = status === 'CHECKIN_READY' ? 'RECEIVED_PENDING_ACCEPTANCE' : 'PENDING_INBOUND',
   custodyStatus = status === 'CHECKIN_READY' ? 'IN_CUSTODY' : 'NONE', startDate = new Date(Date.now() - 60_000), endDate = new Date(Date.now() + 86_400_000),
   signatures = ['CUSTOMER', 'FACILITY_STAFF'], balanceSettled = true, contractSnapshot = true, inspectionDecision = 'ACCEPTED',
-  depositPaid = true, signedHashMatches = true, initialCellWeightKg = 0, initialCellVolumeM3 = 0 } = {}) {
-  const setup = mockSuccessfulConfirmation(t, { initialCellWeightKg, initialCellVolumeM3 });
+  depositPaid = true, signedHashMatches = true, initialCellWeightKg = 0, initialCellVolumeM3 = 0, closurePending = false } = {}) {
+  const setup = mockSuccessfulConfirmation(t, { initialCellWeightKg, initialCellVolumeM3, closurePending });
   const { state } = setup;
   state.item.status = itemStatus;
   state.item.receivingCustodyStatus = custodyStatus;
@@ -501,6 +511,14 @@ test('version 2 subsequent inbound stays ACTIVE without another contract or bala
   assert.equal(setup.state.movements.size, 1);
   assert.equal(setup.state.auditEvents.length, 1);
   assert.equal(setup.state.auditEvents[0].action, 'INBOUND_CONFIRMED');
+});
+
+test('first inbound confirmation is rejected by an active closure marker before stock commits', async t => {
+  const setup = mockV2FirstInbound(t, { status: 'ACTIVE', itemStatus: 'PENDING_INBOUND', closurePending: true });
+  await assert.rejects(service.confirmInbound(itemId, setup.body, setup.actor), { status: 409, message: /closure is pending/ });
+  assert.equal(setup.state.movements.size, 0);
+  assert.equal(setup.state.cell.usedWeightKg, 0);
+  assert.equal(setup.state.reservation.usedCapacityM3, 0);
 });
 
 test('version 2 movement failure rolls back activation, counters, allocation and item writes', async t => {

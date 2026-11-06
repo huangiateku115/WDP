@@ -76,7 +76,7 @@ export function rentalError(error) {
   if (
     error.response?.status < 500 &&
     typeof backendMessage === "string" &&
-    /^(Managed (sellable capacity is not configured or active|pricing is ambiguous|deposit policy is ambiguous|deposit policy has an unsupported configuration|deposit policy must explicitly configure PERCENT_OF_RENT and a non-negative percentage|quote amount overflow|reservation is missing, expired or not RESERVED|reservation not found|contract requires an active, held CONTRACTED reservation\.|capacity configuration not found)|Effective (per-m3 Managed pricing|Managed deposit policy) is not configured|Requested quota exceeds available Managed capacity for this interval|Verified Customer Profile required|Active Managed Inventory Facility not found|Only unpaid RESERVED or CONTRACTED Managed reservations can be cancelled|Customer-signed contract required before payment|Only a valid held CONTRACTED reservation can receive mock payment|Mock payment is disabled)$/.test(
+    /^(Managed (sellable capacity is not configured or active|pricing is ambiguous|deposit policy is ambiguous|deposit policy has an unsupported configuration|deposit policy must explicitly configure PERCENT_OF_RENT and a non-negative percentage|quote amount overflow|reservation is missing, expired or not RESERVED|reservation not found|contract requires an active, held CONTRACTED reservation\.|capacity configuration not found)|Effective (per-m3 Managed pricing|Managed deposit policy) is not configured|Requested quota exceeds available Managed capacity for this interval|Verified Customer Profile required|Active Managed Inventory Facility not found|Only unpaid RESERVED or CONTRACTED Managed reservations can be cancelled|Customer-signed contract required before payment)$/.test(
       backendMessage,
     )
   )
@@ -162,13 +162,14 @@ export function LoadState({ resource }) {
   );
 }
 export function RentalStatus({ status, reservation }) {
+  const selfStorageContracted = reservation?.serviceType === "SELF_STORAGE" && status === "CONTRACTED";
   return (
     <Badge
       variant={
         ["ACTIVE", "PAID", "CLOSED"].includes(status) ? "green" : "orange"
       }
     >
-      {(reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
+      {(selfStorageContracted ? "Booking confirmed — advance-rent Deposit pending" : reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
     </Badge>
   );
 }

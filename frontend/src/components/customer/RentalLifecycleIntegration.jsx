@@ -1,15 +1,16 @@
 import LoadState from './CustomerResourceState';
-import {PortalSummaryCards,PortalEmptyState,PortalTextLink} from './CustomerPortalUI';
+import { PortalSummaryCards, PortalEmptyState, PortalTextLink } from './CustomerPortalUI';
 import ContractPrintAction from './ContractPrintAction';
 import ManagedContractReview from './inventory/ManagedContractReview';
 import CustomerBalancePayment from './CustomerBalancePayment';
 import CustomerDepositPayment from './CustomerDepositPayment';
-import {volumeText} from '@/lib/managedCellBooking';
-import {eligibleInventoryRegistration} from '@/lib/inventoryRegistration';
-import SelfStorageMockPayment,{SelfPaymentNavigation} from './SelfStorageMockPayment';
-import {canPaySelfStorage} from '@/lib/selfStoragePayment';
+import { volumeText } from '@/lib/managedCellBooking';
+import { eligibleInventoryRegistration } from '@/lib/inventoryRegistration';
+import SelfStoragePayosCheckout from './SelfStoragePayosCheckout';
+import { SelfPaymentNavigation } from './CustomerPaymentNavigation';
+import { eligiblePayosPurpose } from '@/lib/selfStoragePayos';
 import ManagedCellSummary from './warehouse/ManagedCellSummary';
-import {clearMapAvailability} from './warehouse/ManagedCellBooking';
+import { clearMapAvailability } from './warehouse/ManagedCellBooking';
 import {
   serviceType,
   serviceLabel,
@@ -18,9 +19,7 @@ import {
   liveHold,
   canCancel,
   canSign,
-  canMockPay,
   contractAmounts,
-  managedMockEnabled,
   isManagedV2,
   isLegacyManaged,
   hasLegacyRentalFlow,
@@ -29,9 +28,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
-import paymentApi from "@/api/paymentApi";
 import managedReservationApi from "@/api/managedReservationApi";
 import contractApi from "@/api/contractApi";
+import facilityApi from "@/api/facilityApi";
+import storageApi from "@/api/storageApi";
 import { accessApi } from "@/api/customerRentalApi";
 import { Input } from "@/components/ui/input";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
@@ -65,23 +65,63 @@ function useCurrentTime() {
 }
 async function contractContext(reservationId, config) {
   if (!validId(reservationId)) throw Error("Invalid reservation ID.");
-  const [contracts, reservation] = await Promise.all([
-    contractApi.mineReal(config).then(rows),
-    reservationApi.detailForCustomer(reservationId, config).then(record),
-  ]);
-  const owned = contracts.find(
-    (c) => recordId(c.reservationId) === reservationId,
-  );
-  if (!owned) return { contract: null, reservation };
-  const contract = record(
-    await contractApi.detailReal(recordId(owned), config),
-  );
-  if (
-    recordId(contract) !== recordId(owned) ||
-    recordId(contract.reservationId) !== reservationId
-  )
-    throw Error("Contract does not match this reservation.");
+  const reservation = record(await reservationApi.detailForCustomer(reservationId, config));
+  if (recordId(reservation) !== reservationId) throw Error("Reservation does not match this payment route.");
+  const contract = await loadSelfStorageContract(reservationId, recordId(reservation.customerId), config);
   return { contract, reservation };
+}
+async function loadSelfStorageReservation(reservationId, config) {
+  if (!validId(reservationId)) throw Error("Invalid reservation ID.");
+  const reservation = record(await reservationApi.detailForCustomer(reservationId, config));
+  if (recordId(reservation) !== reservationId || serviceType(reservation) !== SELF_STORAGE) {
+    throw Error("The owned Self Storage reservation could not be verified.");
+  }
+  return reservation;
+}
+async function loadSelfStorageContract(reservationId, customerId, config) {
+  try {
+    const contract = record(await contractApi.byReservationReal(reservationId, config));
+    if (recordId(contract.reservationId) !== reservationId ||
+        (customerId && recordId(contract.customerId) !== customerId)) {
+      throw Error("The contract does not match this reservation and customer. Payment is unavailable.");
+    }
+    return contract;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    if (error.message?.includes("does not match")) throw error;
+    throw Error("The reservation is saved, but its contract could not be loaded. Retry here; you do not need to book again.");
+  }
+}
+async function loadSelfStorageOverview(reservation, config) {
+  const facilityId = recordId(reservation.facilityId);
+  const unitId = recordId(reservation.storageUnitId);
+  const overview = { facility: null, unit: null, estimate: null, error: "" };
+  try {
+    const [facilityResponse, unitResponse] = await Promise.all([
+      facilityApi.publicDetail(facilityId, config),
+      storageApi.unitDetail(unitId, config),
+    ]);
+    const facility = record(facilityResponse);
+    const unit = record(unitResponse);
+    const durationMs = Date.parse(reservation.endDate) - Date.parse(reservation.startDate);
+    const durationDays = Number.isFinite(durationMs) && durationMs > 0 ? Math.ceil(durationMs / 86_400_000) : null;
+    const estimate = { estimatedRent: reservation.estimatedRent, depositAmount: reservation.depositAmount,
+      taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0, durationDays };
+    if (recordId(facility) === facilityId && recordId(unit) === unitId && recordId(unit.facilityId) === facilityId) Object.assign(overview, { facility, unit, estimate });
+    else overview.error = "Facility or StorageUnit details did not match the owned Reservation.";
+  } catch {
+    overview.error = "Facility or StorageUnit details could not be loaded. The verified reservation and payment status remain available.";
+  }
+  return overview;
+}
+async function selfStoragePaymentContext(reservationId, config) {
+  const reservation = await loadSelfStorageReservation(reservationId, config);
+  const customerId = recordId(reservation.customerId);
+  const [contract, rentalOverview] = await Promise.all([
+    loadSelfStorageContract(reservationId, customerId, config),
+    loadSelfStorageOverview(reservation, config),
+  ]);
+  return { contract, reservation, rentalOverview };
 }
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
@@ -110,42 +150,42 @@ export function RentalsIntegration() {
       }
     >
       <LoadState resource={resource} />
-      {resource.data&&!resource.error&&<PortalSummaryCards items={[{label:"Active rentals",value:resource.data.filter(r=>r.status==='ACTIVE').length},{label:"Awaiting handover",value:resource.data.filter(r=>['PAID','CHECKIN_READY'].includes(r.status)).length},{label:"Reservations returned",value:resource.data.length}]}/>}
+      {resource.data && !resource.error && <PortalSummaryCards items={[{ label: "Active rentals", value: resource.data.filter(r => r.status === 'ACTIVE').length }, { label: "Awaiting handover", value: resource.data.filter(r => ['PAID', 'CHECKIN_READY'].includes(r.status)).length }, { label: "Reservations returned", value: resource.data.length }]} />}
       <div className="portal-filter-bar">
-      <label className="block field-label">
-        Storage service
-        <select
-          aria-label="Storage service"
-          className="customer-select mt-2"
-          value={service}
-          onChange={(e) => setService(e.target.value)}
-        >
-          <option value="">All services</option>
-          <option value={SELF_STORAGE}>Self Storage</option>
-          <option value={MANAGED_INVENTORY}>Managed Inventory</option>
-          <option value="UNKNOWN">Unsupported / unknown</option>
-        </select>
-      </label>
-      <label className="block field-label">
-        Reservation status
-        <select
-          aria-label="Reservation status"
-          className="customer-select mt-2"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        >
-          <option value="">All returned statuses</option>
-          {[
-            ...new Set(
-              resource.data?.map((r) => r.status).filter(Boolean) || [],
-            ),
-          ].map((s) => (
-            <option key={s} value={s}>
-              {s==='RESERVED'&&resource.data?.some(isManagedV2)?'RESERVED — see rental flow':statusLabels[s] || s}
-            </option>
-          ))}
-        </select>
-      </label>
+        <label className="block field-label">
+          Storage service
+          <select
+            aria-label="Storage service"
+            className="customer-select mt-2"
+            value={service}
+            onChange={(e) => setService(e.target.value)}
+          >
+            <option value="">All services</option>
+            <option value={SELF_STORAGE}>Self Storage</option>
+            <option value={MANAGED_INVENTORY}>Managed Inventory</option>
+            <option value="UNKNOWN">Unsupported / unknown</option>
+          </select>
+        </label>
+        <label className="block field-label">
+          Reservation status
+          <select
+            aria-label="Reservation status"
+            className="customer-select mt-2"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          >
+            <option value="">All returned statuses</option>
+            {[
+              ...new Set(
+                resource.data?.map((r) => r.status).filter(Boolean) || [],
+              ),
+            ].map((s) => (
+              <option key={s} value={s}>
+                {s === 'RESERVED' && resource.data?.some(isManagedV2) ? 'RESERVED — see rental flow' : statusLabels[s] || s}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {[
         ["Active Rentals", ["ACTIVE", "OVERDUE"]],
@@ -193,7 +233,7 @@ export function RentalsIntegration() {
         );
       })}
       {!resource.loading && !resource.error && !records.length && (
-        <PortalEmptyState title="No reservations match your filter." description="Try another service or status, or explore a new storage space."/>
+        <PortalEmptyState title="No reservations match your filter." description="Try another service or status, or explore a new storage space." />
       )}
       <p className="text-xs text-slate-500">
         Extensions, notifications, inventory and payment history remain separate
@@ -217,8 +257,8 @@ export function ReservationDetailIntegration() {
     );
   const paymentContracts = useBackend(config => serviceType(resource.data) === SELF_STORAGE ? contractApi.mineReal(config).then(rows) : Promise.resolve([]), [id, resource.data?.serviceType, resource.data?.status]);
   const paymentContract = paymentContracts.data?.find(c => recordId(c.reservationId) === id);
-  const allocated=resource.data?.allocatedCapacity,used=resource.data?.usedCapacityM3;
-  const capacityKnown=[allocated,used].every(value=>typeof value==='number'&&Number.isFinite(value)&&value>=0);
+  const allocated = resource.data?.allocatedCapacity, used = resource.data?.usedCapacityM3;
+  const capacityKnown = [allocated, used].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
   return (
     <BackendScreen
       title="Reservation details"
@@ -226,7 +266,7 @@ export function ReservationDetailIntegration() {
     >
       <LoadState resource={resource} />
       {location.state?.selfStorageCreated && (
-        <Message success=" Waiting for management approval." />
+        <Message success="Self Storage booking confirmed. The advance-rent Deposit is pending; continue from the PayOS payment page." />
       )}
       {location.state?.managedCreated && (
         <Message success={isManagedV2(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
@@ -234,10 +274,10 @@ export function ReservationDetailIntegration() {
       {resource.data && (
         <>
           <RentalSummary item={resource.data} localizeManagedV2 />
-          {isManagedV2(resource.data)&&<Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity",typeof allocated==='number'&&Number.isFinite(allocated)&&allocated>=0?volumeText(allocated):'Not returned'],["Used capacity",typeof used==='number'&&Number.isFinite(used)&&used>=0?volumeText(used):'Not returned'],["Remaining capacity",capacityKnown?volumeText(Math.max(0,allocated-used)):'Not available — capacity data is missing or invalid']]}/></CardContent></Card>}
-          {isManagedV2(resource.data)&&<CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>reservationApi.detailForCustomer(id,config).then(record)} onReservationRefresh={resource.retry}/>}
-          {isManagedV2(resource.data)&&<CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config=>contractContext(id,config)} onReservationRefresh={resource.retry}/>}
-          <ManagedCellSummary reservation={resource.data}/>{isManagedV2(resource.data)&&<div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data)&&<Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status==='RESERVED'&&<p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
+          {isManagedV2(resource.data) && <Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity", typeof allocated === 'number' && Number.isFinite(allocated) && allocated >= 0 ? volumeText(allocated) : 'Not returned'], ["Used capacity", typeof used === 'number' && Number.isFinite(used) && used >= 0 ? volumeText(used) : 'Not returned'], ["Remaining capacity", capacityKnown ? volumeText(Math.max(0, allocated - used)) : 'Not available — capacity data is missing or invalid']]} /></CardContent></Card>}
+          {isManagedV2(resource.data) && <CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(id, config).then(record)} onReservationRefresh={resource.retry} />}
+          {isManagedV2(resource.data) && <CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => contractContext(id, config)} onReservationRefresh={resource.retry} />}
+          <ManagedCellSummary reservation={resource.data} />{isManagedV2(resource.data) && <div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data) && <Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Deposit and balance</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status === 'RESERVED' && <p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
           <p>
             {reservationLifecycle(resource.data).description}
           </p>
@@ -275,7 +315,7 @@ export function ReservationDetailIntegration() {
                     throw Error(
                       "Cancellation was not confirmed by the backend.",
                     );
-                  if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
+                  if (serviceType(result) === MANAGED_INVENTORY) clearMapAvailability();
                   resource.retry();
                 }}
               />
@@ -298,9 +338,7 @@ export function ReservationDetailIntegration() {
                   </Link>
                 </Button>
               )}
-            {isLegacyManaged(resource.data) && ["CONTRACTED", "PAID"].includes(resource.data.status) && (
-              <Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Review simulated payment</Link></Button>
-            )}
+            {isLegacyManaged(resource.data) && <p className="text-sm text-slate-700">Thanh toán trực tuyến cho Managed Inventory hiện chưa được hỗ trợ. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn.</p>}
             {serviceType(resource.data) === SELF_STORAGE &&
               resource.data.status === "ACTIVE" && (
                 <Button asChild>
@@ -345,7 +383,7 @@ export function ContractsIntegration() {
           </CardContent>
         </Card>
       ))}</div>
-      {resource.data?.length === 0 && <PortalEmptyState title="No contracts returned." description="Your rental agreements will appear here when they are available."/>}
+      {resource.data?.length === 0 && <PortalEmptyState title="No contracts returned." description="Your rental agreements will appear here when they are available." />}
       <p className="text-sm text-slate-500">
         Legacy drafts follow the existing approval flow. Managed V2 contracts
         belong to physical intake; review the current content version before signing.
@@ -366,7 +404,7 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
-  if(isManagedV2(reservation)&&contract)return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status}/><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2/><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={()=>contractContext(reservationId)} onRefresh={resource.retry}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  if (isManagedV2(reservation) && contract) return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2 /><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={() => contractContext(reservationId)} onRefresh={resource.retry} /><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
   return (
     <BackendScreen
       title="Review rental contract"
@@ -378,14 +416,14 @@ export function ContractDetailIntegration() {
         <Card>
           <CardContent>
             <RentalStatus status={contract.status} />
-            <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId}/>
-            {isManagedV2(reservation)&&<ManagedFinancialSummary reservation={reservation}/>}
+            <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} />
+            {isManagedV2(reservation) && <ManagedFinancialSummary reservation={reservation} />}
             <Details
               values={[
                 ["Contract number", contract.contractCode],
                 ["Signed at", contract.signedByCustomerAt],
                 ["Service", serviceLabel(reservation)],
-                ...(!isManagedV2(reservation)?[["Estimated rent", amounts.estimatedRent],["Deposit", amounts.depositAmount],["Total due", amounts.totalDue]]:[]),
+                ...(!isManagedV2(reservation) ? [["Estimated rent", amounts.estimatedRent], ["Deposit", amounts.depositAmount], ["Total due", amounts.totalDue]] : []),
                 [
                   "Currency",
                   serviceType(reservation) === MANAGED_INVENTORY
@@ -441,7 +479,7 @@ export function ContractDetailIntegration() {
                       const associatedId = recordId(result.reservationId) || recordId(latest.contract.reservationId);
                       resource.retry();
                       if (!validId(associatedId) || associatedId !== recordId(latest.reservation)) { setSignatureNotice('Contract signed. The associated reservation could not be verified; refresh before proceeding to payment.'); return; }
-                      try { const refreshed = await contractContext(associatedId); if (getAccessToken() !== token) return; if (canPaySelfStorage(refreshed.reservation, refreshed.contract)) nav(`/portal/payments/${associatedId}`); }
+                      try { const refreshed = await contractContext(associatedId); if (getAccessToken() !== token) return; if (eligiblePayosPurpose(refreshed.reservation, refreshed.contract) === "BALANCE") nav(`/portal/payments/${associatedId}`); }
                       catch (e) { if (getAccessToken() === token) setSignatureNotice('Contract signed. Refresh the contract/reservation to continue to payment.'); }
                     } else resource.retry();
                   }}
@@ -450,7 +488,7 @@ export function ContractDetailIntegration() {
             {contract.status === "DRAFT" &&
               !canSign(contract, reservation, now) && (
                 <p className="mt-4 text-sm text-orange-700">
-                  {isManagedV2(reservation)?'Managed V2 contract signing is not implemented in this phase. No signature can be submitted here.':'Signing unavailable: service, reservation status or Managed hold could not be confirmed.'}
+                  {isManagedV2(reservation) ? 'Managed V2 contract signing is not implemented in this phase. No signature can be submitted here.' : serviceType(reservation) === SELF_STORAGE && reservation?.status === 'CONTRACTED' ? 'Complete the Backend-confirmed PayOS Deposit before signing this Self-Storage contract.' : 'Signing unavailable: service, reservation status or Managed hold could not be confirmed.'}
                 </p>
               )}
             <SelfPaymentNavigation contract={contract} reservation={reservation} />
@@ -480,20 +518,20 @@ export function ContractDetailIntegration() {
 export function PaymentIntegration() {
   const session = useAuthSession();
   const { reservationId } = useParams(),
-    now = useCurrentTime(),
-    enabled = managedMockEnabled(import.meta.env);
-  const [depositInitiated, setDepositInitiated] = useState(false);
-  const depositKey = useRef(`managed-deposit-${reservationId}`);
+    now = useCurrentTime();
   const resource = useBackend(
     (config) =>
       validId(reservationId)
-        ? reservationApi.detailForCustomer(reservationId, config).then(record)
+        ? reservationApi.detailForCustomer(reservationId, config).then((response) => {
+            const reservation = record(response);
+            if (recordId(reservation) !== reservationId) throw Error("Reservation does not match this payment route.");
+            return reservation;
+          })
         : Promise.reject(Error("Invalid reservation ID.")),
     [reservationId],
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
   const managedDeposit = isManagedV2(resource.data);
-  const managedDepositEnabled = import.meta.env.DEV === true && import.meta.env.VITE_MI_MANAGED_DEPOSIT_FLOW_ENABLED === "true";
   const contracts = useBackend(
     (config) =>
       isLegacyManaged(resource.data) ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
@@ -502,24 +540,31 @@ export function PaymentIntegration() {
   const contract = contracts.data?.find(
     (c) => recordId(c.reservationId) === reservationId,
   );
-  if (serviceType(resource.data) === SELF_STORAGE) return <SelfStorageMockPayment key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} loadContext={contractContext} />;
+  if (resource.loading) return <BackendScreen title="Loading payment details" description="Loading your reservation from the Backend."><LoadState resource={resource} /></BackendScreen>;
+  if (resource.error || !resource.data) return <BackendScreen title="Payment unavailable" description="A payment can only be shown for a verified reservation."><Message error="Không tải được thông tin đơn thuê. Vui lòng thử lại." /><Button variant="outline" onClick={resource.retry}>Retry reservation</Button></BackendScreen>;
+  if (serviceType(resource.data) === SELF_STORAGE) return <SelfStoragePayosCheckout key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} initialReservation={resource.data} loadContext={selfStoragePaymentContext} loadContract={loadSelfStorageContract} loadOverview={loadSelfStorageOverview} onReservationRefresh={resource.retry} />;
+  if (managedDeposit) return (
+    <BackendScreen title="Managed Inventory payments" description="The Backend confirms each payment stage. Deposit is advance rent credited toward the balance.">
+      <LoadState resource={resource} />
+      {resource.data && <>
+        <RentalSummary item={resource.data} localizeManagedV2 />
+        <CustomerDepositPayment key={`deposit:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(reservationId, config).then(record)} onReservationRefresh={resource.retry} />
+        <CustomerBalancePayment key={`balance:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config => contractContext(reservationId, config)} onReservationRefresh={resource.retry} />
+        <Button asChild variant="outline"><Link to={`/portal/reservations/${reservationId}`}>View reservation</Link></Button>
+      </>}
+    </BackendScreen>
+  );
+  if (!isLegacyManaged(resource.data)) return <BackendScreen title="Payment unavailable" description="Payment is not supported for this reservation type."><RentalSummary item={resource.data} /><Message error="Unsupported service. Payment is unavailable." /></BackendScreen>;
+  const enabled = managedMockEnabled(import.meta.env);
   return (
     <BackendScreen
-      title={managedDeposit ? "Managed V2 payment status" : "Simulated Payment"}
-      description={managedDeposit ? "Read-only status. No payment action is implemented in this phase." : "Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."}
+      title="Simulated Payment"
+      description="Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."
     >
       <LoadState resource={resource} />
       {resource.data && (
         <>
           <RentalSummary item={resource.data} />
-          {managedDeposit && (
-            <Card><CardContent><h2 className="text-xl font-bold">Advance rent deposit</h2>
-              <p className="mt-2 text-sm">The deposit is credited toward rent. Paying it reserves the selected Cells; it does not activate the rental or create a contract. Payment actions are unavailable in this phase.</p>
-              <ManagedFinancialSummary reservation={resource.data}/>
-              <p className="mt-3 text-sm">{reservationLifecycle(resource.data).description}</p>
-              <p className="mt-3 text-sm text-slate-500">Deposit and balance actions are not available in this phase. Review intake signatures under Contracts. No payment can be submitted here.</p>
-             </CardContent></Card>
-          )}
           {!hasLegacyRentalFlow(resource.data) ? null : resource.data.status === "PAID" ? (
             <Message success="Backend reservation status: Đã thanh toán." />
           ) : (
@@ -546,44 +591,6 @@ export function PaymentIntegration() {
             )}
           {!serviceType(resource.data) && (
             <Message error="Unsupported service. Payment is unavailable." />
-          )}
-          {hasLegacyRentalFlow(resource.data) && canMockPay(resource.data, contract, enabled, now) && (
-            <ConfirmAction
-              label="Simulate Payment (Demo)"
-              onAction={async () => {
-                const token = getAccessToken();
-                const latest = record(
-                  await reservationApi.detailForCustomer(reservationId),
-                );
-                if (getAccessToken() !== token) return;
-                let latestContract = null;
-                if (serviceType(latest) === MANAGED_INVENTORY) {
-                  latestContract = (
-                    await contractApi.mineReal().then(rows)
-                  ).find((c) => recordId(c.reservationId) === reservationId);
-                  if (getAccessToken() !== token) return;
-                }
-                if (
-                  serviceType(latest) !== serviceType(resource.data) ||
-                  !canMockPay(latest, latestContract, enabled)
-                )
-                  throw Error(
-                    "Reservation, signature or hold changed. Refresh before payment.",
-                  );
-                const result = record(
-                  await paymentApi.mockPayForService(latest),
-                );
-                if (getAccessToken() !== token) return;
-                if (
-                  result.status !== "PAID" ||
-                  recordId(result) !== reservationId
-                )
-                  throw Error("Backend did not confirm payment.");
-                if(serviceType(result)===MANAGED_INVENTORY)clearMapAvailability();
-                resource.retry();
-                contracts.retry();
-              }}
-            />
           )}
           <Button variant="outline" onClick={resource.retry}>
             Refresh payment status

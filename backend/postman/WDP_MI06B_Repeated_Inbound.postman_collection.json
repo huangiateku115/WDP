@@ -152,6 +152,21 @@
     {
       "key": "outboundSecondActualQty",
       "value": "1"
+    },
+    {
+      "key": "facilityManagerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherFacilityManagerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherReservationId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -2407,6 +2422,140 @@
                   }
                 ],
                 "url": "{{baseUrl}}/inventory-items/{{itemId}}/movements"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MI-07 Read-only Closure Readiness (manual examples)",
+      "description": "Diagnostic GET only. This does not close a Reservation or release Cell/quota. Set tokens and IDs in the environment. These requests are examples and have not been run against live data.",
+      "item": [
+        {
+          "name": "Owner Customer - readiness snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{reservationId}}/closure-readiness",
+            "description": "Use an owned MANAGED_INVENTORY reservation. Positive stock should show BLOCKED. Zero stock still cannot report overall READY in Phase 1 because financial/disposition policy is unresolved."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Read-only readiness DTO', () => { const body = pm.response.json(); pm.expect(body.success).to.eql(true); pm.expect(body.data).to.have.property('overallReadiness'); pm.expect(body.data.overallReadiness).to.not.eql('READY'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assigned Facility Manager - readiness snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{facilityManagerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{reservationId}}/closure-readiness",
+            "description": "Use a Facility Manager token assigned to this Reservation facility."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Read-only readiness DTO', () => { const body = pm.response.json(); pm.expect(body.success).to.eql(true); pm.expect(body.data).to.have.property('overallReadiness'); pm.expect(body.data.overallReadiness).to.not.eql('READY'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cross-owner Customer - must not disclose reservation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherCustomerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{reservationId}}/closure-readiness",
+            "description": "Use a valid Customer token that does not own reservationId. Expected 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Out-of-scope Facility Manager - forbidden",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherFacilityManagerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{reservationId}}/closure-readiness",
+            "description": "Use a valid Facility Manager assigned to a different Facility. Expected 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Other Customer owned reservation - owner control case",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{otherCustomerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/reservations/managed/{{otherReservationId}}/closure-readiness",
+            "description": "Optional control: set otherReservationId to a Managed Reservation owned by otherCustomerToken; expected 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Read-only readiness DTO', () => { const body = pm.response.json(); pm.expect(body.success).to.eql(true); pm.expect(body.data).to.have.property('overallReadiness'); pm.expect(body.data.overallReadiness).to.not.eql('READY'); });"
+                ]
               }
             }
           ]

@@ -18,7 +18,7 @@ import { IInventoryItem, InventoryItemStatus } from '../../types/inventory-item.
 import { ItemMovementType, MovementBatchAction } from '../../types/item-movement.type';
 import { ManagedOutboundRequestState } from '../../types/managed-outbound-request.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
-import { ReservationStatus } from '../../types/reservation.type';
+import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { PolicyType } from '../../types/pricing-policy.type';
 import { ContractStatus, IContract } from '../../types/contract.type';
 import { PaymentPurpose, PaymentStatus } from '../../types/payment.type';
@@ -169,21 +169,45 @@ async function withTransaction<T>(work: (session: ClientSession) => Promise<T>):
   } finally { await session.endSession(); }
 }
 
+/** Registration uses the driver's bounded transaction retry/commit-recovery window. */
+async function withRegistrationTransaction<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
+  const session = await mongoose.startSession();
+  try {
+    let result!: T;
+    await session.withTransaction(async () => { result = await work(session); }, {
+      readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }, timeoutMS: 15_000,
+    });
+    return result;
+  } finally { await session.endSession(); }
+}
+
 async function lockReservationForInbound(item: IInventoryItem, session: ClientSession, now: Date, allowDepositPaidRequest = false) {
-  const reservation = await ReservationModel.findOneAndUpdate({
+  const eligibleStates = allowDepositPaidRequest ? { $or: [
+    { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
+    { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: now } },
+    { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, endDate: { $gt: now } },
+  ] } : { $or: [
+    { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
+    { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, startDate: { $lte: now }, endDate: { $gt: now } },
+  ] };
+  const identity = {
     _id: item.managedReservationId,
     customerId: item.customerId,
     facilityId: item.facilityId,
     serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    ...(allowDepositPaidRequest ? { $or: [
-      { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
-      { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: now } },
-      { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, endDate: { $gt: now } },
-    ] } : { $or: [
-      { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
-      { status: ReservationStatus.CHECKIN_READY, bookingFlowVersion: 2, startDate: { $lte: now }, endDate: { $gt: now } },
-    ] }),
-  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  };
+  const observed = await ReservationModel.findOne({ ...identity, ...eligibleStates } as any).session(session).exec() as IReservation | null;
+  if (!observed) throw new InventoryItemError(409, allowDepositPaidRequest
+    ? 'An active or deposit-paid version 2 Managed reservation is required to request inbound'
+    : 'An active, in-term Managed Inventory rental is required to confirm inbound');
+  if (observed.activeClosureRequestId) throw new InventoryItemError(409, 'Inbound is blocked while reservation closure is pending');
+  const version = Number(observed.inventoryVersion ?? 0);
+  const versionFilter = version === 0
+    ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const reservation = await ReservationModel.findOneAndUpdate({ ...identity, activeClosureRequestId: null,
+    $and: [eligibleStates, versionFilter] } as any, { $inc: { inventoryVersion: 1 } },
+  { new: true, session, runValidators: true }).exec() as IReservation | null;
   if (!reservation) throw new InventoryItemError(409, allowDepositPaidRequest ? 'An active or deposit-paid version 2 Managed reservation is required to request inbound' : 'An active, in-term Managed Inventory rental is required to confirm inbound');
   const overdue = await ReservationModel.exists({
     customerId: item.customerId,
@@ -196,32 +220,103 @@ async function lockReservationForInbound(item: IInventoryItem, session: ClientSe
   return reservation;
 }
 
-async function lockReservationForOutbound(item: IInventoryItem, session: ClientSession, now: Date) {
-  const reservation = await ReservationModel.findOneAndUpdate({
-    _id: item.managedReservationId,
-    customerId: item.customerId,
-    facilityId: item.facilityId,
+/**
+ * Registration has no existing Item to serialize first. It therefore acquires
+ * the Reservation lifecycle fence before inserting an Item, in the same
+ * transaction. The marker predicate remains enforced even when closure
+ * features are disabled so an existing closure cannot be bypassed.
+ */
+async function lockReservationForRegistration(reservation: IReservation, session: ClientSession) {
+  const expectedVersion = Number(reservation.inventoryVersion ?? 0);
+  const versionPredicate = expectedVersion === 0
+    ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: expectedVersion };
+  const eligibilityPredicate = reservation.status === ReservationStatus.DEPOSIT_PAID
+    ? { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: new Date() } }
+    : { status: ReservationStatus.ACTIVE };
+  const filter: any = {
+    _id: reservation._id,
+    customerId: reservation.customerId,
+    facilityId: reservation.facilityId,
     serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    status: ReservationStatus.ACTIVE,
-    startDate: { $lte: now },
-    endDate: { $gt: now },
-  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
-  if (!reservation) throw new InventoryItemError(409, 'A current, in-term ACTIVE Managed Inventory rental is required for normal outbound; overdue rentals require an authorized controlled-outbound policy');
-  return reservation;
+    activeClosureRequestId: null,
+    ...eligibilityPredicate,
+    ...versionPredicate,
+  };
+  const locked = await ReservationModel.findOneAndUpdate(filter, { $inc: { inventoryVersion: 1 } },
+    { new: true, session, runValidators: true }).exec();
+  if (!locked) throw new InventoryItemError(409, 'Managed reservation changed or closure is pending; reload and retry registration');
+  return locked as IReservation;
+}
+
+async function lockReservationLifecycle(item: IInventoryItem, session: ClientSession, options: {
+  now?: Date; requireActiveTerm?: boolean; rejectClosure?: boolean; message: string;
+}) {
+  const identity = { _id: item.managedReservationId, customerId: item.customerId,
+    facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
+  const current = await ReservationModel.findOne(identity).session(session).exec() as IReservation | null;
+  const now = options.now ?? new Date();
+  if (!current || (options.requireActiveTerm && (current.status !== ReservationStatus.ACTIVE ||
+      current.startDate > now || current.endDate <= now))) throw new InventoryItemError(409, options.message);
+  const version = Number(current.inventoryVersion ?? 0);
+  const versionFilter = version === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const eligibility = options.requireActiveTerm ? { status: ReservationStatus.ACTIVE,
+    startDate: { $lte: now }, endDate: { $gt: now } } : {};
+  const locked = await ReservationModel.findOneAndUpdate({ ...identity,
+    ...(options.rejectClosure ? { activeClosureRequestId: null } : {}),
+    $and: [eligibility, versionFilter] }, { $inc: { inventoryVersion: 1 } },
+  { new: true, session, runValidators: true }).exec() as IReservation | null;
+  if (!locked) {
+    if (options.rejectClosure && current.activeClosureRequestId) throw new InventoryItemError(409, 'Reservation closure is pending; relocation or metadata changes are blocked');
+    throw new InventoryItemError(409, 'Reservation lifecycle changed; reload and retry');
+  }
+  return locked;
+}
+
+async function lockReservationForOutbound(item: IInventoryItem, session: ClientSession, now: Date) {
+  // Outbound remains available during closure under the existing in-term rules.
+  return lockReservationLifecycle(item, session, { now, requireActiveTerm: true,
+    message: 'A current, in-term ACTIVE Managed Inventory rental is required for normal outbound; overdue rentals require an authorized controlled-outbound policy' });
+}
+
+async function lockReservationForOutboundResolution(item: IInventoryItem, session: ClientSession) {
+  // Rejecting an existing outbound request is a safe resolution and keeps the
+  // existing request/Item state rules without introducing an overdue policy.
+  return lockReservationLifecycle(item, session, { message: 'Managed reservation is missing or outside item scope' });
 }
 
 async function lockReservationForRelocation(item: IInventoryItem, session: ClientSession, now: Date) {
-  const reservation = await ReservationModel.findOneAndUpdate({
-    _id: item.managedReservationId,
-    customerId: item.customerId,
-    facilityId: item.facilityId,
-    serviceType: FacilityServiceType.MANAGED_INVENTORY,
-    status: ReservationStatus.ACTIVE,
-    startDate: { $lte: now },
-    endDate: { $gt: now },
-  }, { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
-  if (!reservation) throw new InventoryItemError(409, 'Relocation requires an in-term ACTIVE Managed Inventory rental');
-  return reservation;
+  return lockReservationLifecycle(item, session, { now, requireActiveTerm: true, rejectClosure: true,
+    message: 'Relocation requires an in-term ACTIVE Managed Inventory rental' });
+}
+
+async function lockReservationForMetadata(item: IInventoryItem, session: ClientSession) {
+  let eligible: IReservation;
+  try {
+    eligible = await requireActiveManagedInventoryReservation(item.managedReservationId, item.customerId, item.facilityId, session);
+  } catch (error) {
+    if (!(error instanceof ManagedReservationGuardError) || item.receivingInspection?.decision !== 'REJECTED') throw error;
+    eligible = await requireManagedInventoryReservationForRegistration(item.managedReservationId, item.customerId, item.facilityId, session);
+    if (eligible.status !== ReservationStatus.DEPOSIT_PAID || eligible.bookingFlowVersion !== 2 ||
+        await ContractModel.exists({ reservationId: eligible._id }).session(session)) throw error;
+  }
+  const now = new Date();
+  const version = Number(eligible.inventoryVersion ?? 0);
+  const versionFilter = version === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const statusFilter = eligible.status === ReservationStatus.DEPOSIT_PAID
+    ? { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: now } }
+    : { status: ReservationStatus.ACTIVE };
+  const fenceFilter: any = { _id: eligible._id, customerId: item.customerId,
+    facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+    activeClosureRequestId: null, $and: [statusFilter, versionFilter] };
+  const locked = await ReservationModel.findOneAndUpdate(fenceFilter, { $inc: { inventoryVersion: 1 } },
+  { new: true, session, runValidators: true }).exec();
+  if (!locked) throw new InventoryItemError(409, eligible.activeClosureRequestId
+    ? 'Reservation closure is pending; Item metadata changes are blocked'
+    : 'Reservation lifecycle changed; reload and retry Item metadata update');
+  return locked;
 }
 
 function signedByBothCurrentVersion(contract: IContract) {
@@ -535,14 +630,22 @@ async function assertItemReadAccess(item: IInventoryItem, actor: Actor) {
   assertFacilityScope(actor, facilityId);
 }
 
-async function validatePreferredCell(cellId: string, facilityId: Types.ObjectId) {
-  const cell = await WarehouseCellModel.findOne({ _id: cellId, facilityId, ...live }).exec();
+async function validatePreferredCell(cellId: string, facilityId: Types.ObjectId, session?: ClientSession) {
+  const cell = await WarehouseCellModel.findOne({ _id: cellId, facilityId, ...live }).session(session ?? null).exec();
   if (!cell) throw new InventoryItemError(404, 'Preferred Cell not found in this Facility');
   if (cell.operationalStatus !== WarehouseOperationalStatus.AVAILABLE) throw new InventoryItemError(409, 'Preferred Cell must be AVAILABLE');
-  const [zone, rack] = await Promise.all([
-    WarehouseZoneModel.findOne({ _id: cell.zoneId, facilityId, isActive: true, ...live }).exec(),
-    WarehouseRackModel.findOne({ _id: cell.rackId, facilityId, zoneId: cell.zoneId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }).exec(),
-  ]);
+  const zoneQuery = WarehouseZoneModel.findOne({ _id: cell.zoneId, facilityId, isActive: true, ...live }).session(session ?? null);
+  const rackQuery = WarehouseRackModel.findOne({ _id: cell.rackId, facilityId, zoneId: cell.zoneId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }).session(session ?? null);
+  let zone: any, rack: any;
+  if (session) {
+    // The MongoDB driver does not support concurrent operations on one
+    // ClientSession. Keep every transactional read sequential on that session.
+    zone = await zoneQuery.exec();
+    rack = await rackQuery.exec();
+  } else {
+    // Preserve the existing parallel read path for non-transactional callers.
+    [zone, rack] = await Promise.all([zoneQuery.exec(), rackQuery.exec()]);
+  }
   if (!zone || !rack) throw new InventoryItemError(409, 'Preferred Cell must belong to an active Zone and available Rack');
   return cell;
 }
@@ -552,39 +655,29 @@ export class InventoryItemService {
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only customers can register inventory items');
     const data = parseCreate(input);
     return execute(async () => {
-      if (data.images?.length) {
-        return withTransaction(async session => {
-          const reservation = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id, undefined, session);
-          const facilityId = reservation.facilityId;
-          const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId) : undefined;
-          const totals = deriveTotals(data);
-          const item = new InventoryItemModel({
-            ...data, facilityId, customerId: actor._id, managedReservationId: reservation._id,
-            ...(preferredCell ? { preferredCellId: preferredCell._id } : {}), ...totals,
-            currentCellId: null, status: InventoryItemStatus.REGISTERED, createdBy: actor._id,
-          });
-          await ManagedInventoryImageService.attachNewImages(data.images ?? [], [], item._id, actor._id, reservation._id, session);
-          await item.save({ session });
-          return dto(item);
+      return withRegistrationTransaction(async session => {
+        // Eligibility reads precede the write token; the first transactional
+        // write is the Reservation CAS, before any Item insertion or image attach.
+        const eligible = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id, undefined, session) as IReservation;
+        const reservation = await lockReservationForRegistration(eligible, session);
+        // Revalidate owner, status and active Facility in the same transaction.
+        const freshReservation = await requireManagedInventoryReservationForRegistration(
+          reservation._id, actor._id, reservation.facilityId, session,
+        );
+        const facilityId = freshReservation.facilityId;
+        const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId, session) : undefined;
+        const totals = deriveTotals(data);
+        const item = new InventoryItemModel({
+          ...data, facilityId, customerId: actor._id, managedReservationId: freshReservation._id,
+          ...(preferredCell ? { preferredCellId: preferredCell._id } : {}), ...totals,
+          currentCellId: null, status: InventoryItemStatus.REGISTERED, createdBy: actor._id,
         });
-      }
-      const reservation = await requireManagedInventoryReservationForRegistration(data.managedReservationId, actor._id);
-      const facilityId = reservation.facilityId;
-      const preferredCell = data.preferredCellId ? await validatePreferredCell(data.preferredCellId, facilityId) : undefined;
-      const totals = deriveTotals(data);
-      const item = new InventoryItemModel({
-        ...data,
-        facilityId,
-        customerId: actor._id,
-        managedReservationId: reservation._id,
-        ...(preferredCell ? { preferredCellId: preferredCell._id } : {}),
-        ...totals,
-        currentCellId: null,
-        status: InventoryItemStatus.REGISTERED,
-        createdBy: actor._id,
+        if (data.images?.length) {
+          await ManagedInventoryImageService.attachNewImages(data.images, [], item._id, actor._id, freshReservation._id, session);
+        }
+        await item.save({ session });
+        return dto(item);
       });
-      await item.save();
-      return dto(item);
     });
   }
 
@@ -642,54 +735,26 @@ export class InventoryItemService {
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only the owning customer may update registered item metadata');
     const itemId = parseId(idInput, 'item ID');
     const changes = parseUpdate(input);
-    return execute(async () => {
-      const item = await loadItem(itemId);
-      await assertItemReadAccess(item, actor);
-      // Normal item edits remain ACTIVE-only. A rejected v2 receiving inspection
-      // may be corrected after deposit, before a contract snapshot is created.
-      let reservation;
-      try { reservation = await requireActiveManagedInventoryReservation(item.managedReservationId, actor._id, item.facilityId); }
-      catch (error) {
-        if (!(error instanceof ManagedReservationGuardError) || item.receivingInspection?.decision !== 'REJECTED') throw error;
-        reservation = await requireManagedInventoryReservationForRegistration(item.managedReservationId, actor._id, item.facilityId);
-        if (reservation.status !== ReservationStatus.DEPOSIT_PAID || reservation.bookingFlowVersion !== 2 || await ContractModel.exists({ reservationId: reservation._id })) throw error;
+    return execute(async () => withTransaction(async session => {
+      const current = await InventoryItemModel.findOne({ _id: itemId, customerId: actor._id, ...live }).session(session).exec();
+      if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      await assertItemReadAccess(current, actor);
+      if (current.status !== InventoryItemStatus.REGISTERED || current.currentCellId !== null) {
+        throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
       }
-      if (item.status !== InventoryItemStatus.REGISTERED || item.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
+      const itemVersion = Number.isSafeInteger(current.__v) && current.__v >= 0 ? current.__v : { $exists: false };
+      const item = await InventoryItemModel.findOneAndUpdate({ _id: itemId, customerId: actor._id,
+        managedReservationId: current.managedReservationId, facilityId: current.facilityId,
+        status: InventoryItemStatus.REGISTERED, currentCellId: null, __v: itemVersion, ...live },
+      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      if (!item) throw new InventoryItemError(409, 'Item changed concurrently; reload and retry metadata update');
+
+      // Item CAS precedes the shared Reservation fence. The same transaction
+      // protects metadata and image attachment from a pending closure.
+      await lockReservationForMetadata(item, session);
       const currentImages = item.images ?? [];
       const requestedImages = (changes.images as string[] | undefined) ?? currentImages;
-      if (requestedImages.some(url => !currentImages.includes(url))) {
-        return withTransaction(async session => {
-          const fresh = await InventoryItemModel.findOne({ _id: itemId, customerId: actor._id, ...live }).session(session).exec();
-          if (!fresh) throw new InventoryItemError(404, 'Inventory item not found');
-          await assertItemReadAccess(fresh, actor);
-          let freshReservation;
-          try { freshReservation = await requireActiveManagedInventoryReservation(fresh.managedReservationId, actor._id, fresh.facilityId, session); }
-          catch (error) {
-            if (!(error instanceof ManagedReservationGuardError) || fresh.receivingInspection?.decision !== 'REJECTED') throw error;
-            freshReservation = await requireManagedInventoryReservationForRegistration(fresh.managedReservationId, actor._id, fresh.facilityId, session);
-            if (freshReservation.status !== ReservationStatus.DEPOSIT_PAID || freshReservation.bookingFlowVersion !== 2 || await ContractModel.exists({ reservationId: freshReservation._id }).session(session)) throw error;
-          }
-          if (fresh.status !== InventoryItemStatus.REGISTERED || fresh.currentCellId !== null) throw new InventoryItemError(409, 'Only unplaced REGISTERED item metadata can be edited');
-          if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, fresh.facilityId);
-          const normalized = { ...changes };
-          const preferredCellId = normalized.preferredCellId;
-          delete normalized.preferredCellId;
-          Object.assign(fresh, normalized);
-          if (preferredCellId === null) fresh.set('preferredCellId', undefined);
-          else if (preferredCellId) fresh.preferredCellId = new Types.ObjectId(preferredCellId as string);
-          Object.assign(fresh, deriveTotals(fresh));
-          fresh.currentCellId = null;
-          fresh.status = InventoryItemStatus.REGISTERED;
-          if (fresh.receivingInspection?.decision === 'REJECTED') {
-            fresh.set('receivingInspection', undefined);
-            fresh.receivingCustodyStatus = 'NONE' as any;
-          }
-          await ManagedInventoryImageService.attachNewImages(requestedImages, currentImages, fresh._id, actor._id, fresh.managedReservationId, session);
-          await fresh.save({ session });
-          return dto(fresh);
-        });
-      }
-      if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, item.facilityId);
+      if (changes.preferredCellId) await validatePreferredCell(changes.preferredCellId as string, item.facilityId, session);
       const normalized = { ...changes };
       const preferredCellId = normalized.preferredCellId;
       delete normalized.preferredCellId;
@@ -703,9 +768,12 @@ export class InventoryItemService {
         item.set('receivingInspection', undefined);
         item.receivingCustodyStatus = 'NONE' as any;
       }
-      await item.save();
+      if (requestedImages.some(url => !currentImages.includes(url))) {
+        await ManagedInventoryImageService.attachNewImages(requestedImages, currentImages, item._id, actor._id, item.managedReservationId, session);
+      }
+      await item.save({ session });
       return dto(item);
-    });
+    }));
   }
 
   static async requestInbound(idInput: unknown, actor: Actor) {
@@ -1105,9 +1173,7 @@ export class InventoryItemService {
       { $inc: { __v: 1 } }, { new: true, session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound rejection');
       await assertNoUnresolvedRepeatedInbound(item, session);
-      const reservation = await ReservationModel.findOne({ _id: item.managedReservationId,
-        facilityId: item.facilityId, customerId: item.customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).session(session).exec();
-      if (!reservation) throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
+      const reservation = await lockReservationForOutboundResolution(item, session);
       const now = new Date();
       item.status = InventoryItemStatus.IN_STORAGE;
       item.outboundRejection = { reason, rejectedAt: now, rejectedBy: actor._id } as any;

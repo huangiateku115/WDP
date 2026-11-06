@@ -2,6 +2,8 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import ReservationModel from '../../models/reservations/reservation.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
+import ContractModel from '../../models/contracts/contract.model';
+import { ContractStatus } from '../../types/contract.type';
 import PricingRuleModel from '../../models/pricing-policy/pricing-rule.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
 import { IReservation, ReservationStatus } from '../../types/reservation.type';
@@ -327,7 +329,17 @@ export class ReservationService {
           throw new ReservationError(409, conflictMessage, { suggestedUnits });
         }
 
-        // 5. TẠO ĐƠN ĐẶT CHỖ
+        // Revalidate the verified profile in the same transaction before creating
+        // the Reservation and its contract snapshot.
+        let profileQuery: any = CustomerProfileModel.findOne({ userId: data.customerId });
+        if (typeof profileQuery.session === 'function') profileQuery = profileQuery.session(session);
+        if (typeof profileQuery.populate === 'function') profileQuery = profileQuery.populate('userId', 'displayName email phone');
+        const verifiedProfile = await profileQuery.exec();
+        if (!verifiedProfile || verifiedProfile.verificationStatus !== VerificationStatus.VERIFIED) {
+          throw new ReservationError(403, 'Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt.');
+        }
+
+        // 5. TẠO ĐƠN CONTRACTED VÀ HỢP ĐỒNG DRAFT TRONG CÙNG TRANSACTION.
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24); // Hold 24 tiếng theo chuẩn SRS V2
 
@@ -346,7 +358,7 @@ export class ReservationService {
           startDate,
           endDate,
           
-          status: ReservationStatus.RESERVED,
+          status: ReservationStatus.CONTRACTED,
           
           pricingPolicyId: new Types.ObjectId(data.pricingPolicyId),
           estimatedRent,
@@ -355,13 +367,39 @@ export class ReservationService {
           expiresAt, // Đồng hồ đếm ngược 24h
           
           statusHistory: [{
-            status: ReservationStatus.RESERVED,
+            status: ReservationStatus.CONTRACTED,
             actorId: data.customerId,
-            reason: 'Customer created reservation'
+            reason: 'Self-Storage reservation automatically contracted; advance-rent Deposit is pending.'
           }]
         });
 
         await reservation.save({ session });
+
+        const profileUser: any = verifiedProfile.userId && typeof verifiedProfile.userId === 'object'
+          ? verifiedProfile.userId
+          : {};
+        const contract = new ContractModel({
+          contractCode: `CTR-${reservation.reservationCode}`,
+          reservationId: reservation._id,
+          customerId: reservation.customerId,
+          status: ContractStatus.DRAFT,
+          customerSnapshot: {
+            identityCard: verifiedProfile.identityCard,
+            address: verifiedProfile.address,
+            taxCode: verifiedProfile.taxCode,
+            fullName: profileUser.displayName,
+            email: profileUser.email,
+            phone: profileUser.phone,
+          },
+          pricingSnapshot: {
+            estimatedRent,
+            depositAmount,
+            taxAmount: reservation.taxAmount || 0,
+            discountAmount: reservation.discountAmount || 0,
+            pricingPolicyId: reservation.pricingPolicyId,
+          },
+        });
+        await contract.save({ session });
         createdReservation = reservation;
       });
 

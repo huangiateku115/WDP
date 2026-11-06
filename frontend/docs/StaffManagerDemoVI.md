@@ -1,5 +1,19 @@
 # Hướng dẫn cho giao diện tiếng Anh
 
+## Managed Inventory V2 — kiểm chứng API ngày 02/11/2026
+
+Kiểm chứng giao diện bổ sung: đơn `MIR-261102-947413` (`6ae8b981a2bf26d5e8947414`) đã chạy Pay Balance → PENDING; người dùng bấm Confirm simulated Balance → CHECKIN_READY. Staff mở `/staff/inventory/inbound/6ae8b982a2bf26d5e894741b?flow=managed-v2`, xác nhận placement và Confirm first inbound; giao diện đọc lại **ACTIVE / IN_STORAGE** thành công. Đã sửa route chi tiết inbound bị thiếu và khôi phục query `flow=managed-v2` cho hàng chờ first inbound. Các bước chuẩn bị deposit, item, inspection và ký hợp đồng của đơn này được thực hiện qua API, không được coi là toàn bộ luồng đã click bằng browser. Không dùng đơn ACTIVE này để nhập lần đầu lần nữa.
+
+Đã bổ sung xác nhận Balance mô phỏng trên giao diện Customer: mở `/portal/payments/<reservationId>`, bấm **Pay Balance (MOCK)**, chờ receipt PENDING, chọn **Mock Confirm Balance** rồi **Confirm simulated Balance**. Nút chỉ hiện khi development và `VITE_ENABLE_MANAGED_BALANCE_MOCK=true`, đơn đúng Customer, hợp đồng hiện hành đủ hai chữ ký và khoản balance đang chờ được xác minh trong phiên hiện tại. Reload hoặc kết quả không rõ chỉ cho GET refresh. Backend phải trả CHECKIN_READY và frontend đọc lại mới xác nhận hoàn tất. Đơn mẫu bên dưới đã trả balance nên sẽ không cho thanh toán lại. Kiểm tra lượt bổ sung: build PASS, 25/25 tests PASS; chưa chạy nút Balance mới bằng trình duyệt với một đơn PENDING mới.
+
+Đơn demo `MIR-261102-9473D9` (`6ae875fea2bf26d5e89473da`) thuộc Ho Chi Minh Facility 3. Customer `pdat0703@gmail.com` đã tạo đơn cho Cell `MI-DEMO-R01-L4-C4`, trả deposit mô phỏng 3.600đ và balance mô phỏng 14.400đ. Backend GET xác nhận trạng thái hiện tại **CHECKIN_READY**. Hàng `DEMO-MI-261102-A` (`6ae8762da2bf26d5e89473e5`) đã được Staff kiểm nhận ACCEPTED, đang **RECEIVED_PENDING_ACCEPTANCE**. Hợp đồng `CTR-MIR-261102-9473D9` đã có chữ ký Customer và Facility Staff trên cùng phiên bản 1.
+
+Luồng trình bày: Customer mở `/portal/reservations/6ae875fea2bf26d5e89473da` để xem deposit và trạng thái đơn; Staff mở `/staff/inventory/inbound/6ae8762da2bf26d5e89473e5?flow=managed-v2` để xem biên bản nhận hàng và mục **First inbound confirmation**. Mục này dùng API `POST /inventory-items/:id/confirm-inbound` và chỉ xác nhận thành công khi backend cho phép nhập kho trong thời hạn thuê. Đơn bắt đầu **10/11/2026** nên lần kiểm chứng ngày 02/11 trả **409**; chưa có trạng thái ACTIVE hoặc hàng IN_STORAGE. Không bấm lặp lại để cố vượt điều kiện ngày.
+
+Thanh toán trên đây đều là MOCK development, không phải giao dịch thật. Backend local cần `MI_MANAGED_DEPOSIT_FLOW_ENABLED=true`; frontend cần `VITE_ENABLE_MANAGED_DEPOSIT_MOCK=true` cho nút xác nhận deposit mô phỏng. Hai cờ đã được đặt trong file cấu hình local bị Git bỏ qua; môi trường khác phải cấu hình riêng. Build và 22/22 test frontend đạt; chưa kiểm chứng thao tác nút mới trong trình duyệt hoặc ảnh Cloudinary thật.
+
+---
+
 Bản hướng dẫn hiện hành: [StaffManagerWorkflowDemo.docx](StaffManagerWorkflowDemo.docx), gồm 8 trang phân biệt quyền, các trang chồng lặp, đường dẫn và thao tác demo bằng tên nút tiếng Anh. Các nhãn tiếng Việt trong phần lịch sử bên dưới không còn khớp giao diện hiện tại.
 
 Staff và Manager dùng chung dữ liệu; Manager duyệt đặt chỗ/phân công, Staff xử lý vận hành. Check-in và Inspection hiện còn chồng lặp giao diện; không demo lặp thao tác. Chưa thay đổi quyền hay bỏ trang trong lượt đổi ngôn ngữ.

@@ -21,6 +21,8 @@ const reservationSchema = new Schema<IReservation>({
   allocatedCapacity: { type: Number },
   usedCapacityM3: { type: Number, min: 0, default: 0 },
   inventoryVersion: { type: Number, min: 0, default: 0 },
+  /** Active Managed Inventory closure request; absent/null means no closure is pending. */
+  activeClosureRequestId: { type: Schema.Types.ObjectId, ref: 'ManagedClosureRequest' },
   managedPricingSnapshot: { type: Schema.Types.Mixed },
   paymentSimulation: {
     simulated: { type: Boolean },

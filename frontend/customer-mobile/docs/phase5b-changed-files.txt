@@ -1,0 +1,44 @@
+Phase 5B — Customer mobile only
+Paths relative to frontend/customer-mobile. .env, generated artifacts/.expo/node_modules/.git excluded.
+MODIFIED (11)
+README.md
+app/_layout.tsx
+docs/ARCHITECTURE.md
+docs/design-map.json
+src/components/booking.tsx
+src/components/customer.tsx
+src/forms/auth.ts
+src/screens/DashboardScreen.tsx
+src/screens/ProfileScreen.tsx
+src/screens/RegisterScreen.tsx
+src/state/useCustomerStore.ts
+
+ADDED (23)
+app/notifications.tsx
+app/support/[requestId].tsx
+app/support/_layout.tsx
+app/support/index.tsx
+app/support/new.tsx
+docs/PHASE5B_REPORT.md
+docs/UI_COMPLETENESS_AUDIT.md
+docs/phase5b-changed-files.txt
+docs/phase5b-mobile-baseline.json
+docs/phase5b-preservation-result.json
+scripts/smoke-care.cjs
+scripts/verify-phase5b-preservation.cjs
+scripts/verify-ui-completeness.cjs
+src/components/customerCare.tsx
+src/domain/customerCare.ts
+src/fixtures/customerCare.ts
+src/forms/support.ts
+src/screens/NotificationsScreen.tsx
+src/screens/SupportDetailScreen.tsx
+src/screens/SupportFormScreen.tsx
+src/screens/SupportScreen.tsx
+src/state/useCareSessionStore.ts
+tests/customer-care.test.tsx
+
+Source baseline: docs/phase5b-mobile-baseline.json
+Preservation: docs/phase5b-preservation-result.json
+Website: 1074 checked, 0 changed, 0 missing. BE-REF/backend not accessed or modified.
+Generated outputs: artifacts/phase5b screenshots/smoke-result.json; artifacts/native Android/iOS Hermes bundles.

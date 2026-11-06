@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "VaultSpace Khách hàng",
+    "slug": "vaultspace-customer-mobile",
+    "scheme": "vaultspace-customer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-font"],
+    "ios": {"supportsTablet": true, "bundleIdentifier": "vn.vaultspace.customer"},
+    "android": {"package": "vn.vaultspace.customer"},
+    "web": {"bundler": "metro", "output": "single"},
+    "experiments": {"typedRoutes": true}
+  }
+}

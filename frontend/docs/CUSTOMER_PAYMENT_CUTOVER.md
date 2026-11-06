@@ -1,0 +1,15 @@
+# Customer payment cutover
+
+The Customer Self-Storage route `/portal/payments/:reservationId` always renders the authenticated PayOS checkout flow. There is no frontend feature-flag or development-mock fallback. If the Backend PayOS feature is unavailable, the page shows the Backend/API error and does not simulate success.
+
+The Customer payment API client exposes only the supported PayOS Reservation endpoints: create/replay checkout, read one owner-scoped payment, and read paginated history for an owner-scoped Reservation. Amount, currency, settlement and application status come from Backend responses. Hosted Checkout opens only a Backend-returned safe HTTPS URL for a pending READY payment. Browser return/cancel query parameters never prove settlement, and only `VERIFIED` plus `APPLIED` causes Reservation refresh. Payment does not activate a Reservation, generate access credentials or initiate handover.
+
+Customer Payment History first loads the signed-in Customer's Reservations, requires selection of one Self-Storage Reservation, and requests its bounded PayOS history on demand. It displays provider and application statuses and does not present demo data as receipts. Refund and adjustment history is explicitly unavailable because no confirmed Customer-owned API is connected; direct Customer refund/charge detail routes also show unavailable states instead of demo records.
+
+Managed Inventory PayOS is not supported. Customer deposit and balance panels are read-only and display: “Thanh toán trực tuyến cho Managed Inventory hiện chưa được hỗ trợ. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn.” Customer mock-pay, Managed mock-confirm and Managed balance initiation wrappers were removed from the Customer UI/API client. Separate Backend routes and BOM/admin capabilities are outside this frontend cutover and were not modified.
+
+For Self-Storage, the Customer contract-signing action requires the Backend Reservation to be `DEPOSIT_PAID`; this preserves the approved sequence `CONTRACTED + DRAFT → PayOS Deposit → DEPOSIT_PAID → contract signature → CHECKIN_READY → PayOS Balance`. The Backend remains authoritative for all lifecycle transitions and still verifies the signed-paper proof before Balance.
+
+`VITE_USE_MOCK=false` remains in `frontend/.env.example`. The obsolete `VITE_ENABLE_PAYOS_CHECKOUT` selector was removed. No PayOS credentials are stored in frontend configuration. Backend `PAYOS_ENABLED` remains the availability gate and was not changed or enabled here.
+
+Frontend unit tests use mocked HTTP responses; they do not call PayOS or establish settlement. Existing Playwright scripts under `.design-reference` target an older mock-payment flow. A temporary PayOS-only smoke harness was attempted against local Vite with intercepted API/Hosted Checkout traffic, but browser launch was blocked: Microsoft Edge exited during Playwright startup with a temporary profile write error, and the Playwright Chromium headless executable was not installed. No browser scenario is reported as passed. Live HTTPS webhook, provider, database replica-set and production rollout verification remain separate prerequisites.

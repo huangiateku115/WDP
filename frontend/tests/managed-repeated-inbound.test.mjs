@@ -37,14 +37,14 @@ test('Staff repeated receiving page uses the real Facility-scoped API and saves 
   assert.match(source, /evidenceUploadIds/);
   assert.match(source, /ACCEPTED_PENDING_CONFIRMATION/);
   assert.match(source, /RETURN_PENDING/);
-  assert.match(routes, /path="inventory\/inbound" element=\{<RepeatedInboundQueuePage \/>\}/);
+  assert.match(routes, /path="inventory\/inbound" element=\{<InboundQueue \/>\}/);
   assert.doesNotMatch(routes, /\['inventory\/inbound',\s*'INBOUND'\]/);
   assert.match(source, /token !== getAccessToken\(\)/);
 });
 
 test('Staff inventory routes render the actual receiving, outbound and relocation pages', async () => {
   const [routes, workspace] = await Promise.all([readFile(routesPath, 'utf8'), readFile(workspacePath, 'utf8')]);
-  assert.match(routes, /path="inventory\/inbound" element=\{<RepeatedInboundQueuePage \/>\}/);
+  assert.match(routes, /path="inventory\/inbound" element=\{<InboundQueue \/>\}/);
   assert.match(routes, /path="inventory\/outbound" element=\{<CanonicalOutboundQueuePage \/>\}/);
   assert.match(routes, /path="inventory\/relocation" element=\{<CanonicalRelocationPage \/>\}/);
   for (const route of ['inventory/inbound', 'inventory/outbound', 'inventory/relocation']) assert.ok(workspace.includes(`"${route}"`));

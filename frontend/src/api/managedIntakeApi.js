@@ -7,9 +7,9 @@ export const managedIntakeApi={
   receivingContext:(itemId,config={})=>client.get(`/inventory-items/${id(itemId)}/receiving-inspection/context`,config),
   uploadReceivingEvidence:(itemId,file,idempotencyKey,config={})=>{const body=new FormData();body.append('file',file);return client.post(`/inventory-items/${id(itemId)}/receiving-inspection/image-uploads`,body,{...config,headers:{...config.headers,'Content-Type':'multipart/form-data','Idempotency-Key':idempotencyKey}});},
   inspectItem:(itemId,body)=>client.post(`/inventory-items/${id(itemId)}/receiving-inspection`,body),
+  confirmFirstInbound:(itemId,body)=>client.post(`/inventory-items/${id(itemId)}/confirm-inbound`,body),
   receivingEvidence:(itemId,config={})=>client.get(`/inventory-items/${id(itemId)}/receiving-inspection/context`,config),
   createContract:reservationId=>client.post(`/reservations/managed/${id(reservationId)}/contract`,{}),
   signCustomer:contractId=>client.patch(`/contracts/${id(contractId)}/sign`,{}),
   signFacility:contractId=>client.patch(`/contracts/${id(contractId)}/sign/facility`,{}),
 };
-// Staff inspection mutation is intentionally not exposed: Staff reservation read is missing.

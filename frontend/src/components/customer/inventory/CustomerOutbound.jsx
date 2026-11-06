@@ -55,20 +55,21 @@ export function CustomerOutboundAction({item,rental,loading,onRefresh}){
   </section>;
 }
 
-export default function CustomerOutboundPage({id}){
+export default function CustomerOutboundPage({id,outboundAction}){
   const {accessToken}=useAuthSession();
-  return <OutboundPage key={`${accessToken}:${id}`} id={id}/>;
+  return <OutboundPage key={`${accessToken}:${id}`} id={id} outboundAction={outboundAction}/>;
 }
-function OutboundPage({id}){
+function OutboundPage({id,outboundAction:OutboundAction=CustomerOutboundAction}){
   const resource=useInventoryBackend(async config=>{
     const item=inventoryRecord(await inventoryApi.get(id,config));
     if(inventoryId(item)!==id)throw Error('Inventory response does not match this item.');
     return item;
   },[id]);
   const item=resource.data;
+  const rental=useInventoryBackend(config=>item?.managedReservationId?managedInventoryReservation(inventoryId(item.managedReservationId),config):Promise.resolve(null),[id,inventoryId(item?.managedReservationId)]);
   return <CustomerScreen title="Request Outbound" description="Yêu cầu nhân viên xuất và bàn giao hàng đang lưu kho." action={<Button asChild variant="outline"><Link to="/portal/inventory">My Inventory</Link></Button>}>
     <LoadState resource={resource}/>
     {item&&<Card><CardContent><h2 className="text-xl font-bold">{item.itemCode} · {item.name}</h2><div className="my-4"><InventoryStatus status={item.status}/></div><Details values={[["Quantity",`${item.quantity} ${item.quantityUnit}`],["Current Cell",inventoryId(item.currentCellId)||'Not assigned']]}/><div className="mt-4 flex flex-wrap gap-3"><Link className="text-brand underline" to={`/portal/inventory/${id}`}>Item details</Link><Link className="text-brand underline" to={`/portal/inventory/${id}/history`}>View Movement History</Link><Link className="text-brand underline" to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}>View Managed Reservation</Link></div></CardContent></Card>}
-    <CustomerOutboundAction item={item} loading={resource.loading||!!resource.error} onRefresh={resource.retry}/>
+    {item&&<OutboundAction item={item} rental={rental.data} loading={resource.loading||!!resource.error||rental.loading||!!rental.error} onRefresh={()=>{resource.retry();rental.retry();}}/>}
   </CustomerScreen>;
 }

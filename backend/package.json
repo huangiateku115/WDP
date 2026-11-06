@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@keycloak/keycloak-admin-client": "^26.8.0",
+    "@payos/node": "^2.0.5",
     "amqplib": "^2.0.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",

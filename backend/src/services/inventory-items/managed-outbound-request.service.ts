@@ -118,9 +118,30 @@ async function readCanonicalState(item: any, session: ClientSession, expectedPen
   }  if (requests.some((request: any) => request.state === ManagedOutboundRequestState.PENDING && (!expectedPendingRequestId || !sameId(request._id, expectedPendingRequestId)))) {    return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_CONFLICT, 'An unresolved outbound request already exists for this Item');
   }  return { balance, reconciled, requests };
 }
-async function lockActiveReservation(scope: Scope, session: ClientSession, now: Date) {  const reservation = await ReservationModel.findOneAndUpdate({ _id: scope.reservationId, customerId: scope.customerId,    facilityId: scope.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE,    startDate: { $lte: now }, endDate: { $gt: now } }, { $inc: { inventoryVersion: 1 } },  { new: true, session, runValidators: true }).exec();
-  if (!reservation) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'An in-term ACTIVE Managed Inventory reservation is required');
-  return reservation;
+async function lockReservationFence(scope: Pick<Scope, 'reservationId' | 'customerId' | 'facilityId'>,
+  session: ClientSession, options: { now?: Date; requireActiveTerm?: boolean }) {
+  const identity = { _id: scope.reservationId, customerId: scope.customerId,
+    facilityId: scope.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
+  const current = await ReservationModel.findOne(identity).session(session).exec();
+  const now = options.now ?? new Date();
+  if (!current || (options.requireActiveTerm && (current.status !== ReservationStatus.ACTIVE ||
+      current.startDate > now || current.endDate <= now))) {
+    return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'An in-term ACTIVE Managed Inventory reservation is required');
+  }
+  const version = Number(current.inventoryVersion ?? 0);
+  const versionFilter = version === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const eligibility = options.requireActiveTerm ? { status: ReservationStatus.ACTIVE,
+    startDate: { $lte: now }, endDate: { $gt: now } } : {};
+  const locked = await ReservationModel.findOneAndUpdate({ ...identity, $and: [eligibility, versionFilter] },
+    { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!locked) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_CONFLICT,
+    'Reservation lifecycle changed; reload and retry the outbound operation');
+  return locked;
+}
+async function lockActiveReservation(scope: Scope, session: ClientSession, now: Date) {
+  // Outbound is intentionally allowed during closure while existing rental-term checks pass.
+  return lockReservationFence(scope, session, { now, requireActiveTerm: true });
 }
 async function preflightOwnedItem(itemId: Types.ObjectId, actorId: Types.ObjectId): Promise<Scope> {  const item = await InventoryItemModel.findOne({ _id: itemId, customerId: actorId, ...live })    .select('_id customerId managedReservationId facilityId currentCellId __v').lean().exec();
   if (!item || !item.currentCellId) return fail(404, ManagedStockErrorCode.OUTBOUND_REQUEST_NOT_FOUND, 'Eligible inventory item not found');
@@ -140,9 +161,8 @@ function parseConfirmation(input: unknown, idempotencyKeyInput: unknown, ifMatch
 function assertStaffFacility(actor: Actor, facilityId: unknown) {  if (actor.role !== UserRole.FACILITY_STAFF) return fail(403, ManagedStockErrorCode.OUTBOUND_REQUEST_FORBIDDEN, 'Facility Staff role required');
   if (!(actor as any).assignedFacilityId || String((actor as any).assignedFacilityId) !== String(facilityId)) {    return fail(404, ManagedStockErrorCode.OUTBOUND_REQUEST_NOT_FOUND, 'Outbound request not found');
   }}
-async function lockOutboundReservation(scope: Scope, session: ClientSession, now: Date) {  const reservation = await ReservationModel.findOneAndUpdate({ _id: scope.reservationId, customerId: scope.customerId,    facilityId: scope.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE,    startDate: { $lte: now }, endDate: { $gt: now } }, { $inc: { inventoryVersion: 1 } },  { new: true, session, runValidators: true }).exec();
-  if (!reservation) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'An in-term ACTIVE Managed Inventory reservation is required');
-  return reservation;
+async function lockOutboundReservation(scope: Scope, session: ClientSession, now: Date) {
+  return lockReservationFence(scope, session, { now, requireActiveTerm: true });
 }
 async function readConfirmationEvent(itemId: Types.ObjectId, key: string, session?: ClientSession) {  let query = ManagedOutboundRequestEventModel.findOne({ itemId, operation: ManagedOutboundRequestOperation.CONFIRM, idempotencyKey: key });
   if (session) query = query.session(session);
@@ -269,6 +289,8 @@ export class ManagedOutboundRequestService {  static async create(itemIdInput: u
         if (!preflightItem?.currentCellId) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_CONFLICT, 'Item is not in a cancellable stored state');
         const item = await InventoryItemModel.findOneAndUpdate({ _id: scope.itemId, customerId: actor._id,          managedReservationId: scope.reservationId, facilityId: scope.facilityId, currentCellId: preflightItem.currentCellId,          status: 'IN_STORAGE', __v: Number.isSafeInteger(preflightItem.__v) && preflightItem.__v >= 0 ? preflightItem.__v : { $exists: false },          ...live } as any, { $inc: { __v: 1 } }, { new: true, session }).exec();
         if (!item) throw new ItemTokenConflict();
+        // Release of an existing hold is a valid resolution during closure.
+        await lockReservationFence(scope, session, { requireActiveTerm: false });
         const event = await findEvent(itemId, ManagedOutboundRequestOperation.CANCEL, key, actor._id, session);
         if (event) throw new ReplayAbort(replayResult(event, payloadHash));
         const request = await ManagedOutboundRequestModel.findOne({ _id: requestId, itemId, customerId: actor._id }).session(session).exec();

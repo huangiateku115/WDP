@@ -122,7 +122,8 @@ function makeFixture(t, options = {}) {
     serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 2, status: 'ACTIVE', startDate: new Date(now.getTime() - 86400000),
     endDate: new Date(now.getTime() + 86400000), allocatedCapacity: 2, usedCapacityM3: (options.multiBatch ? .047 : .042) +
       (options.sourceOtherVolume ?? 0) + (options.destinationUsedVolumeM3 ?? 0), allocatedCellIds: [source._id, destination._id],
-    inventoryVersion: 0, async save() { return this; } };
+    inventoryVersion: 0, ...(options.closurePending ? { activeClosureRequestId: oid('507f1f77bcf86cd799439299') } : {}),
+    async save() { return this; } };
   const allocations = new Map([
     [String(source._id), { _id: oid('507f1f77bcf86cd799439201'), facilityId: item.facilityId, cellId: source._id,
       reservationId: item.managedReservationId, customerId: item.customerId, status: 'OCCUPIED',
@@ -186,9 +187,11 @@ function makeFixture(t, options = {}) {
   t.mock.method(OutboundRequest, 'findOne', () => new Query(options.pendingOutbound ? { _id: oid(id.remove) } : null));
   t.mock.method(OutboundRequest, 'find', () => new Query([]));
   t.mock.method(InboundRequest, 'findOne', () => new Query(options.pendingInbound ? { _id: oid(id.remove) } : null));
-  t.mock.method(Reservation, 'findOne', () => new Query({ bookingFlowVersion: 2 }));
-  t.mock.method(Reservation, 'findOneAndUpdate', (_filter, update) => {
-    state.operationOrder.push('Reservation'); reservation.inventoryVersion += update.$inc.inventoryVersion; return new Query(reservation);
+  t.mock.method(Reservation, 'findOne', () => new Query(reservation));
+  t.mock.method(Reservation, 'findOneAndUpdate', (filter, update) => {
+    state.operationOrder.push('Reservation');
+    if (filter.activeClosureRequestId === null && reservation.activeClosureRequestId) return new Query(null);
+    reservation.inventoryVersion += update.$inc.inventoryVersion; return new Query(reservation);
   });
   t.mock.method(Reservation.prototype, 'save', async function () { return this; });
   t.mock.method(Capacity, 'findOneAndUpdate', (_filter, update) => {
@@ -393,6 +396,14 @@ test('late audit failure rolls back the already staged MOVE and every placement/
   assert.equal(state.movements.length, 2);
   assert.equal(state.itemMovements.get(id.item).length, 2);
   assert.equal(state.audits.length, 0);
+});
+
+test('canonical relocation is blocked by an active closure marker before any MOVE or counter commit', async t => {
+  const state = makeFixture(t, { closurePending: true });
+  await assert.rejects(service.relocate(id.item, payload(), 'closure-relocation-0001', staff), { status: 409 });
+  assert.equal(state.movements.length, 2);
+  assert.equal(state.source.usedWeightKg, 14); assert.equal(state.destination.usedWeightKg, 0);
+  assert.equal(String(state.item.currentCellId), id.source);
 });
 
 test('gate OFF blocks new canonical relocation but committed key replay remains available', async t => {

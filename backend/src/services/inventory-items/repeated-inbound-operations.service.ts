@@ -110,6 +110,62 @@ async function getScopedRequest(requestId: Types.ObjectId, actor: Actor, session
   if (!request) return fail(404, 'INBOUND_REQUEST_NOT_FOUND', 'Receipt request not found');
   return request;
 }
+async function lockRequestItem(itemId: Types.ObjectId, reservationId: Types.ObjectId, facilityId: Types.ObjectId,
+  customerId: Types.ObjectId, session: ClientSession) {
+  const identity = { _id: itemId, managedReservationId: reservationId, facilityId, customerId, ...live };
+  const item: any = await InventoryItemModel.findOne({ ...identity,
+    status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.CHECKED_OUT] } })
+    .select('_id __v status').session(session).lean().exec();
+  if (!item) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Item changed or is no longer eligible; reload and retry');
+  const version = Number.isSafeInteger(item.__v) ? { __v: item.__v } : { __v: { $exists: false } };
+  const locked = await InventoryItemModel.findOneAndUpdate({ ...identity,
+    status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.CHECKED_OUT] }, ...version },
+  { $inc: { __v: 1 } }, { new: true, session }).exec();
+  if (!locked) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Item changed concurrently; reload and retry');
+  return locked;
+}
+async function lockRequestReservation(request: IInventoryInboundRequest, session: ClientSession,
+  options: { rejectClosure?: boolean; requireActiveTerm?: boolean } = {}) {
+  const identity = { _id: request.reservationId, customerId: request.customerId,
+    facilityId: request.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
+  const current = await ReservationModel.findOne(identity).session(session).exec();
+  if (!current) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Managed reservation is missing or outside request scope');
+  const now = new Date();
+  if (options.requireActiveTerm && (current.status !== ReservationStatus.ACTIVE || current.startDate > now || current.endDate <= now)) {
+    fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'An in-term ACTIVE Managed Inventory reservation is required');
+  }
+  const version = Number(current.inventoryVersion ?? 0);
+  const versionFilter = version === 0
+    ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const locked = await ReservationModel.findOneAndUpdate({ ...identity, ...versionFilter,
+    ...(options.rejectClosure ? { activeClosureRequestId: null } : {}),
+    ...(options.requireActiveTerm ? { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } } : {}) },
+  { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!locked) {
+    if (options.rejectClosure && current.activeClosureRequestId) {
+      fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Inbound acceptance is blocked while reservation closure is pending');
+    }
+    fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Reservation lifecycle changed concurrently; reload and retry');
+  }
+  return locked;
+}
+async function lockRequestReservationByIdentity(identity: { reservationId: Types.ObjectId; facilityId: Types.ObjectId; customerId: Types.ObjectId },
+  session: ClientSession, now: Date) {
+  const scope = { _id: identity.reservationId, facilityId: identity.facilityId, customerId: identity.customerId,
+    serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } };
+  const current = await ReservationModel.findOne(scope).session(session).exec();
+  if (!current) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'An in-term ACTIVE Managed Inventory reservation is required');
+  if (current.activeClosureRequestId) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Inbound stock confirmation is blocked while reservation closure is pending');
+  const version = Number(current.inventoryVersion ?? 0);
+  const versionFilter = version === 0
+    ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
+    : { inventoryVersion: version };
+  const locked = await ReservationModel.findOneAndUpdate({ ...scope, ...versionFilter, activeClosureRequestId: null },
+    { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  if (!locked) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Reservation lifecycle changed concurrently; reload and retry');
+  return locked;
+}
 function makeEvent(request: any, actor: Actor, operation: Operation, idemKey: string, payload: unknown, resultSnapshot: unknown) {
   return new InventoryInboundRequestEventModel({ requestId: request._id, itemId: request.itemId, reservationId: request.reservationId,
     facilityId: request.facilityId, customerId: request.customerId, actorId: actor._id, operation, scopeType: ScopeType.REQUEST,
@@ -222,9 +278,8 @@ export class RepeatedInboundOperationsService {
     const existing = await InventoryInboundRequestEventModel.findOne({ requestId, operation: Operation.INSPECT, idempotencyKey: idem, actorId: actor._id }).lean().exec();
     if (existing) { if (existing.payloadHash !== payloadHash) fail(409, 'INBOUND_REQUEST_IDEMPOTENCY_CONFLICT', 'Inspection key was used with another payload'); return existing.resultSnapshot; }
     return recoverEvent(requestId, actor._id, Operation.INSPECT, idem, payloadHash, () => transaction(async session => {
-      const reservation = await ReservationModel.findOneAndUpdate({ _id: preflight.reservationId, customerId: preflight.customerId,
-        facilityId: preflight.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }, { $inc: { inventoryVersion: 1 } }, { new: true, session }).exec();
-      if (!reservation) fail(404, 'INBOUND_REQUEST_NOT_FOUND', 'Receipt request not found');
+      await lockRequestItem(preflight.itemId, preflight.reservationId, preflight.facilityId, preflight.customerId, session);
+      const reservation = await lockRequestReservation(preflight, session, { rejectClosure: decision === 'ACCEPTED' });
       if (decision === 'ACCEPTED' && (reservation.status !== ReservationStatus.ACTIVE || !(reservation.startDate <= new Date() && reservation.endDate > new Date()))) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Acceptance requires an in-term ACTIVE Managed Inventory reservation');
       const request = await getScopedRequest(requestId, actor, session);
       const prior = await InventoryInboundRequestEventModel.findOne({ requestId, operation: Operation.INSPECT, idempotencyKey: idem, actorId: actor._id }).session(session).lean().exec();
@@ -274,16 +329,17 @@ export class RepeatedInboundOperationsService {
   }
 
   static async completeReturn(requestIdInput: unknown, input: unknown, ifMatch: unknown, keyInput: unknown, actor: Actor) {
-    assertGate();
     if (actor.role !== UserRole.FACILITY_STAFF || !actor.assignedFacilityId) fail(403, 'INBOUND_REQUEST_FORBIDDEN', 'Assigned Facility Staff required');
     const requestId = id(requestIdInput, 'request ID'), expected = version(ifMatch), idem = key(keyInput), body = object(input, ['returnNote']);
     if (typeof body.returnNote !== 'string' || !body.returnNote.trim() || body.returnNote.length > 1000) fail(400, 'INBOUND_REQUEST_INVALID', 'A return completion note is required');
     const payload = { requestId: String(requestId), expectedVersion: expected, event: 'RETURN_COMPLETED', returnNote: body.returnNote.trim() };
     const hash = canonicalReceiptPayloadHash(payload);
-    await getScopedRequest(requestId, actor);
+    const preflight = await getScopedRequest(requestId, actor);
     const existing = await InventoryInboundRequestEventModel.findOne({ requestId, operation: Operation.RETURN_COMPLETED, idempotencyKey: idem, actorId: actor._id }).lean().exec();
     if (existing) { if (existing.payloadHash !== hash) fail(409, 'INBOUND_REQUEST_IDEMPOTENCY_CONFLICT', 'Return key was used with different input'); return existing.resultSnapshot; }
     return recoverEvent(requestId, actor._id, Operation.RETURN_COMPLETED, idem, hash, () => transaction(async session => {
+      await lockRequestItem(preflight.itemId, preflight.reservationId, preflight.facilityId, preflight.customerId, session);
+      await lockRequestReservation(preflight, session);
       const request = await getScopedRequest(requestId, actor, session);
       if (request.version !== expected) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Request version is stale');
       const result = transitionReceiptRequest(request.state, request.custodyState, 'RETURN_COMPLETED');
@@ -323,10 +379,8 @@ export class RepeatedInboundOperationsService {
       const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: lockCell.zoneId, facilityId: lockCell.facilityId, isActive: true, ...live },
         { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
       if (!zone) fail(409, 'CAPACITY_UNKNOWN', 'Destination Zone is unavailable');
-      const reservation = await ReservationModel.findOneAndUpdate({ _id: preflightRequest.reservationId, customerId: preflightRequest.customerId, facilityId: preflightRequest.facilityId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } },
-      { $inc: { inventoryVersion: 1 } }, { new: true, session }).exec();
-      if (!reservation) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'An in-term ACTIVE Managed Inventory reservation is required');
+      const reservation = await lockRequestReservationByIdentity({ reservationId: preflightRequest.reservationId,
+        facilityId: preflightRequest.facilityId, customerId: preflightRequest.customerId }, session, now);
       const current = await getScopedRequest(requestId, actor, session);
       if (current.version !== expectedVersion) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Request version is stale');
       const eventInTxn = await InventoryInboundRequestEventModel.findOne({ requestId, operation: Operation.CONFIRM, idempotencyKey: idem, actorId: actor._id }).session(session).lean().exec();

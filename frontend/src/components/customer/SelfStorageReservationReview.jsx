@@ -141,7 +141,7 @@ function Review({ draft }) {
         endDate: "",
         term: null,
       });
-      nav(`/portal/reservations/${recordId(created)}`, {
+      nav(`/portal/payments/${recordId(created)}`, {
         state: { selfStorageCreated: true },
       });
     } catch (e) {
