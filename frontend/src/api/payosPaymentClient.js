@@ -73,7 +73,8 @@ export function isSafePayosCheckoutUrl(value) {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password;
+    return url.protocol === "https:" && url.hostname.toLowerCase() === "pay.payos.vn" &&
+      !url.port && !url.username && !url.password && url.pathname.startsWith("/web/") && !url.hash;
   } catch {
     return false;
   }
@@ -85,6 +86,7 @@ export function canOpenPayosCheckout(payment) {
     payment?.checkoutStatus === "READY" &&
     payment?.applicationStatus !== "MANUAL_REVIEW" &&
     payment?.providerSettlementStatus !== "VERIFIED" &&
+    payment?.reconciliationRequired === false &&
     isSafePayosCheckoutUrl(payment?.checkoutUrl);
 }
 

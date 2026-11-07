@@ -382,7 +382,7 @@ test("Suite 3.1: createReservation bỏ qua số tiền Client gửi lên, tự 
   const res = mockResponse();
 
   await ReservationController.createReservation(req, res);
-  assert.equal(res.statusCode, 201);
+  assert.equal(res.statusCode, 201, JSON.stringify(res.body));
   assert.equal(res.body.success, true);
 
   // Số tiền lưu phải là 1,500,000 VNĐ, không bao giờ nhận 1 VNĐ
@@ -422,6 +422,46 @@ test("createReservation aborts the unit transaction if automatic DRAFT Contract 
   }), /contract write failed/);
   assert.equal(reservationWasSaved, true);
   assert.equal(transactionAborted, true);
+});
+
+test("Self-Storage Reservation controller returns 201 for a new booking and 200 for an idempotent replay", async (t) => {
+  const reservation = { _id: new mongoose.Types.ObjectId(), serviceType: "SELF_STORAGE", status: "CONTRACTED" };
+  const calls = [];
+  t.mock.method(ReservationService, "createReservationWithOutcome", async (input) => {
+    calls.push(input);
+    return { reservation, replayed: calls.length > 1 };
+  });
+  const key = "wdp-booking-same-request-key";
+  const req = {
+    user: { _id: customerAId, role: "CUSTOMER" },
+    get: name => name === "Idempotency-Key" ? key : undefined,
+    body: {
+      facilityId: facilityId.toString(), storageUnitId: storageUnitId.toString(),
+      startDate: new Date(Date.now() + 86400000).toISOString(),
+      endDate: new Date(Date.now() + 86400000 * 31).toISOString(), pricingPolicyId: pricingPolicyId.toString(),
+    },
+  };
+  const first = mockResponse();
+  await ReservationController.createReservation(req, first);
+  const replay = mockResponse();
+  await ReservationController.createReservation(req, replay);
+  assert.equal(first.statusCode, 201);
+  assert.equal(replay.statusCode, 200);
+  assert.equal(first.body.data, reservation);
+  assert.equal(replay.body.data, reservation);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].idempotencyKey, key);
+  assert.equal(calls[1].idempotencyKey, key);
+  assert.equal(calls[0].customerId, calls[1].customerId);
+});
+
+test("Reservation schema declares a customer-scoped partial unique booking idempotency index", () => {
+  const index = ReservationModel.schema.indexes().find(([fields]) =>
+    fields.customerId === 1 && fields.bookingIdempotencyKey === 1,
+  );
+  assert.ok(index);
+  assert.equal(index[1].unique, true);
+  assert.deepEqual(index[1].partialFilterExpression, { bookingIdempotencyKey: { $type: "string" } });
 });
 
 // =========================================================================

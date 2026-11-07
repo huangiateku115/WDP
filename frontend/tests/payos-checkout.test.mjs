@@ -13,6 +13,7 @@ import {
   normalizePayosReferenceId,
   payosContractMatchesIdentity,
   payosEligibilityMessage,
+  formatPayosVnd,
   readPayosAttempts,
   trackingStorageKey,
   unresolvedPayosPayment,
@@ -22,6 +23,7 @@ import { canSign } from '../src/lib/customerReservationService.js';
 import { createPayosQrDataUrl } from '../src/lib/selfStoragePayosQr.js';
 import { isPayosPaymentPollable, pollPayosPaymentStatuses } from '../src/lib/selfStoragePayosPolling.js';
 import { customerPaymentStatus, selectOwnedSelfStorageReservation } from '../src/lib/selfStoragePaymentHistory.js';
+import { readOrCreateSelfStorageBookingAttempt, writeSelfStorageBookingAttempt } from '../src/lib/selfStorageReservation.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -138,9 +140,34 @@ test('Only an eligible pending READY PayOS checkout can be opened; completed URL
   assert.equal(canOpenPayosCheckout(paymentRecord({ checkoutStatus: 'UNKNOWN' })), false);
   assert.equal(canOpenPayosCheckout(paymentRecord({ applicationStatus: 'MANUAL_REVIEW' })), false);
   assert.equal(canOpenPayosCheckout(paymentRecord({ providerSettlementStatus: 'VERIFIED' })), false);
+  assert.equal(canOpenPayosCheckout(paymentRecord({ reconciliationRequired: true })), false);
   assert.equal(isSafePayosCheckoutUrl('http://pay.payos.vn/web/example'), false);
   assert.equal(isSafePayosCheckoutUrl('https://user:pass@pay.payos.vn/web/example'), false);
+  assert.equal(isSafePayosCheckoutUrl('https://evil.example/web/example'), false);
+  assert.equal(isSafePayosCheckoutUrl('https://pay.payos.vn.evil.example/web/example'), false);
+  assert.equal(isSafePayosCheckoutUrl('https://pay.payos.vn/other/example'), false);
   assert.equal(isSafePayosCheckoutUrl('not a URL'), false);
+});
+
+test('Customer VND amounts use Vietnamese grouping and reject invalid instructions', () => {
+  assert.equal(formatPayosVnd(1500000), '1.500.000');
+  assert.equal(formatPayosVnd(-1), '—');
+  assert.equal(formatPayosVnd(1.2), '—');
+});
+
+test('Self-Storage booking retries reuse a persisted idempotency key and reservation identity', () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const payload = { facilityId: reservationId, storageUnitId: paymentId, pricingPolicyId: customerId,
+    startDate: '2026-12-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z' };
+  const first = readOrCreateSelfStorageBookingAttempt(storage, contractId, payload);
+  assert.match(first.idempotencyKey, /^wdp-booking-/);
+  assert.equal(first.reservationId, null);
+  const replay = readOrCreateSelfStorageBookingAttempt(storage, contractId, payload);
+  assert.equal(replay.idempotencyKey, first.idempotencyKey);
+  writeSelfStorageBookingAttempt(storage, { ...first, reservationId: paymentId });
+  assert.equal(readOrCreateSelfStorageBookingAttempt(storage, contractId, payload).reservationId, paymentId);
+  assert.notEqual(readOrCreateSelfStorageBookingAttempt(storage, contractId, { ...payload, endDate: '2027-02-01T00:00:00.000Z' }).idempotencyKey, first.idempotencyKey);
 });
 
 test('only a valid provider QR payload on an eligible pending checkout can be shown', () => {
@@ -376,6 +403,7 @@ test('Recovered payment history deduplicates only immutable identity matches and
 test('Self-Storage always uses PayOS and never has a Customer mock fallback', async () => {
   const integrationPath = fileURLToPath(new URL('../src/components/customer/RentalLifecycleIntegration.jsx', import.meta.url));
   const checkoutPath = fileURLToPath(new URL('../src/components/customer/SelfStoragePayosCheckout.jsx', import.meta.url));
+  const reviewPath = fileURLToPath(new URL('../src/components/customer/SelfStorageReservationReview.jsx', import.meta.url));
   const qrPath = fileURLToPath(new URL('../src/lib/selfStoragePayosQr.js', import.meta.url));
   const pollingPath = fileURLToPath(new URL('../src/lib/selfStoragePayosPolling.js', import.meta.url));
   const paymentApiPath = fileURLToPath(new URL('../src/api/paymentApi.js', import.meta.url));
@@ -388,8 +416,8 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   const envPath = fileURLToPath(new URL('../.env.example', import.meta.url));
   const depositPath = fileURLToPath(new URL('../src/components/customer/CustomerDepositPayment.jsx', import.meta.url));
   const balancePath = fileURLToPath(new URL('../src/components/customer/CustomerBalancePayment.jsx', import.meta.url));
-  const [integration, checkout, qrRenderer, poller, paymentApi, managedApi, paymentPage, history, financial, navigation, lifecycle, envExample, deposit, balance] = await Promise.all([
-    readFile(integrationPath, 'utf8'), readFile(checkoutPath, 'utf8'), readFile(qrPath, 'utf8'), readFile(pollingPath, 'utf8'),
+  const [integration, checkout, review, qrRenderer, poller, paymentApi, managedApi, paymentPage, history, financial, navigation, lifecycle, envExample, deposit, balance] = await Promise.all([
+    readFile(integrationPath, 'utf8'), readFile(checkoutPath, 'utf8'), readFile(reviewPath, 'utf8'), readFile(qrPath, 'utf8'), readFile(pollingPath, 'utf8'),
     readFile(paymentApiPath, 'utf8'),
     readFile(managedApiPath, 'utf8'), readFile(paymentPagePath, 'utf8'), readFile(historyPath, 'utf8'), readFile(financialPath, 'utf8'),
     readFile(navigationPath, 'utf8'), readFile(lifecyclePath, 'utf8'), readFile(envPath, 'utf8'),
@@ -422,12 +450,10 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.doesNotMatch(history, /customerDemoStore|staffDemoStore|managerDemoStore|sessionStorage|receiptId|demoReceipt|refunds\.map|charges\.map/i);
   assert.doesNotMatch(financial, /customerDemoStore|useCustomerData|data\.refunds|data\.charges/i);
   assert.match(financial, /Demo records are not shown as account transactions/);
-  assert.match(checkout, /window\.location\.assign\(payment\.checkoutUrl\)/);
   const payHandler = checkout.slice(checkout.indexOf('async function pay()'), checkout.indexOf('function continueExistingCheckout'));
-  assert.doesNotMatch(payHandler, /window\.location\.assign/);
-  assert.match(payHandler, /canShowPayosQr\(payment\)/);
-  assert.match(checkout, /<img[\s\S]*alt=\{\"Mã QR PayOS thanh toán \"/);
-  assert.match(checkout, /createPayosQrDataUrl\(payment\)/);
+  assert.match(payHandler, /window\.location\.assign/);
+  assert.match(payHandler, /canOpenPayosCheckout\(payment\)/);
+  assert.doesNotMatch(checkout, /canShowPayosQr|createPayosQrDataUrl|Mã QR|<img/);
   assert.match(checkout, /setInterval\(tick, 5000\)/);
   assert.match(checkout, /document\.hidden/);
   assert.match(checkout, /clearInterval\(interval\)/);
@@ -437,7 +463,11 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.doesNotMatch(checkout, /window\.location\.assign\([^)]*searchParams/);
   assert.match(checkout, /getPayosPaymentStatus/);
   assert.match(checkout, /listPayosPaymentsForReservation/);
-  assert.match(checkout, /Mở trang thanh toán PayOS/);
+  assert.match(checkout, /Tiếp tục thanh toán qua PayOS/);
+  assert.match(review, /Idempotency-Key/);
+  assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
+  assert.match(review, /window\.location\.assign\(result\.payment\.checkoutUrl\)/);
+  assert.match(review, /Xác nhận đặt kho và thanh toán/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);
   assert.match(checkout, /returnQueryPresent/);

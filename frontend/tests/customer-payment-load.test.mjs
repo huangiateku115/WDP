@@ -6,6 +6,7 @@ import { transformSync } from 'esbuild';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { eligiblePayosPurpose, normalizePayosReferenceId, payosContractMatchesIdentity } from '../src/lib/selfStoragePayos.js';
+import { readOrCreateSelfStorageBookingAttempt, writeSelfStorageBookingAttempt } from '../src/lib/selfStorageReservation.js';
 
 const require = createRequire(import.meta.url);
 const reservationId = '507f1f77bcf86cd799439011';
@@ -145,14 +146,19 @@ test('Payment route renders a real loading state instead of Simulated Payment be
 test('Review creates one Reservation and one stable-key Deposit intent after explicit confirmation', async t => {
   const previousWindow = globalThis.window;
   const values = new Map();
-  globalThis.window = { sessionStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) } };
+  let redirectedTo = null;
+  globalThis.window = { sessionStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }, location: { assign: url => { redirectedTo = url; } } };
   t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
-  const payload = { facilityId, storageUnitId: unitId, startDate: '2026-12-01', endDate: '2027-01-01', pricingPolicyId: 'price-1' };
+  const payload = { facilityId, storageUnitId: unitId, startDate: '2026-12-01', endDate: '2027-01-01', pricingPolicyId: '507f1f77bcf86cd799439099' };
   const facility = { _id: facilityId, name: 'Test Facility' };
   const unit = { _id: unitId, facilityId, unitCode: 'A-01', size: 'SMALL' };
   const reviewData = { facility, unit, profile: { verificationStatus: 'VERIFIED' }, price: { currency: 'VND' }, payload, estimate: { estimatedRent: 3000000, depositAmount: 1000000, taxAmount: 0, durationDays: 31 } };
   const states = [], effects = [];
-  let cursor = 0, destination = null, clearedDraft = null, createCalls = 0, checkoutCalls = 0, idempotencyKey = null, createdStatus = null;
+  let cursor = 0, destination = null, clearedDraft = null, createCalls = 0, checkoutCalls = 0, idempotencyKey = null, bookingKey = null, createdStatus = null;
+  const readyCheckout = { id: '507f1f77bcf86cd799439016', reservationId, purpose: 'DEPOSIT', amount: 1000000,
+    currency: 'VND', provider: 'PAYOS', status: 'PENDING', applicationStatus: 'NOT_APPLIED',
+    providerSettlementStatus: 'NOT_VERIFIED', checkoutStatus: 'READY', checkoutUrl: 'https://pay.payos.vn/web/test',
+    reconciliationRequired: false };
   const hooks = {
     useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value; }]; },
     useRef(initial) { const i = cursor++; if (!(i in states)) states[i] = { current: initial }; return states[i]; },
@@ -164,15 +170,18 @@ test('Review creates one Reservation and one stable-key Deposit intent after exp
     'react-router-dom': { useNavigate: () => (...args) => { destination = args; }, useLocation: () => ({ state: null }) },
     '@/contexts/ReservationContext': { useReservation: () => ({ rentalDraft: { facility, unit, startDate: payload.startDate, endDate: payload.endDate, term: { value: 1, unit: 'MONTH' } }, updateRentalDraft: value => { clearedDraft = value; } }) },
     '@/lib/authSession': { useAuthSession: () => ({ accessToken: 'token', user: { id: customerId } }), getAccessToken: () => 'token' },
-    '@/api/paymentApi': { default: { createPayosCheckout: async (_id, purpose, key) => { checkoutCalls++; idempotencyKey = key; assert.equal(purpose, 'DEPOSIT'); return { payment: { id: '507f1f77bcf86cd799439016' } }; } } },
+    '@/api/paymentApi': { default: { createPayosCheckout: async (_id, purpose, key) => { checkoutCalls++; idempotencyKey = key; assert.equal(purpose, 'DEPOSIT'); return { payment: readyCheckout }; } } },
+    '@/api/payosPaymentClient': { canOpenPayosCheckout: payment => require('../src/api/payosPaymentClient.js').canOpenPayosCheckout(payment) },
     '@/lib/selfStoragePayos': { ...require('../src/lib/selfStoragePayos.js') },
     '@/lib/selfStorageReservation': {
       selfStorageRequest: () => payload,
       selfStorageEstimate: value => value.data.data,
       selfStorageCreation: value => { createdStatus = value.data.data.status; return value.data.data; },
       sameEstimate: () => true,
+      readOrCreateSelfStorageBookingAttempt,
+      writeSelfStorageBookingAttempt,
     },
-    '@/api/reservationApi': { default: { estimateReal: async () => response(reviewData.estimate), createReal: async request => { createCalls++; assert.equal(request.facilityId, facilityId); return response({ _id: reservationId, status: 'CONTRACTED', serviceType: 'SELF_STORAGE', customerId, reservationCode: 'BKG-TEST-01' }); } } },
+    '@/api/reservationApi': { default: { estimateReal: async () => response(reviewData.estimate), createReal: async (request, config) => { createCalls++; bookingKey = config?.headers?.['Idempotency-Key']; assert.equal(request.facilityId, facilityId); return response({ _id: reservationId, status: 'CONTRACTED', serviceType: 'SELF_STORAGE', customerId, reservationCode: 'BKG-TEST-01' }); } } },
     '@/api/facilityApi': { default: { publicDetail: async () => response(facility) } },
     '@/api/storageApi': { default: { unitDetail: async () => response(unit) } },
     '@/api/customerRentalApi': { pricingApi: { resolve: async () => response(reviewData.price), }, customerProfileApi: { get: async () => response(reviewData.profile) } },
@@ -200,18 +209,19 @@ test('Review creates one Reservation and one stable-key Deposit intent after exp
   assert(checkbox);
   checkbox.props.onCheckedChange(true);
   tree = render();
-  const create = find(tree, node => node.type === 'button' && node.props.children === 'Xác nhận đặt kho và tạo mã thanh toán');
+  const create = find(tree, node => node.type === 'button' && node.props.children === 'Xác nhận đặt kho và thanh toán');
   assert(create && !create.props.disabled);
   await create.props.onClick();
   assert.equal(createCalls, 1);
   assert.equal(checkoutCalls, 1);
   assert.match(idempotencyKey, /^wdp-/);
+  assert.match(bookingKey, /^wdp-booking-/);
   const storedAttempt = JSON.parse(values.get(`SelfStorage_payos_${customerId}_${reservationId}_DEPOSIT`));
   assert.equal(storedAttempt[0].idempotencyKey, idempotencyKey);
   assert.equal(storedAttempt[0].paymentId, '507f1f77bcf86cd799439016');
   assert.equal(createdStatus, 'CONTRACTED');
-  assert.equal(destination[0], `/portal/payments/${reservationId}`);
-  assert.equal(destination[1].state.selfStorageCreated, true);
+  assert.equal(redirectedTo, 'https://pay.payos.vn/web/test');
+  assert.equal(destination, null, 'a READY checkout redirects directly to the provider');
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);
 });
@@ -282,7 +292,7 @@ test('New CONTRACTED + DRAFT booking hides technical reservation summary and fai
   assert.equal(eligiblePayosPurpose(reservation, draftContract), 'DEPOSIT');
 });
 
-test('Existing READY Deposit renders its Backend amount and QR on load without another checkout request', async t => {
+test('Existing READY Deposit offers its Hosted Checkout on load without another checkout request', async t => {
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   globalThis.window = { sessionStorage: { getItem: () => null, setItem: () => {} }, location: { search: '' }, setInterval: () => 1, clearInterval: () => {} };
@@ -310,10 +320,9 @@ test('Existing READY Deposit renders its Backend amount and QR on load without a
   await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
   const visibleText = html.replace(/<[^>]*>/g, '');
-  assert.match(html, /aria-label="Mã QR PayOS"/);
-  assert.match(html, /data:image\/png;base64,fixture/);
-  assert.match(visibleText, /1500000 ₫/);
-  assert.match(visibleText, /Mở trang thanh toán PayOS/);
+  assert.doesNotMatch(html, /aria-label="Mã QR PayOS"|data:image\/png;base64,fixture/);
+  assert.match(visibleText, /1\.500\.000 ₫/);
+  assert.match(visibleText, /Tiếp tục thanh toán qua PayOS/);
   assert.doesNotMatch(visibleText, /507f1f77bcf86cd799439011|507f1f77bcf86cd799439016|Reservation status|Contract status|Provider settlement|Reservation application/);
   assert.equal(checkoutPosts, 0);
 });
@@ -336,7 +345,7 @@ test('UNKNOWN checkout never renders a payable QR or offers a replacement attemp
   module.render(); await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
   assert.doesNotMatch(html, /aria-label="Mã QR PayOS"|data:image\/png/);
-  assert.match(html, /Chưa thể xác nhận mã thanh toán/);
+  assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
   assert.equal(checkoutPosts, 0);
 });
@@ -443,7 +452,7 @@ test('confirmed terminal failure exposes only the explicit safe retry action', a
   module.render();
   await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
-  assert.match(html, /Thử thanh toán lại/);
+  assert.match(html, /Tạo lần thanh toán mới/);
   assert.doesNotMatch(html, /Mã QR PayOS/);
 });
 
@@ -479,7 +488,7 @@ test('Checkout readiness scans older Backend history pages before allowing a new
   assert.equal(listCalls.length, 2);
   assert.deepEqual(listCalls[0], { limit: 25 });
   assert.deepEqual(listCalls[1], { limit: 25, cursor: 'older-page' });
-  assert.match(html, /Chưa thể xác nhận mã thanh toán/);
+  assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
   assert.equal(checkoutPosts, 0);
 });
@@ -502,7 +511,7 @@ test('Self-Storage PayOS executes the Contract loader with populated Customer id
     assert.deepEqual(contractLoadArgs, [reservationId, customerId, { signal: 'contract-fixture' }]);
     await module.flushEffects();
     const html = renderToStaticMarkup(module.render());
-    assert.match(html, /Tạo mã QR thanh toán/);
+    assert.match(html, /Tiếp tục thanh toán qua PayOS/);
     assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /507f1f77bcf86cd799439011|BKG-TEST-01|Payment status|Contract status/);
   } finally {
     if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
@@ -525,7 +534,7 @@ test('PayOS history failure keeps the Reservation visible and disables new check
   assert.match(failedHtml, /Không thể xác minh lịch sử thanh toán/);
   const find = node => {
     if (!node || typeof node !== 'object') return null;
-    if (node.type === 'button' && node.props.children === 'Tạo mã QR thanh toán') return node;
+    if (node.type === 'button' && node.props.children === 'Tiếp tục thanh toán qua PayOS') return node;
     if (node.props?.children) for (const child of React.Children.toArray(node.props.children)) { const result = find(child); if (result) return result; }
     if (typeof node.type === 'function') return find(node.type(node.props));
     return null;
@@ -538,7 +547,7 @@ test('PayOS history failure keeps the Reservation visible and disables new check
   empty.render();
   await empty.flushEffects();
   const emptyHtml = renderToStaticMarkup(empty.render());
-  assert.match(emptyHtml, /Chưa có mã thanh toán/);
+    assert.match(emptyHtml, /Chưa có liên kết thanh toán/);
   assert.doesNotMatch(emptyHtml, /Payment history could not be verified/);
   } finally {
     if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
@@ -587,17 +596,17 @@ test('unknown checkout outcome refreshes read-only history, displays the origina
       }
       return null;
     };
-    const depositButton = findButton(tree, 'Tạo mã QR thanh toán');
+    const depositButton = findButton(tree, 'Tiếp tục thanh toán qua PayOS');
     assert(depositButton && !depositButton.props.disabled);
     await depositButton.props.onClick();
     await new Promise(resolve => setImmediate(resolve));
     await new Promise(resolve => setImmediate(resolve));
     tree = module.render();
     const html = renderToStaticMarkup(tree);
-    assert.match(html, /Chưa thể xác nhận mã thanh toán/);
+    assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
     assert.match(html, /Làm mới trạng thái/);
     assert.match(html, /Xem lịch sử thanh toán/);
-    const blockedDepositButton = findButton(tree, 'Tạo mã QR thanh toán');
+    const blockedDepositButton = findButton(tree, 'Tiếp tục thanh toán qua PayOS');
     assert.equal(blockedDepositButton, null, 'unresolved Payment suppresses a new checkout action');
     assert.equal(historyCalls, 2, 'history is refreshed once after the uncertain create response');
     assert.equal(createCalls, 1, 'refresh and status recovery are read-only');

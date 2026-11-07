@@ -16,6 +16,21 @@ const MIN_WDP_ORDER_CODE = 1_000_000_000;
 const MAX_PAYOS_QR_PAYLOAD_LENGTH = 4096;
 const PAYOS_PAYMENT_LINK_STATUSES = new Set(['PENDING', 'CANCELLED', 'UNDERPAID', 'PAID', 'EXPIRED', 'PROCESSING', 'FAILED']);
 const ALLOWED_URL_PROTOCOLS = new Set(['http:', 'https:']);
+const SAFE_SDK_ERROR_NAMES = new Set([
+  'APIError', 'BadRequestError', 'UnauthorizedError', 'ForbiddenError', 'NotFoundError',
+  'TooManyRequestError', 'InternalServerError', 'ConnectionError', 'ConnectionTimeoutError',
+  'UserAbortError', 'InvalidSignatureError', 'WebhookError', 'PayOSError', 'SyntaxError', 'Error', 'TypeError',
+]);
+const SAFE_NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT', 'EAI_AGAIN',
+  'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET', 'ABORT_ERR',
+]);
+const PAYOS_SDK_ERROR_NAMES = new Set([
+  'APIError', 'BadRequestError', 'UnauthorizedError', 'ForbiddenError', 'NotFoundError',
+  'TooManyRequestError', 'InternalServerError', 'ConnectionError', 'ConnectionTimeoutError',
+  'UserAbortError', 'InvalidSignatureError', 'WebhookError', 'PayOSError', 'SyntaxError',
+]);
 const Reservations: any = ReservationModel;
 const Payments: any = ReservationPaymentModel;
 const Contracts: any = ContractModel;
@@ -93,9 +108,12 @@ function defaultGateway(): PayosGateway {
   if (!clientId || !apiKey || !checksumKey) {
     throw new PayosPaymentError(503, 'PAYOS_CONFIGURATION_MISSING', 'PayOS server configuration is unavailable');
   }
-  const sdk = new PayOS({ clientId, apiKey, checksumKey });
+  // SDK debug output can include request details; WDP emits its own allowlisted diagnostics.
+  const sdk = new PayOS({ clientId, apiKey, checksumKey, logLevel: 'off' });
   return {
-    create: async data => sdk.paymentRequests.create(data),
+    // A create-link timeout is ambiguous. Never let the SDK silently POST the same
+    // financial operation again; keep the intent UNKNOWN and reconcile by orderCode.
+    create: async data => sdk.paymentRequests.create(data, { maxRetries: 0 }),
     get: async orderCode => sdk.paymentRequests.get(orderCode),
     verify: async webhook => sdk.webhooks.verify(webhook),
   };
@@ -129,13 +147,64 @@ function outcomeHash(event: { orderCode: number; reference: string; amount: numb
 function checkoutCorrelationId(payment: any): string {
   return createHash('sha256').update(`PAYOS_CHECKOUT:${id(payment?._id)}`).digest('hex').slice(0, 16);
 }
+type ProviderCreateErrorCategory = 'PAYOS_PROVIDER_AUTH_ERROR' | 'PAYOS_PROVIDER_VALIDATION_ERROR' |
+  'PAYOS_PROVIDER_RATE_LIMITED' | 'PAYOS_PROVIDER_NETWORK_ERROR' | 'PAYOS_PROVIDER_TIMEOUT' |
+  'PAYOS_PROVIDER_SDK_ERROR' | 'PAYOS_PROVIDER_UNKNOWN_ERROR';
+interface SafeProviderErrorDiagnostic {
+  sdkErrorName: string;
+  providerHttpStatus: number | null;
+  providerErrorCode: string | null;
+  networkErrorCode: string | null;
+  category: ProviderCreateErrorCategory;
+}
+function safeErrorCode(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
+  return typeof value === 'string' && /^[A-Z0-9_-]{1,32}$/.test(value) ? value : null;
+}
+function safeNetworkCode(value: unknown): string | null {
+  return typeof value === 'string' && SAFE_NETWORK_ERROR_CODES.has(value) ? value : null;
+}
+function classifyProviderCreateError(error: unknown): SafeProviderErrorDiagnostic {
+  const candidate = error as any;
+  const rawName = typeof candidate?.name === 'string' ? candidate.name : '';
+  const sdkErrorName = SAFE_SDK_ERROR_NAMES.has(rawName) ? rawName : 'UNKNOWN';
+  const rawStatus = candidate?.status;
+  const providerHttpStatus = Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599 ? rawStatus : null;
+  const providerErrorCode = providerHttpStatus === null ? null : safeErrorCode(candidate?.code);
+  const networkErrorCode = safeNetworkCode(candidate?.cause?.code) ?? safeNetworkCode(candidate?.code);
+  const timeout = providerHttpStatus === 408 || rawName === 'ConnectionTimeoutError' ||
+    ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(networkErrorCode || '');
+  const category: ProviderCreateErrorCategory = providerHttpStatus === 401 || providerHttpStatus === 403
+    ? 'PAYOS_PROVIDER_AUTH_ERROR'
+    : providerHttpStatus === 429
+      ? 'PAYOS_PROVIDER_RATE_LIMITED'
+      : providerHttpStatus === 400 || providerHttpStatus === 422
+        ? 'PAYOS_PROVIDER_VALIDATION_ERROR'
+        : timeout
+          ? 'PAYOS_PROVIDER_TIMEOUT'
+          : networkErrorCode || rawName === 'ConnectionError'
+            ? 'PAYOS_PROVIDER_NETWORK_ERROR'
+            : providerHttpStatus !== null
+              ? 'PAYOS_PROVIDER_UNKNOWN_ERROR'
+              : PAYOS_SDK_ERROR_NAMES.has(rawName)
+                ? 'PAYOS_PROVIDER_SDK_ERROR'
+                : 'PAYOS_PROVIDER_UNKNOWN_ERROR';
+  return { sdkErrorName, providerHttpStatus, providerErrorCode, networkErrorCode, category };
+}
 function logCheckoutDiagnostic(payment: any, category: string, stage: string, providerCreateInvoked: boolean | null,
-  providerResponseReceived: boolean, persistenceConfirmed: boolean | null): void {
+  providerResponseReceived: boolean, persistenceConfirmed: boolean | null,
+  providerError?: SafeProviderErrorDiagnostic): void {
   // persistenceConfirmed means the checkout URL/link identity was written and read back successfully.
   // Keep this allowlisted record free of exception/provider payloads, URLs and payment data.
   console.warn('PAYOS_CHECKOUT_DIAGNOSTIC', {
     category, stage, correlationId: checkoutCorrelationId(payment), providerCreateInvoked,
     providerResponseReceived, persistenceConfirmed,
+    ...(providerError ? {
+      sdkErrorName: providerError.sdkErrorName,
+      providerHttpStatus: providerError.providerHttpStatus ?? 'UNKNOWN',
+      providerErrorCode: providerError.providerErrorCode ?? 'UNKNOWN',
+      networkErrorCode: providerError.networkErrorCode ?? 'UNKNOWN',
+    } : {}),
   });
 }
 function isDocumentedRegistrationProbe(event: {
@@ -533,11 +602,15 @@ export class PayosPaymentService {
     try {
       providerCreateInvoked = true;
       const response = await this.gateway.create({ orderCode, amount,
-        description: `WDP ${payment.purpose} ${id(payment.reservationId).slice(-8)}`.slice(0, 25),
+        // Some PayOS channels backed by a bank account not linked through PayOS
+        // accept at most 9 description characters. Keep a compact ASCII identity
+        // across supported channel configurations.
+        description: `WDP${payment.purpose === PaymentPurpose.DEPOSIT ? 'D' : 'B'}${id(payment.reservationId).slice(-5)}`,
         cancelUrl, returnUrl });
       providerResponseReceived = true;
       stage = 'PROVIDER_RESPONSE_VALIDATION';
       if (!response || typeof response !== 'object' || response.orderCode !== orderCode || response.amount !== amount || response.currency !== 'VND' ||
+          response.status !== 'PENDING' ||
           typeof response.paymentLinkId !== 'string' || !response.paymentLinkId.trim() || response.paymentLinkId.length > 200 ||
           !isSafePayosCheckoutUrl(response.checkoutUrl)) {
         stage = 'PERSIST_RESPONSE_MISMATCH';
@@ -580,10 +653,15 @@ export class PayosPaymentService {
           $set: { checkoutState: 'UNKNOWN', reconciliationReason: 'PayOS create outcome is unknown; query by the same orderCode before retrying' },
         }).exec();
       } catch { /* Do not include the database error or its payload in logs. */ }
-      const category = !providerCreateInvoked ? 'CREATE_NOT_INVOKED'
+      const providerError = stage === 'PROVIDER_CREATE' ? classifyProviderCreateError(error) : undefined;
+      if ((providerError?.providerHttpStatus !== null && providerError?.providerHttpStatus !== undefined) ||
+          providerError?.sdkErrorName === 'SyntaxError' || providerError?.sdkErrorName === 'InvalidSignatureError') {
+        providerResponseReceived = true;
+      }
+      const category = providerError?.category ?? (!providerCreateInvoked ? 'CREATE_NOT_INVOKED'
         : !providerResponseReceived ? 'PROVIDER_CREATE_FAILED'
-          : stage === 'VERIFY_CHECKOUT_PERSISTENCE' ? 'CHECKOUT_READBACK_FAILED' : 'CHECKOUT_PERSISTENCE_FAILED';
-      logCheckoutDiagnostic(payment, category, stage, providerCreateInvoked, providerResponseReceived, persistenceConfirmed);
+          : stage === 'VERIFY_CHECKOUT_PERSISTENCE' ? 'CHECKOUT_READBACK_FAILED' : 'CHECKOUT_PERSISTENCE_FAILED');
+      logCheckoutDiagnostic(payment, category, stage, providerCreateInvoked, providerResponseReceived, persistenceConfirmed, providerError);
       throw new PayosPaymentError(503, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN', 'Checkout result is uncertain; do not create a new payment attempt');
     }
   }

@@ -7,10 +7,13 @@ import {
   selfStorageEstimate,
   selfStorageCreation,
   sameEstimate,
+  readOrCreateSelfStorageBookingAttempt,
+  writeSelfStorageBookingAttempt,
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
 import { newPayosIdempotencyKey, readPayosAttempts, writePayosAttempts, isValidObjectId } from "@/lib/selfStoragePayos";
+import { canOpenPayosCheckout } from "@/api/payosPaymentClient";
 import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
@@ -99,7 +102,6 @@ function Review({ draft, session }) {
     if (
       busy.current ||
       attempted.current ||
-      uncertain ||
       !confirmed ||
       !verified ||
       !context ||
@@ -129,18 +131,25 @@ function Review({ draft, session }) {
           "The Backend price or selected unit changed. Review the refreshed estimate and confirm again.",
         );
       }
+      const customerId = session?.user?.id || session?.user?._id;
+      let bookingStorage = null;
+      try { bookingStorage = window.sessionStorage; } catch { bookingStorage = null; }
+      if (!isValidObjectId(customerId) || !bookingStorage) {
+        throw Error("This browser cannot safely preserve the booking request. Allow session storage and try again.");
+      }
+      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(bookingStorage, customerId, fresh.payload);
       attempted.current = true;
       sent = true;
       const created = selfStorageCreation(
-        await reservationApi.createReal(fresh.payload),
+        await reservationApi.createReal(fresh.payload, { headers: { "Idempotency-Key": bookingAttempt.idempotencyKey } }),
         fresh.payload,
       );
       if (getAccessToken() !== token) return;
       const createdReservationId = recordId(created);
+      writeSelfStorageBookingAttempt(bookingStorage, { ...bookingAttempt, reservationId: createdReservationId });
       updateRentalDraft({ facility: null, unit: null, quote: null, startDate: "", endDate: "", term: null });
       let checkoutCreated = false;
       let checkoutRecoveryNeeded = false;
-      const customerId = session?.user?.id || session?.user?._id;
       let storage = null;
       try { storage = window.sessionStorage; } catch { storage = null; }
       if (isValidObjectId(customerId) && storage && isValidObjectId(createdReservationId)) {
@@ -162,6 +171,10 @@ function Review({ draft, session }) {
             attempts = attempts.map((entry) => entry.idempotencyKey === attempt.idempotencyKey ? { ...entry, paymentId: result.payment.id } : entry);
             writePayosAttempts(storage, customerId, createdReservationId, "DEPOSIT", attempts);
             checkoutCreated = true;
+            if (result.payment.reservationId === createdReservationId && result.payment.purpose === "DEPOSIT" && canOpenPayosCheckout(result.payment)) {
+              window.location.assign(result.payment.checkoutUrl);
+              return;
+            }
           }
         } catch {
           checkoutRecoveryNeeded = true;
@@ -188,6 +201,12 @@ function Review({ draft, session }) {
       busy.current = false;
       setPending(false);
     }
+  }
+  function retryUncertainCreation() {
+    if (busy.current || !uncertain) return;
+    attempted.current = false;
+    setUncertain(false);
+    void create();
   }
   return (
     <BackendScreen
@@ -249,12 +268,13 @@ function Review({ draft, session }) {
         }
         onClick={create}
       >
-        {pending ? "Đang xác nhận đặt kho…" : "Xác nhận đặt kho và tạo mã thanh toán"}
+        {pending ? "Đang xác nhận đặt kho và thanh toán…" : "Xác nhận đặt kho và thanh toán"}
       </Button>
       {uncertain && (
-        <Button asChild variant="outline">
-          <Link to="/portal">Check My Storage</Link>
-        </Button>
+        <div className="grid gap-2 sm:flex">
+          <Button variant="orange" disabled={pending} onClick={retryUncertainCreation}>Thử khôi phục đơn thuê an toàn</Button>
+          <Button asChild variant="outline"><Link to="/portal">Kiểm tra kho của tôi</Link></Button>
+        </div>
       )}
       <Link to="/portal/rent/period" className="block">
         Back to rental period

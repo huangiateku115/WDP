@@ -251,14 +251,22 @@ export const createReservation = async (req: Request, res: Response) => {
       });
     }
 
-    const reservation = await ReservationService.createReservation({
+    const idempotencyHeader = (typeof req.get === 'function' ? req.get('Idempotency-Key') : undefined)
+      ?? req.headers?.['idempotency-key'];
+    const idempotencyKey = typeof idempotencyHeader === 'string' ? idempotencyHeader.trim() : undefined;
+    const input = {
       customerId: req.user!._id.toString(),
       facilityId,
       storageUnitId,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       pricingPolicyId
-    });
+    };
+    if (idempotencyKey) {
+      const result = await ReservationService.createReservationWithOutcome({ ...input, idempotencyKey });
+      return res.status(result.replayed ? 200 : 201).json({ success: true, data: result.reservation });
+    }
+    const reservation = await ReservationService.createReservation(input);
     return res.status(201).json({ success: true, data: reservation });
   } catch (error: any) {
     if (error instanceof ReservationError) {
