@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertConfirmedRequest } from '../src/api/confirmedContract.js';
+import { apiBaseURL, assertConfirmedRequest } from '../src/api/confirmedContract.js';
 import { canOpenPayosCheckout, canShowPayosQr, createPayosPaymentApi, isSafePayosCheckoutUrl } from '../src/api/payosPaymentClient.js';
 import {
+  assessPayosEligibility,
   canStartNewPayosAttempt,
   eligiblePayosPurpose,
   newPayosIdempotencyKey,
   mergePayosPaymentHistory,
   paymentErrorMessage,
   paymentStatusView,
+  normalizePayosReferenceId,
+  payosContractMatchesIdentity,
+  payosEligibilityMessage,
   readPayosAttempts,
   trackingStorageKey,
   unresolvedPayosPayment,
@@ -17,6 +21,7 @@ import {
 import { canSign } from '../src/lib/customerReservationService.js';
 import { createPayosQrDataUrl } from '../src/lib/selfStoragePayosQr.js';
 import { isPayosPaymentPollable, pollPayosPaymentStatuses } from '../src/lib/selfStoragePayosPolling.js';
+import { customerPaymentStatus, selectOwnedSelfStorageReservation } from '../src/lib/selfStoragePaymentHistory.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -74,6 +79,11 @@ test('Payment history API validates Reservation, bounded pagination and response
   await assert.rejects(api.listPayosPaymentsForReservation('bad-id'));
   await assert.rejects(api.listPayosPaymentsForReservation(reservationId, { limit: 26 }));
   await assert.rejects(api.listPayosPaymentsForReservation(reservationId, { cursor: 'bad cursor' }));
+});
+
+test('local Frontend can target the Render API base without changing its versioned path', () => {
+  assert.equal(apiBaseURL('https://wdp-m4ns.onrender.com/api/v1'), 'https://wdp-m4ns.onrender.com/api/v1');
+  assert.equal(apiBaseURL('https://wdp-m4ns.onrender.com/'), 'https://wdp-m4ns.onrender.com/api/v1');
 });
 
 test('PayOS API client posts only purpose with the stable Idempotency-Key and parses 201/200 envelopes', async () => {
@@ -210,14 +220,57 @@ test('PayOS status uses the exact owner-scoped reservation route and rejects mis
 
 test('Deposit eligibility accepts an unexpired DRAFT contract without requiring SIGNED', () => {
   const reservation = {
-    _id: reservationId, serviceType: 'SELF_STORAGE', status: 'CONTRACTED',
+    _id: reservationId, customerId, serviceType: 'SELF_STORAGE', status: 'CONTRACTED',
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
-  const contract = { _id: contractId, reservationId, status: 'DRAFT' };
+  const contract = { _id: contractId, reservationId, customerId, status: 'DRAFT' };
   assert.equal(eligiblePayosPurpose(reservation, contract), 'DEPOSIT');
+  assert.deepEqual(assessPayosEligibility(reservation, contract, Date.now(), customerId), {
+    eligible: true, purpose: 'DEPOSIT', reason: 'ELIGIBLE',
+  });
   assert.equal(eligiblePayosPurpose({ ...reservation, expiresAt: new Date(Date.now() - 1_000).toISOString() }, contract), null);
   assert.equal(eligiblePayosPurpose(reservation, { ...contract, status: 'SIGNED' }), null);
   assert.equal(eligiblePayosPurpose({ ...reservation, serviceType: 'MANAGED_INVENTORY' }, contract), null);
+});
+
+test('PayOS eligibility safely normalizes populated BSON references without stringifying documents', () => {
+  const objectId = hex => ({ _bsontype: 'ObjectId', toHexString: () => hex });
+  const reservation = {
+    _id: objectId(reservationId), customerId: objectId(customerId),
+    serviceType: 'SELF_STORAGE', status: 'CONTRACTED',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const contract = {
+    _id: objectId(contractId), reservationId: { _id: objectId(reservationId) },
+    customerId: { _id: objectId(customerId) }, status: 'DRAFT',
+  };
+  assert.equal(normalizePayosReferenceId(contract.reservationId), reservationId);
+  assert.equal(payosContractMatchesIdentity(contract, reservationId, customerId), true);
+  assert.equal(assessPayosEligibility(reservation, contract, Date.now(), customerId).purpose, 'DEPOSIT');
+
+  const stringReferences = { ...contract, reservationId, customerId };
+  assert.equal(payosContractMatchesIdentity(stringReferences, reservationId, customerId), true);
+  assert.equal(assessPayosEligibility({ ...reservation, _id: reservationId, customerId }, stringReferences, Date.now(), customerId).purpose, 'DEPOSIT');
+});
+
+test('PayOS eligibility returns safe precise reasons and fails closed for invalid or mismatched records', () => {
+  const reservation = {
+    _id: reservationId, customerId, serviceType: 'SELF_STORAGE', status: 'CONTRACTED',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const contract = { _id: contractId, reservationId, customerId, status: 'DRAFT' };
+  const reason = (r = reservation, c = contract, now, owner = customerId) =>
+    assessPayosEligibility(r, c, now, owner).reason;
+  assert.equal(reason({ ...reservation, _id: 'invalid' }), 'INVALID_RESERVATION_ID');
+  assert.equal(reason(reservation, { ...contract, _id: 'invalid' }), 'INVALID_CONTRACT_ID');
+  assert.equal(reason(reservation, { ...contract, reservationId: '507f1f77bcf86cd799439099' }), 'CONTRACT_RESERVATION_MISMATCH');
+  assert.equal(reason(reservation, { ...contract, customerId: '507f1f77bcf86cd799439099' }), 'CONTRACT_CUSTOMER_MISMATCH');
+  assert.equal(reason(reservation, null), 'CONTRACT_NOT_LOADED');
+  assert.equal(reason({ ...reservation, serviceType: 'MANAGED_INVENTORY' }), 'UNSUPPORTED_SERVICE');
+  assert.equal(reason({ ...reservation, status: 'PAID' }), 'INVALID_RESERVATION_STATUS');
+  assert.equal(reason(reservation, { ...contract, status: 'SIGNED' }), 'CONTRACT_NOT_DRAFT');
+  assert.equal(reason(reservation, contract, Date.now() + 120_000), 'RESERVATION_HOLD_EXPIRED');
+  assert.equal(payosEligibilityMessage('CONTRACT_LOAD_FAILED'), 'The linked Contract could not be verified because it failed to load. Retry contract lookup; no payment was started.');
 });
 
 test('Self-Storage cannot sign before Deposit; signing remains available after DEPOSIT_PAID', () => {
@@ -244,12 +297,32 @@ test('Payment status never confuses provider success with applied Reservation pa
   assert.equal(paymentStatusView(paymentRecord({ providerSettlementStatus: 'VERIFIED', applicationStatus: 'MANUAL_REVIEW' })).key, 'MANUAL_REVIEW');
   assert.equal(paymentStatusView(paymentRecord({ status: 'SUCCEEDED', providerSettlementStatus: 'VERIFIED', applicationStatus: 'NOT_APPLIED' })).key, 'SUCCEEDED_UNAPPLIED');
   assert.equal(paymentStatusView(paymentRecord({ checkoutStatus: 'UNKNOWN' })).key, 'UNCERTAIN');
+  const unknownAttempt = paymentRecord({ checkoutStatus: 'UNKNOWN' });
+  assert.equal(unresolvedPayosPayment([unknownAttempt], 'DEPOSIT').id, paymentId);
+  assert.equal(canStartNewPayosAttempt(unknownAttempt), false);
   assert.equal(paymentStatusView(paymentRecord({
     status: 'FAILED', checkoutStatus: 'RECONCILIATION_REQUIRED', reconciliationRequired: false,
   })).key, 'FAILED');
   assert.equal(paymentStatusView(paymentRecord({
     status: 'FAILED', checkoutStatus: 'RECONCILIATION_REQUIRED', reconciliationRequired: true,
   })).key, 'RECONCILIATION_REQUIRED');
+});
+
+test('Payment history uses friendly status labels and requires VERIFIED plus APPLIED for success', () => {
+  assert.equal(customerPaymentStatus(paymentRecord({ providerSettlementStatus: 'VERIFIED', applicationStatus: 'APPLIED' })).label, 'Thanh toán thành công');
+  assert.equal(customerPaymentStatus(paymentRecord({ providerSettlementStatus: 'VERIFIED', applicationStatus: 'MANUAL_REVIEW' })).label, 'Cần kiểm tra giao dịch');
+  assert.equal(customerPaymentStatus(paymentRecord({ checkoutStatus: 'UNKNOWN' })).label, 'Đang xác nhận');
+  assert.equal(customerPaymentStatus(paymentRecord()).label, 'Đang chờ thanh toán');
+  assert.equal(customerPaymentStatus(paymentRecord({ status: 'FAILED', providerSettlementStatus: 'NOT_VERIFIED', applicationStatus: 'NOT_APPLIED' })).label, 'Thanh toán không thành công');
+  assert.notEqual(customerPaymentStatus(paymentRecord({ status: 'SUCCEEDED', providerSettlementStatus: 'VERIFIED', applicationStatus: 'MANUAL_REVIEW' })).label, 'Thanh toán thành công');
+});
+
+test('Payment history honors only an owned Reservation target and otherwise selects the latest owned Reservation', () => {
+  const older = { _id: reservationId, createdAt: '2026-01-01T00:00:00.000Z' };
+  const newer = { _id: paymentId, createdAt: '2026-02-01T00:00:00.000Z' };
+  assert.equal(selectOwnedSelfStorageReservation([older, newer], reservationId), reservationId);
+  assert.equal(selectOwnedSelfStorageReservation([older, newer], '507f1f77bcf86cd799439099'), paymentId);
+  assert.equal(selectOwnedSelfStorageReservation([], reservationId), '');
 });
 
 test('A new attempt is permitted only after authoritative terminal FAILED without verified funds', () => {
@@ -265,6 +338,11 @@ test('409 and uncertain 503/network outcomes never instruct the Customer to crea
   assert.match(paymentErrorMessage({ response: { status: 404 } }), /unavailable/);
   assert.match(paymentErrorMessage({ response: { status: 503 } }), /không tạo thanh toán mới/);
   assert.match(paymentErrorMessage({ isAxiosError: true }), /không tạo thanh toán mới/);
+  const unknownMessage = paymentErrorMessage({ response: { status: 503, data: { code: 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN' } } });
+  assert.match(unknownMessage, /previous checkout was created/i);
+  assert.match(unknownMessage, /keep this payment attempt/i);
+  assert.match(unknownMessage, /Refresh payment history and the existing Payment status/i);
+  assert.match(unknownMessage, /do not pay again or create a new attempt/i);
 });
 
 test('Payment attempt tracking is scoped to Customer, Reservation and purpose and survives reload', () => {
@@ -340,6 +418,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.doesNotMatch(envExample, /VITE_ENABLE_PAYOS_CHECKOUT/);
   assert.match(history, /mineReal/);
   assert.match(history, /listPayosPaymentsForReservation/);
+  assert.match(history, /const applied = relevantPayment\?\.providerSettlementStatus === "VERIFIED" && relevantPayment\?\.applicationStatus === "APPLIED"/);
   assert.doesNotMatch(history, /customerDemoStore|staffDemoStore|managerDemoStore|sessionStorage|receiptId|demoReceipt|refunds\.map|charges\.map/i);
   assert.doesNotMatch(financial, /customerDemoStore|useCustomerData|data\.refunds|data\.charges/i);
   assert.match(financial, /Demo records are not shown as account transactions/);
@@ -347,7 +426,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   const payHandler = checkout.slice(checkout.indexOf('async function pay()'), checkout.indexOf('function continueExistingCheckout'));
   assert.doesNotMatch(payHandler, /window\.location\.assign/);
   assert.match(payHandler, /canShowPayosQr\(payment\)/);
-  assert.match(checkout, /<img[\s\S]*alt=\{`Scannable PayOS QR/);
+  assert.match(checkout, /<img[\s\S]*alt=\{\"Mã QR PayOS thanh toán \"/);
   assert.match(checkout, /createPayosQrDataUrl\(payment\)/);
   assert.match(checkout, /setInterval\(tick, 5000\)/);
   assert.match(checkout, /document\.hidden/);
@@ -358,7 +437,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.doesNotMatch(checkout, /window\.location\.assign\([^)]*searchParams/);
   assert.match(checkout, /getPayosPaymentStatus/);
   assert.match(checkout, /listPayosPaymentsForReservation/);
-  assert.match(checkout, /Open PayOS Checkout/);
+  assert.match(checkout, /Mở trang thanh toán PayOS/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);
   assert.match(checkout, /returnQueryPresent/);
@@ -366,4 +445,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.match(checkout, /No checkout was opened/);
   assert.match(checkout, /providerSettlementStatus === "VERIFIED" && fresh\.applicationStatus === "APPLIED"/);
   assert.doesNotMatch(checkout, /status\?\.get\(['"](success|status)['"]\)/i);
+  assert.doesNotMatch(checkout, /RentalSummary|Reservation reference|Contract status|Payment reference|Provider settlement|Reservation application/);
+  assert.match(checkout, /Thanh toán tiền thuê trả trước/);
+  assert.match(checkout, /goToHistory\(fresh\.id, true\)/);
 });

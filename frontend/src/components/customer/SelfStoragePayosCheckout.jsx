@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { CustomerScreen } from "@/components/common/CustomerScreen";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import paymentApi from "@/api/paymentApi";
 import { getAccessToken, useAuthSession } from "@/lib/authSession";
 import { formatMoney } from "@/lib/booking";
 import {
+  assessPayosEligibility,
   canStartNewPayosAttempt,
   eligiblePayosPurpose,
   isValidObjectId,
   mergePayosPaymentHistory,
   newPayosIdempotencyKey,
+  normalizePayosReferenceId,
   paymentErrorMessage,
   paymentStatusView,
   readPayosAttempts,
@@ -23,11 +24,8 @@ import { canOpenPayosCheckout, canShowPayosQr } from "@/api/payosPaymentClient";
 import { createPayosQrDataUrl } from "@/lib/selfStoragePayosQr";
 import { isPayosPaymentPollable, pollPayosPaymentStatuses } from "@/lib/selfStoragePayosPolling";
 import {
-  Details,
   LoadState,
   Message,
-  RentalSummary,
-  RentalStatus,
   useBackend,
   recordId,
 } from "./RentalBackendUI";
@@ -46,23 +44,56 @@ function customerIdFromSession(session) {
 }
 
 function errorText(error) {
+  const code = error?.response?.data?.code;
+  if (code === "PAYOS_CHECKOUT_DISABLED") return "Cổng thanh toán hiện chưa sẵn sàng.";
+  if (code === "PAYOS_CONFIGURATION_MISSING") return "Không thể khởi tạo thanh toán. Vui lòng liên hệ hỗ trợ.";
+  if (code === "PAYOS_CHECKOUT_OUTCOME_UNKNOWN" || code === "PAYMENT_OUTCOME_UNKNOWN") return "Chưa xác định được kết quả tạo mã thanh toán. Vui lòng kiểm tra giao dịch hiện có.";
+  if (code === "PAYMENT_ATTEMPT_UNRESOLVED") return "Bạn đang có một giao dịch chưa hoàn tất. Vui lòng kiểm tra trạng thái trước khi tiếp tục.";
+  if (code === "RESERVATION_HOLD_EXPIRED") return "Thời hạn thanh toán đã hết.";
+  const status = error?.response?.status;
+  if (status === 401) return "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại và kiểm tra trạng thái giao dịch.";
+  if (status === 403) return "Không thể truy cập giao dịch này bằng tài khoản hiện tại.";
+  if (status === 404) return "Không tìm thấy thông tin thanh toán. Hãy làm mới lịch sử giao dịch.";
+  if (status === 409) return "Thông tin đặt kho hoặc giao dịch đã thay đổi. Hãy làm mới trạng thái trước khi tiếp tục.";
+  if (status === 503 || error?.isAxiosError && !error.response) return "Chưa xác định được kết quả tạo mã thanh toán. Giữ nguyên lần thử hiện tại và kiểm tra trạng thái.";
   return paymentErrorMessage(error);
 }
 
-function estimatedRentalAmounts(reservation, estimate) {
-  const rent = estimate?.estimatedRent ?? reservation?.estimatedRent;
-  const tax = estimate?.taxAmount ?? reservation?.taxAmount ?? 0;
-  const discount = estimate?.discountAmount ?? reservation?.discountAmount ?? 0;
-  const deposit = estimate?.depositAmount ?? reservation?.depositAmount;
-  if (![rent, tax, discount, deposit].every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)) return null;
-  const totalDue = rent + tax - discount;
-  if (!Number.isFinite(totalDue) || totalDue < 0 || deposit > totalDue) return null;
-  return { rent, tax, discount, deposit, totalDue, remainingBalance: totalDue - deposit };
+function eligibilityText(reason) {
+  const messages = {
+    INVALID_RESERVATION_ID: "Không xác minh được đơn thuê. Thanh toán hiện chưa khả dụng.",
+    INVALID_CONTRACT_ID: "Thông tin hợp đồng chưa hợp lệ. Vui lòng liên hệ hỗ trợ.",
+    CONTRACT_RESERVATION_MISMATCH: "Hợp đồng không khớp với đơn thuê này. Thanh toán tạm thời chưa khả dụng.",
+    CONTRACT_CUSTOMER_MISMATCH: "Không thể xác minh quyền sở hữu hợp đồng bằng tài khoản hiện tại.",
+    UNSUPPORTED_SERVICE: "PayOS chỉ hỗ trợ thanh toán đơn thuê Self-Storage tại đây.",
+    INVALID_RESERVATION_STATUS: "Đơn thuê chưa ở trạng thái có thể thanh toán. Hãy làm mới trạng thái.",
+    CONTRACT_NOT_DRAFT: "Khoản trả trước yêu cầu hợp đồng vẫn ở trạng thái chờ ký.",
+    RESERVATION_HOLD_EXPIRED: "Thời hạn thanh toán đã hết.",
+    CONTRACT_NOT_LOADED: "Chưa tìm thấy hợp đồng gắn với đơn thuê. Hãy thử tải lại hợp đồng.",
+    CONTRACT_LOAD_FAILED: "Không thể xác minh hợp đồng. Hãy thử tải lại; bạn không cần đặt kho lần nữa.",
+    CONTRACT_NOT_SIGNED: "Khoản thanh toán còn lại yêu cầu hợp đồng đã ký.",
+    SIGNED_PROOF_NOT_VERIFIED: "Chưa xác minh được chứng từ ký hợp đồng.",
+  };
+  return messages[reason] || "Không thể xác minh điều kiện thanh toán. Vui lòng thử làm mới trạng thái.";
 }
 
-function PaymentRecord({ payment, onRefresh, onContinue, refreshing }) {
+async function loadCompletePayosHistory(reservationId) {
+  let page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25 });
+  let items = mergePayosPaymentHistory([], page.items, reservationId);
+  let cursor = page.nextCursor;
+  let pagesRead = 1;
+  while (cursor) {
+    if (pagesRead >= 100) throw Error("Payment history could not be fully verified. Do not start another payment yet.");
+    page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25, cursor });
+    items = mergePayosPaymentHistory(items, page.items, reservationId);
+    cursor = page.nextCursor;
+    pagesRead += 1;
+  }
+  return { items, nextCursor: null };
+}
+
+function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refreshing, purpose }) {
   const view = paymentStatusView(payment);
-  const variant = view.tone === "success" ? "green" : view.tone === "danger" ? "dark" : "orange";
   const showQr = canShowPayosQr(payment);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [qrError, setQrError] = useState(false);
@@ -74,71 +105,31 @@ function PaymentRecord({ payment, onRefresh, onContinue, refreshing }) {
     if (showQr) {
       createPayosQrDataUrl(payment).then((dataUrl) => {
         if (active) setQrDataUrl(dataUrl || "");
-      }).catch(() => {
-        if (active) setQrError(true);
-      });
+      }).catch(() => { if (active) setQrError(true); });
     }
     return () => { active = false; };
   }, [payment.id, payment.qrCode, showQr]);
 
   return (
-    <Card>
-      <CardContent>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold">Payment status</h2>
-            <p className="mt-1 text-sm text-slate-600">{view.label}</p>
-          </div>
-          <Badge variant={variant}>{payment.status.replaceAll("_", " ")}</Badge>
+    <Card className="mx-auto w-full max-w-xl overflow-hidden border-slate-200 shadow-lg shadow-slate-200/60">
+      <CardContent className="p-5 sm:p-8">
+        <div className="text-center">
+          <p className="text-sm font-medium text-slate-500">{purpose === "BALANCE" ? "Tiền thuê còn lại" : "Tiền thuê trả trước"}</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl" aria-label="Số tiền thanh toán">{formatMoney(payment.amount)} ₫</p>
         </div>
-        <div className="mt-5">
-          <Details values={[
-            ["Purpose", payment.purpose === "DEPOSIT" ? "Advance rent" : "Remaining rent"],
-            ["Amount", `${formatMoney(payment.amount)} ${payment.currency}`],
-            ["Provider settlement", payment.providerSettlementStatus],
-            ["Reservation application", payment.applicationStatus],
-            ["Payment reference", payment.id],
-          ]} />
+        {showQr && <section className="mt-6 rounded-2xl border border-slate-200 bg-white px-3 py-5 text-center sm:px-6" aria-label="Mã QR PayOS">
+          <p className="font-semibold text-slate-900">Quét mã QR để thanh toán an toàn qua PayOS</p>
+          {qrDataUrl ? <img className="mx-auto mt-4 aspect-square h-auto w-full max-w-[320px] bg-white p-2" src={qrDataUrl} alt={"Mã QR PayOS thanh toán " + (purpose === "BALANCE" ? "tiền thuê còn lại" : "tiền thuê trả trước") + ", " + formatMoney(payment.amount) + " đồng"} width="320" height="320" /> : <p className="mx-auto mt-4 max-w-sm text-sm text-slate-600" role={qrError ? "alert" : "status"}>{qrError ? "Không thể hiển thị mã QR. Bạn có thể mở trang thanh toán PayOS an toàn." : "Đang chuẩn bị mã QR thanh toán…"}</p>}
+          <ol className="mx-auto mt-5 grid max-w-sm gap-2 text-left text-sm text-slate-600"><li>1. Mở ứng dụng ngân hàng</li><li>2. Quét mã QR</li><li>3. Kiểm tra thông tin và xác nhận thanh toán</li></ol>
+        </section>}
+        {!showQr && <p className={view.tone === "warning" ? "mt-5 rounded-xl bg-amber-50 p-3 text-center text-sm text-amber-900" : "mt-5 rounded-xl bg-slate-50 p-3 text-center text-sm text-slate-700"} role="status" aria-live="polite">{view.key === "PENDING" ? "Mã QR chưa khả dụng. Bạn có thể mở trang PayOS an toàn hoặc kiểm tra trạng thái." : view.key === "APPLIED" ? "Thanh toán đã được xác minh và ghi nhận." : view.key === "FAILED" ? "Thanh toán chưa hoàn tất theo xác nhận từ Backend." : "Chưa thể xác nhận mã thanh toán. Vui lòng kiểm tra trạng thái giao dịch hiện có."}</p>}
+        {showQr && <p className="mt-4 text-center text-sm text-slate-600" role="status" aria-live="polite">Đang chờ xác nhận thanh toán. Trang sẽ tự cập nhật khi Backend xác minh.</p>}
+        <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+          {canOpenPayosCheckout(payment) && <Button onClick={() => onContinue(payment)}>Mở trang thanh toán PayOS</Button>}
+          {canStartNewPayosAttempt(payment) && <Button disabled={retrying} onClick={onRetry}>{retrying ? "Đang tạo mã mới…" : "Thử thanh toán lại"}</Button>}
+          <Button variant="outline" disabled={refreshing} onClick={() => onRefresh(payment)}>{refreshing ? "Đang kiểm tra…" : "Làm mới trạng thái"}</Button>
+          <Button asChild variant="ghost"><RouterLink to="/portal/payments" state={{ reservationId: payment.reservationId, paymentId: payment.id }}>Xem lịch sử thanh toán</RouterLink></Button>
         </div>
-        {showQr && (
-          <section className="mt-5 rounded-xl border border-slate-200 bg-white p-4" aria-label="PayOS QR payment">
-            <h3 className="font-semibold">Scan the PayOS payment QR</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Pay {formatMoney(payment.amount)} {payment.currency} for {payment.purpose === "DEPOSIT" ? "Deposit" : "Remaining Balance"}.
-              The Backend will confirm when payment is verified.
-            </p>
-            {qrDataUrl ? (
-              <img
-                className="mx-auto mt-4 h-80 w-80 max-w-full rounded bg-white"
-                src={qrDataUrl}
-                alt={`Scannable PayOS QR for ${payment.purpose === "DEPOSIT" ? "Deposit" : "Remaining Balance"}, ${formatMoney(payment.amount)} ${payment.currency}`}
-                width="320"
-                height="320"
-              />
-            ) : (
-              <p className="mt-3 text-sm" role={qrError ? "alert" : "status"}>
-                {qrError ? "The QR could not be rendered. Use the secure PayOS checkout button below." : "Preparing secure payment QR…"}
-              </p>
-            )}
-            <p className="mt-3 text-sm text-slate-600">On this device? Open PayOS Checkout below to complete payment.</p>
-          </section>
-        )}
-        {payment.reconciliationRequired && (
-          <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-            Funds or payment status require manual reconciliation. Do not create another payment or assume the reservation is paid.
-          </p>
-        )}
-        {payment.status === "SUCCEEDED" && payment.applicationStatus !== "APPLIED" && (
-          <p className="mt-4 text-sm text-amber-800">
-            Provider success alone does not mean the payment has been applied to this reservation.
-          </p>
-        )}
-        <Button className="mt-5" variant="outline" disabled={refreshing} onClick={() => onRefresh(payment)}>
-          {refreshing ? "Refreshing…" : "Refresh payment status"}
-        </Button>
-        {canOpenPayosCheckout(payment) && (
-          <Button className="ml-2 mt-5" onClick={() => onContinue(payment)}>Open PayOS Checkout</Button>
-        )}
       </CardContent>
     </Card>
   );
@@ -149,20 +140,17 @@ export default function SelfStoragePayosCheckout({
   initialReservation,
   loadContext,
   loadContract,
-  loadOverview,
   onReservationRefresh,
 }) {
   const session = useAuthSession();
+  const location = useLocation();
+  const navigate = useNavigate();
   const customerId = customerIdFromSession(session);
   const reservation = initialReservation || null;
   const context = { data: reservation ? { reservation } : null, loading: !reservation, error: "", retry: onReservationRefresh };
   const contractResource = useBackend(
-    (config) => reservation ? loadContract(reservationId, recordId(reservation.customerId), config) : Promise.resolve(null),
+    (config) => reservation ? loadContract(reservationId, normalizePayosReferenceId(reservation.customerId), config) : Promise.resolve(null),
     [reservationId, reservation?.status],
-  );
-  const overviewResource = useBackend(
-    (config) => reservation ? loadOverview(reservation, config) : Promise.resolve(null),
-    [reservationId, recordId(reservation?.facilityId), recordId(reservation?.storageUnitId)],
   );
   const [snapshot, setSnapshot] = useState(null);
   const [attemptsByPurpose, setAttemptsByPurpose] = useState({ DEPOSIT: [], BALANCE: [] });
@@ -170,6 +158,7 @@ export default function SelfStoragePayosCheckout({
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyNextCursor, setHistoryNextCursor] = useState(null);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyRefreshing, setHistoryRefreshing] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
@@ -181,9 +170,8 @@ export default function SelfStoragePayosCheckout({
   const polling = useRef(false);
   const alive = useRef(true);
   const contract = snapshot?.contract || contractResource.data;
-  const overview = snapshot?.rentalOverview || overviewResource.data;
-  const estimatedAmounts = estimatedRentalAmounts(reservation, overview?.estimate);
-  const purpose = eligiblePayosPurpose(reservation, contract);
+  const eligibility = assessPayosEligibility(reservation, contract, Date.now(), customerId);
+  const purpose = eligibility.purpose;
   const currentPayment = purpose
     ? paymentsById[attemptsByPurpose[purpose]?.at(-1)?.paymentId]
     : null;
@@ -191,6 +179,13 @@ export default function SelfStoragePayosCheckout({
   const blockingPayment = purpose ? unresolvedPayosPayment(paymentHistory, purpose) : null;
   const pollingPaymentIds = paymentHistory.filter(isPayosPaymentPollable).map((payment) => payment.id);
   const pollingPaymentKey = pollingPaymentIds.join("|");
+  const completionNavigated = useRef(false);
+
+  function goToHistory(paymentId, verifiedApplied = false) {
+    if (completionNavigated.current) return;
+    completionNavigated.current = true;
+    navigate("/portal/payments", { replace: true, state: { reservationId, paymentId: paymentId || null, returnContext: { reservationId, verifiedApplied } } });
+  }
 
   useEffect(() => {
     alive.current = true;
@@ -230,12 +225,12 @@ export default function SelfStoragePayosCheckout({
           getAccessToken,
           isCurrent: () => active,
           onPayment: (payment) => setPaymentsById((previous) => ({ ...previous, [payment.id]: payment })),
-          onApplied: async () => {
+          onApplied: async (appliedPayment) => {
             const refreshed = await loadContext(reservationId);
             if (active && getAccessToken() === token) {
               setSnapshot(refreshed);
               onReservationRefresh?.();
-              setNotice("Payment was verified and applied by the Backend. Reservation status has been refreshed.");
+              goToHistory(appliedPayment?.id, true);
             }
           },
         });
@@ -265,7 +260,7 @@ export default function SelfStoragePayosCheckout({
     let active = true;
     setHistoryLoaded(false);
     setHistoryError("");
-    void paymentApi.listPayosPaymentsForReservation(reservationId)
+    void loadCompletePayosHistory(reservationId)
       .then((page) => {
         if (!active || getAccessToken() !== token) return;
         setPaymentsById((previous) => Object.fromEntries(
@@ -277,8 +272,10 @@ export default function SelfStoragePayosCheckout({
             if (active && getAccessToken() === token) {
               setSnapshot(refreshed);
               onReservationRefresh?.();
+              const applied = page.items.find((payment) => payment.providerSettlementStatus === "VERIFIED" && payment.applicationStatus === "APPLIED");
+              goToHistory(applied?.id, true);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       })
       .catch((cause) => {
@@ -305,11 +302,33 @@ export default function SelfStoragePayosCheckout({
         if (!alive.current || getAccessToken() !== token) return;
         setSnapshot(refreshed);
         onReservationRefresh?.();
+        const applied = page.items.find((payment) => payment.providerSettlementStatus === "VERIFIED" && payment.applicationStatus === "APPLIED");
+        goToHistory(applied?.id, true);
       }
     } catch (cause) {
       if (alive.current && getAccessToken() === token) setHistoryError(errorText(cause));
     } finally {
       if (alive.current && getAccessToken() === token) setHistoryLoadingMore(false);
+    }
+  }
+
+  async function refreshPaymentHistory() {
+    if (!customerId || !session.accessToken || historyRefreshing) return;
+    const token = getAccessToken();
+    setHistoryRefreshing(true);
+    setHistoryError("");
+    try {
+      const page = await loadCompletePayosHistory(reservationId);
+      if (!alive.current || getAccessToken() !== token) return;
+      setPaymentsById((previous) => Object.fromEntries(
+        mergePayosPaymentHistory(Object.values(previous), page.items, reservationId).map((payment) => [payment.id, payment]),
+      ));
+      setHistoryNextCursor(page.nextCursor);
+      setHistoryLoaded(true);
+    } catch (cause) {
+      if (alive.current && getAccessToken() === token) setHistoryError(errorText(cause));
+    } finally {
+      if (alive.current && getAccessToken() === token) setHistoryRefreshing(false);
     }
   }
 
@@ -349,6 +368,8 @@ export default function SelfStoragePayosCheckout({
           if (getAccessToken() === token && active) {
             setSnapshot(refreshed);
             onReservationRefresh?.();
+            const applied = Object.values(loaded).find((payment) => payment.providerSettlementStatus === "VERIFIED" && payment.applicationStatus === "APPLIED");
+            goToHistory(applied?.id, true);
           }
         } catch {
           // The verified payment status remains visible; reservation refresh is still available to the user.
@@ -406,7 +427,7 @@ export default function SelfStoragePayosCheckout({
         if (!alive.current || getAccessToken() !== token) return;
         setSnapshot(updated);
         onReservationRefresh?.();
-        setNotice("Payment was verified and applied by the Backend. Reservation status has been refreshed.");
+        goToHistory(fresh.id, true);
       }
     } catch (cause) {
       if (alive.current && getAccessToken() === token) setError(errorText(cause));
@@ -420,8 +441,8 @@ export default function SelfStoragePayosCheckout({
     if (busy.current || polling.current || !purpose || !customerId || !historyLoaded) return;
     if (blockingPayment) {
       setNotice(canOpenPayosCheckout(blockingPayment)
-        ? "An existing payment is ready. Use its explicit Open PayOS Checkout button or scan its QR; no new payment was created."
-        : "An existing payment attempt is unresolved. Check its status before starting another payment.");
+        ? "Đã có giao dịch đang chờ. Hãy dùng mã QR hoặc mở trang PayOS của giao dịch hiện tại."
+        : "Giao dịch hiện tại chưa được xác nhận xong. Hãy kiểm tra trạng thái trước khi tiếp tục.");
       return;
     }
     if (storageUnavailable || trackingCorrupt) return;
@@ -470,9 +491,10 @@ export default function SelfStoragePayosCheckout({
             if (getAccessToken() === token && alive.current) {
               setSnapshot(updated);
               onReservationRefresh?.();
+              goToHistory(priorPayment.id, true);
             }
           }
-          setNotice("This payment attempt already has a provider result. Review its status before taking another action.");
+          setNotice("Đã có kết quả cho lần thanh toán này. Hãy kiểm tra lịch sử trước khi thực hiện thao tác khác.");
           return;
         }
         if (canStartNewPayosAttempt(priorPayment)) {
@@ -505,24 +527,25 @@ export default function SelfStoragePayosCheckout({
         if (!alive.current || getAccessToken() !== token) return;
         setSnapshot(updated);
         onReservationRefresh?.();
-        setNotice("Payment was verified and applied by the Backend. Reservation status has been refreshed.");
+        goToHistory(payment.id, true);
         return;
       }
       if (eligiblePayosPurpose(freshReservation, freshContract) !== purpose) {
-        setNotice("Payment was created, but reservation eligibility changed. Review its status before continuing.");
+        setNotice("Giao dịch đã được tạo nhưng điều kiện thanh toán đã thay đổi. Hãy kiểm tra trạng thái trước khi tiếp tục.");
       } else if (canShowPayosQr(payment)) {
-        setNotice("Your PayOS QR is ready. Scan it with your banking app or choose Open PayOS Checkout.");
+        setNotice("Mã QR PayOS đã sẵn sàng.");
       } else if (canOpenPayosCheckout(payment)) {
-        setNotice("Secure PayOS Checkout is ready. Choose Open PayOS Checkout to continue.");
+        setNotice("Trang thanh toán PayOS an toàn đã sẵn sàng.");
       } else {
-        setNotice(paymentStatusView(payment).label);
+        setNotice("Chưa thể xác nhận mã thanh toán. Hãy kiểm tra trạng thái giao dịch hiện có.");
       }
     } catch (cause) {
       if (!alive.current || getAccessToken() !== token) return;
       if (cause.response?.status === 404 || cause.response?.status === 503) {
         setCheckoutUnavailable(true);
         setNotice("");
-        setError("");
+        setError(cause.response?.status === 503 ? errorText(cause) : "");
+        if (cause.response?.status === 503) void refreshPaymentHistory();
       } else setError(errorText(cause));
     } finally {
       busy.current = false;
@@ -534,125 +557,51 @@ export default function SelfStoragePayosCheckout({
     if (canOpenPayosCheckout(payment)) window.location.assign(payment.checkoutUrl);
   }
 
-  const contractNextStep = reservation?.status === "DEPOSIT_PAID";
   const returnQueryPresent = typeof window !== "undefined" && !!window.location.search;
   const unmatchedReturn = returnQueryPresent && historyLoaded && !historyError && paymentHistory.length === 0;
-  const eligible = !!purpose && !contractResource.loading && !contractResource.error && historyLoaded && !historyError && !unmatchedReturn && !storageUnavailable && !trackingCorrupt && !checkoutUnavailable && !context.loading && !!customerId && !blockingPayment;
-  const durationMs = Date.parse(reservation?.endDate || "") - Date.parse(reservation?.startDate || "");
-  const durationDays = overview?.estimate?.durationDays || (Number.isFinite(durationMs) && durationMs > 0 ? Math.ceil(durationMs / 86_400_000) : null);
-  const visiblePayment = blockingPayment || currentPayment;
-  const missingPrerequisite = reservation?.status === "CONTRACTED"
-    ? contractResource.loading
-      ? "Verifying the linked DRAFT contract before enabling the advance-rent Deposit…"
-      : !contract
-        ? "A linked DRAFT contract is required before Deposit checkout. The Reservation is already saved; do not book it again."
-        : contract.status !== "DRAFT"
-          ? `Deposit requires a DRAFT contract; the current contract status is ${contract.status}.`
-          : !Number.isFinite(Date.parse(reservation.expiresAt || "")) || Date.parse(reservation.expiresAt) <= Date.now()
-            ? "The CONTRACTED Reservation payment eligibility window has expired."
-            : "Deposit checkout is unavailable because Reservation eligibility could not be verified."
-    : reservation?.status === "CHECKIN_READY" && !purpose
-      ? "Balance requires CHECKIN_READY and a verified SIGNED contract with signed-paper proof."
-      : reservation && !purpose && !["DEPOSIT_PAID", "PAID"].includes(reservation.status)
-        ? `Payment is unavailable while the Reservation is ${reservation.status}.`
-        : "";
+  const visiblePayment = blockingPayment || currentPayment || (purpose ? paymentHistory.find((payment) => payment.purpose === purpose) : null);
+  const hasTrackedAttempt = !!purpose && (attemptsByPurpose[purpose] || []).length > 0;
+  const checkoutRecoveryNeeded = (location.state?.checkoutRecoveryNeeded === true || hasTrackedAttempt) && !visiblePayment;
+  const eligible = !!purpose && !contractResource.loading && !contractResource.error && historyLoaded && !historyError && !unmatchedReturn && !storageUnavailable && !trackingCorrupt && !checkoutUnavailable && !checkoutRecoveryNeeded && !context.loading && !!customerId && !blockingPayment;
+  const contractLoadReason = contractResource.error ? String(contractResource.error).includes("does not match this Reservation") ? "CONTRACT_RESERVATION_MISMATCH" : String(contractResource.error).includes("ownership could not be verified") ? "CONTRACT_CUSTOMER_MISMATCH" : "CONTRACT_LOAD_FAILED" : eligibility.reason;
+  const missingPrerequisite = reservation?.status === "CONTRACTED" && !purpose ? contractResource.loading ? "Đang xác minh hợp đồng trước khi mở thanh toán tiền thuê trả trước…" : eligibilityText(contractLoadReason) : reservation?.status === "CHECKIN_READY" && !purpose ? eligibilityText(contractLoadReason) : reservation && !purpose && !["DEPOSIT_PAID", "PAID"].includes(reservation.status) ? eligibilityText(eligibility.reason) : "";
+
+  useEffect(() => {
+    if (!returnQueryPresent || !historyLoaded || historyError || !paymentHistory.length) return;
+    const latest = paymentHistory[0];
+    goToHistory(latest.id, latest.providerSettlementStatus === "VERIFIED" && latest.applicationStatus === "APPLIED");
+  }, [returnQueryPresent, historyLoaded, historyError, paymentHistory.map((payment) => payment.id).join("|")]);
+  useEffect(() => {
+    const applied = paymentHistory.find((payment) => payment.providerSettlementStatus === "VERIFIED" && payment.applicationStatus === "APPLIED");
+    if (applied && historyLoaded) goToHistory(applied.id, true);
+  }, [historyLoaded, paymentHistory.map((payment) => payment.id).join("|")]);
 
   return (
-    <CustomerScreen
-      title="Self Storage payment"
-      description="Pay through the Backend-created PayOS Hosted Checkout. Reservation and payment status always come from the Backend."
-      notice="The amount and payment result are confirmed by the Backend. Returning from PayOS does not itself prove payment."
-    >
+    <CustomerScreen title="Thanh toán Self-Storage" description="Quét mã QR hoặc mở trang thanh toán PayOS an toàn.">
       <LoadState resource={context} />
-      {reservation && <RentalSummary item={reservation} />}
-      {reservation && (
-        <Card>
-          <CardContent>
-            {reservation.status === "CONTRACTED" && <p className="mb-4 rounded-xl bg-sky-50 p-4 text-sm text-sky-900" role="status">Your Self Storage booking is confirmed. No Manager approval is pending. Create the PayOS advance-rent Deposit below when ready.</p>}
-            <h2 className="text-xl font-bold">{purpose === "BALANCE" ? "Thanh toán số tiền thuê còn lại" : "Thanh toán tiền thuê trả trước"}</h2>
-            <>
-              <LoadState resource={contractResource} />
-              {contractResource.data === null && !contractResource.loading && !contractResource.error && <><Message error="The reservation was created, but its linked contract was not found. No new reservation was created. Retry contract lookup before attempting a Deposit." /><Button className="mt-3" variant="outline" onClick={contractResource.retry}>Retry contract lookup</Button></>}
-              {overviewResource.loading && !overview?.facility && !overview?.unit && <p className="mt-4 text-sm text-slate-600" role="status">Loading Facility and StorageUnit details…</p>}
-            </>
-            <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" aria-label="Rental overview">
-              <h3 className="font-semibold">Rental overview</h3>
-              <div className="mt-3"><Details values={[
-                ["Facility", overview?.facility?.name || reservation.facilityName || "Details unavailable"],
-                ["Unit", overview?.unit?.unitCode || reservation.storageUnitCode || "Details unavailable"],
-                ["Unit size", overview?.unit?.size || reservation.unitSize || "Not returned"],
-                ["Volume", typeof overview?.unit?.volumeM3 === "number" ? `${overview.unit.volumeM3} m³` : "Not returned"],
-                ["Start date", reservation.startDate || "Not returned"],
-                ["End date", reservation.endDate || "Not returned"],
-                ["Rental duration", durationDays ? `${durationDays} days` : "Not available"],
-                ["Estimated rent", estimatedAmounts ? `${formatMoney(estimatedAmounts.rent)} VND` : "Not available"],
-                ["Estimated Deposit", estimatedAmounts ? `${formatMoney(estimatedAmounts.deposit)} VND` : "Not available"],
-                ["Estimated total due", estimatedAmounts ? `${formatMoney(estimatedAmounts.totalDue)} VND` : "Not available"],
-                ["Estimated remaining balance", estimatedAmounts ? `${formatMoney(estimatedAmounts.remainingBalance)} VND` : "Not available"],
-              ]} /></div>
-              <p className="mt-3 text-xs text-slate-600">Amounts shown before Payment creation are Backend Reservation estimates. The immutable PayOS Payment amount shown separately is returned by Backend and is the amount to pay.</p>
-            </section>
-            {overview?.error && <p className="mt-4 text-sm text-amber-800" role="status">{overview.error}</p>}
-            <div className="mt-4">
-              <Details values={[
-                ["Reservation reference", reservation.reservationCode || recordId(reservation)],
-                ["Reservation status", <RentalStatus key="status" status={reservation.status} reservation={reservation} />],
-                ["Payment purpose", purpose === "BALANCE" ? "Remaining rent" : "Advance rent credited toward rent"],
-                ["Amount", visiblePayment ? `${formatMoney(visiblePayment.amount)} ${visiblePayment.currency}` : "Estimated; exact payable amount comes from Backend checkout"],
-                ["Contract status", contract?.status || (contractResource.loading ? "Loading contract…" : contractResource.error ? "Unavailable" : "Not found")],
-                ["Payment status", visiblePayment ? paymentStatusView(visiblePayment).label : historyError ? "Unavailable" : historyLoaded ? "No PayOS Payment yet" : "Loading payment history…"],
-              ]} />
-            </div>
-            {purpose === "DEPOSIT" && <p className="mt-4 text-sm text-slate-600">This is advance rent credited toward the rental amount. It is not described as a refundable security deposit.</p>}
-            {purpose === "BALANCE" && <p className="mt-4 text-sm text-slate-600">Balance checkout requires the Backend to confirm an applied PayOS advance-rent payment.</p>}
-            {!purpose && reservation.status === "DEPOSIT_PAID" && (
-              <div className="mt-5 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
-                Advance rent is recorded. Review the existing contract and complete the required contract step before continuing.
-                <Button asChild className="mt-4"><RouterLink to={`/portal/contracts/${reservationId}`}>Review contract next steps</RouterLink></Button>
-              </div>
-            )}
-            {!purpose && !contractNextStep && reservation.status === "PAID" && (
-              <p className="mt-5 text-sm text-slate-600">Payment does not activate the rental. Facility handover remains a separate process.</p>
-            )}
-            {purpose && (
-              <Button className="mt-5" disabled={!eligible || !!pending} aria-busy={pending === "checkout"} onClick={pay}>
-                {pending === "checkout" ? "Preparing secure checkout…" : purpose === "DEPOSIT" ? "Thanh toán tiền thuê trả trước với PayOS" : "Thanh toán số tiền thuê còn lại với PayOS"}
-              </Button>
-            )}
-            {missingPrerequisite && <p className="mt-5 text-sm text-amber-800" role="status">{missingPrerequisite}</p>}
-          </CardContent>
-        </Card>
-      )}
-      {Object.values(paymentsById).map((payment) => (
-        <PaymentRecord
-          key={payment.id}
-          payment={payment}
-          onRefresh={refreshPayment}
-          onContinue={continueExistingCheckout}
-          refreshing={pending === `status:${payment.id}`}
-        />
-      ))}
-      {historyError && <Message error={`Payment history could not be verified. Do not start another payment yet. ${historyError}`} />}
-      {checkoutUnavailable && <Message error="PayOS checkout is unavailable or its result is uncertain. The Reservation remains saved; no successful payment is assumed. Refresh payment history before trying again." />}
-      {historyLoaded && !historyError && historyNextCursor && (
-        <Button variant="outline" disabled={historyLoadingMore} onClick={loadOlderPayments}>
-          {historyLoadingMore ? "Loading older payments…" : "Load older payments"}
-        </Button>
-      )}
-      {storageUnavailable && <Message error="This browser cannot safely preserve the payment attempt. Checkout is unavailable until session storage works." />}
-      {trackingCorrupt && <Message error="Stored payment tracking could not be verified. Do not start another payment; contact support or sign in again." />}
-      {!customerId && <Message error="Customer identity is unavailable. Sign in again before starting a payment." />}
-      {returnQueryPresent && historyLoaded && !historyError && !Object.keys(paymentsById).length && (
-        <Message error="No payment record was found for this return. Redirect details do not confirm payment; check with support before retrying." />
-      )}
-      <Message error={error} />
-      <Message success={notice} />
-      <div className="flex flex-wrap gap-3">
-        <Button variant="outline" disabled={!!pending} onClick={refreshReservation}>
-          {pending === "reservation" ? "Refreshing…" : "Refresh reservation and contract"}
-        </Button>
-        <Button asChild variant="outline"><RouterLink to={`/portal/reservations/${reservationId}`}>Back to reservation</RouterLink></Button>
-        <Button asChild variant="outline"><RouterLink to="/portal">Back to My Units</RouterLink></Button>
+      {reservation && <Card className="mx-auto w-full max-w-3xl border-slate-200 shadow-sm"><CardContent className="p-5 sm:p-7">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{purpose === "BALANCE" ? "Thanh toán tiền thuê còn lại" : "Thanh toán tiền thuê trả trước"}</h1>
+        <p className="mt-2 text-sm text-slate-600">Quét mã QR để thanh toán an toàn qua PayOS</p>
+        <div className="mt-5">{contractResource.loading && <p className="text-sm text-slate-600" role="status">Đang xác minh hợp đồng…</p>}{(contractResource.error || contractResource.data === null && !contractResource.loading) && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>{eligibilityText(contractLoadReason)}</p><Button className="mt-3" variant="outline" onClick={contractResource.retry}>Thử tải lại hợp đồng</Button></div>}</div>
+        {visiblePayment && <div className="mt-6"><PaymentPanel payment={visiblePayment} purpose={purpose || visiblePayment.purpose} onRefresh={refreshPayment} onContinue={continueExistingCheckout} onRetry={() => void pay()} retrying={pending === "checkout"} refreshing={pending === ("status:" + visiblePayment.id)} /></div>}
+        {!visiblePayment && purpose && !checkoutRecoveryNeeded && <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center sm:p-7"><p className="text-sm text-slate-600">{historyLoaded ? "Chưa có mã thanh toán cho đơn thuê này." : "Đang tải trạng thái thanh toán…"}</p><Button className="mt-4 w-full sm:w-auto" disabled={!eligible || !!pending} aria-busy={pending === "checkout"} onClick={pay}>{pending === "checkout" ? "Đang tạo mã thanh toán…" : purpose === "DEPOSIT" ? "Tạo mã QR thanh toán" : "Tạo mã thanh toán số tiền còn lại"}</Button></div>}
+        {!purpose && reservation.status === "DEPOSIT_PAID" && <p className="mt-5 rounded-xl bg-sky-50 p-4 text-sm text-sky-900" role="status">Khoản tiền trả trước đã được ghi nhận. Hãy tiếp tục bước hợp đồng theo hướng dẫn trên trang hợp đồng.</p>}
+        {!purpose && reservation.status === "PAID" && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900" role="status">Khoản thanh toán đã được ghi nhận. Việc nhận kho vẫn là một bước riêng.</p>}
+        {missingPrerequisite && <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{missingPrerequisite}</p>}
+      </CardContent></Card>}
+      {historyError && <Message error={"Không thể xác minh lịch sử thanh toán. Chưa nên thử tạo giao dịch khác. " + historyError} />}
+      {(checkoutUnavailable || checkoutRecoveryNeeded) && !visiblePayment && <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-4"><Message error={error || "Chưa xác định được kết quả tạo mã thanh toán. Hãy giữ nguyên lần thử hiện tại và kiểm tra giao dịch hiện có."} /><Button className="mt-2" variant="outline" disabled={historyRefreshing} onClick={() => void refreshPaymentHistory()}>{historyRefreshing ? "Đang kiểm tra lịch sử…" : "Làm mới lịch sử thanh toán"}</Button></div>}
+      {storageUnavailable && <Message error="Không thể lưu an toàn thông tin lần thanh toán trên trình duyệt này. Hãy đăng nhập lại hoặc thử trên trình duyệt khác." />}
+      {trackingCorrupt && <Message error="Không xác minh được thông tin giao dịch đã lưu. Không tạo giao dịch mới; vui lòng liên hệ hỗ trợ." />}
+      {!customerId && <Message error="Không xác minh được tài khoản. Vui lòng đăng nhập lại." />}
+      {returnQueryPresent && historyLoaded && !historyError && !Object.keys(paymentsById).length && <Message error="Chưa tìm thấy giao dịch gắn với lần quay lại này. Thông tin trên URL không xác nhận thanh toán; vui lòng kiểm tra lịch sử hoặc liên hệ hỗ trợ." />}
+      <Message error={checkoutUnavailable ? "" : error} /><Message success={notice} />
+      <div className="mx-auto flex w-full max-w-3xl flex-wrap gap-3">
+        {historyNextCursor && <Button variant="outline" disabled={historyLoadingMore} onClick={loadOlderPayments}>{historyLoadingMore ? "Đang tải…" : "Xem giao dịch cũ hơn"}</Button>}
+        <Button variant="outline" disabled={!!pending} onClick={refreshReservation}>{pending === "reservation" ? "Đang làm mới…" : "Làm mới thông tin thanh toán"}</Button>
+        <Button asChild variant="outline"><RouterLink to="/portal/payments" state={{ reservationId }}>Xem lịch sử thanh toán</RouterLink></Button>
+        <Button asChild variant="outline"><RouterLink to={"/portal/reservations/" + reservationId}>Quay lại đơn thuê</RouterLink></Button>
+        <Button asChild variant="outline"><RouterLink to="/portal">Về kho của tôi</RouterLink></Button>
       </div>
     </CustomerScreen>
   );

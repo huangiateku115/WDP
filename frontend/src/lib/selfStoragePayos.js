@@ -11,33 +11,116 @@ export function isValidObjectId(value) {
   return typeof value === "string" && OBJECT_ID.test(value);
 }
 
-function id(value) {
-  return typeof value === "string" ? value : value?._id || value?.id || "";
+export function normalizePayosReferenceId(value) {
+  const seen = new Set();
+  function normalize(candidate, depth = 0) {
+    if (typeof candidate === "string") return isValidObjectId(candidate) ? candidate.toLowerCase() : "";
+    if (!candidate || typeof candidate !== "object" || depth > 3 || seen.has(candidate)) return "";
+    seen.add(candidate);
+
+    // BSON ObjectIds are not strings until explicitly serialized. Never stringify
+    // a populated document as a whole; read only its scalar identifier.
+    if (candidate._bsontype === "ObjectId" && typeof candidate.toHexString === "function") {
+      try {
+        const hex = candidate.toHexString();
+        return isValidObjectId(hex) ? hex.toLowerCase() : "";
+      } catch {
+        return "";
+      }
+    }
+    for (const key of ["_id", "id"]) {
+      let nested;
+      try { nested = candidate[key]; } catch { continue; }
+      const normalized = normalize(nested, depth + 1);
+      if (normalized) return normalized;
+    }
+    return "";
+  }
+  return normalize(value);
+}
+
+export function payosContractMatchesIdentity(contract, reservationId, customerId) {
+  const expectedReservationId = normalizePayosReferenceId(reservationId);
+  const expectedCustomerId = normalizePayosReferenceId(customerId);
+  return !!contract && !!expectedReservationId && !!expectedCustomerId &&
+    normalizePayosReferenceId(contract.reservationId) === expectedReservationId &&
+    normalizePayosReferenceId(contract.customerId) === expectedCustomerId;
+}
+
+export function assessPayosEligibility(reservation, contract, now = Date.now(), expectedCustomerId) {
+  const reservationId = normalizePayosReferenceId(reservation);
+  if (!reservationId) return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_ID" };
+  if (reservation?.serviceType !== "SELF_STORAGE") {
+    return { eligible: false, purpose: null, reason: "UNSUPPORTED_SERVICE" };
+  }
+  if (!["CONTRACTED", "CHECKIN_READY"].includes(reservation.status)) {
+    return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_STATUS" };
+  }
+  if (!contract || typeof contract !== "object" || Array.isArray(contract)) {
+    return { eligible: false, purpose: null, reason: "CONTRACT_NOT_LOADED" };
+  }
+  if (!normalizePayosReferenceId(contract)) {
+    return { eligible: false, purpose: null, reason: "INVALID_CONTRACT_ID" };
+  }
+  if (normalizePayosReferenceId(contract.reservationId) !== reservationId) {
+    return { eligible: false, purpose: null, reason: "CONTRACT_RESERVATION_MISMATCH" };
+  }
+
+  const reservationCustomerId = normalizePayosReferenceId(reservation.customerId);
+  const contractCustomerId = normalizePayosReferenceId(contract.customerId);
+  const expectedCustomer = expectedCustomerId === undefined
+    ? ""
+    : normalizePayosReferenceId(expectedCustomerId);
+  if (expectedCustomerId !== undefined && (!expectedCustomer ||
+      reservationCustomerId !== expectedCustomer || contractCustomerId !== expectedCustomer)) {
+    return { eligible: false, purpose: null, reason: "CONTRACT_CUSTOMER_MISMATCH" };
+  }
+  if (reservationCustomerId && contractCustomerId && reservationCustomerId !== contractCustomerId) {
+    return { eligible: false, purpose: null, reason: "CONTRACT_CUSTOMER_MISMATCH" };
+  }
+
+  if (reservation.status === "CONTRACTED") {
+    if (contract.status !== "DRAFT") {
+      return { eligible: false, purpose: null, reason: "CONTRACT_NOT_DRAFT" };
+    }
+    const expiresAt = Date.parse(reservation.expiresAt || "");
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      return { eligible: false, purpose: null, reason: "RESERVATION_HOLD_EXPIRED" };
+    }
+    return { eligible: true, purpose: "DEPOSIT", reason: "ELIGIBLE" };
+  }
+
+  if (contract.status !== "SIGNED") {
+    return { eligible: false, purpose: null, reason: "CONTRACT_NOT_SIGNED" };
+  }
+  if (!(typeof contract.signedProofPublicId === "string" && contract.signedProofPublicId.length > 0 &&
+      typeof contract.signedProofUrl === "string" && contract.signedProofUrl.length > 0 && contract.verifiedAt)) {
+    return { eligible: false, purpose: null, reason: "SIGNED_PROOF_NOT_VERIFIED" };
+  }
+  return { eligible: true, purpose: "BALANCE", reason: "ELIGIBLE" };
+}
+
+export function payosEligibilityMessage(reason) {
+  const messages = {
+    INVALID_RESERVATION_ID: "The Reservation identifier could not be verified. Payment is unavailable.",
+    INVALID_CONTRACT_ID: "The linked Contract identifier is invalid. Payment is unavailable until the contract is corrected.",
+    CONTRACT_RESERVATION_MISMATCH: "The linked Contract does not match this Reservation. Payment is unavailable; contact support.",
+    CONTRACT_CUSTOMER_MISMATCH: "Contract ownership could not be verified for this account. Payment is unavailable.",
+    UNSUPPORTED_SERVICE: "PayOS checkout here is available only for Self-Storage Reservations.",
+    INVALID_RESERVATION_STATUS: "The Reservation is not in a payment-eligible state. Refresh its status before continuing.",
+    CONTRACT_NOT_DRAFT: "Deposit checkout requires the linked Contract to remain in DRAFT status.",
+    RESERVATION_HOLD_EXPIRED: "The CONTRACTED Reservation payment eligibility window has expired.",
+    CONTRACT_NOT_LOADED: "A linked Contract could not be found. The Reservation is saved; retry contract lookup before attempting a Deposit.",
+    CONTRACT_LOAD_FAILED: "The linked Contract could not be verified because it failed to load. Retry contract lookup; no payment was started.",
+    CONTRACT_NOT_SIGNED: "Balance checkout requires the linked Contract to be SIGNED.",
+    SIGNED_PROOF_NOT_VERIFIED: "Balance checkout requires verified signed-paper proof on the linked Contract.",
+    ELIGIBLE: "",
+  };
+  return messages[reason] || "Reservation and Contract eligibility could not be verified. Payment is unavailable.";
 }
 
 export function eligiblePayosPurpose(reservation, contract, now = Date.now()) {
-  if (
-    reservation?.serviceType !== "SELF_STORAGE" ||
-    !isValidObjectId(id(reservation)) ||
-    !isValidObjectId(id(contract)) ||
-    id(contract.reservationId) !== id(reservation)
-  ) return null;
-
-  if (reservation.status === "CONTRACTED") {
-    const expiresAt = Date.parse(reservation.expiresAt || "");
-    if (contract.status === "DRAFT" && Number.isFinite(expiresAt) && expiresAt > now) return "DEPOSIT";
-    return null;
-  }
-
-  if (
-    reservation.status === "CHECKIN_READY" &&
-    contract.status === "SIGNED" &&
-    typeof contract.signedProofPublicId === "string" && contract.signedProofPublicId.length > 0 &&
-    typeof contract.signedProofUrl === "string" && contract.signedProofUrl.length > 0 &&
-    !!contract.verifiedAt
-  ) return "BALANCE";
-
-  return null;
+  return assessPayosEligibility(reservation, contract, now).purpose;
 }
 
 export function paymentStatusView(payment) {
@@ -183,13 +266,17 @@ export function newPayosIdempotencyKey(cryptoProvider = globalThis.crypto) {
 
 export function paymentErrorMessage(error) {
   const status = error?.response?.status;
+  const code = error?.response?.data?.code;
   if (status === 400) return "The payment request was invalid. Refresh and try again.";
   if (status === 401) return "Your session expired. Sign in again, then check payment status before retrying.";
   if (status === 403) return "This payment is unavailable for your account.";
   if (status === 404) return "PayOS checkout is unavailable or the payment could not be found.";
   if (status === 409) return "Reservation or payment eligibility changed. Refresh the reservation before continuing.";
+  if (code === "PAYOS_CHECKOUT_OUTCOME_UNKNOWN" || code === "PAYMENT_OUTCOME_UNKNOWN") {
+    return "PayOS has not confirmed whether the previous checkout was created. Keep this payment attempt; do not pay again or create a new attempt. Refresh payment history and the existing Payment status.";
+  }
   if (status === 503 || error?.isAxiosError && !error.response) {
-    return "Không thể xác định kết quả tạo giao dịch. Vui lòng kiểm tra lại trạng thái, không tạo thanh toán mới.";
+    return "Không thể xác định kết quả tạo giao dịch. Giữ nguyên lần thử hiện tại, làm mới lịch sử/trạng thái thanh toán và không tạo thanh toán mới.";
   }
   return "The payment service could not confirm the request. Refresh payment status before retrying.";
 }

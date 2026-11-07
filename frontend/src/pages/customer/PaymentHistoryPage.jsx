@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatMoney } from "@/lib/booking";
 import { SELF_STORAGE, serviceType } from "@/lib/customerReservationService";
+import { customerPaymentStatus, selectOwnedSelfStorageReservation } from "@/lib/selfStoragePaymentHistory";
 import { BackendScreen, LoadState, Message, recordId, rows, useBackend } from "@/components/customer/RentalBackendUI";
 
-function ReservationHistory({ reservationId }) {
+function ReservationHistory({ reservationId, returnContext, requestedPaymentId }) {
   const session = useAuthSession();
   const resource = useBackend(
     () => paymentApi.listPayosPaymentsForReservation(reservationId),
@@ -26,7 +27,7 @@ function ReservationHistory({ reservationId }) {
 
   useEffect(() => {
     if (!resource.data) return;
-    setPage(resource.data);
+    setPage({ ...resource.data, items: [...resource.data.items].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)) });
   }, [resource.data]);
 
   async function loadOlder() {
@@ -38,61 +39,79 @@ function ReservationHistory({ reservationId }) {
       const next = await paymentApi.listPayosPaymentsForReservation(reservationId, { cursor: page.nextCursor });
       if (getAccessToken() !== token) return;
       const ids = new Set(page.items.map((payment) => payment.id));
-      setPage({ items: [...page.items, ...next.items.filter((payment) => !ids.has(payment.id))], nextCursor: next.nextCursor });
+      setPage({ items: [...page.items, ...next.items.filter((payment) => !ids.has(payment.id))].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)), nextCursor: next.nextCursor });
     } catch {
-      if (getAccessToken() === token) setError("Could not load older Backend payment records. Please retry.");
+      if (getAccessToken() === token) setError("Không tải được giao dịch cũ hơn. Vui lòng thử lại.");
     } finally {
       if (getAccessToken() === token) setLoadingMore(false);
     }
   }
 
   const payments = page?.items || [];
+  const relevantPayment = requestedPaymentId ? payments.find((payment) => payment.id === requestedPaymentId) : payments[0];
+  const applied = relevantPayment?.providerSettlementStatus === "VERIFIED" && relevantPayment?.applicationStatus === "APPLIED";
+  const matchingReturnContext = returnContext?.reservationId === reservationId;
+  const hasSuccessContext = matchingReturnContext && returnContext?.verifiedApplied === true && relevantPayment?.providerSettlementStatus === "VERIFIED" && relevantPayment?.applicationStatus === "APPLIED";
+
   return (
-    <Card><CardContent>
-      <h2 className="text-xl font-bold">Backend PayOS history</h2>
-      <p className="mt-2 text-sm text-slate-600">These are payment records returned by the Backend, not bank receipts. Refund and adjustment history is unavailable here.</p>
-      <LoadState resource={resource} />
-      {error && <Message error={error} />}
-      {payments.length > 0 && <div className="mt-5 overflow-x-auto"><table className="customer-table w-full">
-        <caption className="sr-only">Backend PayOS payment history</caption>
-        <thead><tr><th>Payment ID</th><th>Purpose</th><th>Amount</th><th>Provider settlement</th><th>Reservation application</th><th>Created</th><th>Action</th></tr></thead>
-        <tbody>{payments.map((payment) => <tr key={payment.id}>
-          <td className="font-mono text-xs">{payment.id}</td>
-          <td>{payment.purpose}</td>
-          <td>{formatMoney(payment.amount)} {payment.currency}</td>
-          <td>{payment.providerSettlementStatus}</td>
-          <td>{payment.applicationStatus}</td>
-          <td>{new Date(payment.createdAt).toLocaleString()}</td>
-          <td><Link className="text-brand underline" to={`/portal/payments/${reservationId}`}>View status</Link></td>
-        </tr>)}</tbody>
-      </table></div>}
-      {!resource.loading && !resource.error && !payments.length && <p className="mt-5 text-sm text-slate-600">No PayOS payment records were returned for this Reservation.</p>}
-      {page?.nextCursor && <Button className="mt-5" variant="outline" disabled={loadingMore} onClick={loadOlder}>{loadingMore ? "Loading…" : "Load older records"}</Button>}
-    </CardContent></Card>
+    <>
+      {(hasSuccessContext || applied) && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status" aria-live="polite">Thanh toán đã được xác minh và ghi nhận thành công.</div>}
+      {matchingReturnContext && !applied && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="status" aria-live="polite">PayOS đã chuyển bạn trở lại. Giao dịch vẫn đang được Backend xác nhận; trang này hiển thị trạng thái mới nhất.</div>}
+      <Card><CardContent>
+        <h2 className="text-xl font-semibold">Giao dịch gần đây</h2>
+        <LoadState resource={resource} />
+        {error && <Message error={error} />}
+        {payments.length > 0 && <div className="mt-4 space-y-3">
+          {payments.map((payment) => {
+            const status = customerPaymentStatus(payment);
+            const purpose = payment.purpose === "DEPOSIT" ? "Tiền thuê trả trước" : "Tiền thuê còn lại";
+            const date = new Date(payment.createdAt);
+            return <article key={payment.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h3 className="font-semibold text-slate-900">{purpose}</h3><p className="mt-1 text-sm text-slate-500">{Number.isFinite(date.getTime()) ? date.toLocaleString("vi-VN") : "Ngày giao dịch chưa có"}</p></div>
+                <p className="text-lg font-bold text-slate-900">{formatMoney(payment.amount)} ₫</p>
+              </div>
+              <p className={`mt-3 text-sm font-medium ${status.tone}`} role="status">{status.label}</p>
+              <Link className="mt-3 inline-flex text-sm font-medium text-brand underline" to={`/portal/payments/${reservationId}`}>Xem trạng thái thanh toán</Link>
+            </article>;
+          })}
+        </div>}
+        {!resource.loading && !resource.error && !payments.length && <p className="mt-4 text-sm text-slate-600">Chưa có giao dịch PayOS cho đơn thuê này.</p>}
+        {page?.nextCursor && <Button className="mt-5" variant="outline" disabled={loadingMore} onClick={loadOlder}>{loadingMore ? "Đang tải…" : "Xem giao dịch cũ hơn"}</Button>}
+      </CardContent></Card>
+    </>
   );
 }
 
 export default function PaymentHistoryPage() {
   const session = useAuthSession();
+  const location = useLocation();
   const reservations = useBackend((config) => reservationApi.mineReal(config).then(rows));
   const [selectedId, setSelectedId] = useState("");
-  const ownedSelfStorage = (reservations.data || []).filter((reservation) => serviceType(reservation) === SELF_STORAGE && recordId(reservation));
+  const ownedSelfStorage = useMemo(() => (reservations.data || []).filter((reservation) => serviceType(reservation) === SELF_STORAGE && recordId(reservation)), [reservations.data]);
+  const requestedId = location.state?.reservationId;
 
-  useEffect(() => { setSelectedId(""); }, [session.accessToken]);
+  useEffect(() => {
+    setSelectedId("");
+  }, [session.accessToken]);
+
+  useEffect(() => {
+    if (reservations.loading || reservations.error) return;
+    setSelectedId(selectOwnedSelfStorageReservation(ownedSelfStorage, requestedId));
+  }, [reservations.loading, reservations.error, requestedId, ownedSelfStorage]);
 
   return (
-    <BackendScreen title="Payment history" description="View PayOS payment records associated with a Reservation owned by your account." notice="Payment results are read from the Backend. Browser redirects and local storage are not settlement evidence.">
+    <BackendScreen title="Lịch sử thanh toán" description="Theo dõi các giao dịch PayOS đã được Backend xác nhận." notice="Chỉ trạng thái do Backend xác minh mới được xem là thanh toán thành công.">
       <LoadState resource={reservations} />
-      {!reservations.loading && !reservations.error && <label className="block max-w-xl text-sm font-medium">
-        Select a Self-Storage Reservation
+      {!reservations.loading && !reservations.error && ownedSelfStorage.length > 1 && <label className="block max-w-xl text-sm font-medium">
+        Chọn đơn thuê Self-Storage
         <select className="customer-select mt-2 w-full" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-          <option value="">Choose a Reservation</option>
-          {ownedSelfStorage.map((reservation) => <option key={recordId(reservation)} value={recordId(reservation)}>{reservation.reservationCode || recordId(reservation)} · {reservation.status}</option>)}
+          {ownedSelfStorage.map((reservation, index) => <option key={recordId(reservation)} value={recordId(reservation)}>{reservation.reservationCode || `Đơn thuê ${index + 1}`}</option>)}
         </select>
       </label>}
-      {!reservations.loading && !reservations.error && !ownedSelfStorage.length && <p className="text-sm text-slate-600">No Self-Storage Reservations were returned for your account.</p>}
-      {selectedId && ownedSelfStorage.some((reservation) => recordId(reservation) === selectedId) && <ReservationHistory key={`${session.accessToken}:${selectedId}`} reservationId={selectedId} />}
-      <Card><CardContent><h2 className="text-lg font-semibold">Refunds and adjustments</h2><p className="mt-2 text-sm text-slate-600">Refund and adjustment records are unavailable because no confirmed Customer-owned API is connected to this page.</p></CardContent></Card>
+      {!reservations.loading && !reservations.error && !ownedSelfStorage.length && <p className="text-sm text-slate-600">Tài khoản chưa có đơn thuê Self-Storage.</p>}
+      {selectedId && ownedSelfStorage.some((reservation) => recordId(reservation) === selectedId) && <ReservationHistory key={`${session.accessToken}:${selectedId}`} reservationId={selectedId} returnContext={location.state?.returnContext} requestedPaymentId={location.state?.paymentId} />}
+      <Card><CardContent><h2 className="text-lg font-semibold">Hoàn tiền và điều chỉnh</h2><p className="mt-2 text-sm text-slate-600">Chưa có dữ liệu hoàn tiền hoặc điều chỉnh trên trang này.</p></CardContent></Card>
     </BackendScreen>
   );
 }

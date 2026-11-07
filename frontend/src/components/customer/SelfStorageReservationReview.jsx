@@ -9,6 +9,8 @@ import {
   sameEstimate,
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
+import paymentApi from "@/api/paymentApi";
+import { newPayosIdempotencyKey, readPayosAttempts, writePayosAttempts, isValidObjectId } from "@/lib/selfStoragePayos";
 import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
@@ -74,10 +76,11 @@ export default function SelfStorageReservationReview() {
     <Review
       key={JSON.stringify([session.accessToken, rentalDraft])}
       draft={rentalDraft}
+      session={session}
     />
   );
 }
-function Review({ draft }) {
+function Review({ draft, session }) {
   const nav = useNavigate(),
     { updateRentalDraft } = useReservation();
   const resource = useBackend((config) => reviewContext(draft, config));
@@ -133,17 +136,40 @@ function Review({ draft }) {
         fresh.payload,
       );
       if (getAccessToken() !== token) return;
-      updateRentalDraft({
-        facility: null,
-        unit: null,
-        quote: null,
-        startDate: "",
-        endDate: "",
-        term: null,
-      });
-      nav(`/portal/payments/${recordId(created)}`, {
-        state: { selfStorageCreated: true },
-      });
+      const createdReservationId = recordId(created);
+      updateRentalDraft({ facility: null, unit: null, quote: null, startDate: "", endDate: "", term: null });
+      let checkoutCreated = false;
+      let checkoutRecoveryNeeded = false;
+      const customerId = session?.user?.id || session?.user?._id;
+      let storage = null;
+      try { storage = window.sessionStorage; } catch { storage = null; }
+      if (isValidObjectId(customerId) && storage && isValidObjectId(createdReservationId)) {
+        try {
+          const tracked = readPayosAttempts(storage, customerId, createdReservationId, "DEPOSIT");
+          if (tracked.unavailable || tracked.corrupt) throw Error("Payment attempt tracking is unavailable.");
+          let attempts = tracked.attempts;
+          let attempt = attempts.at(-1);
+          if (!attempt) {
+            attempt = { idempotencyKey: newPayosIdempotencyKey(), paymentId: null };
+            attempts = [...attempts, attempt];
+            writePayosAttempts(storage, customerId, createdReservationId, "DEPOSIT", attempts);
+          }
+          if (attempt.paymentId) {
+            checkoutRecoveryNeeded = true;
+          } else {
+            const result = await paymentApi.createPayosCheckout(createdReservationId, "DEPOSIT", attempt.idempotencyKey);
+            if (getAccessToken() !== token) return;
+            attempts = attempts.map((entry) => entry.idempotencyKey === attempt.idempotencyKey ? { ...entry, paymentId: result.payment.id } : entry);
+            writePayosAttempts(storage, customerId, createdReservationId, "DEPOSIT", attempts);
+            checkoutCreated = true;
+          }
+        } catch {
+          checkoutRecoveryNeeded = true;
+        }
+      } else {
+        checkoutRecoveryNeeded = true;
+      }
+      nav("/portal/payments/" + createdReservationId, { state: { selfStorageCreated: true, checkoutCreated, checkoutRecoveryNeeded } });
     } catch (e) {
       if (getAccessToken() !== token) return;
       const status = e.response?.status;
@@ -223,7 +249,7 @@ function Review({ draft }) {
         }
         onClick={create}
       >
-        {pending ? "Creating reservation…" : "Create Reservation"}
+        {pending ? "Đang xác nhận đặt kho…" : "Xác nhận đặt kho và tạo mã thanh toán"}
       </Button>
       {uncertain && (
         <Button asChild variant="outline">

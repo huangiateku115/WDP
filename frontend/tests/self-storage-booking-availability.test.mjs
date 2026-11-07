@@ -52,13 +52,14 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
     readFile(new URL('../src/components/customer/SelfStoragePayosCheckout.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/customer/RentalLifecycleIntegration.jsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(review, /nav\(`\/portal\/payments\/\$\{recordId\(created\)\}`/);
+  assert.match(review, /paymentApi\.createPayosCheckout\(createdReservationId, "DEPOSIT", attempt\.idempotencyKey\)/);
+  assert.match(review, /nav\("\/portal\/payments\/" \+ createdReservationId/);
   assert.match(period, /aria-label=\{`Availability calendar for \$\{visibleMonth\}`\}/);
   assert.match(period, /Previous month/);
   assert.match(period, /lg:grid-cols/);
   assert.match(period, /rangeState === "CONFLICT"/);
-  assert.match(checkout, /Rental overview/);
-  assert.match(checkout, /immutable PayOS Payment amount shown separately/);
+  assert.match(checkout, /Quét mã QR để thanh toán an toàn qua PayOS/);
+  assert.doesNotMatch(checkout, /Rental overview|Reservation reference|Contract status|Payment reference/);
   assert.match(lifecycle, /Self Storage booking confirmed/);
   assert.doesNotMatch(lifecycle, /selfStorageCreated && \(\s*<Message success=" Waiting for management approval/);
 });
