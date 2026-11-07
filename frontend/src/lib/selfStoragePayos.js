@@ -11,6 +11,11 @@ export function isValidObjectId(value) {
   return typeof value === "string" && OBJECT_ID.test(value);
 }
 
+export function formatPayosVnd(amount) {
+  if (!Number.isSafeInteger(amount) || amount < 0) return "—";
+  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(amount);
+}
+
 export function normalizePayosReferenceId(value) {
   const seen = new Set();
   function normalize(candidate, depth = 0) {

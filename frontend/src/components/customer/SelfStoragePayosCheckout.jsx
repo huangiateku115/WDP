@@ -5,11 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import paymentApi from "@/api/paymentApi";
 import { getAccessToken, useAuthSession } from "@/lib/authSession";
-import { formatMoney } from "@/lib/booking";
 import {
   assessPayosEligibility,
   canStartNewPayosAttempt,
-  eligiblePayosPurpose,
+  formatPayosVnd,
   isValidObjectId,
   mergePayosPaymentHistory,
   newPayosIdempotencyKey,
@@ -20,8 +19,7 @@ import {
   unresolvedPayosPayment,
   writePayosAttempts,
 } from "@/lib/selfStoragePayos";
-import { canOpenPayosCheckout, canShowPayosQr } from "@/api/payosPaymentClient";
-import { createPayosQrDataUrl } from "@/lib/selfStoragePayosQr";
+import { canOpenPayosCheckout } from "@/api/payosPaymentClient";
 import { isPayosPaymentPollable, pollPayosPaymentStatuses } from "@/lib/selfStoragePayosPolling";
 import {
   LoadState,
@@ -92,43 +90,35 @@ async function loadCompletePayosHistory(reservationId) {
   return { items, nextCursor: null };
 }
 
-function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refreshing, purpose }) {
+function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refreshing, purpose, reservationId }) {
   const view = paymentStatusView(payment);
-  const showQr = canShowPayosQr(payment);
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [qrError, setQrError] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    setQrDataUrl("");
-    setQrError(false);
-    if (showQr) {
-      createPayosQrDataUrl(payment).then((dataUrl) => {
-        if (active) setQrDataUrl(dataUrl || "");
-      }).catch(() => { if (active) setQrError(true); });
-    }
-    return () => { active = false; };
-  }, [payment.id, payment.qrCode, showQr]);
+  const identityMatches = payment.reservationId === reservationId && payment.purpose === purpose;
+  const canContinue = identityMatches && canOpenPayosCheckout(payment);
+  const canRetry = identityMatches && canStartNewPayosAttempt(payment);
+  const applied = payment.providerSettlementStatus === "VERIFIED" && payment.applicationStatus === "APPLIED";
+  const message = applied
+    ? "Thanh toán thành công. Đang mở lịch sử giao dịch…"
+    : view.key === "MANUAL_REVIEW" || view.key === "RECONCILIATION_REQUIRED"
+      ? "Giao dịch cần được kiểm tra. Không tạo thêm lần thanh toán mới."
+      : view.key === "UNCERTAIN" || view.key === "CREATING"
+        ? "Chưa thể xác nhận liên kết thanh toán. Vui lòng kiểm tra giao dịch hiện có."
+        : view.key === "FAILED"
+          ? "PayOS đã xác nhận lần thanh toán này không thành công. Có thể tạo lần mới sau khi kiểm tra trạng thái."
+          : "Đang chờ PayOS xác nhận thanh toán. Trạng thái sẽ được cập nhật từ Backend.";
 
   return (
-    <Card className="mx-auto w-full max-w-xl overflow-hidden border-slate-200 shadow-lg shadow-slate-200/60">
+    <Card className="mx-auto w-full max-w-xl overflow-hidden border-slate-200 shadow-sm">
       <CardContent className="p-5 sm:p-8">
         <div className="text-center">
           <p className="text-sm font-medium text-slate-500">{purpose === "BALANCE" ? "Tiền thuê còn lại" : "Tiền thuê trả trước"}</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl" aria-label="Số tiền thanh toán">{formatMoney(payment.amount)} ₫</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl" aria-label="Số tiền thanh toán">{formatPayosVnd(payment.amount)} ₫</p>
         </div>
-        {showQr && <section className="mt-6 rounded-2xl border border-slate-200 bg-white px-3 py-5 text-center sm:px-6" aria-label="Mã QR PayOS">
-          <p className="font-semibold text-slate-900">Quét mã QR để thanh toán an toàn qua PayOS</p>
-          {qrDataUrl ? <img className="mx-auto mt-4 aspect-square h-auto w-full max-w-[320px] bg-white p-2" src={qrDataUrl} alt={"Mã QR PayOS thanh toán " + (purpose === "BALANCE" ? "tiền thuê còn lại" : "tiền thuê trả trước") + ", " + formatMoney(payment.amount) + " đồng"} width="320" height="320" /> : <p className="mx-auto mt-4 max-w-sm text-sm text-slate-600" role={qrError ? "alert" : "status"}>{qrError ? "Không thể hiển thị mã QR. Bạn có thể mở trang thanh toán PayOS an toàn." : "Đang chuẩn bị mã QR thanh toán…"}</p>}
-          <ol className="mx-auto mt-5 grid max-w-sm gap-2 text-left text-sm text-slate-600"><li>1. Mở ứng dụng ngân hàng</li><li>2. Quét mã QR</li><li>3. Kiểm tra thông tin và xác nhận thanh toán</li></ol>
-        </section>}
-        {!showQr && <p className={view.tone === "warning" ? "mt-5 rounded-xl bg-amber-50 p-3 text-center text-sm text-amber-900" : "mt-5 rounded-xl bg-slate-50 p-3 text-center text-sm text-slate-700"} role="status" aria-live="polite">{view.key === "PENDING" ? "Mã QR chưa khả dụng. Bạn có thể mở trang PayOS an toàn hoặc kiểm tra trạng thái." : view.key === "APPLIED" ? "Thanh toán đã được xác minh và ghi nhận." : view.key === "FAILED" ? "Thanh toán chưa hoàn tất theo xác nhận từ Backend." : "Chưa thể xác nhận mã thanh toán. Vui lòng kiểm tra trạng thái giao dịch hiện có."}</p>}
-        {showQr && <p className="mt-4 text-center text-sm text-slate-600" role="status" aria-live="polite">Đang chờ xác nhận thanh toán. Trang sẽ tự cập nhật khi Backend xác minh.</p>}
+        <p className={view.tone === "warning" ? "mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-900" : applied ? "mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center text-sm text-emerald-900" : "mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-700"} role="status" aria-live="polite">{message}</p>
         <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-          {canOpenPayosCheckout(payment) && <Button onClick={() => onContinue(payment)}>Mở trang thanh toán PayOS</Button>}
-          {canStartNewPayosAttempt(payment) && <Button disabled={retrying} onClick={onRetry}>{retrying ? "Đang tạo mã mới…" : "Thử thanh toán lại"}</Button>}
-          <Button variant="outline" disabled={refreshing} onClick={() => onRefresh(payment)}>{refreshing ? "Đang kiểm tra…" : "Làm mới trạng thái"}</Button>
-          <Button asChild variant="ghost"><RouterLink to="/portal/payments" state={{ reservationId: payment.reservationId, paymentId: payment.id }}>Xem lịch sử thanh toán</RouterLink></Button>
+          {canContinue && <Button className="w-full sm:w-auto" variant="orange" onClick={() => onContinue(payment)}>Tiếp tục thanh toán qua PayOS</Button>}
+          {canRetry && <Button className="w-full sm:w-auto" disabled={retrying} variant="orange" onClick={onRetry}>{retrying ? "Đang tạo liên kết thanh toán…" : "Tạo lần thanh toán mới"}</Button>}
+          <Button className="w-full sm:w-auto" variant="outline" disabled={refreshing} onClick={() => onRefresh(payment)}>{refreshing ? "Đang kiểm tra…" : "Làm mới trạng thái"}</Button>
+          <Button asChild className="w-full sm:w-auto" variant="ghost"><RouterLink to="/portal/payments" state={{ reservationId: payment.reservationId, paymentId: payment.id }}>Xem lịch sử thanh toán</RouterLink></Button>
         </div>
       </CardContent>
     </Card>
@@ -441,7 +431,7 @@ export default function SelfStoragePayosCheckout({
     if (busy.current || polling.current || !purpose || !customerId || !historyLoaded) return;
     if (blockingPayment) {
       setNotice(canOpenPayosCheckout(blockingPayment)
-        ? "Đã có giao dịch đang chờ. Hãy dùng mã QR hoặc mở trang PayOS của giao dịch hiện tại."
+        ? "Đã có giao dịch đang chờ. Hãy tiếp tục tại trang thanh toán PayOS hiện có."
         : "Giao dịch hiện tại chưa được xác nhận xong. Hãy kiểm tra trạng thái trước khi tiếp tục.");
       return;
     }
@@ -458,7 +448,7 @@ export default function SelfStoragePayosCheckout({
       const freshContract = freshContext?.contract;
       if (
         recordId(freshReservation) !== reservationId ||
-        eligiblePayosPurpose(freshReservation, freshContract) !== purpose
+        assessPayosEligibility(freshReservation, freshContract, Date.now(), customerId).purpose !== purpose
       ) {
         setSnapshot(freshContext);
         throw Error("Reservation, contract or payment eligibility changed. Refresh before continuing.");
@@ -530,14 +520,13 @@ export default function SelfStoragePayosCheckout({
         goToHistory(payment.id, true);
         return;
       }
-      if (eligiblePayosPurpose(freshReservation, freshContract) !== purpose) {
+      if (assessPayosEligibility(freshReservation, freshContract, Date.now(), customerId).purpose !== purpose) {
         setNotice("Giao dịch đã được tạo nhưng điều kiện thanh toán đã thay đổi. Hãy kiểm tra trạng thái trước khi tiếp tục.");
-      } else if (canShowPayosQr(payment)) {
-        setNotice("Mã QR PayOS đã sẵn sàng.");
-      } else if (canOpenPayosCheckout(payment)) {
-        setNotice("Trang thanh toán PayOS an toàn đã sẵn sàng.");
+      } else if (payment.reservationId === reservationId && payment.purpose === purpose && canOpenPayosCheckout(payment)) {
+        window.location.assign(payment.checkoutUrl);
+        return;
       } else {
-        setNotice("Chưa thể xác nhận mã thanh toán. Hãy kiểm tra trạng thái giao dịch hiện có.");
+        setNotice("Liên kết thanh toán chưa sẵn sàng. Hãy kiểm tra trạng thái giao dịch hiện có.");
       }
     } catch (cause) {
       if (!alive.current || getAccessToken() !== token) return;
@@ -554,7 +543,9 @@ export default function SelfStoragePayosCheckout({
   }
 
   function continueExistingCheckout(payment) {
-    if (canOpenPayosCheckout(payment)) window.location.assign(payment.checkoutUrl);
+    if (payment?.reservationId === reservationId && payment?.purpose === purpose && canOpenPayosCheckout(payment)) {
+      window.location.assign(payment.checkoutUrl);
+    }
   }
 
   const returnQueryPresent = typeof window !== "undefined" && !!window.location.search;
@@ -577,14 +568,13 @@ export default function SelfStoragePayosCheckout({
   }, [historyLoaded, paymentHistory.map((payment) => payment.id).join("|")]);
 
   return (
-    <CustomerScreen title="Thanh toán Self-Storage" description="Quét mã QR hoặc mở trang thanh toán PayOS an toàn.">
+    <CustomerScreen title={purpose === "BALANCE" ? "Thanh toán tiền thuê còn lại" : "Thanh toán tiền thuê trả trước"} description="Thanh toán an toàn tại trang Hosted Checkout chính thức của PayOS.">
       <LoadState resource={context} />
       {reservation && <Card className="mx-auto w-full max-w-3xl border-slate-200 shadow-sm"><CardContent className="p-5 sm:p-7">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{purpose === "BALANCE" ? "Thanh toán tiền thuê còn lại" : "Thanh toán tiền thuê trả trước"}</h1>
-        <p className="mt-2 text-sm text-slate-600">Quét mã QR để thanh toán an toàn qua PayOS</p>
+        <p className="mt-2 text-sm text-slate-600">Liên kết thanh toán được tạo bởi PayOS. WDP chỉ xác nhận kết quả sau khi Backend nhận và xác minh webhook.</p>
         <div className="mt-5">{contractResource.loading && <p className="text-sm text-slate-600" role="status">Đang xác minh hợp đồng…</p>}{(contractResource.error || contractResource.data === null && !contractResource.loading) && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>{eligibilityText(contractLoadReason)}</p><Button className="mt-3" variant="outline" onClick={contractResource.retry}>Thử tải lại hợp đồng</Button></div>}</div>
-        {visiblePayment && <div className="mt-6"><PaymentPanel payment={visiblePayment} purpose={purpose || visiblePayment.purpose} onRefresh={refreshPayment} onContinue={continueExistingCheckout} onRetry={() => void pay()} retrying={pending === "checkout"} refreshing={pending === ("status:" + visiblePayment.id)} /></div>}
-        {!visiblePayment && purpose && !checkoutRecoveryNeeded && <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center sm:p-7"><p className="text-sm text-slate-600">{historyLoaded ? "Chưa có mã thanh toán cho đơn thuê này." : "Đang tải trạng thái thanh toán…"}</p><Button className="mt-4 w-full sm:w-auto" disabled={!eligible || !!pending} aria-busy={pending === "checkout"} onClick={pay}>{pending === "checkout" ? "Đang tạo mã thanh toán…" : purpose === "DEPOSIT" ? "Tạo mã QR thanh toán" : "Tạo mã thanh toán số tiền còn lại"}</Button></div>}
+        {visiblePayment && <div className="mt-6"><PaymentPanel payment={visiblePayment} reservationId={reservationId} purpose={purpose || visiblePayment.purpose} onRefresh={refreshPayment} onContinue={continueExistingCheckout} onRetry={() => void pay()} retrying={pending === "checkout"} refreshing={pending === ("status:" + visiblePayment.id)} /></div>}
+        {!visiblePayment && purpose && !checkoutRecoveryNeeded && <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm sm:p-7"><p className="text-sm leading-6 text-slate-600">{historyLoaded ? "Chưa có liên kết thanh toán cho đơn thuê này. Backend sẽ xác định số tiền và tạo liên kết PayOS khi bạn tiếp tục." : "Đang kiểm tra lịch sử thanh toán…"}</p><Button className="mt-4 w-full sm:w-auto" variant="orange" disabled={!eligible || !!pending} aria-busy={pending === "checkout"} onClick={pay}>{pending === "checkout" ? "Đang tạo liên kết thanh toán…" : "Tiếp tục thanh toán qua PayOS"}</Button></div>}
         {!purpose && reservation.status === "DEPOSIT_PAID" && <p className="mt-5 rounded-xl bg-sky-50 p-4 text-sm text-sky-900" role="status">Khoản tiền trả trước đã được ghi nhận. Hãy tiếp tục bước hợp đồng theo hướng dẫn trên trang hợp đồng.</p>}
         {!purpose && reservation.status === "PAID" && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900" role="status">Khoản thanh toán đã được ghi nhận. Việc nhận kho vẫn là một bước riêng.</p>}
         {missingPrerequisite && <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{missingPrerequisite}</p>}

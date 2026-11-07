@@ -29,6 +29,9 @@ export interface IReservation extends Document {
   facilityId: Types.ObjectId;
   
   serviceType: FacilityServiceType;
+  /** Optional immutable key/hash used to replay Customer Self-Storage creation safely. */
+  bookingIdempotencyKey?: string;
+  bookingPayloadHash?: string;
   /** Absent on legacy records. Version 2 is never inferred from legacy status/payment fields. */
   bookingFlowVersion?: 2;
   storageUnitId?: Types.ObjectId;

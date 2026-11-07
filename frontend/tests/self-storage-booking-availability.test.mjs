@@ -58,7 +58,7 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
   assert.match(period, /Previous month/);
   assert.match(period, /lg:grid-cols/);
   assert.match(period, /rangeState === "CONFLICT"/);
-  assert.match(checkout, /Quét mã QR để thanh toán an toàn qua PayOS/);
+  assert.match(checkout, /Hosted Checkout chính thức của PayOS/);
   assert.doesNotMatch(checkout, /Rental overview|Reservation reference|Contract status|Payment reference/);
   assert.match(lifecycle, /Self Storage booking confirmed/);
   assert.doesNotMatch(lifecycle, /selfStorageCreated && \(\s*<Message success=" Waiting for management approval/);

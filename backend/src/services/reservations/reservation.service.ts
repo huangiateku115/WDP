@@ -1,4 +1,5 @@
 import mongoose, { ClientSession, Types } from 'mongoose';
+import { createHash } from 'node:crypto';
 import ReservationModel from '../../models/reservations/reservation.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
@@ -36,6 +37,32 @@ export class ReservationError extends Error {
 }
 
 export class ReservationService {
+  private static bookingPayloadHash(data: {
+    customerId: string; facilityId: string; storageUnitId: string; startDate: Date; endDate: Date; pricingPolicyId: string;
+  }): string {
+    const canonical = {
+      customerId: String(data.customerId).toLowerCase(),
+      facilityId: String(data.facilityId).toLowerCase(),
+      storageUnitId: String(data.storageUnitId).toLowerCase(),
+      startDate: new Date(data.startDate).toISOString(),
+      endDate: new Date(data.endDate).toISOString(),
+      pricingPolicyId: String(data.pricingPolicyId).toLowerCase(),
+      serviceType: FacilityServiceType.SELF_STORAGE,
+    };
+    return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  }
+
+  private static async findBookingReplay(customerId: string, idempotencyKey: string, payloadHash: string, session?: ClientSession) {
+    let query: any = ReservationModel.findOne({ customerId, bookingIdempotencyKey: idempotencyKey });
+    if (session && typeof query.session === 'function') query = query.session(session);
+    const existing = await query.exec();
+    if (!existing) return null;
+    if (existing.bookingPayloadHash !== payloadHash) {
+      throw new ReservationError(409, 'This booking request key was already used with different reservation details.');
+    }
+    return existing;
+  }
+
   /**
    * Bộ lọc kiểm tra giao cắt khoảng thời gian (Overlap Filter) cho Kho Tự Quản.
    * Hai khoảng thời gian [S1, E1] và [S2, E2] giao nhau khi: S1 < E2 VÀ E1 > S2.
@@ -242,6 +269,34 @@ export class ReservationService {
     endDate: Date;
     pricingPolicyId: string;
   }): Promise<IReservation> {
+    const result = await this.createReservationWithOutcome(data);
+    return result.reservation;
+  }
+
+  static async createReservationWithOutcome(data: {
+    customerId: string;
+    facilityId: string;
+    storageUnitId: string;
+    startDate: Date;
+    endDate: Date;
+    pricingPolicyId: string;
+    idempotencyKey?: string;
+  }): Promise<{ reservation: IReservation; replayed: boolean }> {
+
+    const idempotencyKey = data.idempotencyKey?.trim();
+    if (idempotencyKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+      throw new ReservationError(400, 'A valid booking Idempotency-Key is required.');
+    }
+    let payloadHash: string | undefined;
+    if (idempotencyKey) {
+      try {
+        payloadHash = this.bookingPayloadHash(data);
+      } catch {
+        throw new ReservationError(400, 'Reservation dates are invalid.');
+      }
+      const replay = await this.findBookingReplay(data.customerId, idempotencyKey, payloadHash);
+      if (replay) return { reservation: replay, replayed: true };
+    }
     
     // 1. Kiểm tra Gate Verification (Bắt buộc KH phải VERIFIED)
     const profile = await CustomerProfileModel.findOne({ userId: data.customerId }).exec();
@@ -274,8 +329,17 @@ export class ReservationService {
     const session = await mongoose.startSession();
     try {
       let createdReservation: IReservation | null = null;
+      let replayed = false;
       
       await session.withTransaction(async () => {
+        if (idempotencyKey && payloadHash) {
+          const replay = await this.findBookingReplay(data.customerId, idempotencyKey, payloadHash, session);
+          if (replay) {
+            createdReservation = replay;
+            replayed = true;
+            return;
+          }
+        }
         // 3. KHÓA KHO BẰNG WRITE-CONFLICT (Kỹ thuật ép tăng version)
         // Nếu 2 người cùng đặt kho này, lệnh $inc sẽ khiến Mongo lock document này lại.
         // Người đến sau sẽ phải đợi, hoặc bị văng lỗi WriteConflict và retry.
@@ -353,6 +417,7 @@ export class ReservationService {
           customerId: data.customerId,
           facilityId: data.facilityId,
           serviceType: FacilityServiceType.SELF_STORAGE,
+          ...(idempotencyKey && payloadHash ? { bookingIdempotencyKey: idempotencyKey, bookingPayloadHash: payloadHash } : {}),
           storageUnitId: unit._id,
           
           startDate,
@@ -403,7 +468,18 @@ export class ReservationService {
         createdReservation = reservation;
       });
 
-      return createdReservation!;
+      return { reservation: createdReservation!, replayed };
+    } catch (error: any) {
+      if (idempotencyKey && payloadHash) {
+        // A concurrent insert or an ambiguous transaction result may have committed
+        // the original Reservation. Recover only by the same Customer/key/hash.
+        const replay = await this.findBookingReplay(data.customerId, idempotencyKey, payloadHash).catch((lookupError) => {
+          if (lookupError instanceof ReservationError && lookupError.code === 409) throw lookupError;
+          return null;
+        });
+        if (replay) return { reservation: replay, replayed: true };
+      }
+      throw error;
     } finally {
       await session.endSession();
     }

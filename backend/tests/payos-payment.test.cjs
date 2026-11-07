@@ -256,6 +256,8 @@ test('checkout creates a server-priced intent after Reservation CAS and reuses e
   const expectedCustomerRoute = `https://customer.example/portal/payments/${reservation._id}`;
   assert.equal(providerRequest.returnUrl, expectedCustomerRoute);
   assert.equal(providerRequest.cancelUrl, expectedCustomerRoute);
+  assert.match(providerRequest.description, /^WDPD[a-f\d]{5}$/i);
+  assert.ok(providerRequest.description.length <= 9);
   assert.ok(operations.indexOf('reservation-cas') < operations.indexOf('payment-save'));
   assert.ok(operations.indexOf('payment-save') < operations.indexOf('provider-create'));
   assert.ok(operations.includes('checkout-link-save'));
@@ -302,6 +304,8 @@ test('Balance intent requires an applied PayOS Deposit and calculates only the r
   const expectedCustomerRoute = `https://customer.example/portal/payments/${reservation._id}`;
   assert.equal(providerRequest.returnUrl, expectedCustomerRoute);
   assert.equal(providerRequest.cancelUrl, expectedCustomerRoute);
+  assert.match(providerRequest.description, /^WDPB[a-f\d]{5}$/i);
+  assert.ok(providerRequest.description.length <= 9);
   assert.notEqual(providerRequest.returnUrl, 'https://customer.example/portal/payments/507f1f77bcf86cd799439011');
 });
 
@@ -687,6 +691,107 @@ test('provider create timeout yields 503 and leaves the intent unknown for same-
   assert.equal(payment.checkoutState, 'UNKNOWN');
 });
 
+test('provider create failures are categorized using allowlisted fields and never log sensitive error content', async t => {
+  const cases = [
+    { label: 'HTTP 400 validation', error: Object.assign(new Error('PRIVATE response detail'), { name: 'BadRequestError', status: 400, code: '231', desc: 'PRIVATE provider text' }), category: 'PAYOS_PROVIDER_VALIDATION_ERROR', status: 400, code: '231', response: true },
+    { label: 'HTTP 401 authentication', error: Object.assign(new Error('PRIVATE auth text'), { name: 'UnauthorizedError', status: 401, code: 'AUTH_DENIED' }), category: 'PAYOS_PROVIDER_AUTH_ERROR', status: 401, code: 'AUTH_DENIED', response: true },
+    { label: 'HTTP 429 rate limit', error: Object.assign(new Error('PRIVATE rate data'), { name: 'TooManyRequestError', status: 429, code: 'RATE_LIMITED' }), category: 'PAYOS_PROVIDER_RATE_LIMITED', status: 429, code: 'RATE_LIMITED', response: true },
+    { label: 'SDK timeout', error: Object.assign(new Error('PRIVATE timeout message'), { name: 'ConnectionTimeoutError' }), category: 'PAYOS_PROVIDER_TIMEOUT', status: 'UNKNOWN', network: 'UNKNOWN', response: false },
+    { label: 'network reset', error: Object.assign(new Error('PRIVATE network message'), { code: 'ECONNRESET' }), category: 'PAYOS_PROVIDER_NETWORK_ERROR', status: 'UNKNOWN', network: 'ECONNRESET', response: false },
+    { label: 'SDK response parse failure', error: Object.assign(new Error('PRIVATE response body'), { name: 'SyntaxError' }), category: 'PAYOS_PROVIDER_SDK_ERROR', status: 'UNKNOWN', network: 'UNKNOWN', response: true },
+    { label: 'unknown SDK error', error: Object.assign(new Error('PRIVATE SDK payload'), { name: 'APIError', code: 'secret with spaces' }), category: 'PAYOS_PROVIDER_SDK_ERROR', status: 'UNKNOWN', network: 'UNKNOWN', response: false },
+    { label: 'unclassified error', error: Object.assign(new Error('PRIVATE token and checkout URL'), { name: 'SensitiveError', code: 'PRIVATE=VALUE' }), category: 'PAYOS_PROVIDER_UNKNOWN_ERROR', status: 'UNKNOWN', network: 'UNKNOWN', response: false },
+  ];
+
+  for (const fixture of cases) await t.test(fixture.label, async subtest => {
+    const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType: 'SELF_STORAGE',
+      provider: PaymentProvider.PAYOS, providerReference: '1234567898', purpose: PaymentPurpose.DEPOSIT,
+      amount: 100000, currency: 'VND', idempotencyKey: 'PAYOS-SS-original-key', status: PaymentStatus.PENDING,
+      checkoutState: 'NOT_CREATED', applicationStatus: PaymentApplicationStatus.NOT_APPLIED };
+    const diagnostics = [];
+    let providerCreates = 0;
+    subtest.mock.method(console, 'warn', (...args) => diagnostics.push(args));
+    subtest.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+      Object.assign(payment, update.$set); return query(payment);
+    });
+    subtest.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+      Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+    });
+    const service = new PayosPaymentService({ gateway: { create: async () => { providerCreates += 1; throw fixture.error; } } });
+    await assert.rejects(service.createProviderLink(payment), error => {
+      assert.equal(error.code, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN');
+      assert.equal(error.status, 503);
+      return true;
+    });
+    assert.equal(providerCreates, 1);
+    assert.equal(payment.providerReference, '1234567898', 'UNKNOWN keeps the original provider orderCode');
+    assert.equal(payment.idempotencyKey, 'PAYOS-SS-original-key');
+    assert.equal(payment.checkoutState, 'UNKNOWN');
+    assert.equal(payment.status, PaymentStatus.PENDING, 'a provider create error is not evidence of payment failure');
+    const record = diagnostics[0]?.[1];
+    assert.equal(record.category, fixture.category);
+    assert.equal(record.providerCreateInvoked, true);
+    assert.equal(record.providerResponseReceived, fixture.response);
+    assert.equal(record.persistenceConfirmed, false);
+    assert.equal(record.providerHttpStatus, fixture.status);
+    if (fixture.code !== undefined) assert.equal(record.providerErrorCode, fixture.code);
+    if (fixture.network !== undefined) assert.equal(record.networkErrorCode, fixture.network);
+    const logged = JSON.stringify(diagnostics);
+    assert.doesNotMatch(logged, /PRIVATE|secret with spaces|SECRET=VALUE|Bearer|000201|pay\.example/);
+    assert.deepEqual(Object.keys(record).sort(), [
+      'category', 'correlationId', 'networkErrorCode', 'persistenceConfirmed', 'providerCreateInvoked',
+      'providerErrorCode', 'providerHttpStatus', 'providerResponseReceived', 'sdkErrorName', 'stage',
+    ].sort());
+  });
+});
+
+test('installed PayOS SDK create uses one network attempt and no SDK logging on an HTTP 503', async t => {
+  const envNames = ['PAYOS_CLIENT_ID', 'PAYOS_API_KEY', 'PAYOS_CHECKSUM_KEY', 'PAYOS_CUSTOMER_ORIGIN', 'PAYOS_WEBHOOK_URL', 'PAYOS_LOG'];
+  const previousEnv = Object.fromEntries(envNames.map(name => [name, process.env[name]]));
+  const previousFetch = globalThis.fetch;
+  const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType: 'SELF_STORAGE',
+    provider: PaymentProvider.PAYOS, providerReference: '1234567897', purpose: PaymentPurpose.DEPOSIT,
+    amount: 100000, currency: 'VND', status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+  let fetchCalls = 0;
+  const diagnostics = [];
+  const sdkLogs = [];
+  process.env.PAYOS_CLIENT_ID = 'synthetic-test-client';
+  process.env.PAYOS_API_KEY = 'synthetic-test-api-key';
+  process.env.PAYOS_CHECKSUM_KEY = 'synthetic-test-checksum-key';
+  process.env.PAYOS_CUSTOMER_ORIGIN = 'https://customer.example';
+  process.env.PAYOS_WEBHOOK_URL = 'https://api.example/api/v1/payments/payos/webhook';
+  process.env.PAYOS_LOG = 'debug';
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ code: '91', desc: 'synthetic unavailable', data: null }), {
+      status: 503, headers: { 'content-type': 'application/json' },
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+    for (const name of envNames) {
+      if (previousEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = previousEnv[name];
+    }
+  });
+  t.mock.method(console, 'warn', (...args) => diagnostics.push(args));
+  for (const method of ['error', 'info', 'debug']) t.mock.method(console, method, (...args) => sdkLogs.push([method, ...args]));
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+    Object.assign(payment, update.$set); return query(payment);
+  });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  const service = new PayosPaymentService();
+  await assert.rejects(service.createProviderLink(payment), error => error.code === 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN');
+  assert.equal(fetchCalls, 1, 'maxRetries: 0 prevents an automatic second POST to PayOS');
+  assert.equal(payment.checkoutState, 'UNKNOWN');
+  assert.equal(payment.providerReference, '1234567897');
+  assert.equal(diagnostics.length, 1, 'only WDP safe diagnostics are emitted while PAYOS_LOG=debug');
+  assert.equal(diagnostics[0][1].providerHttpStatus, 503);
+  assert.deepEqual(sdkLogs, [], 'SDK logging stays off even when PAYOS_LOG requests debug output');
+});
+
 test('provider response persistence failure preserves the original intent and emits only sanitized diagnostics', async t => {
   const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType: 'SELF_STORAGE',
     provider: PaymentProvider.PAYOS, providerReference: '1234567891', purpose: PaymentPurpose.DEPOSIT,
@@ -739,6 +844,37 @@ test('null or malformed PayOS create response fails closed for reconciliation', 
   assert.equal(payment.checkoutState, 'RECONCILIATION_REQUIRED');
   assert.match(JSON.stringify(diagnostics), /PROVIDER_RESPONSE_MISMATCH/);
   assert.doesNotMatch(JSON.stringify(diagnostics), /null|orderCode|pay\.example/);
+});
+
+test('PayOS create response must be PENDING before WDP persists a READY checkout', async t => {
+  for (const providerStatus of ['PAID', 'CANCELLED', 'EXPIRED', 'PROCESSING', undefined]) {
+    await t.test(`provider status ${providerStatus ?? 'missing'}`, async subtest => {
+      setPayosCheckoutTestConfig();
+      const payment = { _id: oid(), reservationId: oid(), provider: PaymentProvider.PAYOS,
+        providerReference: '1234567892', purpose: PaymentPurpose.DEPOSIT, amount: 100000,
+        status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+      const diagnostics = [];
+      subtest.mock.method(console, 'warn', (...args) => diagnostics.push(args));
+      subtest.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+        Object.assign(payment, update.$set); return query(payment);
+      });
+      let checkoutWriteCount = 0;
+      const service = new PayosPaymentService({ gateway: { create: async data => ({
+        orderCode: data.orderCode, amount: data.amount, currency: 'VND', paymentLinkId: 'provider-link',
+        checkoutUrl: 'https://pay.payos.vn/web/provider-link', status: providerStatus,
+      }) } });
+      subtest.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+        checkoutWriteCount += 1;
+        Object.assign(payment, update.$set);
+        return query({ matchedCount: 1 });
+      });
+      await assert.rejects(service.createProviderLink(payment), error => error.code === 'PAYOS_RESPONSE_MISMATCH');
+      assert.equal(payment.checkoutState, 'RECONCILIATION_REQUIRED');
+      assert.equal(payment.checkoutUrl, undefined);
+      assert.equal(checkoutWriteCount, 1, 'only the fail-closed reconciliation state is persisted');
+      assert.match(JSON.stringify(diagnostics), /PROVIDER_RESPONSE_MISMATCH/);
+    });
+  }
 });
 
 test('concurrent provider-link requests for one intent invoke PayOS create only once', async t => {
