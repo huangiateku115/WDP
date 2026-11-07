@@ -8,7 +8,7 @@ import { volumeText } from '@/lib/managedCellBooking';
 import { eligibleInventoryRegistration } from '@/lib/inventoryRegistration';
 import SelfStoragePayosCheckout from './SelfStoragePayosCheckout';
 import { SelfPaymentNavigation } from './CustomerPaymentNavigation';
-import { eligiblePayosPurpose } from '@/lib/selfStoragePayos';
+import { eligiblePayosPurpose, normalizePayosReferenceId } from '@/lib/selfStoragePayos';
 import ManagedCellSummary from './warehouse/ManagedCellSummary';
 import { clearMapAvailability } from './warehouse/ManagedCellBooking';
 import {
@@ -66,14 +66,14 @@ function useCurrentTime() {
 async function contractContext(reservationId, config) {
   if (!validId(reservationId)) throw Error("Invalid reservation ID.");
   const reservation = record(await reservationApi.detailForCustomer(reservationId, config));
-  if (recordId(reservation) !== reservationId) throw Error("Reservation does not match this payment route.");
-  const contract = await loadSelfStorageContract(reservationId, recordId(reservation.customerId), config);
+  if (normalizePayosReferenceId(reservation) !== normalizePayosReferenceId(reservationId)) throw Error("Reservation does not match this payment route.");
+  const contract = await loadSelfStorageContract(reservationId, normalizePayosReferenceId(reservation.customerId), config);
   return { contract, reservation };
 }
 async function loadSelfStorageReservation(reservationId, config) {
   if (!validId(reservationId)) throw Error("Invalid reservation ID.");
   const reservation = record(await reservationApi.detailForCustomer(reservationId, config));
-  if (recordId(reservation) !== reservationId || serviceType(reservation) !== SELF_STORAGE) {
+  if (normalizePayosReferenceId(reservation) !== normalizePayosReferenceId(reservationId) || serviceType(reservation) !== SELF_STORAGE) {
     throw Error("The owned Self Storage reservation could not be verified.");
   }
   return reservation;
@@ -81,14 +81,18 @@ async function loadSelfStorageReservation(reservationId, config) {
 async function loadSelfStorageContract(reservationId, customerId, config) {
   try {
     const contract = record(await contractApi.byReservationReal(reservationId, config));
-    if (recordId(contract.reservationId) !== reservationId ||
-        (customerId && recordId(contract.customerId) !== customerId)) {
-      throw Error("The contract does not match this reservation and customer. Payment is unavailable.");
+    if (normalizePayosReferenceId(contract.reservationId) !== normalizePayosReferenceId(reservationId)) {
+      throw Error("The contract does not match this Reservation. Payment is unavailable.");
+    }
+    if (!normalizePayosReferenceId(customerId) ||
+        normalizePayosReferenceId(contract.customerId) !== normalizePayosReferenceId(customerId)) {
+      throw Error("Contract ownership could not be verified. Payment is unavailable.");
     }
     return contract;
   } catch (error) {
     if (error.response?.status === 404) return null;
-    if (error.message?.includes("does not match")) throw error;
+    if (error.message?.includes("does not match this Reservation") ||
+        error.message?.includes("ownership could not be verified")) throw error;
     throw Error("The reservation is saved, but its contract could not be loaded. Retry here; you do not need to book again.");
   }
 }
@@ -116,7 +120,7 @@ async function loadSelfStorageOverview(reservation, config) {
 }
 async function selfStoragePaymentContext(reservationId, config) {
   const reservation = await loadSelfStorageReservation(reservationId, config);
-  const customerId = recordId(reservation.customerId);
+  const customerId = normalizePayosReferenceId(reservation.customerId);
   const [contract, rentalOverview] = await Promise.all([
     loadSelfStorageContract(reservationId, customerId, config),
     loadSelfStorageOverview(reservation, config),
@@ -524,7 +528,7 @@ export function PaymentIntegration() {
       validId(reservationId)
         ? reservationApi.detailForCustomer(reservationId, config).then((response) => {
             const reservation = record(response);
-            if (recordId(reservation) !== reservationId) throw Error("Reservation does not match this payment route.");
+            if (normalizePayosReferenceId(reservation) !== normalizePayosReferenceId(reservationId)) throw Error("Reservation does not match this payment route.");
             return reservation;
           })
         : Promise.reject(Error("Invalid reservation ID.")),

@@ -14,6 +14,7 @@ const PAYOS_INTENT_PREFIX = 'PAYOS-SS-';
 const MAX_ORDER_CODE = 9_999_999_999;
 const MIN_WDP_ORDER_CODE = 1_000_000_000;
 const MAX_PAYOS_QR_PAYLOAD_LENGTH = 4096;
+const PAYOS_PAYMENT_LINK_STATUSES = new Set(['PENDING', 'CANCELLED', 'UNDERPAID', 'PAID', 'EXPIRED', 'PROCESSING', 'FAILED']);
 const ALLOWED_URL_PROTOCOLS = new Set(['http:', 'https:']);
 const Reservations: any = ReservationModel;
 const Payments: any = ReservationPaymentModel;
@@ -30,7 +31,7 @@ export interface PayosGateway {
   create(data: { orderCode: number; amount: number; description: string; cancelUrl: string; returnUrl: string }): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; checkoutUrl: string; qrCode?: string; status: string;
   }>;
-  get(orderCode: number): Promise<{ orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
+  get(orderCode: number): Promise<{ id?: string; orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
   verify(webhook: Webhook): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; reference: string; description?: string;
     transactionDateTime: string; code: string; desc: string;
@@ -125,6 +126,18 @@ function outcomeHash(event: { orderCode: number; reference: string; amount: numb
   return createHash('sha256').update([event.orderCode, event.reference, event.amount, event.currency,
     event.paymentLinkId, event.transactionDateTime, event.code].join('|')).digest('hex');
 }
+function checkoutCorrelationId(payment: any): string {
+  return createHash('sha256').update(`PAYOS_CHECKOUT:${id(payment?._id)}`).digest('hex').slice(0, 16);
+}
+function logCheckoutDiagnostic(payment: any, category: string, stage: string, providerCreateInvoked: boolean | null,
+  providerResponseReceived: boolean, persistenceConfirmed: boolean | null): void {
+  // persistenceConfirmed means the checkout URL/link identity was written and read back successfully.
+  // Keep this allowlisted record free of exception/provider payloads, URLs and payment data.
+  console.warn('PAYOS_CHECKOUT_DIAGNOSTIC', {
+    category, stage, correlationId: checkoutCorrelationId(payment), providerCreateInvoked,
+    providerResponseReceived, persistenceConfirmed,
+  });
+}
 function isDocumentedRegistrationProbe(event: {
   orderCode: number; amount: number; currency: string; paymentLinkId: string; reference: string;
   description?: string; transactionDateTime: string; code: string; desc: string;
@@ -154,6 +167,13 @@ function assertEnabled(enabled: boolean): void {
 function isValidPayosQrPayload(value: unknown): value is string {
   return typeof value === 'string' && value.length >= 16 && value.length <= MAX_PAYOS_QR_PAYLOAD_LENGTH &&
     value.trim() === value && value.startsWith('000201') && /^[\x20-\x7E]+$/.test(value);
+}
+function isSafePayosCheckoutUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value.length > 2048 || value.trim() !== value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !!url.hostname;
+  } catch { return false; }
 }
 function errorHasLabel(error: any, label: string): boolean {
   return error?.hasErrorLabel?.(label) === true || error?.errorLabels?.includes?.(label) === true;
@@ -503,17 +523,28 @@ export class PayosPaymentService {
       if (current?.checkoutState === 'READY' && current.checkoutUrl) {
         return { ...await this.customerStatusDto(current), outcome: 'REPLAYED', httpStatus: 200 };
       }
+      logCheckoutDiagnostic(payment, 'CREATE_CLAIM_UNAVAILABLE', 'CLAIM', false, false, false);
       throw new PayosPaymentError(503, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN', 'Checkout creation is already in progress or uncertain; do not create another payment');
     }
+    let stage = 'PROVIDER_CREATE';
+    let providerCreateInvoked = false;
+    let providerResponseReceived = false;
+    let persistenceConfirmed = false;
     try {
+      providerCreateInvoked = true;
       const response = await this.gateway.create({ orderCode, amount,
         description: `WDP ${payment.purpose} ${id(payment.reservationId).slice(-8)}`.slice(0, 25),
         cancelUrl, returnUrl });
-      if (response.orderCode !== orderCode || response.amount !== amount || response.currency !== 'VND' ||
-          typeof response.checkoutUrl !== 'string' || !response.checkoutUrl.startsWith('https://') || !response.paymentLinkId) {
+      providerResponseReceived = true;
+      stage = 'PROVIDER_RESPONSE_VALIDATION';
+      if (!response || typeof response !== 'object' || response.orderCode !== orderCode || response.amount !== amount || response.currency !== 'VND' ||
+          typeof response.paymentLinkId !== 'string' || !response.paymentLinkId.trim() || response.paymentLinkId.length > 200 ||
+          !isSafePayosCheckoutUrl(response.checkoutUrl)) {
+        stage = 'PERSIST_RESPONSE_MISMATCH';
         await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING, checkoutState: 'CREATING' }, {
           $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS create response identity mismatch' },
         }).exec();
+        logCheckoutDiagnostic(payment, 'PROVIDER_RESPONSE_MISMATCH', 'PROVIDER_RESPONSE_VALIDATION', true, true, false);
         throw new PayosPaymentError(503, 'PAYOS_RESPONSE_MISMATCH', 'PayOS checkout response requires reconciliation');
       }
       const identityFilter = { _id: payment._id, reservationId: payment.reservationId, customerId: payment.customerId,
@@ -529,31 +560,51 @@ export class PayosPaymentService {
       const checkoutFields: Record<string, unknown> = { checkoutState: 'READY', checkoutUrl: response.checkoutUrl,
         providerPaymentLinkId: response.paymentLinkId, providerCurrency: response.currency };
       if (isValidPayosQrPayload(response.qrCode)) checkoutFields.qrCode = response.qrCode;
+      stage = 'PERSIST_CHECKOUT_LINK';
       const persisted = await Payments.updateOne(identityFilter, {
         $set: checkoutFields,
       }).exec();
       if (persisted.matchedCount !== 1) throw new Error('PayOS checkout result was not attached to the payment intent');
+      stage = 'VERIFY_CHECKOUT_PERSISTENCE';
       const refreshed = await Payments.findById(payment._id).exec();
       if (!refreshed?.checkoutUrl || refreshed.providerPaymentLinkId !== response.paymentLinkId ||
           (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode)) {
         throw new Error('Persisted PayOS checkout identity could not be verified');
       }
+      persistenceConfirmed = true;
       return { ...await this.customerStatusDto(refreshed), outcome: 'CREATED', httpStatus: 201 };
     } catch (error: any) {
       if (error instanceof PayosPaymentError) throw error;
-      await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING, checkoutState: 'CREATING' }, {
-        $set: { checkoutState: 'UNKNOWN', reconciliationReason: 'PayOS create outcome is unknown; query by the same orderCode before retrying' },
-      }).exec().catch(() => undefined);
+      try {
+        await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING, checkoutState: 'CREATING' }, {
+          $set: { checkoutState: 'UNKNOWN', reconciliationReason: 'PayOS create outcome is unknown; query by the same orderCode before retrying' },
+        }).exec();
+      } catch { /* Do not include the database error or its payload in logs. */ }
+      const category = !providerCreateInvoked ? 'CREATE_NOT_INVOKED'
+        : !providerResponseReceived ? 'PROVIDER_CREATE_FAILED'
+          : stage === 'VERIFY_CHECKOUT_PERSISTENCE' ? 'CHECKOUT_READBACK_FAILED' : 'CHECKOUT_PERSISTENCE_FAILED';
+      logCheckoutDiagnostic(payment, category, stage, providerCreateInvoked, providerResponseReceived, persistenceConfirmed);
       throw new PayosPaymentError(503, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN', 'Checkout result is uncertain; do not create a new payment attempt');
     }
   }
 
   private async reconcileCheckoutState(payment: any) {
-    const link = await this.gateway.get(numericOrderCode(payment.providerReference));
-    if (link.orderCode !== numericOrderCode(payment.providerReference) || link.amount !== payment.amount) {
+    const orderCode = numericOrderCode(payment.providerReference);
+    let link: Awaited<ReturnType<PayosGateway['get']>>;
+    try {
+      link = await this.gateway.get(orderCode);
+    } catch {
+      logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_FAILED', 'LOOKUP_BY_ORIGINAL_ORDER_CODE', null, false, null);
+      throw new Error('PayOS lookup failed for the original payment order code');
+    }
+    if (!link || link.orderCode !== orderCode || link.amount !== payment.amount ||
+        !Number.isSafeInteger(link.amountPaid) || link.amountPaid < 0 || !PAYOS_PAYMENT_LINK_STATUSES.has(link.status) ||
+        typeof link.id !== 'string' || !link.id.trim() ||
+        (payment.providerPaymentLinkId && link.id !== payment.providerPaymentLinkId)) {
       await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING }, {
         $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS lookup identity mismatch' },
       }).exec();
+      logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_IDENTITY_MISMATCH', 'VALIDATE_LOOKUP_RESPONSE', null, true, false);
       return;
     }
     if (link.status === 'PENDING' && payment.checkoutUrl) {

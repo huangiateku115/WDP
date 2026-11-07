@@ -687,6 +687,137 @@ test('provider create timeout yields 503 and leaves the intent unknown for same-
   assert.equal(payment.checkoutState, 'UNKNOWN');
 });
 
+test('provider response persistence failure preserves the original intent and emits only sanitized diagnostics', async t => {
+  const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType: 'SELF_STORAGE',
+    provider: PaymentProvider.PAYOS, providerReference: '1234567891', purpose: PaymentPurpose.DEPOSIT,
+    amount: 100000, currency: 'VND', status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+  let updateCalls = 0; let providerCreates = 0; const diagnostics = [];
+  t.mock.method(console, 'warn', (...args) => diagnostics.push(args));
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+    Object.assign(payment, update.$set); return query(payment);
+  });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    updateCalls += 1;
+    if (updateCalls === 1) throw Error('private URL and sensitive SDK body must never be logged');
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  const service = new PayosPaymentService({ gateway: { create: async data => {
+    providerCreates += 1;
+    return { orderCode: data.orderCode, amount: data.amount, currency: 'VND', paymentLinkId: 'link-private',
+      checkoutUrl: 'https://pay.example/private-link', qrCode: DEPOSIT_QR, status: 'PENDING' };
+  } } });
+  await assert.rejects(service.createProviderLink(payment), error => {
+    assert.equal(error.code, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN'); return true;
+  });
+  assert.equal(providerCreates, 1);
+  assert.equal(payment.providerReference, '1234567891');
+  assert.equal(payment.checkoutState, 'UNKNOWN');
+  assert.equal(diagnostics.length, 1);
+  const diagnosticText = JSON.stringify(diagnostics);
+  assert.match(diagnosticText, /CHECKOUT_PERSISTENCE_FAILED/);
+  assert.match(diagnosticText, /providerCreateInvoked/);
+  assert.match(diagnosticText, /providerResponseReceived/);
+  assert.match(diagnosticText, /persistenceConfirmed/);
+  assert.doesNotMatch(diagnosticText, /pay\.example|private-link|000201|sensitive SDK body/);
+});
+
+test('null or malformed PayOS create response fails closed for reconciliation', async t => {
+  const payment = { _id: oid(), reservationId: oid(), provider: PaymentProvider.PAYOS, providerReference: '1234567892',
+    purpose: PaymentPurpose.DEPOSIT, amount: 100000, status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+  let diagnostics = [];
+  t.mock.method(console, 'warn', (...args) => diagnostics.push(args));
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+    Object.assign(payment, update.$set); return query(payment);
+  });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  const service = new PayosPaymentService({ gateway: { create: async () => null } });
+  await assert.rejects(service.createProviderLink(payment), error => {
+    assert.equal(error.code, 'PAYOS_RESPONSE_MISMATCH'); return true;
+  });
+  assert.equal(payment.checkoutState, 'RECONCILIATION_REQUIRED');
+  assert.match(JSON.stringify(diagnostics), /PROVIDER_RESPONSE_MISMATCH/);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /null|orderCode|pay\.example/);
+});
+
+test('concurrent provider-link requests for one intent invoke PayOS create only once', async t => {
+  setPayosCheckoutTestConfig();
+  const reservation = baseReservation();
+  const payment = { _id: oid(), reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
+    serviceType: 'SELF_STORAGE', provider: PaymentProvider.PAYOS, providerReference: '1234567893',
+    purpose: PaymentPurpose.DEPOSIT, amount: 100000, currency: 'VND', status: PaymentStatus.PENDING,
+    checkoutState: 'NOT_CREATED', applicationStatus: PaymentApplicationStatus.NOT_APPLIED,
+    providerSettlementStatus: 'NOT_VERIFIED' };
+  let providerCreates = 0; let releaseCreate; let markStarted;
+  const createStarted = new Promise(resolve => { markStarted = resolve; });
+  const providerResponse = new Promise(resolve => { releaseCreate = resolve; });
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => {
+    if (payment.checkoutState !== 'NOT_CREATED') return query(null);
+    Object.assign(payment, update.$set); return query(payment);
+  });
+  t.mock.method(ReservationPaymentModel, 'findById', () => query(payment));
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  t.mock.method(ReservationModel, 'findOne', () => query(reservation));
+  t.mock.method(ContractModel, 'findOne', () => query({ status: ContractStatus.DRAFT }));
+  const service = new PayosPaymentService({ enabled: true, gateway: { create: async data => {
+    providerCreates += 1; markStarted(); return providerResponse;
+  } } });
+  const first = service.createProviderLink(payment);
+  await createStarted;
+  await assert.rejects(service.createProviderLink(payment), error => {
+    assert.equal(error.code, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN'); return true;
+  });
+  releaseCreate({ orderCode: 1234567893, amount: 100000, currency: 'VND', paymentLinkId: 'link-concurrent',
+    checkoutUrl: 'https://pay.example/concurrent', qrCode: DEPOSIT_QR, status: 'PENDING' });
+  const result = await first;
+  assert.equal(providerCreates, 1);
+  assert.equal(payment.providerReference, '1234567893');
+  assert.equal(result.checkoutUrl, 'https://pay.example/concurrent');
+});
+
+test('unknown checkout lookup uses original orderCode and quarantines a lost or mismatched provider link', async t => {
+  const payment = { _id: oid(), provider: PaymentProvider.PAYOS, providerReference: '1234567894', amount: 100000,
+    providerPaymentLinkId: 'expected-link', status: PaymentStatus.PENDING, checkoutState: 'UNKNOWN', checkoutUrl: null };
+  let lookupOrderCode; let createCalls = 0;
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  const service = new PayosPaymentService({ gateway: {
+    create: async () => { createCalls += 1; throw Error('replacement order forbidden'); },
+    get: async orderCode => { lookupOrderCode = orderCode; return { id: 'different-link', orderCode,
+      amount: 100000, amountPaid: 0, status: 'PENDING' }; },
+  } });
+  await service.reconcileCheckoutState(payment);
+  assert.equal(lookupOrderCode, 1234567894);
+  assert.equal(payment.checkoutState, 'RECONCILIATION_REQUIRED');
+  assert.equal(payment.providerPaymentLinkId, 'expected-link');
+  assert.equal(payment.checkoutUrl, null);
+  assert.equal(createCalls, 0);
+});
+
+test('PayOS lookup of the original order can verify the link identity but never manufactures a lost checkout URL', async t => {
+  const payment = { _id: oid(), provider: PaymentProvider.PAYOS, providerReference: '1234567895', amount: 100000,
+    providerPaymentLinkId: null, status: PaymentStatus.PENDING, checkoutState: 'UNKNOWN', checkoutUrl: null };
+  let lookupOrderCode; let createCalls = 0;
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => {
+    Object.assign(payment, update.$set); return query({ matchedCount: 1 });
+  });
+  const service = new PayosPaymentService({ gateway: {
+    create: async () => { createCalls += 1; throw Error('replacement order forbidden'); },
+    get: async orderCode => { lookupOrderCode = orderCode; return { id: 'original-link', orderCode,
+      amount: 100000, amountPaid: 0, status: 'PENDING' }; },
+  } });
+  await service.reconcileCheckoutState(payment);
+  assert.equal(lookupOrderCode, 1234567895);
+  assert.equal(payment.checkoutState, 'RECONCILIATION_REQUIRED');
+  assert.match(payment.reconciliationReason, /original checkout URL was not persisted/);
+  assert.equal(payment.checkoutUrl, null);
+  assert.equal(createCalls, 0);
+});
+
 test('payment status lookup uses Customer, Reservation, provider and service scope', async t => {
   const paymentId = String(oid()); const reservationId = String(oid()); const customerId = oid();
   const reservation = baseReservation(); reservation._id = reservationId; reservation.customerId = customerId;
