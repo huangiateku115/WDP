@@ -12,10 +12,16 @@ import {
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
-import { newPayosIdempotencyKey, readPayosAttempts, writePayosAttempts, isValidObjectId } from "@/lib/selfStoragePayos";
+import {
+  newPayosIdempotencyKey,
+  readPayosAttempts,
+  writePayosAttempts,
+  isValidObjectId,
+} from "@/lib/selfStoragePayos";
 import { canOpenPayosCheckout } from "@/api/payosPaymentClient";
 import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
+import { selfStorageAlternatives } from "./selfStorageSuggestions";
 import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
 import { Checkbox } from "@/components/ui/checkbox";
 import Steps from "@/components/common/Steps";
@@ -90,7 +96,8 @@ function Review({ draft, session }) {
   const [confirmed, setConfirmed] = useState(false),
     [pending, setPending] = useState(false),
     [uncertain, setUncertain] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [alternatives, setAlternatives] = useState([]);
   const busy = useRef(false),
     attempted = useRef(false),
     context = resource.data;
@@ -112,6 +119,7 @@ function Review({ draft, session }) {
     busy.current = true;
     setPending(true);
     setError("");
+    setAlternatives([]);
     const token = getAccessToken();
     let sent = false;
     try {
@@ -133,45 +141,108 @@ function Review({ draft, session }) {
       }
       const customerId = session?.user?.id || session?.user?._id;
       let bookingStorage = null;
-      try { bookingStorage = window.sessionStorage; } catch { bookingStorage = null; }
-      if (!isValidObjectId(customerId) || !bookingStorage) {
-        throw Error("This browser cannot safely preserve the booking request. Allow session storage and try again.");
+      try {
+        bookingStorage = window.sessionStorage;
+      } catch {
+        bookingStorage = null;
       }
-      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(bookingStorage, customerId, fresh.payload);
+      if (!isValidObjectId(customerId) || !bookingStorage) {
+        throw Error(
+          "This browser cannot safely preserve the booking request. Allow session storage and try again.",
+        );
+      }
+      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+        bookingStorage,
+        customerId,
+        fresh.payload,
+      );
       attempted.current = true;
       sent = true;
       const created = selfStorageCreation(
-        await reservationApi.createReal(fresh.payload, { headers: { "Idempotency-Key": bookingAttempt.idempotencyKey } }),
+        await reservationApi.createReal(fresh.payload, {
+          headers: { "Idempotency-Key": bookingAttempt.idempotencyKey },
+        }),
         fresh.payload,
       );
       if (getAccessToken() !== token) return;
       const createdReservationId = recordId(created);
-      writeSelfStorageBookingAttempt(bookingStorage, { ...bookingAttempt, reservationId: createdReservationId });
-      updateRentalDraft({ facility: null, unit: null, quote: null, startDate: "", endDate: "", term: null });
+      writeSelfStorageBookingAttempt(bookingStorage, {
+        ...bookingAttempt,
+        reservationId: createdReservationId,
+      });
+      updateRentalDraft({
+        facility: null,
+        unit: null,
+        quote: null,
+        startDate: "",
+        endDate: "",
+        term: null,
+      });
       let checkoutCreated = false;
       let checkoutRecoveryNeeded = false;
       let storage = null;
-      try { storage = window.sessionStorage; } catch { storage = null; }
-      if (isValidObjectId(customerId) && storage && isValidObjectId(createdReservationId)) {
+      try {
+        storage = window.sessionStorage;
+      } catch {
+        storage = null;
+      }
+      if (
+        isValidObjectId(customerId) &&
+        storage &&
+        isValidObjectId(createdReservationId)
+      ) {
         try {
-          const tracked = readPayosAttempts(storage, customerId, createdReservationId, "DEPOSIT");
-          if (tracked.unavailable || tracked.corrupt) throw Error("Payment attempt tracking is unavailable.");
+          const tracked = readPayosAttempts(
+            storage,
+            customerId,
+            createdReservationId,
+            "DEPOSIT",
+          );
+          if (tracked.unavailable || tracked.corrupt)
+            throw Error("Payment attempt tracking is unavailable.");
           let attempts = tracked.attempts;
           let attempt = attempts.at(-1);
           if (!attempt) {
-            attempt = { idempotencyKey: newPayosIdempotencyKey(), paymentId: null };
+            attempt = {
+              idempotencyKey: newPayosIdempotencyKey(),
+              paymentId: null,
+            };
             attempts = [...attempts, attempt];
-            writePayosAttempts(storage, customerId, createdReservationId, "DEPOSIT", attempts);
+            writePayosAttempts(
+              storage,
+              customerId,
+              createdReservationId,
+              "DEPOSIT",
+              attempts,
+            );
           }
           if (attempt.paymentId) {
             checkoutRecoveryNeeded = true;
           } else {
-            const result = await paymentApi.createPayosCheckout(createdReservationId, "DEPOSIT", attempt.idempotencyKey);
+            const result = await paymentApi.createPayosCheckout(
+              createdReservationId,
+              "DEPOSIT",
+              attempt.idempotencyKey,
+            );
             if (getAccessToken() !== token) return;
-            attempts = attempts.map((entry) => entry.idempotencyKey === attempt.idempotencyKey ? { ...entry, paymentId: result.payment.id } : entry);
-            writePayosAttempts(storage, customerId, createdReservationId, "DEPOSIT", attempts);
+            attempts = attempts.map((entry) =>
+              entry.idempotencyKey === attempt.idempotencyKey
+                ? { ...entry, paymentId: result.payment.id }
+                : entry,
+            );
+            writePayosAttempts(
+              storage,
+              customerId,
+              createdReservationId,
+              "DEPOSIT",
+              attempts,
+            );
             checkoutCreated = true;
-            if (result.payment.reservationId === createdReservationId && result.payment.purpose === "DEPOSIT" && canOpenPayosCheckout(result.payment)) {
+            if (
+              result.payment.reservationId === createdReservationId &&
+              result.payment.purpose === "DEPOSIT" &&
+              canOpenPayosCheckout(result.payment)
+            ) {
               window.location.assign(result.payment.checkoutUrl);
               return;
             }
@@ -182,7 +253,13 @@ function Review({ draft, session }) {
       } else {
         checkoutRecoveryNeeded = true;
       }
-      nav("/portal/payments/" + createdReservationId, { state: { selfStorageCreated: true, checkoutCreated, checkoutRecoveryNeeded } });
+      nav("/portal/payments/" + createdReservationId, {
+        state: {
+          selfStorageCreated: true,
+          checkoutCreated,
+          checkoutRecoveryNeeded,
+        },
+      });
     } catch (e) {
       if (getAccessToken() !== token) return;
       const status = e.response?.status;
@@ -195,8 +272,37 @@ function Review({ draft, session }) {
         attempted.current = false;
         setConfirmed(false);
         setError(rentalError(e));
+        setAlternatives(selfStorageAlternatives(e, recordId(draft.unit)));
         resource.retry();
       }
+    } finally {
+      busy.current = false;
+      setPending(false);
+    }
+  }
+  async function selectAlternative(suggestion) {
+    if (busy.current || pending || uncertain) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    const token = getAccessToken();
+    try {
+      const unit = record(await storageApi.unitDetail(suggestion._id));
+      if (getAccessToken() !== token) return;
+      if (
+        recordId(unit) !== suggestion._id ||
+        recordId(unit.facilityId) !== recordId(draft.facility) ||
+        unit.size !== suggestion.size ||
+        ["INACTIVE", "MAINTENANCE"].includes(unit.status)
+      )
+        throw Error(
+          "Alternative Unit could not be verified. Select storage again.",
+        );
+      // Dates and term remain. Pricing and availability are reviewed again for the explicitly selected Unit.
+      updateRentalDraft({ unit, quote: null });
+      nav("/portal/rent/period");
+    } catch (e) {
+      if (getAccessToken() === token) setError(rentalError(e));
     } finally {
       busy.current = false;
       setPending(false);
@@ -255,6 +361,31 @@ function Review({ draft, session }) {
         </>
       )}
       <Message error={error} />
+      {alternatives.length > 0 && !uncertain && (
+        <section
+          aria-label="Alternative storage units"
+          className="soft-panel space-y-3 p-4"
+        >
+          <h2 className="font-bold">
+            Other Units suggested for your rental period
+          </h2>
+          <p>
+            Your dates are preserved. Choose a Unit explicitly, then review its
+            availability and pricing. No booking is retried automatically.
+          </p>
+          {alternatives.map((unit) => (
+            <Button
+              key={unit._id}
+              variant="outline"
+              disabled={pending}
+              onClick={() => selectAlternative(unit)}
+            >
+              Review {unit.unitCode} · {unit.size}
+              {unit.sameSize ? " · same size" : ""}
+            </Button>
+          ))}
+        </section>
+      )}
       <Button
         variant="orange"
         disabled={
@@ -268,12 +399,22 @@ function Review({ draft, session }) {
         }
         onClick={create}
       >
-        {pending ? "Đang xác nhận đặt kho và thanh toán…" : "Xác nhận đặt kho và thanh toán"}
+        {pending
+          ? "Đang xác nhận đặt kho và thanh toán…"
+          : "Xác nhận đặt kho và thanh toán"}
       </Button>
       {uncertain && (
         <div className="grid gap-2 sm:flex">
-          <Button variant="orange" disabled={pending} onClick={retryUncertainCreation}>Thử khôi phục đơn thuê an toàn</Button>
-          <Button asChild variant="outline"><Link to="/portal">Kiểm tra kho của tôi</Link></Button>
+          <Button
+            variant="orange"
+            disabled={pending}
+            onClick={retryUncertainCreation}
+          >
+            Thử khôi phục đơn thuê an toàn
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/portal">Kiểm tra kho của tôi</Link>
+          </Button>
         </div>
       )}
       <Link to="/portal/rent/period" className="block">

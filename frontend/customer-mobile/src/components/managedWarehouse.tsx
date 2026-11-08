@@ -1,5 +1,5 @@
 import {useRef, useState} from 'react';
-import {Pressable, ScrollView, StyleSheet, View} from 'react-native';
+import {Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance} from 'react-native';
 import {AppText, Button, Card, Chip, ui} from './ui';
 import {colors} from '../theme/tokens';
 import {cellEligibility, cellLabels, type CellStatus, type ManagedCell, type ManagedFacility, type ManagedRack, type ManagedZone} from '../domain/managedBooking';
@@ -22,7 +22,7 @@ export function AvailabilityLegend() {
 }
 export function WarehouseFloorplan({facility, zone, activeRackId, start, months, onRack}: {facility: ManagedFacility; zone: ManagedZone; activeRackId: string | null; start: string; months: number; onRack: (id: string) => void}) {
   const [zoom, setZoom] = useState(1);
-  const horizontal = useRef<ScrollView>(null), vertical = useRef<ScrollView>(null);
+  const horizontal = useRef<ScrollViewInstance>(null), vertical = useRef<ScrollViewInstance>(null);
   const width = Math.max(460, ...zone.racks.map(r => r.position.x + r.position.width + 30));
   const height = Math.max(250, ...zone.racks.map(r => r.position.y + r.position.height + 40));
   const reset = () => {setZoom(1); horizontal.current?.scrollTo({x: 0, animated: false}); vertical.current?.scrollTo({y: 0, animated: false});};

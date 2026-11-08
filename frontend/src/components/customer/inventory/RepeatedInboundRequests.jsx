@@ -5,6 +5,7 @@ import { getAccessToken, useAuthSession } from '@/lib/authSession';
 import {receiptStates as states,unresolvedReceiptStates,receiptPayload,receiptList,receiptResponse,mayChangeReceipt,eligibleRepeatedReceipt} from '@/lib/customerRepeatedInbound';
 import {inventoryId,validInventoryId} from '@/lib/inventoryRegistration';
 import {reservationVietnamTime} from '@/lib/customerReservationDisplay';
+import {managedInventoryReservation,inventoryLifecycleContext} from './managedInventoryContext';
 const key = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 const message = error => error?.response?.data?.message || error?.message || 'Request failed.';
 
@@ -21,6 +22,13 @@ function Requests({ item,rental,parentLoading }) {
   const session=useAuthSession();
   const [page,setPage]=useState(1),[pagination,setPagination]=useState(null),[readError,setReadError]=useState(''),[gateBlocked,setGateBlocked]=useState(false),[storageBlocked,setStorageBlocked]=useState(false);
   const operation=useRef(null),alive=useRef(false),readSequence=useRef(0),loaded=useRef(false);
+  const [eligibility,setEligibility]=useState(null);
+  const eligibilityRental=eligibility&&eligibility.parent===rental?eligibility.value:rental;
+  const lifecycle=inventoryLifecycleContext(eligibilityRental);
+  const reloadEligibility=async token=>{
+    try{const fresh=await managedInventoryReservation(inventoryId(item.managedReservationId));if(current(token))setEligibility({parent:rental,value:fresh});return fresh;}
+    catch(e){if(current(token))setEligibility({parent:rental,value:null});throw e;}
+  };
   const operationKey=`wdp:receipt-operation:${inventoryId(session.user)}:${item._id}`;
   const current=token=>alive.current&&getAccessToken()===token;
   const fill=row=>{setQuantity(String(row.requestedQuantity));setWeight(String(row.declaredUnitWeightKg));setWidth(String(row.declaredUnitDimensionsM.widthM));setDepth(String(row.declaredUnitDimensionsM.depthM));setHeight(String(row.declaredUnitDimensionsM.heightM));};
@@ -49,14 +57,21 @@ function Requests({ item,rental,parentLoading }) {
     return()=>{alive.current=false;readSequence.current++;};
   },[item._id]);
   const owner=!!session.accessToken&&session.user?.role==='CUSTOMER'&&inventoryId(session.user)===inventoryId(item.customerId);
-  const allowed=eligibleRepeatedReceipt(item,rental,session.user)&&!parentLoading;
+  const allowed=eligibleRepeatedReceipt(item,eligibilityRental,session.user)&&lifecycle.mayAddOrEdit&&!parentLoading;
   const mayWrite=import.meta.env?.PROD!==true&&!gateBlocked;
   const clearOperation=()=>{sessionStorage.removeItem(operationKey);operation.current=null;pendingKey.current=null;pendingPayload.current=null;};
   const execute=async op=>{
     if(busy.current||!owner||storageBlocked||(op.kind!=='CANCEL'&&!mayWrite))return;
     busy.current=true;setPending(true);setError('');setNotice('');const token=getAccessToken();tokenAtStart.current=token;let sent=false;
+    const priorOperation=operation.current;
     operation.current=op;pendingKey.current=op.key;pendingPayload.current=op.payload;
     try{
+      if(op.kind!=='CANCEL'){
+        let fresh;try{fresh=await reloadEligibility(token);}catch{throw Object.assign(Error('Reservation eligibility could not be refreshed. No mutation was sent; retain the same intent for review.'),{eligibility:true});}
+        if(!current(token))return;
+        const policy=inventoryLifecycleContext(fresh);
+        if(!policy.mayAddOrEdit||!eligibleRepeatedReceipt(item,fresh,session.user))throw Object.assign(Error(policy.reason||'Additional receipts require a currently eligible in-term ACTIVE reservation.'),{eligibility:true});
+      }
       sessionStorage.setItem(operationKey,JSON.stringify(op));
       sent=true;
       const response=op.kind==='CANCEL'
@@ -72,14 +87,15 @@ function Requests({ item,rental,parentLoading }) {
     }catch(e){
       if(!current(token))return;
       const status=e.response?.status;
-      if(!sent){setStorageBlocked(true);setError('Safe operation storage is unavailable. No receipt mutation was submitted.');}
+      if(e.eligibility){if(!priorOperation){operation.current=null;pendingKey.current=null;pendingPayload.current=null;}setError(message(e));}
+      else if(!sent){setStorageBlocked(true);setError('Safe operation storage is unavailable. No receipt mutation was submitted.');}
       else if(e.response?.data?.code==='INBOUND_REQUEST_FEATURE_DISABLED'){
         clearOperation();setGateBlocked(true);setError('Repeated inbound creation/amendment is disabled by Backend configuration. No first-inbound fallback was attempted.');
       }else if(!status||e.response?.status === 503||status>=500){
         setError(`${message(e)} Outcome is uncertain. Retry with the same key, payload and version; no new request will be created automatically.`);
         await refresh(page);
       }else{
-        clearOperation();setEditing(null);setDetail(null);setError([409,428].includes(status)?`${message(e)} State/version conflict. Review refreshed history before editing again; no version was overwritten.`:message(e));await refresh(page);
+        clearOperation();setEditing(null);setDetail(null);setError([409,428].includes(status)?`${message(e)} State/version conflict. Your entered values are preserved. Review refreshed eligibility and history; no version was overwritten.`:message(e));await refresh(page);if([409,428].includes(status))await reloadEligibility(token).catch(()=>{});
       }
     }finally{busy.current=false;if(current(token))setPending(false);}
   };
@@ -112,6 +128,7 @@ function Requests({ item,rental,parentLoading }) {
   };
   return <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5" aria-label="Repeated inbound requests">
     <h2 className="text-lg font-bold">Additional receipt requests</h2>
+    {lifecycle.reason&&<p role="status" className="mt-3 text-sm text-orange-700">{lifecycle.reason}</p>}
     <p className="mt-1 text-sm text-slate-600">Registered quantity remains item metadata. Enter the quantity in this new delivery batch.</p>
     {['IN_STORAGE','CHECKED_OUT'].includes(item.status) && <form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={e => { e.preventDefault(); submit(false); }}>
       <label className="text-sm">Receipt quantity ({item.quantityUnit})<input className="mt-1 w-full rounded border p-2" type="number" min="1" step="1" required disabled={pending||!!operation.current||storageBlocked} value={quantity} onChange={e => setQuantity(e.target.value)} /></label>
@@ -121,7 +138,7 @@ function Requests({ item,rental,parentLoading }) {
     </form>}
     {!allowed && <p className="mt-3 text-sm text-slate-600">Additional receipts require your eligible Item and an in-term ACTIVE Managed reservation. Physical ledger and placement reconciliation remain Backend-controlled; this does not replace first inbound.</p>}
     {!mayWrite&&<p role="note" className="mt-3 text-sm text-orange-800">Repeated inbound create/amend is unavailable in production or disabled by Backend. Reads and eligible cancellation remain separate.</p>}
-    <button className="mt-3 rounded border px-3 py-2" disabled={pending||loading} onClick={()=>refresh(page)}>Refresh receipt history (GET)</button>
+    <button className="mt-3 rounded border px-3 py-2" disabled={pending||loading} onClick={()=>Promise.all([refresh(page),reloadEligibility(getAccessToken()).catch(()=>{})])}>Refresh receipt history (GET)</button>
     {readError&&<p role="alert" className="mt-3 text-sm text-red-700">{readError}</p>}
     {operation.current&&<p role="note" className="mt-3 text-sm text-orange-800">Saved operation: {operation.current.kind}. New actions are locked until this operation is resolved.</p>}
     {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}{notice && <p role="status" className="mt-3 text-sm text-emerald-800">{notice}</p>}

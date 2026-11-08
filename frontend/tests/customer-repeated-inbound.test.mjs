@@ -7,6 +7,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import * as receipt from '../src/lib/customerRepeatedInbound.js';
 import * as registration from '../src/lib/inventoryRegistration.js';
+import {inventoryLifecycleContext} from '../src/components/customer/inventory/customerInventoryPolicy.js';
 const require=createRequire(import.meta.url),iid='a'.repeat(24),uid='b'.repeat(24),rid='c'.repeat(24),fid='d'.repeat(24),cell='e'.repeat(24),requestId='1'.repeat(24);
 const item={_id:iid,customerId:uid,managedReservationId:rid,facilityId:fid,status:'IN_STORAGE',currentCellId:cell,quantityUnit:'box',unitWeightKg:2,unitDimensionsM:{widthM:.2,depthM:.3,heightM:.4}};
 const rental={_id:rid,facilityId:fid,serviceType:'MANAGED_INVENTORY',status:'ACTIVE',startDate:'2020-01-01',endDate:'2099-01-01'},user={id:uid,role:'CUSTOMER'};
@@ -32,14 +33,14 @@ function compile(mocks,env={PROD:false}){
  const code=transformSync(readFileSync(new URL('../src/components/customer/inventory/RepeatedInboundRequests.jsx',import.meta.url),'utf8'),{loader:'jsx',format:'cjs',jsx:'automatic',define:{'import.meta.env':JSON.stringify(env)}}).code;
  const module={exports:{}};new Function('require','module','exports',code)(name=>name in mocks?{__esModule:true,...mocks[name]}:require(name),module,module.exports);return module.exports.default;
 }
-function harness({initial=[],createFailure,amendFailure,cancelFailure,featureCode,prod=false,store=new Map(),deferPage2=false}={}){
+function harness({initial=[],createFailure,amendFailure,cancelFailure,featureCode,prod=false,store=new Map(),deferPage2=false,reservation=rental,freshReservation=reservation}={}){
  let rows=[...initial],values=[],refs=[],cursor=0,effects=[],scheduled=false,calls=[],createCount=0,cancelCount=0,page2Resolve;
  const prior=globalThis.sessionStorage;globalThis.sessionStorage={getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)};
  const hooks={useState:initial=>{const i=cursor++;if(!(i in values))values[i]=initial;return [values[i],v=>values[i]=typeof v==='function'?v(values[i]):v];},useRef:initial=>{const i=cursor++;return refs[i]??={current:initial};},useEffect:fn=>{if(!scheduled)effects.push(fn);}};
  function history(page){return {data:{success:true,data:rows.slice((page-1)*50,page*50),pagination:{page,limit:50,total:rows.length,totalPages:Math.ceil(rows.length/50)}}};}
  const api={repeatedInboundHistory:async(id,params)=>{calls.push(['list',id,params]);if(deferPage2&&params.page===2)return new Promise(resolve=>page2Resolve=()=>resolve(history(2)));return history(params.page);},repeatedInboundDetail:async id=>{calls.push(['detail',id]);return response(rows.find(r=>r._id===id));},createRepeatedInbound:async(id,body,key)=>{calls.push(['create',id,body,key]);createCount++;if(createFailure&&createCount===1)throw {response:{status:createFailure,data:{message:'Fixture unavailable',code:featureCode}}};const result=row({...body});rows=[result,...rows];return response(result,201);},amendRepeatedInbound:async(id,body,version,key)=>{calls.push(['amend',id,body,version,key]);if(amendFailure){rows=rows.map(r=>r._id===id?{...r,version:r.version+1}:r);throw {response:{status:amendFailure,data:{message:'Fixture stale amendment'}}};}const result={...rows.find(r=>r._id===id),...body,version:version+1};rows=rows.map(r=>r._id===id?result:r);return response(result);},cancelRepeatedInbound:async(id,version,key)=>{calls.push(['cancel',id,version,key]);cancelCount++;if(cancelFailure&&cancelCount===1)throw {response:{status:cancelFailure,data:{message:'Fixture cancel uncertain'}}};const result={...rows.find(r=>r._id===id),state:'CANCELLED',version:version+1};rows=rows.map(r=>r._id===id?result:r);return response(result);}};
- const Component=compile({react:hooks,'./InventoryBackendUI':{inventoryApi:api},'@/lib/authSession':{getAccessToken:()=> 'fixture',useAuthSession:()=>({accessToken:'fixture',user})},'@/lib/customerRepeatedInbound':receipt,'@/lib/inventoryRegistration':registration,'@/lib/customerReservationDisplay':{reservationVietnamTime:String}},{PROD:prod});
- const outer=Component({item,rental});
+ const Component=compile({react:hooks,'./InventoryBackendUI':{inventoryApi:api},'./managedInventoryContext':{inventoryLifecycleContext,managedInventoryReservation:async()=>freshReservation},'@/lib/authSession':{getAccessToken:()=> 'fixture',useAuthSession:()=>({accessToken:'fixture',user})},'@/lib/customerRepeatedInbound':receipt,'@/lib/inventoryRegistration':registration,'@/lib/customerReservationDisplay':{reservationVietnamTime:String}},{PROD:prod});
+ const outer=Component({item,rental:reservation});
  function render(){cursor=0;return outer.type(outer.props);}
  function walk(predicate,node=render()){if(!node||typeof node!=='object')return null;if(predicate(node))return node;for(const child of [node.props?.children].flat(Infinity)){if(child!==undefined){const found=walk(predicate,child);if(found)return found;}}return null;}
  const button=text=>walk(n=>n.type==='button'&&n.props.children===text);
@@ -66,7 +67,7 @@ test('pagination passes page/limit and stale page responses cannot overwrite a n
 
 
 test('missing/null Item guard never mounts receipt reads',()=>{
- const Component=compile({react:{},'./InventoryBackendUI':{inventoryApi:new Proxy({},{get(){throw Error('Unexpected API access');}})},'@/lib/authSession':{useAuthSession:()=>({accessToken:'fixture',user})},'@/lib/customerRepeatedInbound':receipt,'@/lib/inventoryRegistration':registration,'@/lib/customerReservationDisplay':{reservationVietnamTime:String}});
+ const Component=compile({react:{},'./InventoryBackendUI':{inventoryApi:new Proxy({},{get(){throw Error('Unexpected API access');}})},'./managedInventoryContext':{inventoryLifecycleContext,managedInventoryReservation:()=>{throw Error('Unexpected reservation lookup');}},'@/lib/authSession':{useAuthSession:()=>({accessToken:'fixture',user})},'@/lib/customerRepeatedInbound':receipt,'@/lib/inventoryRegistration':registration,'@/lib/customerReservationDisplay':{reservationVietnamTime:String}});
  for(const value of [null,undefined,{}, {_id:'invalid'}])assert.equal(Component({item:value}),null);
 });
 test('uncertain amendment retry keeps request identity, version and frozen payload',async()=>{
@@ -81,3 +82,7 @@ test('existing API helpers preserve exact idempotency and quoted If-Match header
  for(const call of calls)assert.equal(call[3].headers['Idempotency-Key'],key);
  for(const call of calls.slice(1))assert.equal(call[3].headers['If-Match'],'"3"');
 });
+
+
+test('closure-pending Customer blocks create/amend but keeps read and cancel',async()=>{const h=harness({reservation:{...rental,activeClosureRequestId:fid},initial:[row()]});try{await h.start();assert(h.button('Create receipt request').props.disabled);assert(h.button('Amend').props.disabled);assert(!h.button('Cancel').props.disabled);await h.button('Details').props.onClick();await h.button('Cancel').props.onClick();assert.equal(h.calls.filter(c=>c[0]==='cancel').length,1);assert.equal(h.calls.filter(c=>c[0]==='create'||c[0]==='amend').length,0);}finally{h.close();}});
+test('fresh closure appearing before submission rejects mutation and preserves entered values',async()=>{const h=harness({freshReservation:{...rental,activeClosureRequestId:fid}});try{await h.start();h.input(0).props.onChange({target:{value:'7'}});await h.form().props.onSubmit({preventDefault(){}});await new Promise(r=>setImmediate(r));assert.equal(h.calls.filter(c=>c[0]==='create').length,0);assert.equal(h.input(0).props.value,'7');assert.match(h.html(),/closure is pending/);}finally{h.close();}});

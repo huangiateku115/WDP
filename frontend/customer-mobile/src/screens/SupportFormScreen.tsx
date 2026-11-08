@@ -2,8 +2,8 @@ import {useRef, useState} from 'react';
 import {View} from 'react-native';
 import {Controller, useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
-import {useLocalSearchParams, useNavigation, useRouter} from 'expo-router';
-import {usePreventRemove} from 'expo-router/react-navigation';
+import {useLocalSearchParams, useRouter} from 'expo-router';
+import {usePreventRemove} from 'expo-router';
 import {useCustomerStore} from '../state/useCustomerStore';
 import {useCareSessionStore} from '../state/useCareSessionStore';
 import {careContext} from '../fixtures/customerCare';
@@ -22,10 +22,10 @@ export default function SupportFormScreen() {
   return <SupportEditor key={ownerId} ctx={ctx} binding={binding} restored={!!saved} initial={saved?.values ?? {...emptySupportForm(), category: category ?? ''}} onBack={back}/>;
 }
 function SupportEditor({ctx, binding, restored, initial, onBack}: {ctx: CareContext; binding: string; restored: boolean; initial: SupportFormValues; onBack: () => void}) {
-  const navigation = useNavigation(), demo = useCustomerStore(s => s.demoSession), ownerId = ctx.data.customer!.id;
+  const demo = useCustomerStore(s => s.demoSession), ownerId = ctx.data.customer!.id;
   const pending = useRef<(() => void) | null>(null), [dialog, setDialog] = useState<'unsaved' | 'remove' | null>(null), [message, setMessage] = useState('');
   const {control, reset, getValues, handleSubmit, formState: {isDirty, isSubmitting, errors}} = useForm<SupportFormValues>({resolver: zodResolver(supportFormSchema(ctx)), defaultValues: initial, mode: 'onBlur'});
-  usePreventRemove(isDirty && demo, ({data}) => {pending.current = () => navigation.dispatch(data.action); setDialog('unsaved');});
+  usePreventRemove(isDirty && demo, ({repeat}) => {pending.current = repeat; setDialog('unsaved');});
   const save = handleSubmit(values => {
     const currentData = useCustomerStore.getState().fixtures;
     if (currentData.customer?.id === ownerId && useCareSessionStore.getState().saveDraft(currentData, values, binding)) {reset(values); setMessage('Đã lưu bản nháp yêu cầu hỗ trợ trong phiên — chưa gửi lên hệ thống.');}
