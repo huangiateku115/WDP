@@ -1,0 +1,1 @@
+{"result":"PASS","target":"supplementary React Native Web preview; NOT device testing","screens":6,"widths":[320,390,768],"checks":"local demo login/logout, auth register/back, five tabs, native-stack route/back, empty search, no document overflow","mutations":0,"backendRequests":0,"requests":23}

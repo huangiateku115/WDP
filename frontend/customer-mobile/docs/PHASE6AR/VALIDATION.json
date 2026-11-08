@@ -1,0 +1,69 @@
+{
+  "csv": [
+    {
+      "file": "API_CHANGE_MATRIX.csv",
+      "rows": 184,
+      "columns": 28,
+      "result": "PASS"
+    },
+    {
+      "file": "WEBSITE_FRONTEND_IMPACT.csv",
+      "rows": 32,
+      "columns": 17,
+      "result": "PASS"
+    },
+    {
+      "file": "MOBILE_FRONTEND_IMPACT.csv",
+      "rows": 23,
+      "columns": 23,
+      "result": "PASS"
+    },
+    {
+      "file": "HISTORICAL_FINDING_RESOLUTION.csv",
+      "rows": 29,
+      "columns": 6,
+      "result": "PASS"
+    }
+  ],
+  "uniqueRoutes": 184,
+  "websiteCalls": 208,
+  "historicalHashesMatched": 221,
+  "websiteSyntax": {
+    "parsed": 281,
+    "errors": 0
+  },
+  "mobileTypecheck": "PASS",
+  "mobileTests": {
+    "suites": 8,
+    "pass": 375,
+    "fail": 0
+  },
+  "websiteTests": {
+    "pass": 133,
+    "fail": 1,
+    "totalReported": 134,
+    "blockedFile": "tests/payos-checkout.test.mjs",
+    "reason": "ERR_MODULE_NOT_FOUND qrcode"
+  },
+  "websiteBuild": "FAIL: cannot resolve qrcode from src/lib/selfStoragePayosQr.js",
+  "warehouseRegression": {
+    "pass": 3,
+    "fail": 0
+  },
+  "oldWebsiteVerifier": {
+    "checked": 1074,
+    "changed": 26,
+    "missing": 1,
+    "result": "FAIL_AGAINST_HISTORICAL_BASELINE",
+    "note": "Existing differences, not this audit; current task baseline1186 unchanged"
+  },
+  "designInventory": {
+    "designs": 23,
+    "missing": 0,
+    "result": "PASS"
+  },
+  "backendExecution": "NONE",
+  "networkRequests": "NONE",
+  "nativeE2E": "NOT_PERFORMED",
+  "deviceExports": "SKIPPED docs-only"
+}

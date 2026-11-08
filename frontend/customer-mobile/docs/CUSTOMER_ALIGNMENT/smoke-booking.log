@@ -1,0 +1,1 @@
+{"result":"PASS","target":"supplementary RN Web; NOT native device E2E","widths":[320,390,430,768],"screens":5,"checks":"facility/unit/review/preview/rental; native stack back; draft restoration; tabs; logout reset; document overflow","mutations":0,"backendRequests":0}

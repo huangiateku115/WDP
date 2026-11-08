@@ -1,0 +1,1549 @@
+[
+  {
+    "path": "src/app.ts",
+    "oldHash": "7aba241cd3a5da43ccca85cbbd3334c419d150b9491ea75d9e26cc8f6c225227",
+    "currentHash": "7aba241cd3a5da43ccca85cbbd3334c419d150b9491ea75d9e26cc8f6c225227",
+    "referenceHash": "7aba241cd3a5da43ccca85cbbd3334c419d150b9491ea75d9e26cc8f6c225227",
+    "changed": false
+  },
+  {
+    "path": "src/config/cloudinary.config.ts",
+    "oldHash": "0dd51728e51154050d4bbd4ba9b565fd7e11777b627990e1c9a9b5294b35d6dd",
+    "currentHash": "0dd51728e51154050d4bbd4ba9b565fd7e11777b627990e1c9a9b5294b35d6dd",
+    "referenceHash": "0dd51728e51154050d4bbd4ba9b565fd7e11777b627990e1c9a9b5294b35d6dd",
+    "changed": false
+  },
+  {
+    "path": "src/config/cors.ts",
+    "oldHash": "5b5490985aa214151cadc9c506fea107dedef71a7581cfc056029ecc562da9e2",
+    "currentHash": "5b5490985aa214151cadc9c506fea107dedef71a7581cfc056029ecc562da9e2",
+    "referenceHash": "5b5490985aa214151cadc9c506fea107dedef71a7581cfc056029ecc562da9e2",
+    "changed": false
+  },
+  {
+    "path": "src/config/database.ts",
+    "oldHash": "b86331a38818f0ea7fdb410c64615f1bad4ab751209efc0bda7fcfece7178ca0",
+    "currentHash": "b86331a38818f0ea7fdb410c64615f1bad4ab751209efc0bda7fcfece7178ca0",
+    "referenceHash": "b86331a38818f0ea7fdb410c64615f1bad4ab751209efc0bda7fcfece7178ca0",
+    "changed": false
+  },
+  {
+    "path": "src/config/env.ts",
+    "oldHash": "d1fc6bf6c10ac8790219c5b2beeb157791fb61a3f7064dd2ef762290cf2286a4",
+    "currentHash": "d1fc6bf6c10ac8790219c5b2beeb157791fb61a3f7064dd2ef762290cf2286a4",
+    "referenceHash": "d1fc6bf6c10ac8790219c5b2beeb157791fb61a3f7064dd2ef762290cf2286a4",
+    "changed": false
+  },
+  {
+    "path": "src/config/keycloak-admin.config.ts",
+    "oldHash": "cd0728eeaaf30389f25009024b148c548f89718edf58ccdcd6f41b10650e8c88",
+    "currentHash": "cd0728eeaaf30389f25009024b148c548f89718edf58ccdcd6f41b10650e8c88",
+    "referenceHash": "cd0728eeaaf30389f25009024b148c548f89718edf58ccdcd6f41b10650e8c88",
+    "changed": false
+  },
+  {
+    "path": "src/config/keycloak.config.ts",
+    "oldHash": "f4c35d97e7217f68931c17cc8bb37ade52a2dca4b707bec501fcd8b2908bcd6d",
+    "currentHash": "f4c35d97e7217f68931c17cc8bb37ade52a2dca4b707bec501fcd8b2908bcd6d",
+    "referenceHash": "f4c35d97e7217f68931c17cc8bb37ade52a2dca4b707bec501fcd8b2908bcd6d",
+    "changed": false
+  },
+  {
+    "path": "src/config/mi06-canonical-outbound-gate.ts",
+    "oldHash": "ba58a36972f55b7f46266807b4da31f54c42b9e825ce4a1d5776a5ef8d12628d",
+    "currentHash": "ba58a36972f55b7f46266807b4da31f54c42b9e825ce4a1d5776a5ef8d12628d",
+    "referenceHash": "ba58a36972f55b7f46266807b4da31f54c42b9e825ce4a1d5776a5ef8d12628d",
+    "changed": false
+  },
+  {
+    "path": "src/config/mi06-canonical-relocation-gate.ts",
+    "oldHash": "36385cbc94a495cbbada0fd5dcd38dc5beec03019280a1ade62b2b9d7b7c2cb1",
+    "currentHash": "36385cbc94a495cbbada0fd5dcd38dc5beec03019280a1ade62b2b9d7b7c2cb1",
+    "referenceHash": "36385cbc94a495cbbada0fd5dcd38dc5beec03019280a1ade62b2b9d7b7c2cb1",
+    "changed": false
+  },
+  {
+    "path": "src/config/mi06b-feature-gate.ts",
+    "oldHash": "6caceabf8802b64977b3e3212ad9871bd59dbd02037e9aebc9d54912c1328ab0",
+    "currentHash": "6caceabf8802b64977b3e3212ad9871bd59dbd02037e9aebc9d54912c1328ab0",
+    "referenceHash": "6caceabf8802b64977b3e3212ad9871bd59dbd02037e9aebc9d54912c1328ab0",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/access/access.controller.ts",
+    "oldHash": "2d86c9ba4ff7eb5d34e7107a52306d536b43956cf062c453fac715301353f83e",
+    "currentHash": "2d86c9ba4ff7eb5d34e7107a52306d536b43956cf062c453fac715301353f83e",
+    "referenceHash": "2d86c9ba4ff7eb5d34e7107a52306d536b43956cf062c453fac715301353f83e",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/audit/audit.controller.ts",
+    "oldHash": "2b6606f9ec5bd917f4c3c518ebdd27fbf8073098fcc139866827393118c01468",
+    "currentHash": "2b6606f9ec5bd917f4c3c518ebdd27fbf8073098fcc139866827393118c01468",
+    "referenceHash": "2b6606f9ec5bd917f4c3c518ebdd27fbf8073098fcc139866827393118c01468",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/auth/auth.controller.ts",
+    "oldHash": "7813b29b48eb6b292c51f1d56469bb126c1b872207d5929697bbf2ed3ee1bf64",
+    "currentHash": "7813b29b48eb6b292c51f1d56469bb126c1b872207d5929697bbf2ed3ee1bf64",
+    "referenceHash": "7813b29b48eb6b292c51f1d56469bb126c1b872207d5929697bbf2ed3ee1bf64",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/contracts/contract.controller.ts",
+    "oldHash": "ee928631857f922284c41b8ad9a1ff7ab3673c4534f72cee8e9bb2a9b093ad9a",
+    "currentHash": "23eb830005428431be3b55c5d5bc41ec8b2a5b2846e9e7549f38b45576005319",
+    "referenceHash": "23eb830005428431be3b55c5d5bc41ec8b2a5b2846e9e7549f38b45576005319",
+    "changed": true
+  },
+  {
+    "path": "src/controllers/facilities/facility.controller.ts",
+    "oldHash": "f7619fe565a9e5c39691290a1e62ec5ebac1e9ff71f7ef7a3eef83dbaef09c27",
+    "currentHash": "f7619fe565a9e5c39691290a1e62ec5ebac1e9ff71f7ef7a3eef83dbaef09c27",
+    "referenceHash": "f7619fe565a9e5c39691290a1e62ec5ebac1e9ff71f7ef7a3eef83dbaef09c27",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/inspections/inspection.controller.ts",
+    "oldHash": "d794d1a952b997fa558d6dd40c0f1df541225b826c75c2f347b74125617e7de7",
+    "currentHash": "e439d4d303994755cbeacb79694c1f739b5412d058fd87101fd4a0afbba7c314",
+    "referenceHash": "e439d4d303994755cbeacb79694c1f739b5412d058fd87101fd4a0afbba7c314",
+    "changed": true
+  },
+  {
+    "path": "src/controllers/inventory-items/inventory-inbound-request.controller.ts",
+    "oldHash": "db79bbeb79d338c0520ad828a8e290d4c463dccd72031c02598dbe9e18300369",
+    "currentHash": "db79bbeb79d338c0520ad828a8e290d4c463dccd72031c02598dbe9e18300369",
+    "referenceHash": "db79bbeb79d338c0520ad828a8e290d4c463dccd72031c02598dbe9e18300369",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/inventory-items/inventory-item.controller.ts",
+    "oldHash": "a0c2e1787945d92a1da6975c9e9cc3b8b889f41972ea15d6901d716d6115c5ba",
+    "currentHash": "a0c2e1787945d92a1da6975c9e9cc3b8b889f41972ea15d6901d716d6115c5ba",
+    "referenceHash": "a0c2e1787945d92a1da6975c9e9cc3b8b889f41972ea15d6901d716d6115c5ba",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/inventory-items/managed-outbound-request.controller.ts",
+    "oldHash": "aee2275998ba9a5ab64bb247fed5c3052cc37e5d20839cbe7a3ae410e8b7697a",
+    "currentHash": "aee2275998ba9a5ab64bb247fed5c3052cc37e5d20839cbe7a3ae410e8b7697a",
+    "referenceHash": "aee2275998ba9a5ab64bb247fed5c3052cc37e5d20839cbe7a3ae410e8b7697a",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/maintenance-tickets/maintenance-ticket.controller.ts",
+    "oldHash": "d4bcbc6567ecf4d123f20e01e4438686ad9ea6fb3019b86d77c84cbd997ec512",
+    "currentHash": "d4bcbc6567ecf4d123f20e01e4438686ad9ea6fb3019b86d77c84cbd997ec512",
+    "referenceHash": "d4bcbc6567ecf4d123f20e01e4438686ad9ea6fb3019b86d77c84cbd997ec512",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/notifications/notification.controller.ts",
+    "oldHash": "c9c04decc78683e1adc86eb7f535200746a84368edabbfed256c18cac16f3f06",
+    "currentHash": "c9c04decc78683e1adc86eb7f535200746a84368edabbfed256c18cac16f3f06",
+    "referenceHash": "c9c04decc78683e1adc86eb7f535200746a84368edabbfed256c18cac16f3f06",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/pricing-policy/rule.controller.ts",
+    "oldHash": "7904376c0b57397d9cea2bf262d073e817d799f8f1b27f8d7dc7cb4cd578543d",
+    "currentHash": "7904376c0b57397d9cea2bf262d073e817d799f8f1b27f8d7dc7cb4cd578543d",
+    "referenceHash": "7904376c0b57397d9cea2bf262d073e817d799f8f1b27f8d7dc7cb4cd578543d",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/public/public-catalog.controller.ts",
+    "oldHash": "e3c2f0dfe9ff77813447b264145a9b00d37a5e7878d76bfa3c6cdf73ac4890e4",
+    "currentHash": "e3c2f0dfe9ff77813447b264145a9b00d37a5e7878d76bfa3c6cdf73ac4890e4",
+    "referenceHash": "e3c2f0dfe9ff77813447b264145a9b00d37a5e7878d76bfa3c6cdf73ac4890e4",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/reservations/managed-checkin.controller.ts",
+    "oldHash": "28e7da5d6567cc03c7bc0f612dec9d55aeeb4730254a229d20d4d75ef718625b",
+    "currentHash": "28e7da5d6567cc03c7bc0f612dec9d55aeeb4730254a229d20d4d75ef718625b",
+    "referenceHash": "28e7da5d6567cc03c7bc0f612dec9d55aeeb4730254a229d20d4d75ef718625b",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/reservations/managed-reservation.controller.ts",
+    "oldHash": "a6bdd545c792b7817575a4242f0955105b9fe976576257d589f39cfe4700a780",
+    "currentHash": "6063abf9284916721c10268e6fb1de4874e3a7a84795906caff4bb833748e3a7",
+    "referenceHash": "6063abf9284916721c10268e6fb1de4874e3a7a84795906caff4bb833748e3a7",
+    "changed": true
+  },
+  {
+    "path": "src/controllers/reservations/reservation.controller.ts",
+    "oldHash": "fe29ddbbebac18849369c0fdb60324aff84bb1c6d1fd33c83d63c331fb844724",
+    "currentHash": "192fe3c8f9b51ebde5b46bf53a7573507f4188afd31b15a92900adb2f9814f35",
+    "referenceHash": "192fe3c8f9b51ebde5b46bf53a7573507f4188afd31b15a92900adb2f9814f35",
+    "changed": true
+  },
+  {
+    "path": "src/controllers/storage-units/storage-unit.controller.ts",
+    "oldHash": "874f89393718d70c828ab92a3e590749c7cd83f4be58be373c9c8413a2fbdb1b",
+    "currentHash": "1b950a7960c33410934ab3a1bd84c079b300fdb00a8192f2c43ca19a6499beba",
+    "referenceHash": "1b950a7960c33410934ab3a1bd84c079b300fdb00a8192f2c43ca19a6499beba",
+    "changed": true
+  },
+  {
+    "path": "src/controllers/support-requests/support-request.controller.ts",
+    "oldHash": "5e04eb11e1a05aa66db67d384af492a606b6d95f9c578d66e440c33ceb8468c5",
+    "currentHash": "5e04eb11e1a05aa66db67d384af492a606b6d95f9c578d66e440c33ceb8468c5",
+    "referenceHash": "5e04eb11e1a05aa66db67d384af492a606b6d95f9c578d66e440c33ceb8468c5",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/users/customer-profile.controller.ts",
+    "oldHash": "5fd006554578efda653b0c1c27af60922c9a46af138e79faf9c8c2232280f4cd",
+    "currentHash": "5fd006554578efda653b0c1c27af60922c9a46af138e79faf9c8c2232280f4cd",
+    "referenceHash": "5fd006554578efda653b0c1c27af60922c9a46af138e79faf9c8c2232280f4cd",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/users/user.controller.ts",
+    "oldHash": "10e022e97b90a6456e72530a864cdf5497cc9a09c1d984c99456366268c3e542",
+    "currentHash": "10e022e97b90a6456e72530a864cdf5497cc9a09c1d984c99456366268c3e542",
+    "referenceHash": "10e022e97b90a6456e72530a864cdf5497cc9a09c1d984c99456366268c3e542",
+    "changed": false
+  },
+  {
+    "path": "src/controllers/warehouse-map/warehouse-map.controller.ts",
+    "oldHash": "68881c81bb9e21755b6fb01f1181d4a7cdff0c60e08820d748a647083d9b98f9",
+    "currentHash": "68881c81bb9e21755b6fb01f1181d4a7cdff0c60e08820d748a647083d9b98f9",
+    "referenceHash": "68881c81bb9e21755b6fb01f1181d4a7cdff0c60e08820d748a647083d9b98f9",
+    "changed": false
+  },
+  {
+    "path": "src/middlewares/auth/requireAuth.ts",
+    "oldHash": "70db7af9e674149ae79036d33a27b4ae269ac09aa4f6875f4b4645b847a52b9e",
+    "currentHash": "70db7af9e674149ae79036d33a27b4ae269ac09aa4f6875f4b4645b847a52b9e",
+    "referenceHash": "70db7af9e674149ae79036d33a27b4ae269ac09aa4f6875f4b4645b847a52b9e",
+    "changed": false
+  },
+  {
+    "path": "src/middlewares/auth/requireRole.ts",
+    "oldHash": "11c9685466f7379add970fe620417c7cffa18741fd34f54d66924cc5bddb6b9a",
+    "currentHash": "11c9685466f7379add970fe620417c7cffa18741fd34f54d66924cc5bddb6b9a",
+    "referenceHash": "11c9685466f7379add970fe620417c7cffa18741fd34f54d66924cc5bddb6b9a",
+    "changed": false
+  },
+  {
+    "path": "src/middlewares/auth/verifyToken.ts",
+    "oldHash": "61c3a2ea99377ac003e78cce58957004080a37fb564b30077085fff70c15ad94",
+    "currentHash": "61c3a2ea99377ac003e78cce58957004080a37fb564b30077085fff70c15ad94",
+    "referenceHash": "61c3a2ea99377ac003e78cce58957004080a37fb564b30077085fff70c15ad94",
+    "changed": false
+  },
+  {
+    "path": "src/middlewares/error.middleware.ts",
+    "oldHash": "801581a843c0ec358d11ac089060de6940441af639d2d5d97907a1551723aead",
+    "currentHash": "801581a843c0ec358d11ac089060de6940441af639d2d5d97907a1551723aead",
+    "referenceHash": "801581a843c0ec358d11ac089060de6940441af639d2d5d97907a1551723aead",
+    "changed": false
+  },
+  {
+    "path": "src/middlewares/upload.middleware.ts",
+    "oldHash": "9a11b81e40558421ee6f9beaf68c897cd571d952d110e249c5635c6b2d421db6",
+    "currentHash": "9a11b81e40558421ee6f9beaf68c897cd571d952d110e249c5635c6b2d421db6",
+    "referenceHash": "9a11b81e40558421ee6f9beaf68c897cd571d952d110e249c5635c6b2d421db6",
+    "changed": false
+  },
+  {
+    "path": "src/models/access/access-log.model.ts",
+    "oldHash": "4e90caac733083786af77dfbd4a3c8ec382010477f2995fc22344283eac9de2f",
+    "currentHash": "4e90caac733083786af77dfbd4a3c8ec382010477f2995fc22344283eac9de2f",
+    "referenceHash": "4e90caac733083786af77dfbd4a3c8ec382010477f2995fc22344283eac9de2f",
+    "changed": false
+  },
+  {
+    "path": "src/models/audit/audit.model.ts",
+    "oldHash": "10787591933bcb9a254206612d2cd3edb0710f8620dc71937853665bb7793231",
+    "currentHash": "10787591933bcb9a254206612d2cd3edb0710f8620dc71937853665bb7793231",
+    "referenceHash": "10787591933bcb9a254206612d2cd3edb0710f8620dc71937853665bb7793231",
+    "changed": false
+  },
+  {
+    "path": "src/models/audit/loginHistory.model.ts",
+    "oldHash": "cada0f3cc8519ccfc54f28ce30f2ccc8a98bc45103fe9f6a8a3860cfc2dc481b",
+    "currentHash": "cada0f3cc8519ccfc54f28ce30f2ccc8a98bc45103fe9f6a8a3860cfc2dc481b",
+    "referenceHash": "cada0f3cc8519ccfc54f28ce30f2ccc8a98bc45103fe9f6a8a3860cfc2dc481b",
+    "changed": false
+  },
+  {
+    "path": "src/models/auth/otp.model.ts",
+    "oldHash": "b4d8d00054e5ffe989905d89d7205336c477d4494b664c79d33f0a7f42c47e1e",
+    "currentHash": "b4d8d00054e5ffe989905d89d7205336c477d4494b664c79d33f0a7f42c47e1e",
+    "referenceHash": "b4d8d00054e5ffe989905d89d7205336c477d4494b664c79d33f0a7f42c47e1e",
+    "changed": false
+  },
+  {
+    "path": "src/models/contracts/contract.model.ts",
+    "oldHash": "4f84cb579ddf0aca7ada92738d364594220439f28e26f5dcc23b0eb28f01b930",
+    "currentHash": "4f84cb579ddf0aca7ada92738d364594220439f28e26f5dcc23b0eb28f01b930",
+    "referenceHash": "4f84cb579ddf0aca7ada92738d364594220439f28e26f5dcc23b0eb28f01b930",
+    "changed": false
+  },
+  {
+    "path": "src/models/facilities/facility.model.ts",
+    "oldHash": "4a1fbfb81e92d5c4e75989d81856303cf7ebb729e204a20de8311ba47b01f61a",
+    "currentHash": "4a1fbfb81e92d5c4e75989d81856303cf7ebb729e204a20de8311ba47b01f61a",
+    "referenceHash": "4a1fbfb81e92d5c4e75989d81856303cf7ebb729e204a20de8311ba47b01f61a",
+    "changed": false
+  },
+  {
+    "path": "src/models/inspections/inspection.model.ts",
+    "oldHash": "3f7670423ad0046149c5e56c232e2458ba57459a0150eae10604ec4a879d64bd",
+    "currentHash": "3f7670423ad0046149c5e56c232e2458ba57459a0150eae10604ec4a879d64bd",
+    "referenceHash": "3f7670423ad0046149c5e56c232e2458ba57459a0150eae10604ec4a879d64bd",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/inventory-image-upload.model.ts",
+    "oldHash": "04b85a8cfb41e69a101cb6f6758ce8f2bb8d0295d6c0fe51c26667e56e9cf533",
+    "currentHash": "04b85a8cfb41e69a101cb6f6758ce8f2bb8d0295d6c0fe51c26667e56e9cf533",
+    "referenceHash": "04b85a8cfb41e69a101cb6f6758ce8f2bb8d0295d6c0fe51c26667e56e9cf533",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/inventory-inbound-request-event.model.ts",
+    "oldHash": "5c995c33a22127a02cd6490f37a8f3d2e18dbd21780fd91da3de2fa0b4a54dc9",
+    "currentHash": "5c995c33a22127a02cd6490f37a8f3d2e18dbd21780fd91da3de2fa0b4a54dc9",
+    "referenceHash": "5c995c33a22127a02cd6490f37a8f3d2e18dbd21780fd91da3de2fa0b4a54dc9",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/inventory-inbound-request.model.ts",
+    "oldHash": "a59c0665125a9157b9393a3e3b49626d6d0ca5b3ae8372c47e940f51d511171f",
+    "currentHash": "a59c0665125a9157b9393a3e3b49626d6d0ca5b3ae8372c47e940f51d511171f",
+    "referenceHash": "a59c0665125a9157b9393a3e3b49626d6d0ca5b3ae8372c47e940f51d511171f",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/inventory-item.model.ts",
+    "oldHash": "6d1f8b133fa9108583b5c5b6f3303037f3a87115281e6622f5e80c6f85218cac",
+    "currentHash": "6d1f8b133fa9108583b5c5b6f3303037f3a87115281e6622f5e80c6f85218cac",
+    "referenceHash": "6d1f8b133fa9108583b5c5b6f3303037f3a87115281e6622f5e80c6f85218cac",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/inventory-stock-balance.model.ts",
+    "oldHash": "6401de00742da8b76d24b32d98b6ed6c869546bdf29dafec44d73a652fb3bc24",
+    "currentHash": "6401de00742da8b76d24b32d98b6ed6c869546bdf29dafec44d73a652fb3bc24",
+    "referenceHash": "6401de00742da8b76d24b32d98b6ed6c869546bdf29dafec44d73a652fb3bc24",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/item-movement.model.ts",
+    "oldHash": "dd751463d82a83dde63fda16d0a3fa893e8424195dbe659d963c546688601993",
+    "currentHash": "dd751463d82a83dde63fda16d0a3fa893e8424195dbe659d963c546688601993",
+    "referenceHash": "dd751463d82a83dde63fda16d0a3fa893e8424195dbe659d963c546688601993",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/managed-outbound-request-event.model.ts",
+    "oldHash": "a3360fec6c2b5ca7ca8b017fa1494d31bc1c3d19d444f6152473b692a83b44df",
+    "currentHash": "a3360fec6c2b5ca7ca8b017fa1494d31bc1c3d19d444f6152473b692a83b44df",
+    "referenceHash": "a3360fec6c2b5ca7ca8b017fa1494d31bc1c3d19d444f6152473b692a83b44df",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/managed-outbound-request.model.ts",
+    "oldHash": "7d53e6b66ad29fef55b29178e5a66492f01df430b14b074b7134fc0e8e0a3397",
+    "currentHash": "7d53e6b66ad29fef55b29178e5a66492f01df430b14b074b7134fc0e8e0a3397",
+    "referenceHash": "7d53e6b66ad29fef55b29178e5a66492f01df430b14b074b7134fc0e8e0a3397",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/receiving-inspection-evidence.model.ts",
+    "oldHash": "4c6f903da2126447b7292bcf1a2e859bd9f536a3a1b25a7cf740724c4e8eb8d3",
+    "currentHash": "4c6f903da2126447b7292bcf1a2e859bd9f536a3a1b25a7cf740724c4e8eb8d3",
+    "referenceHash": "4c6f903da2126447b7292bcf1a2e859bd9f536a3a1b25a7cf740724c4e8eb8d3",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/receiving-inspection-upload.model.ts",
+    "oldHash": "e7072d4bb3d8991c53d61d32e3d69589642914834e6acf1aa0a2bb355f80db6e",
+    "currentHash": "e7072d4bb3d8991c53d61d32e3d69589642914834e6acf1aa0a2bb355f80db6e",
+    "referenceHash": "e7072d4bb3d8991c53d61d32e3d69589642914834e6acf1aa0a2bb355f80db6e",
+    "changed": false
+  },
+  {
+    "path": "src/models/inventory-items/repeated-inbound-inspection.model.ts",
+    "oldHash": "5f680235b6e16922a5c6fecb35c62bb0978945c8061dd64d44acec5d1b262b85",
+    "currentHash": "5f680235b6e16922a5c6fecb35c62bb0978945c8061dd64d44acec5d1b262b85",
+    "referenceHash": "5f680235b6e16922a5c6fecb35c62bb0978945c8061dd64d44acec5d1b262b85",
+    "changed": false
+  },
+  {
+    "path": "src/models/maintenance-tickets/maintenance-ticket.model.ts",
+    "oldHash": "c7c0470953075d6167def28992d3f105ae4e85a128b0dfdd5fcf0635e8a3363a",
+    "currentHash": "c7c0470953075d6167def28992d3f105ae4e85a128b0dfdd5fcf0635e8a3363a",
+    "referenceHash": "c7c0470953075d6167def28992d3f105ae4e85a128b0dfdd5fcf0635e8a3363a",
+    "changed": false
+  },
+  {
+    "path": "src/models/notifications/notification.model.ts",
+    "oldHash": "d7b6768b54613b4ce722e775cb1250e472f7ba76066af94c8eafa6c37ac005f4",
+    "currentHash": "d7b6768b54613b4ce722e775cb1250e472f7ba76066af94c8eafa6c37ac005f4",
+    "referenceHash": "d7b6768b54613b4ce722e775cb1250e472f7ba76066af94c8eafa6c37ac005f4",
+    "changed": false
+  },
+  {
+    "path": "src/models/payments/reservation-payment.model.ts",
+    "oldHash": "26385c3babeeb44283f7a5a8996ebf9ab86ec4f434c777b8c2dce7e1717eef46",
+    "currentHash": "35827fa478402fa6709008aaf1785e25291d9a28246c63216a6811d37e874793",
+    "referenceHash": "35827fa478402fa6709008aaf1785e25291d9a28246c63216a6811d37e874793",
+    "changed": true
+  },
+  {
+    "path": "src/models/pricing-policy/effective.schema.ts",
+    "oldHash": "9cfb3166e0e71f8b5b5b1fc671fe08898b282f8242b2d7bf2abdc1ad80008169",
+    "currentHash": "9cfb3166e0e71f8b5b5b1fc671fe08898b282f8242b2d7bf2abdc1ad80008169",
+    "referenceHash": "9cfb3166e0e71f8b5b5b1fc671fe08898b282f8242b2d7bf2abdc1ad80008169",
+    "changed": false
+  },
+  {
+    "path": "src/models/pricing-policy/policy.model.ts",
+    "oldHash": "6beecc7fa1b0e0a6e95bb7b79d7f87f4253c07f810c73ce7b0f011de3dc5d6ca",
+    "currentHash": "6beecc7fa1b0e0a6e95bb7b79d7f87f4253c07f810c73ce7b0f011de3dc5d6ca",
+    "referenceHash": "6beecc7fa1b0e0a6e95bb7b79d7f87f4253c07f810c73ce7b0f011de3dc5d6ca",
+    "changed": false
+  },
+  {
+    "path": "src/models/pricing-policy/pricing-rule.model.ts",
+    "oldHash": "d548291f1f01ba5c6ec396fbcaad59ccd5923bc96e80faa453e5884750ed6ba1",
+    "currentHash": "d548291f1f01ba5c6ec396fbcaad59ccd5923bc96e80faa453e5884750ed6ba1",
+    "referenceHash": "d548291f1f01ba5c6ec396fbcaad59ccd5923bc96e80faa453e5884750ed6ba1",
+    "changed": false
+  },
+  {
+    "path": "src/models/pricing-policy/rule-scope.model.ts",
+    "oldHash": "cf136b45f921cd8be1d50d5ae124590e4b363fc6de195b5319d314c70f9cefc0",
+    "currentHash": "cf136b45f921cd8be1d50d5ae124590e4b363fc6de195b5319d314c70f9cefc0",
+    "referenceHash": "cf136b45f921cd8be1d50d5ae124590e4b363fc6de195b5319d314c70f9cefc0",
+    "changed": false
+  },
+  {
+    "path": "src/models/reservations/managed-facility-capacity.model.ts",
+    "oldHash": "848e001d9a941e540f860ee17a3555d753ca7373de0c74d7186ba8c74c33238d",
+    "currentHash": "848e001d9a941e540f860ee17a3555d753ca7373de0c74d7186ba8c74c33238d",
+    "referenceHash": "848e001d9a941e540f860ee17a3555d753ca7373de0c74d7186ba8c74c33238d",
+    "changed": false
+  },
+  {
+    "path": "src/models/reservations/managed-reservation-audit.model.ts",
+    "oldHash": "9f4502b70a2af97c1ae50cdf02309199ecefbd8f04d3d84708ab0d6b8022c258",
+    "currentHash": "9f4502b70a2af97c1ae50cdf02309199ecefbd8f04d3d84708ab0d6b8022c258",
+    "referenceHash": "9f4502b70a2af97c1ae50cdf02309199ecefbd8f04d3d84708ab0d6b8022c258",
+    "changed": false
+  },
+  {
+    "path": "src/models/reservations/reservation.model.ts",
+    "oldHash": "5aafb5a08818934d112cf895e94c16d7b3a1dde85ebf1c873191252174f8b693",
+    "currentHash": "880ea206bc281e4f29132e39e7d320aae8e7d922f43ea3d666e35745d7e1715a",
+    "referenceHash": "880ea206bc281e4f29132e39e7d320aae8e7d922f43ea3d666e35745d7e1715a",
+    "changed": true
+  },
+  {
+    "path": "src/models/storage-units/storage-unit.model.ts",
+    "oldHash": "5a76ba8ad1b480990daa5dc6532805f6183e14c52c4341b36c2360f935d88ca2",
+    "currentHash": "5a76ba8ad1b480990daa5dc6532805f6183e14c52c4341b36c2360f935d88ca2",
+    "referenceHash": "5a76ba8ad1b480990daa5dc6532805f6183e14c52c4341b36c2360f935d88ca2",
+    "changed": false
+  },
+  {
+    "path": "src/models/support-requests/support-message.model.ts",
+    "oldHash": "ed59201bb93a17b3c32164cc31d6a99392475a47ee68fced3e1a641c5838b7c7",
+    "currentHash": "ed59201bb93a17b3c32164cc31d6a99392475a47ee68fced3e1a641c5838b7c7",
+    "referenceHash": "ed59201bb93a17b3c32164cc31d6a99392475a47ee68fced3e1a641c5838b7c7",
+    "changed": false
+  },
+  {
+    "path": "src/models/support-requests/support-request.model.ts",
+    "oldHash": "c96ad1a69372d4259448ae17cacd259485c730b5738bd96c64a8dcd15a873e94",
+    "currentHash": "c96ad1a69372d4259448ae17cacd259485c730b5738bd96c64a8dcd15a873e94",
+    "referenceHash": "c96ad1a69372d4259448ae17cacd259485c730b5738bd96c64a8dcd15a873e94",
+    "changed": false
+  },
+  {
+    "path": "src/models/users/customer-profile.model.ts",
+    "oldHash": "248259e8753fe1824a892e60219823f74508e2cd8ffc30b33d419308be975247",
+    "currentHash": "248259e8753fe1824a892e60219823f74508e2cd8ffc30b33d419308be975247",
+    "referenceHash": "248259e8753fe1824a892e60219823f74508e2cd8ffc30b33d419308be975247",
+    "changed": false
+  },
+  {
+    "path": "src/models/users/user.model.ts",
+    "oldHash": "059d852b7dccabdbda1736b2535325d5fb0496b5d74244a1fc825e2f7192090c",
+    "currentHash": "059d852b7dccabdbda1736b2535325d5fb0496b5d74244a1fc825e2f7192090c",
+    "referenceHash": "059d852b7dccabdbda1736b2535325d5fb0496b5d74244a1fc825e2f7192090c",
+    "changed": false
+  },
+  {
+    "path": "src/models/warehouse-map/cell-allocation.model.ts",
+    "oldHash": "86180b02d4b9e14483e1ed7d08108b8f4d351a45e516e3d526db3980eb0d5623",
+    "currentHash": "86180b02d4b9e14483e1ed7d08108b8f4d351a45e516e3d526db3980eb0d5623",
+    "referenceHash": "86180b02d4b9e14483e1ed7d08108b8f4d351a45e516e3d526db3980eb0d5623",
+    "changed": false
+  },
+  {
+    "path": "src/models/warehouse-map/warehouse-cell.model.ts",
+    "oldHash": "abe7ff1ffa57f6b843768f17141ac32cfd063f220403466eeaf477f552defd0e",
+    "currentHash": "abe7ff1ffa57f6b843768f17141ac32cfd063f220403466eeaf477f552defd0e",
+    "referenceHash": "abe7ff1ffa57f6b843768f17141ac32cfd063f220403466eeaf477f552defd0e",
+    "changed": false
+  },
+  {
+    "path": "src/models/warehouse-map/warehouse-rack.model.ts",
+    "oldHash": "5f55bdaedbcf2210e17cea568dfbf7e3c30081fa3072d9ac8073a285413c1cf7",
+    "currentHash": "5f55bdaedbcf2210e17cea568dfbf7e3c30081fa3072d9ac8073a285413c1cf7",
+    "referenceHash": "5f55bdaedbcf2210e17cea568dfbf7e3c30081fa3072d9ac8073a285413c1cf7",
+    "changed": false
+  },
+  {
+    "path": "src/models/warehouse-map/warehouse-zone.model.ts",
+    "oldHash": "d89e7095e84204bb89197fde3bc5464409f0b433c6aaaddc62b00d784d6e8df6",
+    "currentHash": "d89e7095e84204bb89197fde3bc5464409f0b433c6aaaddc62b00d784d6e8df6",
+    "referenceHash": "d89e7095e84204bb89197fde3bc5464409f0b433c6aaaddc62b00d784d6e8df6",
+    "changed": false
+  },
+  {
+    "path": "src/routes/access.routes.ts",
+    "oldHash": "e1dfe502c664d878704e83caf82829232ac5cfc50bc104886022c73b6406d623",
+    "currentHash": "e1dfe502c664d878704e83caf82829232ac5cfc50bc104886022c73b6406d623",
+    "referenceHash": "e1dfe502c664d878704e83caf82829232ac5cfc50bc104886022c73b6406d623",
+    "changed": false
+  },
+  {
+    "path": "src/routes/audit.routes.ts",
+    "oldHash": "e977d35efc510de4044f44cc94eed2c4ab1505de09c5e95c3c5aadc35e935aa4",
+    "currentHash": "e977d35efc510de4044f44cc94eed2c4ab1505de09c5e95c3c5aadc35e935aa4",
+    "referenceHash": "e977d35efc510de4044f44cc94eed2c4ab1505de09c5e95c3c5aadc35e935aa4",
+    "changed": false
+  },
+  {
+    "path": "src/routes/auth.routes.ts",
+    "oldHash": "a8fd5b4714581469cb761605d21df64670077e35bd0ac5f5fa47a34d0a53e697",
+    "currentHash": "a8fd5b4714581469cb761605d21df64670077e35bd0ac5f5fa47a34d0a53e697",
+    "referenceHash": "a8fd5b4714581469cb761605d21df64670077e35bd0ac5f5fa47a34d0a53e697",
+    "changed": false
+  },
+  {
+    "path": "src/routes/contract.routes.ts",
+    "oldHash": "9d9117b94de89c826c161c72c3aa752800cd3c38ff28ebacbdc92813af9f6a5d",
+    "currentHash": "9d9117b94de89c826c161c72c3aa752800cd3c38ff28ebacbdc92813af9f6a5d",
+    "referenceHash": "9d9117b94de89c826c161c72c3aa752800cd3c38ff28ebacbdc92813af9f6a5d",
+    "changed": false
+  },
+  {
+    "path": "src/routes/customer-profile.routes.ts",
+    "oldHash": "92b724493cdacf74baa5e2a8e4f1d0862345ad2ef6e3926f7b0c0d9a16320c5f",
+    "currentHash": "92b724493cdacf74baa5e2a8e4f1d0862345ad2ef6e3926f7b0c0d9a16320c5f",
+    "referenceHash": "92b724493cdacf74baa5e2a8e4f1d0862345ad2ef6e3926f7b0c0d9a16320c5f",
+    "changed": false
+  },
+  {
+    "path": "src/routes/facility.routes.ts",
+    "oldHash": "7a23d5733f8c2709958f0dc40ea0aa22e0a08bf80d0d6b15ae1deb0f01246c02",
+    "currentHash": "7a23d5733f8c2709958f0dc40ea0aa22e0a08bf80d0d6b15ae1deb0f01246c02",
+    "referenceHash": "7a23d5733f8c2709958f0dc40ea0aa22e0a08bf80d0d6b15ae1deb0f01246c02",
+    "changed": false
+  },
+  {
+    "path": "src/routes/index.ts",
+    "oldHash": "24b0d7ba092e15a8df47e72e2e95f3f3c1116edcedab3bc79137b6c92c75d4db",
+    "currentHash": "af8d31c898a9a685717b914b682ca2227d9ca154237ce9d2669c4e2e2098d361",
+    "referenceHash": "af8d31c898a9a685717b914b682ca2227d9ca154237ce9d2669c4e2e2098d361",
+    "changed": true
+  },
+  {
+    "path": "src/routes/inspection.routes.ts",
+    "oldHash": "877cbe794ec3fe0803d4af4d629a55c9e2f1bc8bf2cb3c446f6bf58de98182e0",
+    "currentHash": "877cbe794ec3fe0803d4af4d629a55c9e2f1bc8bf2cb3c446f6bf58de98182e0",
+    "referenceHash": "877cbe794ec3fe0803d4af4d629a55c9e2f1bc8bf2cb3c446f6bf58de98182e0",
+    "changed": false
+  },
+  {
+    "path": "src/routes/inventory-inbound-request.routes.ts",
+    "oldHash": "e9a4729cc1270c8c033dfaf1909ab0facb076cd0e2d875adc2f1d39b71cd0108",
+    "currentHash": "e9a4729cc1270c8c033dfaf1909ab0facb076cd0e2d875adc2f1d39b71cd0108",
+    "referenceHash": "e9a4729cc1270c8c033dfaf1909ab0facb076cd0e2d875adc2f1d39b71cd0108",
+    "changed": false
+  },
+  {
+    "path": "src/routes/inventory-item.routes.ts",
+    "oldHash": "2787fe214daa33e878d9e249d9a70e1561d43152df09e799f9e679a39ecd6bfc",
+    "currentHash": "2787fe214daa33e878d9e249d9a70e1561d43152df09e799f9e679a39ecd6bfc",
+    "referenceHash": "2787fe214daa33e878d9e249d9a70e1561d43152df09e799f9e679a39ecd6bfc",
+    "changed": false
+  },
+  {
+    "path": "src/routes/maintenance-ticket.routes.ts",
+    "oldHash": "9d5cb7e9e3585b6bf31a2c26ee2c9ad229eacb43aaf3170032c7e9bf2f9cac5d",
+    "currentHash": "9d5cb7e9e3585b6bf31a2c26ee2c9ad229eacb43aaf3170032c7e9bf2f9cac5d",
+    "referenceHash": "9d5cb7e9e3585b6bf31a2c26ee2c9ad229eacb43aaf3170032c7e9bf2f9cac5d",
+    "changed": false
+  },
+  {
+    "path": "src/routes/managed-outbound-request.routes.ts",
+    "oldHash": "ea8bd96f8b7599c2779b22b89120aec0cbe8e6d69f3f412420863446da14dcc3",
+    "currentHash": "ea8bd96f8b7599c2779b22b89120aec0cbe8e6d69f3f412420863446da14dcc3",
+    "referenceHash": "ea8bd96f8b7599c2779b22b89120aec0cbe8e6d69f3f412420863446da14dcc3",
+    "changed": false
+  },
+  {
+    "path": "src/routes/notification.routes.ts",
+    "oldHash": "e27a4ba563f75081fe5034be7093a1f2d78f48169bc1355f9c6b893ebec956a6",
+    "currentHash": "e27a4ba563f75081fe5034be7093a1f2d78f48169bc1355f9c6b893ebec956a6",
+    "referenceHash": "e27a4ba563f75081fe5034be7093a1f2d78f48169bc1355f9c6b893ebec956a6",
+    "changed": false
+  },
+  {
+    "path": "src/routes/pricing-policy.routes.ts",
+    "oldHash": "0e682442319a7d32d36a845277af9b540ae5277967ed730ecafdb89e3be86f9c",
+    "currentHash": "0e682442319a7d32d36a845277af9b540ae5277967ed730ecafdb89e3be86f9c",
+    "referenceHash": "0e682442319a7d32d36a845277af9b540ae5277967ed730ecafdb89e3be86f9c",
+    "changed": false
+  },
+  {
+    "path": "src/routes/public.routes.ts",
+    "oldHash": "fd68aa2b60b1b98de9e387803fb69ce9ff75aa44265c44a8277f695405127ae0",
+    "currentHash": "fd68aa2b60b1b98de9e387803fb69ce9ff75aa44265c44a8277f695405127ae0",
+    "referenceHash": "fd68aa2b60b1b98de9e387803fb69ce9ff75aa44265c44a8277f695405127ae0",
+    "changed": false
+  },
+  {
+    "path": "src/routes/reservation.routes.ts",
+    "oldHash": "37f0aa47fa36f2b84254847fde5cf7367858f8c197faa3e042ce9e80420ac7c4",
+    "currentHash": "ea444d948dd7b2e47f19f926cd3ec8142843ca5a181cfceedeb3fa8d790c4456",
+    "referenceHash": "ea444d948dd7b2e47f19f926cd3ec8142843ca5a181cfceedeb3fa8d790c4456",
+    "changed": true
+  },
+  {
+    "path": "src/routes/storage-unit.routes.ts",
+    "oldHash": "7b885f4ea0023a0ce93e3c449989ae483844ef3e0b72f098e476ed07db703569",
+    "currentHash": "743a5d6ae78f21da295c8615faf47ce2bf6db85e8a54bdbbedc7708b52961fbf",
+    "referenceHash": "743a5d6ae78f21da295c8615faf47ce2bf6db85e8a54bdbbedc7708b52961fbf",
+    "changed": true
+  },
+  {
+    "path": "src/routes/support-request.routes.ts",
+    "oldHash": "23f40d836e303308b640015bf5f54bbaa91cd3cc89737e1e88811cebd97854a2",
+    "currentHash": "23f40d836e303308b640015bf5f54bbaa91cd3cc89737e1e88811cebd97854a2",
+    "referenceHash": "23f40d836e303308b640015bf5f54bbaa91cd3cc89737e1e88811cebd97854a2",
+    "changed": false
+  },
+  {
+    "path": "src/routes/user.routes.ts",
+    "oldHash": "5ec8df375e6750c6d4754a7e1aa013dfa80bc71308c0649d59af1461ec10fe53",
+    "currentHash": "5ec8df375e6750c6d4754a7e1aa013dfa80bc71308c0649d59af1461ec10fe53",
+    "referenceHash": "5ec8df375e6750c6d4754a7e1aa013dfa80bc71308c0649d59af1461ec10fe53",
+    "changed": false
+  },
+  {
+    "path": "src/routes/warehouse-map.routes.ts",
+    "oldHash": "ace529f5c0bf33b557353e1fbdf7d5deac1cb99a05b3e7417b84f5ed8ad8fc58",
+    "currentHash": "ace529f5c0bf33b557353e1fbdf7d5deac1cb99a05b3e7417b84f5ed8ad8fc58",
+    "referenceHash": "ace529f5c0bf33b557353e1fbdf7d5deac1cb99a05b3e7417b84f5ed8ad8fc58",
+    "changed": false
+  },
+  {
+    "path": "src/scripts/seed-fe-demo-utils.ts",
+    "oldHash": "8ff26963b0d06dfa330d11c81b56c331faacce6adeea01139af0971b089073a4",
+    "currentHash": "8ff26963b0d06dfa330d11c81b56c331faacce6adeea01139af0971b089073a4",
+    "referenceHash": "8ff26963b0d06dfa330d11c81b56c331faacce6adeea01139af0971b089073a4",
+    "changed": false
+  },
+  {
+    "path": "src/scripts/seed-fe-demo.ts",
+    "oldHash": "9ee656d713250c2c0e7d64820787d99a80739a26ebeff027cd398072c9175e91",
+    "currentHash": "9ee656d713250c2c0e7d64820787d99a80739a26ebeff027cd398072c9175e91",
+    "referenceHash": "9ee656d713250c2c0e7d64820787d99a80739a26ebeff027cd398072c9175e91",
+    "changed": false
+  },
+  {
+    "path": "src/server.ts",
+    "oldHash": "ccdc17f74acf59cb07c63cd8473aa43cf38c169e6cd2a089eb578ba14defb98f",
+    "currentHash": "ccdc17f74acf59cb07c63cd8473aa43cf38c169e6cd2a089eb578ba14defb98f",
+    "referenceHash": "ccdc17f74acf59cb07c63cd8473aa43cf38c169e6cd2a089eb578ba14defb98f",
+    "changed": false
+  },
+  {
+    "path": "src/services/audit/audit.service.ts",
+    "oldHash": "afa4473bc5a164f7f444cb035f8ee6f0ad07db07e261a0c94f330cf8241b49c2",
+    "currentHash": "afa4473bc5a164f7f444cb035f8ee6f0ad07db07e261a0c94f330cf8241b49c2",
+    "referenceHash": "afa4473bc5a164f7f444cb035f8ee6f0ad07db07e261a0c94f330cf8241b49c2",
+    "changed": false
+  },
+  {
+    "path": "src/services/audit/loginHistory.service.ts",
+    "oldHash": "5520c4b28c731b8579307d3119339a08f572ef0d576dfbbb6f226b0d69456d91",
+    "currentHash": "5520c4b28c731b8579307d3119339a08f572ef0d576dfbbb6f226b0d69456d91",
+    "referenceHash": "5520c4b28c731b8579307d3119339a08f572ef0d576dfbbb6f226b0d69456d91",
+    "changed": false
+  },
+  {
+    "path": "src/services/auth/auth.service.ts",
+    "oldHash": "067997abfcb977f9a63989c1b70024a3ad2bee93f127424055810defbb7e5214",
+    "currentHash": "067997abfcb977f9a63989c1b70024a3ad2bee93f127424055810defbb7e5214",
+    "referenceHash": "067997abfcb977f9a63989c1b70024a3ad2bee93f127424055810defbb7e5214",
+    "changed": false
+  },
+  {
+    "path": "src/services/email/email.service.ts",
+    "oldHash": "23f2d80f5c5cf57d3b3dae6f56027506726faa3493853bbdaa61c2a3c8f471f2",
+    "currentHash": "23f2d80f5c5cf57d3b3dae6f56027506726faa3493853bbdaa61c2a3c8f471f2",
+    "referenceHash": "23f2d80f5c5cf57d3b3dae6f56027506726faa3493853bbdaa61c2a3c8f471f2",
+    "changed": false
+  },
+  {
+    "path": "src/services/facilities/facility.service.ts",
+    "oldHash": "5135c9d6b48294da0ce2af1beb03b94e76bbde05966dba30f9f06321b42cc768",
+    "currentHash": "5135c9d6b48294da0ce2af1beb03b94e76bbde05966dba30f9f06321b42cc768",
+    "referenceHash": "5135c9d6b48294da0ce2af1beb03b94e76bbde05966dba30f9f06321b42cc768",
+    "changed": false
+  },
+  {
+    "path": "src/services/facilities/facility.validation.ts",
+    "oldHash": "20a4acf4e5ffa02ff502470f68b6cdcb4da5590ac9828f0a7eae077242e1fde1",
+    "currentHash": "20a4acf4e5ffa02ff502470f68b6cdcb4da5590ac9828f0a7eae077242e1fde1",
+    "referenceHash": "20a4acf4e5ffa02ff502470f68b6cdcb4da5590ac9828f0a7eae077242e1fde1",
+    "changed": false
+  },
+  {
+    "path": "src/services/inventory-items/inventory-inbound-request.lifecycle.ts",
+    "oldHash": "dfcf8b52a574f60a2a5944ed513d453dbc86383be424827a7bbccbd9f5ffc39d",
+    "currentHash": "dfcf8b52a574f60a2a5944ed513d453dbc86383be424827a7bbccbd9f5ffc39d",
+    "referenceHash": "dfcf8b52a574f60a2a5944ed513d453dbc86383be424827a7bbccbd9f5ffc39d",
+    "changed": false
+  },
+  {
+    "path": "src/services/inventory-items/inventory-item.service.ts",
+    "oldHash": "8ba559bbb3562e76b774954a77f9fa5d15d3e7c29d057939fe494d92e67da057",
+    "currentHash": "ce3ee3ef03b112b9a3292731f7b36b7e9ec5553674a850b0ba0a96581fcf4403",
+    "referenceHash": "ce3ee3ef03b112b9a3292731f7b36b7e9ec5553674a850b0ba0a96581fcf4403",
+    "changed": true
+  },
+  {
+    "path": "src/services/inventory-items/inventory-item.validation.ts",
+    "oldHash": "e5c548beda851f2e1b6781e962b4ede492644f59bdbdb9f7f36f562612d93a45",
+    "currentHash": "e5c548beda851f2e1b6781e962b4ede492644f59bdbdb9f7f36f562612d93a45",
+    "referenceHash": "e5c548beda851f2e1b6781e962b4ede492644f59bdbdb9f7f36f562612d93a45",
+    "changed": false
+  },
+  {
+    "path": "src/services/inventory-items/managed-canonical-relocation.service.ts",
+    "oldHash": "ca94a612b33475e3078a13349c2cdc59cc72b16416d88572ee21ece84f6063a5",
+    "currentHash": "33d0b7d6a6c84ff1667ce906be21116ea14d9ccbfe1c5d1be98ccdd202ae89c7",
+    "referenceHash": "33d0b7d6a6c84ff1667ce906be21116ea14d9ccbfe1c5d1be98ccdd202ae89c7",
+    "changed": true
+  },
+  {
+    "path": "src/services/inventory-items/managed-inbound-request.service.ts",
+    "oldHash": "eaeb2f0c28cc72bc5f44d459d53dea3fb09550544fab07640c1d529abb3f382a",
+    "currentHash": "fa8cbea675a053438f149cafe6b39860b3120270f557861a4d6fd0d3dac1036c",
+    "referenceHash": "fa8cbea675a053438f149cafe6b39860b3120270f557861a4d6fd0d3dac1036c",
+    "changed": true
+  },
+  {
+    "path": "src/services/inventory-items/managed-outbound-allocation.service.ts",
+    "oldHash": "d046ae47e3780c6447f60469e69e5d6778ffc230572d13ce70786b2551425512",
+    "currentHash": "d046ae47e3780c6447f60469e69e5d6778ffc230572d13ce70786b2551425512",
+    "referenceHash": "d046ae47e3780c6447f60469e69e5d6778ffc230572d13ce70786b2551425512",
+    "changed": false
+  },
+  {
+    "path": "src/services/inventory-items/managed-outbound-request.service.ts",
+    "oldHash": "3fd6e1c27556ddd7ba77870304eac7499e5e04fb70ac0586349a31451edce850",
+    "currentHash": "bcd65b93e765b5020158b2ac4d213fa83bdeba62096445aef48c300e22415467",
+    "referenceHash": "bcd65b93e765b5020158b2ac4d213fa83bdeba62096445aef48c300e22415467",
+    "changed": true
+  },
+  {
+    "path": "src/services/inventory-items/managed-stock-ledger.service.ts",
+    "oldHash": "a58856859eb9df9b3381e2a8cbcaca694be901c78dc4be0faf2095ad7be2f049",
+    "currentHash": "a58856859eb9df9b3381e2a8cbcaca694be901c78dc4be0faf2095ad7be2f049",
+    "referenceHash": "a58856859eb9df9b3381e2a8cbcaca694be901c78dc4be0faf2095ad7be2f049",
+    "changed": false
+  },
+  {
+    "path": "src/services/inventory-items/repeated-inbound-operations.service.ts",
+    "oldHash": "12ef22c978bf4f3c62d2c65a04e334fdb87a0f1de32e1f4164619720530dce04",
+    "currentHash": "5c7e539fe3fd67a01dce4e3f496ed743c3565477aaa2a43ba6f39de04de04a8b",
+    "referenceHash": "5c7e539fe3fd67a01dce4e3f496ed743c3565477aaa2a43ba6f39de04de04a8b",
+    "changed": true
+  },
+  {
+    "path": "src/services/keycloak.service.ts",
+    "oldHash": "8b42372b60bcb545386d7a800265fb69b72386ad5cb8ad15ce5ccf2d4654256b",
+    "currentHash": "8b42372b60bcb545386d7a800265fb69b72386ad5cb8ad15ce5ccf2d4654256b",
+    "referenceHash": "8b42372b60bcb545386d7a800265fb69b72386ad5cb8ad15ce5ccf2d4654256b",
+    "changed": false
+  },
+  {
+    "path": "src/services/maintenance-tickets/maintenance-ticket.service.ts",
+    "oldHash": "7b746335acd0709dff6d6fbd6a6316e852de4d560603963f1f60fe4a517854e5",
+    "currentHash": "7b746335acd0709dff6d6fbd6a6316e852de4d560603963f1f60fe4a517854e5",
+    "referenceHash": "7b746335acd0709dff6d6fbd6a6316e852de4d560603963f1f60fe4a517854e5",
+    "changed": false
+  },
+  {
+    "path": "src/services/maintenance-tickets/maintenance-ticket.validation.ts",
+    "oldHash": "57ed3123c3146a8de4a176284980862bdaca5e9abd83e02d5c2233666a94ad72",
+    "currentHash": "57ed3123c3146a8de4a176284980862bdaca5e9abd83e02d5c2233666a94ad72",
+    "referenceHash": "57ed3123c3146a8de4a176284980862bdaca5e9abd83e02d5c2233666a94ad72",
+    "changed": false
+  },
+  {
+    "path": "src/services/payments/payment-accounting.ts",
+    "oldHash": "fa10d1c6841b5134f4bb40e23433979845740d3a0d9aee920b6c2d7475ad256b",
+    "currentHash": "fa10d1c6841b5134f4bb40e23433979845740d3a0d9aee920b6c2d7475ad256b",
+    "referenceHash": "fa10d1c6841b5134f4bb40e23433979845740d3a0d9aee920b6c2d7475ad256b",
+    "changed": false
+  },
+  {
+    "path": "src/services/pricing-policy/rule.service.ts",
+    "oldHash": "65e655da5ac1ddb43c9290781fe9be341bd3a8e64754464e7ebe50f882e4b546",
+    "currentHash": "65e655da5ac1ddb43c9290781fe9be341bd3a8e64754464e7ebe50f882e4b546",
+    "referenceHash": "65e655da5ac1ddb43c9290781fe9be341bd3a8e64754464e7ebe50f882e4b546",
+    "changed": false
+  },
+  {
+    "path": "src/services/pricing-policy/rule.validation.ts",
+    "oldHash": "fe189c5b7b5024e0c036e353b25522f691913a3853d90c38ac2c32f7025f8da6",
+    "currentHash": "fe189c5b7b5024e0c036e353b25522f691913a3853d90c38ac2c32f7025f8da6",
+    "referenceHash": "fe189c5b7b5024e0c036e353b25522f691913a3853d90c38ac2c32f7025f8da6",
+    "changed": false
+  },
+  {
+    "path": "src/services/public/public-catalog.service.ts",
+    "oldHash": "f8228d5b3a3c917fae20a3eebf90080270dfa72bd8152480273b94017798ffe4",
+    "currentHash": "f8228d5b3a3c917fae20a3eebf90080270dfa72bd8152480273b94017798ffe4",
+    "referenceHash": "f8228d5b3a3c917fae20a3eebf90080270dfa72bd8152480273b94017798ffe4",
+    "changed": false
+  },
+  {
+    "path": "src/services/reservations/managed-checkin.service.ts",
+    "oldHash": "884c874a885b64421dedbadeeac30d7d5b2c41f6b7cac2a2633c6f6c60f1e193",
+    "currentHash": "8dc61a312fa5f03555c9966d1dff87652cb30c36e6d2100129f1d73dcdd4d1cc",
+    "referenceHash": "8dc61a312fa5f03555c9966d1dff87652cb30c36e6d2100129f1d73dcdd4d1cc",
+    "changed": true
+  },
+  {
+    "path": "src/services/reservations/managed-inventory-reservation.guard.ts",
+    "oldHash": "adbabf5d97ad7646fb79870816b3b7bb3dc81421bf8b01d436b7c110f25ab1ee",
+    "currentHash": "adbabf5d97ad7646fb79870816b3b7bb3dc81421bf8b01d436b7c110f25ab1ee",
+    "referenceHash": "adbabf5d97ad7646fb79870816b3b7bb3dc81421bf8b01d436b7c110f25ab1ee",
+    "changed": false
+  },
+  {
+    "path": "src/services/reservations/managed-reservation.service.ts",
+    "oldHash": "90018d6cceb81c3a87ba2ae5ce27f15cac81710babadd6b662bc70e5a985d415",
+    "currentHash": "803cc4ad6502b863789c57a5362e1b01138b48c7a201fce2e776a41836a0a2e1",
+    "referenceHash": "803cc4ad6502b863789c57a5362e1b01138b48c7a201fce2e776a41836a0a2e1",
+    "changed": true
+  },
+  {
+    "path": "src/services/reservations/reservation.service.ts",
+    "oldHash": "ec6e8d7af8a143084f8bc908341f39cdbea8483a7c53bdec92db6da635e08121",
+    "currentHash": "da47c104814e99a88be6c1dacdbdb6baeb3d2a0de3b9c91302d1ffb0b4683685",
+    "referenceHash": "da47c104814e99a88be6c1dacdbdb6baeb3d2a0de3b9c91302d1ffb0b4683685",
+    "changed": true
+  },
+  {
+    "path": "src/services/storage-units/storage-unit.service.ts",
+    "oldHash": "23eba3636c7ca09c317fd4c1b1e255f8e89865d9dbae34d4615755b34ad746aa",
+    "currentHash": "af83853d1456cb51f2f56af8101ece50da9c70bc27c6936d91abcd7993d23b41",
+    "referenceHash": "af83853d1456cb51f2f56af8101ece50da9c70bc27c6936d91abcd7993d23b41",
+    "changed": true
+  },
+  {
+    "path": "src/services/storage-units/storage-unit.validation.ts",
+    "oldHash": "8c9a8d85b4ec270220e7f9b11b620550d05fbe3b75a22a89fc0f57f0458a2d4e",
+    "currentHash": "7f2323ab5795f40895a655b1979b9f7ae8e84a3df59fb94c030d5ea7d15ec5e9",
+    "referenceHash": "7f2323ab5795f40895a655b1979b9f7ae8e84a3df59fb94c030d5ea7d15ec5e9",
+    "changed": true
+  },
+  {
+    "path": "src/services/support-requests/support-request.service.ts",
+    "oldHash": "3bd0c072489f663447087f909ea8bd72edf24e586f99fecf0ce5273831f7ba1d",
+    "currentHash": "3bd0c072489f663447087f909ea8bd72edf24e586f99fecf0ce5273831f7ba1d",
+    "referenceHash": "3bd0c072489f663447087f909ea8bd72edf24e586f99fecf0ce5273831f7ba1d",
+    "changed": false
+  },
+  {
+    "path": "src/services/support-requests/support-request.validation.ts",
+    "oldHash": "8ece7dba6cbd6dd6ff3c62c92c2407ab20a63c7d0dc4d5aa556d539167778be5",
+    "currentHash": "8ece7dba6cbd6dd6ff3c62c92c2407ab20a63c7d0dc4d5aa556d539167778be5",
+    "referenceHash": "8ece7dba6cbd6dd6ff3c62c92c2407ab20a63c7d0dc4d5aa556d539167778be5",
+    "changed": false
+  },
+  {
+    "path": "src/services/upload/cloudinary.service.ts",
+    "oldHash": "48e0595f16cd01591a081948b85040ca55691ec55637a736cd9f970e61f39734",
+    "currentHash": "48e0595f16cd01591a081948b85040ca55691ec55637a736cd9f970e61f39734",
+    "referenceHash": "48e0595f16cd01591a081948b85040ca55691ec55637a736cd9f970e61f39734",
+    "changed": false
+  },
+  {
+    "path": "src/services/upload/inventory-image-validation.service.ts",
+    "oldHash": "be96a9946c8a50708605e40288dd94e4364c9506f5cfd518eb9c9a2ecee036d0",
+    "currentHash": "be96a9946c8a50708605e40288dd94e4364c9506f5cfd518eb9c9a2ecee036d0",
+    "referenceHash": "be96a9946c8a50708605e40288dd94e4364c9506f5cfd518eb9c9a2ecee036d0",
+    "changed": false
+  },
+  {
+    "path": "src/services/upload/managed-inventory-image.service.ts",
+    "oldHash": "7f3cdae6be2abdc02b3f1555fe7cbd921019ff7e5a590f62862642d49e7e814b",
+    "currentHash": "7f3cdae6be2abdc02b3f1555fe7cbd921019ff7e5a590f62862642d49e7e814b",
+    "referenceHash": "7f3cdae6be2abdc02b3f1555fe7cbd921019ff7e5a590f62862642d49e7e814b",
+    "changed": false
+  },
+  {
+    "path": "src/services/upload/managed-receiving-evidence.service.ts",
+    "oldHash": "40fa056b9846c26e89ed987a35bc163bd37b78675286d7e820c0fc35ea13983b",
+    "currentHash": "40fa056b9846c26e89ed987a35bc163bd37b78675286d7e820c0fc35ea13983b",
+    "referenceHash": "40fa056b9846c26e89ed987a35bc163bd37b78675286d7e820c0fc35ea13983b",
+    "changed": false
+  },
+  {
+    "path": "src/services/users/facility-assignment.service.ts",
+    "oldHash": "5aab25e717e0fb1697bf76b9d665128c5b49e00b755d816552548f0fbfe0c160",
+    "currentHash": "5aab25e717e0fb1697bf76b9d665128c5b49e00b755d816552548f0fbfe0c160",
+    "referenceHash": "5aab25e717e0fb1697bf76b9d665128c5b49e00b755d816552548f0fbfe0c160",
+    "changed": false
+  },
+  {
+    "path": "src/services/users/user.service.ts",
+    "oldHash": "6de1c27d6123431033bf323da58482f0dfa6fd9e7509231149aa5809debb3311",
+    "currentHash": "6de1c27d6123431033bf323da58482f0dfa6fd9e7509231149aa5809debb3311",
+    "referenceHash": "6de1c27d6123431033bf323da58482f0dfa6fd9e7509231149aa5809debb3311",
+    "changed": false
+  },
+  {
+    "path": "src/services/warehouse-map/warehouse-map.service.ts",
+    "oldHash": "0f9766351f7948b84f4fde204724a5954453d11401b66ba9c534da0b6ed144be",
+    "currentHash": "0f9766351f7948b84f4fde204724a5954453d11401b66ba9c534da0b6ed144be",
+    "referenceHash": "0f9766351f7948b84f4fde204724a5954453d11401b66ba9c534da0b6ed144be",
+    "changed": false
+  },
+  {
+    "path": "src/services/warehouse-map/warehouse-map.validation.ts",
+    "oldHash": "b8f08995169e55daefeb6be6e79b7f892e8a59a6dc0f0a8ff6c0bcee6a4e46ce",
+    "currentHash": "b8f08995169e55daefeb6be6e79b7f892e8a59a6dc0f0a8ff6c0bcee6a4e46ce",
+    "referenceHash": "b8f08995169e55daefeb6be6e79b7f892e8a59a6dc0f0a8ff6c0bcee6a4e46ce",
+    "changed": false
+  },
+  {
+    "path": "src/types/access-log.type.ts",
+    "oldHash": "2d8e0f7c2d543ebd6c888ffbb9b176028165beb892db0fac43ebd06695af0574",
+    "currentHash": "2d8e0f7c2d543ebd6c888ffbb9b176028165beb892db0fac43ebd06695af0574",
+    "referenceHash": "2d8e0f7c2d543ebd6c888ffbb9b176028165beb892db0fac43ebd06695af0574",
+    "changed": false
+  },
+  {
+    "path": "src/types/audit.type.ts",
+    "oldHash": "b16ffe1d33aab1b33d45f0adb6dde354acabf0af8b3d47315402c2718b871d12",
+    "currentHash": "b16ffe1d33aab1b33d45f0adb6dde354acabf0af8b3d47315402c2718b871d12",
+    "referenceHash": "b16ffe1d33aab1b33d45f0adb6dde354acabf0af8b3d47315402c2718b871d12",
+    "changed": false
+  },
+  {
+    "path": "src/types/contract.type.ts",
+    "oldHash": "5fb875a91d2b2a90c13f6ffafee5b3c5be3c0cc3f61e3899d18d5a81a48195dd",
+    "currentHash": "5fb875a91d2b2a90c13f6ffafee5b3c5be3c0cc3f61e3899d18d5a81a48195dd",
+    "referenceHash": "5fb875a91d2b2a90c13f6ffafee5b3c5be3c0cc3f61e3899d18d5a81a48195dd",
+    "changed": false
+  },
+  {
+    "path": "src/types/customer-profile.type.ts",
+    "oldHash": "7ddd74a2fbbcdc0d61ddfa9d917d0d0bdaf2facbd5887180e99a6cf2a219406a",
+    "currentHash": "7ddd74a2fbbcdc0d61ddfa9d917d0d0bdaf2facbd5887180e99a6cf2a219406a",
+    "referenceHash": "7ddd74a2fbbcdc0d61ddfa9d917d0d0bdaf2facbd5887180e99a6cf2a219406a",
+    "changed": false
+  },
+  {
+    "path": "src/types/facility.type.ts",
+    "oldHash": "e5dac8d399a50a70ea4fe0bb3196c8088df93d88ba9220bbb05fd3283d77b883",
+    "currentHash": "e5dac8d399a50a70ea4fe0bb3196c8088df93d88ba9220bbb05fd3283d77b883",
+    "referenceHash": "e5dac8d399a50a70ea4fe0bb3196c8088df93d88ba9220bbb05fd3283d77b883",
+    "changed": false
+  },
+  {
+    "path": "src/types/inspection.type.ts",
+    "oldHash": "b62ff3088ccc78994eddbf70ca690802b5d0835bc2b1479f90be4dd0b86a9138",
+    "currentHash": "b62ff3088ccc78994eddbf70ca690802b5d0835bc2b1479f90be4dd0b86a9138",
+    "referenceHash": "b62ff3088ccc78994eddbf70ca690802b5d0835bc2b1479f90be4dd0b86a9138",
+    "changed": false
+  },
+  {
+    "path": "src/types/inventory-inbound-request-event.type.ts",
+    "oldHash": "3f048e1d062da1ec0425c5b10f9ab94646994f9c7058bb1f0a4c4644720262ea",
+    "currentHash": "3f048e1d062da1ec0425c5b10f9ab94646994f9c7058bb1f0a4c4644720262ea",
+    "referenceHash": "3f048e1d062da1ec0425c5b10f9ab94646994f9c7058bb1f0a4c4644720262ea",
+    "changed": false
+  },
+  {
+    "path": "src/types/inventory-inbound-request.type.ts",
+    "oldHash": "659d90e1eab5710cd75eda8d6ffbd9cc39e986654744ae471c067aa693231e24",
+    "currentHash": "659d90e1eab5710cd75eda8d6ffbd9cc39e986654744ae471c067aa693231e24",
+    "referenceHash": "659d90e1eab5710cd75eda8d6ffbd9cc39e986654744ae471c067aa693231e24",
+    "changed": false
+  },
+  {
+    "path": "src/types/inventory-item.type.ts",
+    "oldHash": "0d7a30ee2101b48c8460fdc2cffb976038799c35af63a9479968677e851ab07a",
+    "currentHash": "0d7a30ee2101b48c8460fdc2cffb976038799c35af63a9479968677e851ab07a",
+    "referenceHash": "0d7a30ee2101b48c8460fdc2cffb976038799c35af63a9479968677e851ab07a",
+    "changed": false
+  },
+  {
+    "path": "src/types/item-movement.type.ts",
+    "oldHash": "7c2caebfd0a5516d1fa43ab0df6039eb50409ad5c58434110c0752d3d4984222",
+    "currentHash": "7c2caebfd0a5516d1fa43ab0df6039eb50409ad5c58434110c0752d3d4984222",
+    "referenceHash": "7c2caebfd0a5516d1fa43ab0df6039eb50409ad5c58434110c0752d3d4984222",
+    "changed": false
+  },
+  {
+    "path": "src/types/maintenance-ticket.type.ts",
+    "oldHash": "e9244eb9f3382f2fd4f23581ce8123456a50c98b407368eb3f32615b06d37f4f",
+    "currentHash": "e9244eb9f3382f2fd4f23581ce8123456a50c98b407368eb3f32615b06d37f4f",
+    "referenceHash": "e9244eb9f3382f2fd4f23581ce8123456a50c98b407368eb3f32615b06d37f4f",
+    "changed": false
+  },
+  {
+    "path": "src/types/managed-capacity.type.ts",
+    "oldHash": "c2044063113ee9cb2ffcdcd03e2d95cc9301790cce26d58e489ad6d7171b366a",
+    "currentHash": "c2044063113ee9cb2ffcdcd03e2d95cc9301790cce26d58e489ad6d7171b366a",
+    "referenceHash": "c2044063113ee9cb2ffcdcd03e2d95cc9301790cce26d58e489ad6d7171b366a",
+    "changed": false
+  },
+  {
+    "path": "src/types/managed-outbound-request.type.ts",
+    "oldHash": "30c507218c46a6f2fe3c7dd521b20fb22b282e7fd8abe26019ff2ae4e23f77ff",
+    "currentHash": "30c507218c46a6f2fe3c7dd521b20fb22b282e7fd8abe26019ff2ae4e23f77ff",
+    "referenceHash": "30c507218c46a6f2fe3c7dd521b20fb22b282e7fd8abe26019ff2ae4e23f77ff",
+    "changed": false
+  },
+  {
+    "path": "src/types/managed-reservation-audit.type.ts",
+    "oldHash": "ab94f38c065a8d360e12184b2754d8e84fdc85b6898ea62ce0a4b2288becbe6e",
+    "currentHash": "ab94f38c065a8d360e12184b2754d8e84fdc85b6898ea62ce0a4b2288becbe6e",
+    "referenceHash": "ab94f38c065a8d360e12184b2754d8e84fdc85b6898ea62ce0a4b2288becbe6e",
+    "changed": false
+  },
+  {
+    "path": "src/types/managed-stock.type.ts",
+    "oldHash": "34257b95b7f16e6e6b97518ccbd7a7ff1be667b8bce4bfdf8bd7525a4f31d7e9",
+    "currentHash": "34257b95b7f16e6e6b97518ccbd7a7ff1be667b8bce4bfdf8bd7525a4f31d7e9",
+    "referenceHash": "34257b95b7f16e6e6b97518ccbd7a7ff1be667b8bce4bfdf8bd7525a4f31d7e9",
+    "changed": false
+  },
+  {
+    "path": "src/types/notification.type.ts",
+    "oldHash": "0578448ba0d8041d25eaa2cbb0d0c91dc7922ee544ca527a906ca37e413c762f",
+    "currentHash": "0578448ba0d8041d25eaa2cbb0d0c91dc7922ee544ca527a906ca37e413c762f",
+    "referenceHash": "0578448ba0d8041d25eaa2cbb0d0c91dc7922ee544ca527a906ca37e413c762f",
+    "changed": false
+  },
+  {
+    "path": "src/types/payment.type.ts",
+    "oldHash": "eda9d36da9f123146f249406adfd4307535e1abccbf2e391eb783e9714144f30",
+    "currentHash": "a74bdc65d95191e9142297dcd03513dc943510fe5ff36b1343d83954c0b54468",
+    "referenceHash": "a74bdc65d95191e9142297dcd03513dc943510fe5ff36b1343d83954c0b54468",
+    "changed": true
+  },
+  {
+    "path": "src/types/pricing-policy.type.ts",
+    "oldHash": "1c700924ffc8777e80dd6a298785168a8764af80a547125448da6994be96daeb",
+    "currentHash": "1c700924ffc8777e80dd6a298785168a8764af80a547125448da6994be96daeb",
+    "referenceHash": "1c700924ffc8777e80dd6a298785168a8764af80a547125448da6994be96daeb",
+    "changed": false
+  },
+  {
+    "path": "src/types/repeated-inbound-inspection.type.ts",
+    "oldHash": "4ce3adcda39c13e174ff23bb51a23152d802a6378694ca6d75c99ca5e7599642",
+    "currentHash": "4ce3adcda39c13e174ff23bb51a23152d802a6378694ca6d75c99ca5e7599642",
+    "referenceHash": "4ce3adcda39c13e174ff23bb51a23152d802a6378694ca6d75c99ca5e7599642",
+    "changed": false
+  },
+  {
+    "path": "src/types/reservation.type.ts",
+    "oldHash": "30ae9b4dad97d8c4fdccdd8f39b29f0ff3068816a8cf5c876f43470b58da10ad",
+    "currentHash": "62fbd6dc80ba0b930eb5d17761ffada72bc8ffb7b8b0a93e6d9028fa5a2630c7",
+    "referenceHash": "62fbd6dc80ba0b930eb5d17761ffada72bc8ffb7b8b0a93e6d9028fa5a2630c7",
+    "changed": true
+  },
+  {
+    "path": "src/types/storage-unit.type.ts",
+    "oldHash": "948c04d388a5d925c67630836faa338ade325958ca1cd95608bbe497e1f52819",
+    "currentHash": "948c04d388a5d925c67630836faa338ade325958ca1cd95608bbe497e1f52819",
+    "referenceHash": "948c04d388a5d925c67630836faa338ade325958ca1cd95608bbe497e1f52819",
+    "changed": false
+  },
+  {
+    "path": "src/types/support-request.type.ts",
+    "oldHash": "15c7b52675bb7bc3af91bf8c5a0c7425f27a8784136b5ef3061c1da6f22a9cc5",
+    "currentHash": "15c7b52675bb7bc3af91bf8c5a0c7425f27a8784136b5ef3061c1da6f22a9cc5",
+    "referenceHash": "15c7b52675bb7bc3af91bf8c5a0c7425f27a8784136b5ef3061c1da6f22a9cc5",
+    "changed": false
+  },
+  {
+    "path": "src/types/user.type.ts",
+    "oldHash": "8e25358c7291e112cab6a962f5416aa53b30c113deca8bc8f5b4651dfac18d9f",
+    "currentHash": "8e25358c7291e112cab6a962f5416aa53b30c113deca8bc8f5b4651dfac18d9f",
+    "referenceHash": "8e25358c7291e112cab6a962f5416aa53b30c113deca8bc8f5b4651dfac18d9f",
+    "changed": false
+  },
+  {
+    "path": "src/types/warehouse-map.type.ts",
+    "oldHash": "e9242bbac41a5ec5666c0a960bcdfa0af5f9b5a9a2fec1fe1aece59eda8bfe6c",
+    "currentHash": "e9242bbac41a5ec5666c0a960bcdfa0af5f9b5a9a2fec1fe1aece59eda8bfe6c",
+    "referenceHash": "e9242bbac41a5ec5666c0a960bcdfa0af5f9b5a9a2fec1fe1aece59eda8bfe6c",
+    "changed": false
+  },
+  {
+    "path": "src/utils/image-url.ts",
+    "oldHash": "c16a4f2f548cd38d955be2e58851e8efb9f6a2c5a406c1def3c38aeabc69f212",
+    "currentHash": "c16a4f2f548cd38d955be2e58851e8efb9f6a2c5a406c1def3c38aeabc69f212",
+    "referenceHash": "c16a4f2f548cd38d955be2e58851e8efb9f6a2c5a406c1def3c38aeabc69f212",
+    "changed": false
+  },
+  {
+    "path": "src/utils/managed-stock-arithmetic.ts",
+    "oldHash": "d6046b2848848eaf9b779006f4e74028c0f95d5946be732772eb3d9b375488bc",
+    "currentHash": "d6046b2848848eaf9b779006f4e74028c0f95d5946be732772eb3d9b375488bc",
+    "referenceHash": "d6046b2848848eaf9b779006f4e74028c0f95d5946be732772eb3d9b375488bc",
+    "changed": false
+  },
+  {
+    "path": "tests/cors.test.cjs",
+    "oldHash": "adb13faa2fd7cc1379433108d451894f856ac1f2e448f940e0744e4a80b7fced",
+    "currentHash": "adb13faa2fd7cc1379433108d451894f856ac1f2e448f940e0744e4a80b7fced",
+    "referenceHash": "adb13faa2fd7cc1379433108d451894f856ac1f2e448f940e0744e4a80b7fced",
+    "changed": false
+  },
+  {
+    "path": "tests/facility-assignment.test.cjs",
+    "oldHash": "ded1e67f523c730588e2fee88652b2225b67a4c35ca722d2686141f1dd6cba2e",
+    "currentHash": "ded1e67f523c730588e2fee88652b2225b67a4c35ca722d2686141f1dd6cba2e",
+    "referenceHash": "ded1e67f523c730588e2fee88652b2225b67a4c35ca722d2686141f1dd6cba2e",
+    "changed": false
+  },
+  {
+    "path": "tests/facility.test.cjs",
+    "oldHash": "be84110f646fb4e54873daf7504a4da47183e2130a3a12176ccf1fc5e31b9bd1",
+    "currentHash": "be84110f646fb4e54873daf7504a4da47183e2130a3a12176ccf1fc5e31b9bd1",
+    "referenceHash": "be84110f646fb4e54873daf7504a4da47183e2130a3a12176ccf1fc5e31b9bd1",
+    "changed": false
+  },
+  {
+    "path": "tests/infrastructure.test.cjs",
+    "oldHash": "902510bd6243d0edcf0e1e32976f77562d0f3ff0e34ec8ee6a97daab3b25397b",
+    "currentHash": "902510bd6243d0edcf0e1e32976f77562d0f3ff0e34ec8ee6a97daab3b25397b",
+    "referenceHash": "902510bd6243d0edcf0e1e32976f77562d0f3ff0e34ec8ee6a97daab3b25397b",
+    "changed": false
+  },
+  {
+    "path": "tests/integration/managed-inbound-request.mongo.test.cjs",
+    "oldHash": "c46ee410ed1d615de21eacddcc2f8b6ca8f6a753b39aa7d54b97b5f443c5118e",
+    "currentHash": "c46ee410ed1d615de21eacddcc2f8b6ca8f6a753b39aa7d54b97b5f443c5118e",
+    "referenceHash": "c46ee410ed1d615de21eacddcc2f8b6ca8f6a753b39aa7d54b97b5f443c5118e",
+    "changed": false
+  },
+  {
+    "path": "tests/integration/mi06b-mongo-safety.cjs",
+    "oldHash": "42d2792dbc2d26746ba7eff47e04777030a47fe5b2579265ca3949aeed6eeb7c",
+    "currentHash": "42d2792dbc2d26746ba7eff47e04777030a47fe5b2579265ca3949aeed6eeb7c",
+    "referenceHash": "42d2792dbc2d26746ba7eff47e04777030a47fe5b2579265ca3949aeed6eeb7c",
+    "changed": false
+  },
+  {
+    "path": "tests/integration/mi06b-mongo-safety.test.cjs",
+    "oldHash": "3055eb062bb491e08dd6a659873710f649c2dc391bb90e2a8baf0c63c51ff34d",
+    "currentHash": "3055eb062bb491e08dd6a659873710f649c2dc391bb90e2a8baf0c63c51ff34d",
+    "referenceHash": "3055eb062bb491e08dd6a659873710f649c2dc391bb90e2a8baf0c63c51ff34d",
+    "changed": false
+  },
+  {
+    "path": "tests/inventory-item.test.cjs",
+    "oldHash": "ccfd1f6435d1f91c85b45e7b03ad82b8822a4ea666301714ff809a9a48651054",
+    "currentHash": "7acb30338dd94aa56a5c3cfe2386a72b70419ad4bf9f2fcd6f6e97dd7b2da7b4",
+    "referenceHash": "7acb30338dd94aa56a5c3cfe2386a72b70419ad4bf9f2fcd6f6e97dd7b2da7b4",
+    "changed": true
+  },
+  {
+    "path": "tests/maintenance-ticket.test.cjs",
+    "oldHash": "eaebbffd9f94ea719cc7c8ca3d9185d86300563ba832bf1a8a90441d8ce90d0f",
+    "currentHash": "eaebbffd9f94ea719cc7c8ca3d9185d86300563ba832bf1a8a90441d8ce90d0f",
+    "referenceHash": "eaebbffd9f94ea719cc7c8ca3d9185d86300563ba832bf1a8a90441d8ce90d0f",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-canonical-relocation.test.cjs",
+    "oldHash": "693180ae999731fa5a1a8557992b62adfca2498bb86cd87c2faad96935aabad8",
+    "currentHash": "f66cf489b564abf0dd39e013cbb4ea2897b8d30ed45a034032281c0ce164b6e9",
+    "referenceHash": "f66cf489b564abf0dd39e013cbb4ea2897b8d30ed45a034032281c0ce164b6e9",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-checkin.test.cjs",
+    "oldHash": "180c7bfe42cd0e1662cb95bf39a2941e9f84bed3e4ee46e963eb842bd23ada4c",
+    "currentHash": "529974bf1338df458e7e4924b0b9e160cf7bb8fa2a2c7e0bc251e4836d3146e9",
+    "referenceHash": "529974bf1338df458e7e4924b0b9e160cf7bb8fa2a2c7e0bc251e4836d3146e9",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-customer-stock-read.test.cjs",
+    "oldHash": "f5de12d842cda2833999ca9a6a736aea29bfafbc91b058c821d25191c6041194",
+    "currentHash": "f5de12d842cda2833999ca9a6a736aea29bfafbc91b058c821d25191c6041194",
+    "referenceHash": "f5de12d842cda2833999ca9a6a736aea29bfafbc91b058c821d25191c6041194",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-inbound-request-api.test.cjs",
+    "oldHash": "6fd8d20988fc963ffb08d65db0b06e59f6e511f4d9fef11bf33ee6fd653fb108",
+    "currentHash": "2099bf0c8a6c3c585d9fc00daf3962b01c7244e51021ca706c79e9d45537fa01",
+    "referenceHash": "2099bf0c8a6c3c585d9fc00daf3962b01c7244e51021ca706c79e9d45537fa01",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-inbound-request-foundation.test.cjs",
+    "oldHash": "da29157944c9bdf97c1edaef627522310a8f5069b6faaf511feda7ad8f33abf7",
+    "currentHash": "da29157944c9bdf97c1edaef627522310a8f5069b6faaf511feda7ad8f33abf7",
+    "referenceHash": "da29157944c9bdf97c1edaef627522310a8f5069b6faaf511feda7ad8f33abf7",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-inbound.test.cjs",
+    "oldHash": "74bddd44b396af5a297658afb7adb0219e70ed3fba5232ad9d54790c1f3173fd",
+    "currentHash": "010ff6ce638df5000772b471746538bbc37a09f5d199612f4399f48c1f187f57",
+    "referenceHash": "010ff6ce638df5000772b471746538bbc37a09f5d199612f4399f48c1f187f57",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-inventory-image.test.cjs",
+    "oldHash": "af903b64afde55fea646308b4973ee94b735f042428d7d290acb7c39566fdcf1",
+    "currentHash": "af903b64afde55fea646308b4973ee94b735f042428d7d290acb7c39566fdcf1",
+    "referenceHash": "af903b64afde55fea646308b4973ee94b735f042428d7d290acb7c39566fdcf1",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-outbound-allocation.test.cjs",
+    "oldHash": "907a8ad624916b46459384eaab655dd7b3bd64c0898b76a80d5f7509b5af635e",
+    "currentHash": "907a8ad624916b46459384eaab655dd7b3bd64c0898b76a80d5f7509b5af635e",
+    "referenceHash": "907a8ad624916b46459384eaab655dd7b3bd64c0898b76a80d5f7509b5af635e",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-outbound-request-api.test.cjs",
+    "oldHash": "6de1592ec49c742a88246d4ec0e4e10aa699a9da3a4333b3f0397de592c975a3",
+    "currentHash": "ba6073f117921e7cb05f0d68780d5569ea6debc193c63cf5aa2dbf7ed94d476e",
+    "referenceHash": "ba6073f117921e7cb05f0d68780d5569ea6debc193c63cf5aa2dbf7ed94d476e",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-outbound-staff-read.test.cjs",
+    "oldHash": "88d2fac3e85fdbcdbf802bb11fcd93243419a9a1ea0f2df7278e53e2100d6749",
+    "currentHash": "88d2fac3e85fdbcdbf802bb11fcd93243419a9a1ea0f2df7278e53e2100d6749",
+    "referenceHash": "88d2fac3e85fdbcdbf802bb11fcd93243419a9a1ea0f2df7278e53e2100d6749",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-outbound.test.cjs",
+    "oldHash": "f72a03982f7648af16e1a15ad034d8344e4bf38787f953ebcd6a0c5464140c99",
+    "currentHash": "fd4b389f166302eb1d04d12fad8d523985ec203233b648e10ecba4427db6d47d",
+    "referenceHash": "fd4b389f166302eb1d04d12fad8d523985ec203233b648e10ecba4427db6d47d",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-receiving-evidence.test.cjs",
+    "oldHash": "e0f8ed7c324f42f1a2185bd1243353a5278006b644d7430a9bcaf53f7c83ff63",
+    "currentHash": "e0f8ed7c324f42f1a2185bd1243353a5278006b644d7430a9bcaf53f7c83ff63",
+    "referenceHash": "e0f8ed7c324f42f1a2185bd1243353a5278006b644d7430a9bcaf53f7c83ff63",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-relocation.test.cjs",
+    "oldHash": "726a9d73226b8c6f70ea68d18721b96cf395e9e21c69767267d97958a6769829",
+    "currentHash": "74dbdc394715782984617384c116cf0878a6ce21efbea7716c6c7f27129dee8d",
+    "referenceHash": "74dbdc394715782984617384c116cf0878a6ce21efbea7716c6c7f27129dee8d",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-repeated-inbound-foundation.test.cjs",
+    "oldHash": "7308d29d85e9254b9fc539e0dd4eb9341c2d6ede676c3076ad7153dd27f03c50",
+    "currentHash": "7308d29d85e9254b9fc539e0dd4eb9341c2d6ede676c3076ad7153dd27f03c50",
+    "referenceHash": "7308d29d85e9254b9fc539e0dd4eb9341c2d6ede676c3076ad7153dd27f03c50",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-repeated-inbound-operations-security.test.cjs",
+    "oldHash": "701a6356f1aed48f674bcbff04dadfa8c4c9c7893f43656cbb7f145080ee5b9c",
+    "currentHash": "701a6356f1aed48f674bcbff04dadfa8c4c9c7893f43656cbb7f145080ee5b9c",
+    "referenceHash": "701a6356f1aed48f674bcbff04dadfa8c4c9c7893f43656cbb7f145080ee5b9c",
+    "changed": false
+  },
+  {
+    "path": "tests/managed-repeated-inbound-operations.test.cjs",
+    "oldHash": "e3f26a0357e5a5e35bc77683a425e1a0ee4a8508c382b7bcf56268d77ecf4c9f",
+    "currentHash": "ccf4d5f381748655beb5c8fb9f509db6df55db60f51344bc7369b5bf890febb7",
+    "referenceHash": "ccf4d5f381748655beb5c8fb9f509db6df55db60f51344bc7369b5bf890febb7",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-reservation.test.cjs",
+    "oldHash": "c17fd722738023739c5ca282678759607f5a51a15282d1fc81d9be9f6ffcf866",
+    "currentHash": "9e87859835c99cb224e71d25d2c68df1b40f5ef25acb22b95d6c6d866449c2eb",
+    "referenceHash": "9e87859835c99cb224e71d25d2c68df1b40f5ef25acb22b95d6c6d866449c2eb",
+    "changed": true
+  },
+  {
+    "path": "tests/managed-stock-ledger.test.cjs",
+    "oldHash": "a316f045d35eb434ffa8c373738004112b554024bf2eb00075fb88dfb10dd494",
+    "currentHash": "a316f045d35eb434ffa8c373738004112b554024bf2eb00075fb88dfb10dd494",
+    "referenceHash": "a316f045d35eb434ffa8c373738004112b554024bf2eb00075fb88dfb10dd494",
+    "changed": false
+  },
+  {
+    "path": "tests/payment-accounting.test.cjs",
+    "oldHash": "5c7b7f1650a3174530261474484b0406b812b733a9915a79e054382375b0dda5",
+    "currentHash": "5c7b7f1650a3174530261474484b0406b812b733a9915a79e054382375b0dda5",
+    "referenceHash": "5c7b7f1650a3174530261474484b0406b812b733a9915a79e054382375b0dda5",
+    "changed": false
+  },
+  {
+    "path": "tests/pricing-policy.test.cjs",
+    "oldHash": "6baf408acf4960d0b941e33c0dea156db958d5908c9307fe9c8155c13352b6f2",
+    "currentHash": "6baf408acf4960d0b941e33c0dea156db958d5908c9307fe9c8155c13352b6f2",
+    "referenceHash": "6baf408acf4960d0b941e33c0dea156db958d5908c9307fe9c8155c13352b6f2",
+    "changed": false
+  },
+  {
+    "path": "tests/public-catalog.test.cjs",
+    "oldHash": "0f596ace2907d5a507f39f2f31d19849d42016f6b21ed586ef5a574c64276fb9",
+    "currentHash": "0f596ace2907d5a507f39f2f31d19849d42016f6b21ed586ef5a574c64276fb9",
+    "referenceHash": "0f596ace2907d5a507f39f2f31d19849d42016f6b21ed586ef5a574c64276fb9",
+    "changed": false
+  },
+  {
+    "path": "tests/reservation.test.cjs",
+    "oldHash": "c42db04feabd478e7028d64dbc2656e209f4275db7f446b9d436c457e8d17ff1",
+    "currentHash": "e61173cb6ad79bdde7226bb9a5c677d76c609934957afcd53593ab579de1ceb7",
+    "referenceHash": "e61173cb6ad79bdde7226bb9a5c677d76c609934957afcd53593ab579de1ceb7",
+    "changed": true
+  },
+  {
+    "path": "tests/seed-fe-demo.test.cjs",
+    "oldHash": "bd9cdb440ba08f015942b62cf385b702d582d1e647ec3eb8736eefa971b8b68a",
+    "currentHash": "bd9cdb440ba08f015942b62cf385b702d582d1e647ec3eb8736eefa971b8b68a",
+    "referenceHash": "bd9cdb440ba08f015942b62cf385b702d582d1e647ec3eb8736eefa971b8b68a",
+    "changed": false
+  },
+  {
+    "path": "tests/storage-unit.test.cjs",
+    "oldHash": "4991ec40ea1a7c420af306342c6772b527a1fabfc4b82362cbc6b984541433f1",
+    "currentHash": "a1cc6bfe77cd65664d73dd771bb37658b8a84711df3218f25421b26015186223",
+    "referenceHash": "a1cc6bfe77cd65664d73dd771bb37658b8a84711df3218f25421b26015186223",
+    "changed": true
+  },
+  {
+    "path": "tests/support-request.test.cjs",
+    "oldHash": "bb65fd22d0c7471c130a3898b8851e9a50a372b5a105b67ab3a07b2829e44fbb",
+    "currentHash": "bb65fd22d0c7471c130a3898b8851e9a50a372b5a105b67ab3a07b2829e44fbb",
+    "referenceHash": "bb65fd22d0c7471c130a3898b8851e9a50a372b5a105b67ab3a07b2829e44fbb",
+    "changed": false
+  },
+  {
+    "path": "tests/warehouse-map.test.cjs",
+    "oldHash": "e0ca1ab86f58e1775aa0e1291a1f3873b2d909bb70840bf131cd15f9481013c0",
+    "currentHash": "e0ca1ab86f58e1775aa0e1291a1f3873b2d909bb70840bf131cd15f9481013c0",
+    "referenceHash": "e0ca1ab86f58e1775aa0e1291a1f3873b2d909bb70840bf131cd15f9481013c0",
+    "changed": false
+  },
+  {
+    "path": "docs/BUSINESS_FLOW_P0_P1.md",
+    "oldHash": "f8aa85dbc2ffbad0453dca0f938422fa09ff122857992f119449204ee98511e4",
+    "currentHash": "f8aa85dbc2ffbad0453dca0f938422fa09ff122857992f119449204ee98511e4",
+    "referenceHash": "f8aa85dbc2ffbad0453dca0f938422fa09ff122857992f119449204ee98511e4",
+    "changed": false
+  },
+  {
+    "path": "docs/FACILITY_ASSIGNMENT.md",
+    "oldHash": "40e483e11ada9541100f0a8f751e9b43a68f7d8fa4aa63e38f252ae1d7d0d910",
+    "currentHash": "40e483e11ada9541100f0a8f751e9b43a68f7d8fa4aa63e38f252ae1d7d0d910",
+    "referenceHash": "40e483e11ada9541100f0a8f751e9b43a68f7d8fa4aa63e38f252ae1d7d0d910",
+    "changed": false
+  },
+  {
+    "path": "docs/FE_DEMO_SEED.md",
+    "oldHash": "bd7a4ffc5eceb1b6c10094348175f6f43f2db74775d7bb833fec51011bde4293",
+    "currentHash": "bd7a4ffc5eceb1b6c10094348175f6f43f2db74775d7bb833fec51011bde4293",
+    "referenceHash": "bd7a4ffc5eceb1b6c10094348175f6f43f2db74775d7bb833fec51011bde4293",
+    "changed": false
+  },
+  {
+    "path": "docs/fixtures/mi-01-warehouse-map.mock.json",
+    "oldHash": "683a985503bb6e059d8d77e952cb764bacd369952545c2ced005e99104c3bd85",
+    "currentHash": "683a985503bb6e059d8d77e952cb764bacd369952545c2ced005e99104c3bd85",
+    "referenceHash": "683a985503bb6e059d8d77e952cb764bacd369952545c2ced005e99104c3bd85",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_01_WAREHOUSE_MAP.md",
+    "oldHash": "4c868beef8a323cc13d2288c611b1ae2aa49dd2f735fc63464d5d30f7744b375",
+    "currentHash": "4c868beef8a323cc13d2288c611b1ae2aa49dd2f735fc63464d5d30f7744b375",
+    "referenceHash": "4c868beef8a323cc13d2288c611b1ae2aa49dd2f735fc63464d5d30f7744b375",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_02B_STAFF_INBOUND.md",
+    "oldHash": "35b1dfb79db3b5d09221cc10f4815b0765bbf6c1b23fcdbb0ffb3289b0956cb9",
+    "currentHash": "35b1dfb79db3b5d09221cc10f4815b0765bbf6c1b23fcdbb0ffb3289b0956cb9",
+    "referenceHash": "35b1dfb79db3b5d09221cc10f4815b0765bbf6c1b23fcdbb0ffb3289b0956cb9",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_02C_CELL_RESERVATION.md",
+    "oldHash": "4a270de9e293e7457af8623d299f754226c023d8a6960417e9c10f4bd1a8eb55",
+    "currentHash": "4a270de9e293e7457af8623d299f754226c023d8a6960417e9c10f4bd1a8eb55",
+    "referenceHash": "4a270de9e293e7457af8623d299f754226c023d8a6960417e9c10f4bd1a8eb55",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_02_INVENTORY_ITEM.md",
+    "oldHash": "3bab01a2661999043aad67c02a1a8356507ab64d192eb9386dc5ddd2f110b1a5",
+    "currentHash": "3bab01a2661999043aad67c02a1a8356507ab64d192eb9386dc5ddd2f110b1a5",
+    "referenceHash": "3bab01a2661999043aad67c02a1a8356507ab64d192eb9386dc5ddd2f110b1a5",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_03A_MANAGED_CHECKIN.md",
+    "oldHash": "02b46f312f6a9b4e9b3b09433f5b26220f9f8e16441ef433734ffb12858981f7",
+    "currentHash": "02b46f312f6a9b4e9b3b09433f5b26220f9f8e16441ef433734ffb12858981f7",
+    "referenceHash": "02b46f312f6a9b4e9b3b09433f5b26220f9f8e16441ef433734ffb12858981f7",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_03B_MANAGED_FIRST_INBOUND.md",
+    "oldHash": "d1c44f9b51cbcc27ea408384fde660b0363bac523f445bd83b212a19ad4bd9fd",
+    "currentHash": "d1c44f9b51cbcc27ea408384fde660b0363bac523f445bd83b212a19ad4bd9fd",
+    "referenceHash": "d1c44f9b51cbcc27ea408384fde660b0363bac523f445bd83b212a19ad4bd9fd",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_04_MANAGED_OUTBOUND.md",
+    "oldHash": "51b626903f50c0d816ff52a2c836eeccc88d7cd9866e2ee67c1810477ee338b2",
+    "currentHash": "51b626903f50c0d816ff52a2c836eeccc88d7cd9866e2ee67c1810477ee338b2",
+    "referenceHash": "51b626903f50c0d816ff52a2c836eeccc88d7cd9866e2ee67c1810477ee338b2",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_05_MANAGED_RELOCATION.md",
+    "oldHash": "d24a363914ea1b3a7bba7730b6b5e41a90068bff18426098dd144d1dcfcb2ce7",
+    "currentHash": "d24a363914ea1b3a7bba7730b6b5e41a90068bff18426098dd144d1dcfcb2ce7",
+    "referenceHash": "d24a363914ea1b3a7bba7730b6b5e41a90068bff18426098dd144d1dcfcb2ce7",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06A_STOCK_LEDGER.md",
+    "oldHash": "9a5fb3975fa2e13f307072ad97ab1ae89b9c8084667b9a4366030d1b9d7ef8e5",
+    "currentHash": "9a5fb3975fa2e13f307072ad97ab1ae89b9c8084667b9a4366030d1b9d7ef8e5",
+    "referenceHash": "9a5fb3975fa2e13f307072ad97ab1ae89b9c8084667b9a4366030d1b9d7ef8e5",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06B_1A_FOUNDATION.md",
+    "oldHash": "79d581939b76228a36dcd7a2065f39f8651a9213e731e0e1eda9192cfb8706c4",
+    "currentHash": "79d581939b76228a36dcd7a2065f39f8651a9213e731e0e1eda9192cfb8706c4",
+    "referenceHash": "79d581939b76228a36dcd7a2065f39f8651a9213e731e0e1eda9192cfb8706c4",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06B_1B_MONGODB_INTEGRATION.md",
+    "oldHash": "caeda6751910617020447dcb5c6fabb5ef2c26ec092a99d9d0c7a98b63b515af",
+    "currentHash": "caeda6751910617020447dcb5c6fabb5ef2c26ec092a99d9d0c7a98b63b515af",
+    "referenceHash": "caeda6751910617020447dcb5c6fabb5ef2c26ec092a99d9d0c7a98b63b515af",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06B_1B_RECEIPT_REQUEST_API.md",
+    "oldHash": "4b73a469e0907e65ec11291be8ab9b4b769e25e21221953f43825d6757c23294",
+    "currentHash": "4b73a469e0907e65ec11291be8ab9b4b769e25e21221953f43825d6757c23294",
+    "referenceHash": "4b73a469e0907e65ec11291be8ab9b4b769e25e21221953f43825d6757c23294",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06B_PHASE_E_FRONTEND_HANDOFF.md",
+    "oldHash": "6fc89621104bba6f6b96836c73b86183282a4363ded96b924fcc6fac2b1737f5",
+    "currentHash": "6fc89621104bba6f6b96836c73b86183282a4363ded96b924fcc6fac2b1737f5",
+    "referenceHash": "6fc89621104bba6f6b96836c73b86183282a4363ded96b924fcc6fac2b1737f5",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06B_POSTMAN.md",
+    "oldHash": "f140b3d50c13a9c2df568cb0d3543b2711abd126054f2632af0939fc47904238",
+    "currentHash": "f140b3d50c13a9c2df568cb0d3543b2711abd126054f2632af0939fc47904238",
+    "referenceHash": "f140b3d50c13a9c2df568cb0d3543b2711abd126054f2632af0939fc47904238",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_06D_CANONICAL_RELOCATION.md",
+    "oldHash": "7639f16a8529d7eb7ba022117e721e4c833e96fb7e119eecbc14c57ed008cc0b",
+    "currentHash": "7639f16a8529d7eb7ba022117e721e4c833e96fb7e119eecbc14c57ed008cc0b",
+    "referenceHash": "7639f16a8529d7eb7ba022117e721e4c833e96fb7e119eecbc14c57ed008cc0b",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_IMAGE_01_CLOUDINARY.md",
+    "oldHash": "796ecdc300409cf367bf04c3628cdc897b1f8fac2983d1551da960c5323aa282",
+    "currentHash": "796ecdc300409cf367bf04c3628cdc897b1f8fac2983d1551da960c5323aa282",
+    "referenceHash": "796ecdc300409cf367bf04c3628cdc897b1f8fac2983d1551da960c5323aa282",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_IMAGE_04_RECEIVING_EVIDENCE.md",
+    "oldHash": "08f2ba9e93da9f511bf7253e0bc3b8751429d8e4a1995e38de5ab556198a3070",
+    "currentHash": "08f2ba9e93da9f511bf7253e0bc3b8751429d8e4a1995e38de5ab556198a3070",
+    "referenceHash": "08f2ba9e93da9f511bf7253e0bc3b8751429d8e4a1995e38de5ab556198a3070",
+    "changed": false
+  },
+  {
+    "path": "docs/MI_R01_MANAGED_RESERVATION.md",
+    "oldHash": "11deea8f2fd9862187876635956b4b0fcc19860f0a2b5562779203dcf18714fe",
+    "currentHash": "11deea8f2fd9862187876635956b4b0fcc19860f0a2b5562779203dcf18714fe",
+    "referenceHash": "11deea8f2fd9862187876635956b4b0fcc19860f0a2b5562779203dcf18714fe",
+    "changed": false
+  },
+  {
+    "path": "docs/phase-3.5-postman.md",
+    "oldHash": "97586ec03c6eb6b25c53e64dca60f4031c8f7ec483bad4ca0bf61e12b45c9020",
+    "currentHash": "97586ec03c6eb6b25c53e64dca60f4031c8f7ec483bad4ca0bf61e12b45c9020",
+    "referenceHash": "97586ec03c6eb6b25c53e64dca60f4031c8f7ec483bad4ca0bf61e12b45c9020",
+    "changed": false
+  },
+  {
+    "path": "docs/phase-5-maintenance-postman.md",
+    "oldHash": "836bf2cd05e4c09cdbed45ed20b2452d00fca61b8b2e96510a12179dea6a5047",
+    "currentHash": "836bf2cd05e4c09cdbed45ed20b2452d00fca61b8b2e96510a12179dea6a5047",
+    "referenceHash": "836bf2cd05e4c09cdbed45ed20b2452d00fca61b8b2e96510a12179dea6a5047",
+    "changed": false
+  },
+  {
+    "path": "docs/phase-6-support-postman.md",
+    "oldHash": "0319a207012fb5a9c2c7271d8d603ff9fd9ac09e0c5fda054c80068351234557",
+    "currentHash": "0319a207012fb5a9c2c7271d8d603ff9fd9ac09e0c5fda054c80068351234557",
+    "referenceHash": "0319a207012fb5a9c2c7271d8d603ff9fd9ac09e0c5fda054c80068351234557",
+    "changed": false
+  },
+  {
+    "path": "docs/PROJECT_CONTEXT.md",
+    "oldHash": "cad325a20e09cfe686401bd746e6a65da13db7c705ad365e2934fe00564c69aa",
+    "currentHash": "cad325a20e09cfe686401bd746e6a65da13db7c705ad365e2934fe00564c69aa",
+    "referenceHash": "cad325a20e09cfe686401bd746e6a65da13db7c705ad365e2934fe00564c69aa",
+    "changed": false
+  }
+]

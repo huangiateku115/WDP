@@ -1,0 +1,16 @@
+{
+  "websiteRows": 32,
+  "websiteActionableFiles": 22,
+  "websiteNoChangeRows": 10,
+  "mobileDesigns": 23,
+  "mobileRequiredAlignment": 23,
+  "mobileUniqueScreenFiles": 26,
+  "fullRedesigns": 0,
+  "findings": 35,
+  "priorities": {
+    "P0": 2,
+    "P1": 14,
+    "P2": 18,
+    "P3": 1
+  }
+}
