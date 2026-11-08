@@ -19,51 +19,51 @@ beforeEach(()=>{useCustomerStore.setState({demoSession:false,fixtures:customerFi
 test.each([
   [DashboardScreen,'screen-home'],[ExploreScreen,'screen-explore'],[RentalsScreen,'screen-rentals'],
   [InventoryScreen,'screen-inventory'],[ProfileScreen,'screen-profile'],[LoginScreen,'screen-login'],
-] as const)('native screen renders with fixtures: %s',(Component,id)=>{
-  render(<Component/>);expect(screen.getByTestId(id)).toBeTruthy();expect(screen.getByText(/Bản mẫu ngoại tuyến/)).toBeTruthy();
+] as const)('native screen renders with fixtures: %s',async (Component,id)=>{
+  await render(<Component/>);expect(screen.getByTestId(id)).toBeTruthy();expect(screen.getByText(/Bản mẫu ngoại tuyến/)).toBeTruthy();
 });
-test('explore search and service filter show real fixture matches and empty state',()=>{
-  render(<ExploreScreen/>);fireEvent.changeText(screen.getByLabelText('Tìm cơ sở'),'khong co co so');
+test('explore search and service filter show real fixture matches and empty state',async ()=>{
+  await render(<ExploreScreen/>);await fireEvent.changeText(screen.getByLabelText('Tìm cơ sở'),'khong co co so');
   expect(screen.getByText('Chưa tìm thấy cơ sở')).toBeTruthy();
-  fireEvent.changeText(screen.getByLabelText('Tìm cơ sở'),'Thu Duc');
+  await fireEvent.changeText(screen.getByLabelText('Tìm cơ sở'),'Thu Duc');
   expect(screen.getByText('VaultSpace Đông Sài Gòn')).toBeTruthy();
 });
-test('rental filters select history without fabricating payment completion',()=>{
-  render(<RentalsScreen/>);fireEvent.press(screen.getByRole('button',{name:'Lịch sử'}));
+test('rental filters select history without fabricating payment completion',async ()=>{
+  await render(<RentalsScreen/>);await fireEvent.press(screen.getByRole('button',{name:'Lịch sử'}));
   expect(screen.getByText('VaultSpace Tân Bình')).toBeTruthy();expect(screen.queryByText('VaultSpace Nam Sài Gòn')).toBeNull();
 });
-test('inventory keeps registration quantity separate from available fixture stock',()=>{
-  render(<InventoryScreen/>);expect(screen.getByText('Có thể xuất: 45 kiện')).toBeTruthy();expect(screen.getByText('Chưa có dữ liệu tồn kho')).toBeTruthy();
-  fireEvent.changeText(screen.getByLabelText('Tìm mã hàng'),'PKG-0102');expect(screen.queryByText('Cà phê Arabica Đà Lạt')).toBeNull();
+test('inventory keeps registration quantity separate from available fixture stock',async ()=>{
+  await render(<InventoryScreen/>);expect(screen.getByText('Có thể xuất: 45 kiện')).toBeTruthy();expect(screen.getByText('Chưa có dữ liệu tồn kho')).toBeTruthy();
+  await fireEvent.changeText(screen.getByLabelText('Tìm mã hàng'),'PKG-0102');expect(screen.queryByText('Cà phê Arabica Đà Lạt')).toBeNull();
 });
-test('detail action uses stack params and back returns to previous screen',()=>{
-  render(<ExploreScreen/>);fireEvent.press(screen.getByRole('button',{name:'Xem VaultSpace Nam Sài Gòn'}));
+test('detail action uses stack params and back returns to previous screen',async ()=>{
+  await render(<ExploreScreen/>);await fireEvent.press(screen.getByRole('button',{name:'Xem VaultSpace Nam Sài Gòn'}));
   expect(mockPush).toHaveBeenCalledWith({pathname:'/preview/[kind]/[id]',params:{kind:'facility',id:'saigon-south'}});
 });
-test('missing fixture detail is safe and offers native back action',()=>{
-  mockParams={kind:'item',id:'does-not-exist'};render(<PreviewDetailScreen/>);
+test('missing fixture detail is safe and offers native back action',async ()=>{
+  mockParams={kind:'item',id:'does-not-exist'};await render(<PreviewDetailScreen/>);
   expect(screen.getByText('Không tìm thấy dữ liệu mẫu')).toBeTruthy();
-  fireEvent.press(screen.getByRole('button',{name:'Trở về màn hình trước'}));expect(mockBack).toHaveBeenCalled();
+  await fireEvent.press(screen.getByRole('button',{name:'Trở về màn hình trước'}));expect(mockBack).toHaveBeenCalled();
 });
-test('missing fixture collections and customer do not crash the five tabs',()=>{
+test('missing fixture collections and customer do not crash the five tabs',async ()=>{
   useCustomerStore.setState({fixtures:{customer:null,facilities:[],rentals:[],items:[]}});
-  for(const Component of [DashboardScreen,ExploreScreen,RentalsScreen,InventoryScreen,ProfileScreen]){const view=render(<Component/>);expect(view.toJSON()).toBeTruthy();view.unmount();}
+  for(const Component of [DashboardScreen,ExploreScreen,RentalsScreen,InventoryScreen,ProfileScreen]){const view=await render(<Component/>);expect(view.toJSON()).toBeTruthy();await view.unmount();}
 });
 test('login validates before entering local demo; no real credentials are verified',async()=>{
-  render(<LoginScreen/>);fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
+  await render(<LoginScreen/>);await fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
   await waitFor(()=>expect(screen.getByText('Mật khẩu mẫu cần ít nhất 8 ký tự.')).toBeTruthy());
   expect(useCustomerStore.getState().demoSession).toBe(false);
-  fireEvent.changeText(screen.getByLabelText('Mật khẩu bản mẫu'),'VaultDemo123!');
-  fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
+  await fireEvent.changeText(screen.getByLabelText('Mật khẩu bản mẫu'),'VaultDemo123!');
+  await fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
   await waitFor(()=>expect(useCustomerStore.getState().demoSession).toBe(true));
   expect(mockReplace).toHaveBeenCalledWith('/(tabs)');
 });
-test('registration shell and loading/error/empty primitives render',()=>{
-  const registration=render(<RegisterScreen/>);expect(screen.getByText('Khởi đầu không gian mới')).toBeTruthy();registration.unmount();
-  for(const kind of ['loading','error','empty'] as const){const view=render(<StateCard kind={kind} title="Trạng thái mẫu" onRetry={()=>{}}/>);expect(screen.getByText('Trạng thái mẫu')).toBeTruthy();view.unmount();}
+test('registration shell and loading/error/empty primitives render',async ()=>{
+  const registration=await render(<RegisterScreen/>);expect(screen.getByText('Khởi đầu không gian mới')).toBeTruthy();await registration.unmount();
+  for(const kind of ['loading','error','empty'] as const){const view=await render(<StateCard kind={kind} title="Trạng thái mẫu" onRetry={()=>{}}/>);expect(screen.getByText('Trạng thái mẫu')).toBeTruthy();await view.unmount();}
 });
-test('profile local preference and logout work',()=>{
-  useCustomerStore.getState().enterDemo();render(<ProfileScreen/>);
-  fireEvent(screen.getByRole('switch'),'valueChange',true);expect(useCustomerStore.getState().compactCards).toBe(true);
-  fireEvent.press(screen.getByRole('button',{name:'Đăng xuất bản mẫu'}));expect(useCustomerStore.getState().demoSession).toBe(false);
+test('profile local preference and logout work',async ()=>{
+  useCustomerStore.getState().enterDemo();await render(<ProfileScreen/>);
+  await fireEvent(screen.getByRole('switch'),'valueChange',true);expect(useCustomerStore.getState().compactCards).toBe(true);
+  await fireEvent.press(screen.getByRole('button',{name:'Đăng xuất bản mẫu'}));expect(useCustomerStore.getState().demoSession).toBe(false);
 });

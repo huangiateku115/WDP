@@ -1,0 +1,16 @@
+{
+  "registered": 184,
+  "oldRegistered": 178,
+  "new": 6,
+  "removed": 0,
+  "renamed": 0,
+  "classifications": {
+    "UNCHANGED": 151,
+    "SECURITY_CHANGED": 7,
+    "BEHAVIOR_CHANGED": 19,
+    "NEW": 6,
+    "REQUEST_CHANGED": 1
+  },
+  "historicalDetailedRows": 108,
+  "historicalDistinctSubset": 86
+}

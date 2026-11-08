@@ -3,6 +3,7 @@ import warehouseMapApi from '@/api/warehouseMapApi';
 import {inventoryId,validInventoryId} from '@/lib/inventoryRegistration';
 import {validateWarehouseMap,validateRackDetail} from '@/lib/warehouseMap';
 import {record} from '../RentalBackendUI';
+export {inventoryLifecycleContext} from './customerInventoryPolicy';
 
 export async function managedInventoryReservation(id,config){
   const rental=record(await reservationApi.detailForCustomer(id,config));

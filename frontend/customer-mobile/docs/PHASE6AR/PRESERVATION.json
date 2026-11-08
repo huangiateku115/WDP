@@ -1,0 +1,13 @@
+{
+  "checked": 1186,
+  "changed": [],
+  "missing": [],
+  "guard": {
+    "before": "cfc5016fd0b5cd0e60183f7a73adf1ca30e2de6ff97ebbedfdbfdcb1b500d774",
+    "after": "cfc5016fd0b5cd0e60183f7a73adf1ca30e2de6ff97ebbedfdbfdcb1b500d774"
+  },
+  "backendSelected": 257,
+  "referenceDifferent": [],
+  "result": "PASS",
+  "scope": "Existing selected text files across Frontend,Backend,BE-REF; .env,secrets,node_modules,generated artifacts,symlinks excluded. New PHASE6AR documentation excluded by design."
+}

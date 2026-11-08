@@ -2,8 +2,8 @@ import {useEffect, useRef, useState} from 'react';
 import {View} from 'react-native';
 import {Controller, useForm, type Resolver} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
-import {useLocalSearchParams, useNavigation, useRouter} from 'expo-router';
-import {usePreventRemove} from 'expo-router/react-navigation';
+import {useLocalSearchParams, useRouter} from 'expo-router';
+import {usePreventRemove} from 'expo-router';
 import {useCustomerStore} from '../state/useCustomerStore';
 import {requestDraftKey, useRequestDraftStore} from '../state/useRequestDraftStore';
 import {inventoryRequests, requestContext, scopedRequest} from '../fixtures/inventoryRequests';
@@ -32,7 +32,7 @@ export default function InventoryRequestScreen({kind, loading = false, error}: {
 }
 
 function RequestEditor({context, kind, request, requestId, fingerprint, rows, back, open}: {context: RequestContext; kind: RequestKind; request?: InventoryRequest; requestId?: string; fingerprint: string; rows: InventoryRequest[]; back: () => void; open: (request: InventoryRequest) => void}) {
-  const navigation = useNavigation(), demo = useCustomerStore(s => s.demoSession), intent = requestId ? 'AMEND' as const : 'CREATE' as const;
+  const demo = useCustomerStore(s => s.demoSession), intent = requestId ? 'AMEND' as const : 'CREATE' as const;
   const key = requestDraftKey({ownerId: context.ownerId, itemId: context.item.id, kind, intent, requestId}), saved = useRequestDraftStore(s => s.drafts[key]);
   const initial = saved?.values ?? requestInitialValues(context, kind, request);
   const schema = kind === 'INBOUND' ? inboundRequestSchema(context) : outboundRequestSchema(context);
@@ -41,7 +41,7 @@ function RequestEditor({context, kind, request, requestId, fingerprint, rows, ba
   const [pending, setPending] = useState<{values: InboundValues | OutboundValues; fingerprint: string; version: number | null | undefined} | null>(null), [discard, setDiscard] = useState(false), [message, setMessage] = useState('');
   const pendingNavigation = useRef<(() => void) | null>(null), confirmationBusy = useRef(false);
   useEffect(() => {void trigger();}, [trigger]);
-  usePreventRemove(isDirty && demo, ({data}) => {pendingNavigation.current = () => navigation.dispatch(data.action); setDiscard(true);});
+  usePreventRemove(isDirty && demo, ({repeat}) => {pendingNavigation.current = repeat; setDiscard(true);});
   const current = schema.safeParse(watch());
   const duplicate = saved?.sourceFingerprint === fingerprint && current.success && JSON.stringify(saved.values) === JSON.stringify(current.data);
   const stock = canonicalStock(context.item, context.detail).balance;

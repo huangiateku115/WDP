@@ -1,0 +1,6 @@
+{"completedWidth":320}
+{"completedWidth":375}
+{"completedWidth":390}
+{"completedWidth":430}
+{"completedWidth":768}
+{"result":"PASS","target":"Supplementary React Native Web preview; NOT native device E2E","widths":[320,375,390,430,768],"checks":"Registration validation/visibility/consent/no auth/password reset; demo login; bell/local read/filter/reset; validated resource navigation; unavailable target; Support list/detail/conversation/missing references; RHF draft validation/restore/dirty dialog/removal; logout/deep-link guard; document overflow","backendRequests":0,"mutations":0,"pageErrors":[]}

@@ -12,13 +12,29 @@ const base = 'http://127.0.0.1:8091';
     const button = (root, name) => root.getByRole('button', {name, exact: true});
     const tap = async (root, name) => {
       const target = button(root, name);
-      for (let i = 0; i < 12 && !await target.count(); i++) {
-        await root.evaluate(el => {for (const n of [el, ...el.querySelectorAll('*')]) if (n.scrollHeight > n.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(n).overflowY)) n.scrollBy(0, 550);});
-        await page.waitForTimeout(75);
-      }
       let lastError;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {await target.click({timeout: 5000}); return;} catch (error) {lastError = error; await page.waitForTimeout(150);}
+      try {await target.click({timeout: 2000}); return;} catch (error) {lastError = error;}
+
+      // After returning to a list, a virtualized row may detach while the
+      // browser auto-scrolls. Search from the top instead of retrying a stale
+      // position. Keep each scroll step smaller than the viewport.
+      const container = root === page ? page.locator('body') : root;
+      for (let step = 0; step < 24; step++) {
+        const moved = await container.evaluate((el, fromTop) => {
+          let moved = false;
+          for (const list of [el, ...el.querySelectorAll('*')]) {
+            if (list.scrollHeight <= list.clientHeight + 1 || !/auto|scroll/.test(getComputedStyle(list).overflowY)) continue;
+            const before = list.scrollTop;
+            list.scrollTop = fromTop ? 0 : before + Math.max(120, Math.floor(list.clientHeight * .65));
+            moved ||= list.scrollTop !== before;
+          }
+          return moved;
+        }, step === 0);
+        await page.waitForTimeout(100);
+        if (await target.count()) {
+          try {await target.click({timeout: 1200}); return;} catch (error) {lastError = error;}
+        }
+        if (step > 0 && !moved) break;
       }
       await page.screenshot({path: 'artifacts/phase5b/failure.png'}); console.error('Browser errors:', errors); throw lastError;
     };

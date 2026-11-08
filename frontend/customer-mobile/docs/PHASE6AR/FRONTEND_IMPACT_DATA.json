@@ -1,0 +1,574 @@
+{
+  "website": [
+    {
+      "file": "frontend/src/api/confirmedContract.js",
+      "role": "Shared/Staff",
+      "route": "all Staff inventory routes",
+      "symbol": "assertConfirmedRequest",
+      "findings": "R01;R13;R20",
+      "priority": "P1",
+      "classification": "API_ENDPOINT_CHANGE;SECURITY_FIX_REQUIRED;TEST_UPDATE_REQUIRED",
+      "current": "Staff helper requests blocked; print path currently allowed; closure read not allowed",
+      "proposed": "Permit only verified Staff queue/detail/evidence/inspection/return/confirm and relocation combinations after review; deny unsafe print; closure GET only if separate display task approved",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/api/inventoryApi.js",
+      "role": "Staff",
+      "route": "/staff/inventory/*",
+      "symbol": "repeatedInboundQueue;canonicalOutboundStaffQueue;relocateCanonical",
+      "findings": "R13;R14",
+      "priority": "P1",
+      "classification": "ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Real helpers use shared client; guards not integration-tested end to end",
+      "proposed": "Preserve endpoints/keys/body inspectionKey and idempotencyKey; add shared-interceptor fixture tests and lifecycle409 mapping, no alternate client",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/staff/RepeatedInboundQueuePage.jsx",
+      "role": "Staff",
+      "route": "/staff/inventory/inbound",
+      "symbol": "loadQueue;open;inspect;confirm;completeReturn",
+      "findings": "R13;R14;R28",
+      "priority": "P1",
+      "classification": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "First page100 only; session token checked but no selection sequence; return mints key per click",
+      "proposed": "Add pagination/stale selection fence, closure block acceptance/confirmation, preserve saved return key on uncertain outcomes; keep cleanup return reachable when creation gate off",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/pages/staff/CanonicalOutboundQueuePage.jsx",
+      "role": "Staff",
+      "route": "/staff/inventory/outbound",
+      "symbol": "loadQueue;open;submit",
+      "findings": "R13;R14",
+      "priority": "P1",
+      "classification": "ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Real confirmation UI with held quantities/stable key; shared allowlist blocks transport",
+      "proposed": "Repair allowlist in shared file; show409 lifecycle changes, refresh request+stock; retain outbound during closure only when server eligible; no new mutation behavior",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/staff/CanonicalRelocationPage.jsx",
+      "role": "Staff",
+      "route": "/staff/inventory/relocation",
+      "symbol": "load;submit",
+      "findings": "R13;R14",
+      "priority": "P1",
+      "classification": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Stable operation exists; no closure presentation; request blocked by allowlist",
+      "proposed": "Keep same canonical context/key/payload; disable closure-pending move, refresh context after409; no legacy move fallback",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/components/staff/FacilityHandoverPanel.jsx",
+      "role": "Staff/FM",
+      "route": "/staff/handovers/:id; /manager/reservations/:id",
+      "symbol": "run;paperEligible;handoverEligible",
+      "findings": "R01;R08;R33",
+      "priority": "P0",
+      "classification": "SECURITY_FIX_REQUIRED;FEATURE_MUST_REMAIN_DISABLED;UI_CONTENT_CHANGE",
+      "current": "Calls unsafe print and generic Self paper/handover; PAID assumed sufficient availability",
+      "proposed": "Use safe scoped detail for print; expose unavailable production activation; no paper confirmation until server scope/state fixed; map404/409/503 and durable refresh",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/api/facilityHandoverApi.js",
+      "role": "Staff/FM",
+      "route": "/staff/handovers/:id",
+      "symbol": "print;confirmPaper;handover",
+      "findings": "R01;R08;R33",
+      "priority": "P0",
+      "classification": "SECURITY_FIX_REQUIRED;TEST_UPDATE_REQUIRED",
+      "current": "print uses /contracts/:id/print; valid physical endpoints lack all release safeguards",
+      "proposed": "Stop unsafe print usage after approved task; retain safe GET detail and explicit server gates, don't emulate success",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/staff/InspectionApiView.jsx",
+      "role": "Staff/FM",
+      "route": "/staff/check-ins; /manager/work/CHECK_IN",
+      "symbol": "create;complete",
+      "findings": "R02;R33",
+      "priority": "P1",
+      "classification": "FEATURE_MUST_REMAIN_DISABLED;ERROR_HANDLING_CHANGE",
+      "current": "Client facility filtering, legacy CHECK_IN UI with valid server requests",
+      "proposed": "Explain dev/test-only; server rejects production; preserve owner/matching checks, never assume client filtering secures getInspections",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/staff/CheckoutApiView.jsx",
+      "role": "Staff/FM",
+      "route": "/staff/checkouts; /manager/work/CHECKOUT",
+      "symbol": "create;complete",
+      "findings": "R02",
+      "priority": "P0",
+      "classification": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+      "current": "Live generic inspection complete can close without server scope/transaction",
+      "proposed": "Disable live completion until Backend guarded transaction/scope verified; retain read only only after scoped read API safe",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/pages/staff/ManagedReceivingQueue.jsx",
+      "role": "Staff",
+      "route": "/staff/inventory/inbound?flow=managed-v2",
+      "symbol": "ManagedReceivingQueue",
+      "findings": "R14;R09",
+      "priority": "P1",
+      "classification": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE",
+      "current": "First inbound source APIs; no closure capability mapped",
+      "proposed": "Surface closure/fence conflicts, refetch reservation/receiving context; retain V2 gate and no activation shortcut",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/InventoryItemForm.jsx",
+      "role": "Customer",
+      "route": "/portal/inventory/register; /portal/inventory/:id/edit",
+      "symbol": "InventoryItemForm",
+      "findings": "R14;R35",
+      "priority": "P1",
+      "classification": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Registration/edit implemented; now every request can lose closure/CAS eligibility",
+      "proposed": "Use authoritative reservation closure context; preserve form on409 and refetch eligibility, no blind retry/create duplicate",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/RepeatedInboundRequests.jsx",
+      "role": "Customer",
+      "route": "/portal/inventory/:id/inbound",
+      "symbol": "RepeatedInboundRequests",
+      "findings": "R14;R25",
+      "priority": "P1",
+      "classification": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Create/amend/cancel keys and If-Match already present",
+      "proposed": "Block create/amend during pending closure, keep cancel/read eligible; map409 revalidation and exact-key503 replay",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/managedInventoryContext.js",
+      "role": "Customer",
+      "route": "inventory registration",
+      "symbol": "context loaders",
+      "findings": "R14",
+      "priority": "P1",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+      "current": "Reservation context gates existing actions without new closure field",
+      "proposed": "Carry activeClosureRequestId/inventoryVersion without inventing closure workflow; invalidate with stock/Item changes",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/lib/customerReservationService.js",
+      "role": "Customer",
+      "route": "/portal/reservations/:id",
+      "symbol": "selfDescriptions;reservationLifecycle",
+      "findings": "R19;R33",
+      "priority": "P2",
+      "classification": "UI_CONTENT_CHANGE",
+      "current": "New CONTRACTED described, older RESERVED label says wait approval; Self DEPOSIT_PAID/CHECKIN_READY descriptions absent",
+      "proposed": "Add current Self stage copy and mark legacy RESERVED approval accurately; no rule changes, no Managed label reuse",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/SelfStorageReservationReview.jsx",
+      "role": "Customer",
+      "route": "/portal/rent/review",
+      "symbol": "Review.create",
+      "findings": "R19;R31",
+      "priority": "P2",
+      "classification": "DTO_MAPPING_ONLY;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+      "current": "Already validates CONTRACTED and navigates PayOS;409 only message",
+      "proposed": "Render validated top-level suggestedUnits with explicit customer choice and same period; preserve no-auto-retry after unknown create",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/manager/ReservationApiView.jsx",
+      "role": "FM/Staff",
+      "route": "/manager/reservations/:id",
+      "symbol": "ReservationApiContent",
+      "findings": "R19;R20;R08",
+      "priority": "P2",
+      "classification": "UI_CONTENT_CHANGE;BACKEND_DEPENDENCY",
+      "current": "Decision text assumes approval creates contract; limits decision to RESERVED",
+      "proposed": "Label current Self auto-contract flow; keep legacy decision paths; optional diagnostic GET separate from close permission, no new close action",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/api/managedReservationApi.js",
+      "role": "Customer/FM",
+      "route": "managed reservation detail",
+      "symbol": "detail",
+      "findings": "R20",
+      "priority": "P2",
+      "classification": "BACKEND_DEPENDENCY",
+      "current": "No closure-readiness helper",
+      "proposed": "Optional future read-only readiness helper only with explicit feature scope; do not change existing detail contract",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/lib/selfStoragePayosQr.js",
+      "role": "Customer",
+      "route": "/portal/payments/:id",
+      "symbol": "createPayosQrDataUrl",
+      "findings": "R12",
+      "priority": "P1",
+      "classification": "TEST_UPDATE_REQUIRED",
+      "current": "Import qrcode fails in audit install",
+      "proposed": "Verify declared lockfile dependency in approved installation task; do not replace QR with fake payload",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/CanonicalCustomerOutbound.jsx",
+      "role": "Customer",
+      "route": "/portal/inventory/:id/outbound",
+      "symbol": "CanonicalCustomerOutbound",
+      "findings": "R14;R24",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Canonical balance/key/retry flow already source-aligned; closure does not categorically block outbound",
+      "proposed": "Preserve functionality; extend regression fixture for pending closure and active term, do not add global closure disable",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/ContractPrintAction.jsx",
+      "role": "Customer",
+      "route": "/portal/contracts/:id",
+      "symbol": "open",
+      "findings": "R01",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Uses authorized contract detail and sandbox A4, explicitly avoids unsafe /print",
+      "proposed": "Preserve safe implementation; anti-IDOR endpoint regression",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/SelfStoragePayosCheckout.jsx",
+      "role": "Customer",
+      "route": "/portal/payments/:id",
+      "symbol": "SelfStoragePayosCheckout",
+      "findings": "R11",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Real PayOS owner history/status/QR/polling,session/key safeguards",
+      "proposed": "Preserve; validate with fixtures after dependency restoration; don't rebuild or repurpose for Managed",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/api/payosPaymentClient.js",
+      "role": "Customer",
+      "route": "/portal/payments/:id",
+      "symbol": "createPayosPaymentApi",
+      "findings": "R11",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Exact Self endpoints/strict DTO,status3dimensions,history cursor already implemented",
+      "proposed": "Preserve public contract; optional tighten cursor canonical base64url validation without changing server requirements",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/customer/PaymentHistoryPage.jsx",
+      "role": "Customer",
+      "route": "/portal/payments",
+      "symbol": "ReservationHistory",
+      "findings": "R11",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Real per-Self-reservation PayOS history, not broad refund/account ledger",
+      "proposed": "Keep correct scope and limitation copy; no new provider/history route invented",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/CustomerNotificationsIntegration.jsx",
+      "role": "Customer",
+      "route": "/portal/notifications",
+      "symbol": "notifications view",
+      "findings": "R22",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Real owner list/mark-one",
+      "proposed": "Do not add arbitrary destination routing or unsupported bulk endpoint",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/CustomerSupportIntegration.jsx",
+      "role": "Customer",
+      "route": "/portal/support",
+      "symbol": "support view",
+      "findings": "R21;R34",
+      "priority": "P2",
+      "classification": "BACKEND_DEPENDENCY;VALIDATION_CHANGE",
+      "current": "Real ticket/message APIs; Backend private related refs insufficiently validated",
+      "proposed": "Keep text-only/verified public linkage, do not send arbitrary private cross-owner IDs; retain reply/internal safety",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/ManagedContractReview.jsx",
+      "role": "Customer",
+      "route": "/portal/contracts/:id",
+      "symbol": "ManagedContractReview",
+      "findings": "R03;R26",
+      "priority": "P1",
+      "classification": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+      "current": "Review/valid-current-signature progress implemented; sign payload no reviewed version/hash",
+      "proposed": "Keep reading/status/refresh; restrict real signing until reviewed-content Backend contract fixed; do not fix by GET-then-sign alone",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/components/manager/ManagedContractLookup.jsx",
+      "role": "FM/Staff",
+      "route": "managed contract lookup",
+      "symbol": "ManagedContractLookup",
+      "findings": "R03",
+      "priority": "P1",
+      "classification": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+      "current": "Facility signing available through version-unbound contract",
+      "proposed": "Same compare-and-sign prerequisite; preserve current signature display and source role scope",
+      "complexity": "M"
+    },
+    {
+      "file": "frontend/src/api/bomApi.js",
+      "role": "BOM/Admin",
+      "route": "/bom/*",
+      "symbol": "bomFacilityApi;bomPricingApi;bomPolicyApi;bomReservationApi;bomInventoryApi",
+      "findings": "R20;R19",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Facility/pricing/policy/user-independent APIs unchanged; existing legacy decision APIs remain mounted",
+      "proposed": "Do not refactor stable CRUD; optional readiness read is separate task, never close/release from diagnostic",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/admin/UsersLivePage.jsx",
+      "role": "Admin",
+      "route": "/admin/users",
+      "symbol": "UsersLivePage",
+      "findings": "R04;R05",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "User CRUD source/API family unchanged",
+      "proposed": "No business-diff-driven rewrite; security hardening server dependency distinct",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/pages/bom/OversightLivePage.jsx",
+      "role": "BOM",
+      "route": "/bom/reservations",
+      "symbol": "OversightLivePage",
+      "findings": "R19;R20",
+      "priority": "P2",
+      "classification": "UI_CONTENT_CHANGE",
+      "current": "Oversight reads existing reservation status",
+      "proposed": "Show auto-CONTRACTED Self and distinguish diagnostic unknown if later added; do not expose Manager-only actions to BOM",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/routes/StaffRoutes.jsx",
+      "role": "Staff",
+      "route": "/staff/inventory/*",
+      "symbol": "StaffRoutes",
+      "findings": "R13",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "Correct real repeated/canonical/relocation route components already mounted",
+      "proposed": "Keep routes; fix shared allowlist, not navigation rewrite",
+      "complexity": "S"
+    },
+    {
+      "file": "frontend/src/api/axiosClient.js",
+      "role": "Shared",
+      "route": "all network",
+      "symbol": "request interceptor",
+      "findings": "R13",
+      "priority": "P2",
+      "classification": "NO_CHANGE",
+      "current": "One shared client attaches token and enforces allowlist",
+      "proposed": "Reuse existing architecture; tests must include interceptor; no second Axios instance",
+      "complexity": "S"
+    }
+  ],
+  "mobile": [
+    {
+      "screen": "01",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE",
+      "proposed": "Map owned reservations summary, real statuses and separate notification reads; Self CONTRACTED is pending deposit; no fake aggregate API",
+      "findings": "R19;R22",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "02",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+      "proposed": "Public paginated facility search; nested address/serviceTypes/images; prices only from confirmed pricing, no fixture amenity claims",
+      "findings": "R18;R27",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "03",
+      "classification": "DTO_MAPPING_ONLY;UI_CONTENT_CHANGE",
+      "proposed": "Use public detail/storage-options/pricing; distinguish exact Unit vs managed Cell; no fixture live availability",
+      "findings": "R18;R19",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "04",
+      "classification": "API_ENDPOINT_CHANGE;DTO_MAPPING_ONLY;VALIDATION_CHANGE;STATE_MACHINE_CHANGE",
+      "proposed": "New Self period-aware Unit list + monthly availability; UTC date-only calendar/range,UNKNOWN/500 bound fail closed; preserve exclusive end and current Unit selection",
+      "findings": "R17;R18",
+      "phase": "R4",
+      "complexity": "L"
+    },
+    {
+      "screen": "05",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE;STATE_MACHINE_CHANGE",
+      "proposed": "Exact Self ID/pricingPolicyId/start/end body; source estimate not monthly fixture formula; strict future instant; pricing scope blocker before writes",
+      "findings": "R06;R18;R19",
+      "phase": "R4",
+      "complexity": "M"
+    },
+    {
+      "screen": "06",
+      "classification": "STATE_MACHINE_CHANGE;UI_CONTENT_CHANGE;ERROR_HANDLING_CHANGE",
+      "proposed": "Create yields CONTRACTED+existing DRAFT, no approve wait; route to Self deposit presentation only after authoritative success;409 suggestedUnits, unknown result no duplicate create",
+      "findings": "R19;R31",
+      "phase": "R4",
+      "complexity": "M"
+    },
+    {
+      "screen": "07",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+      "proposed": "Real map hierarchy/Rack coordinates, periodStatus distinct from physical status; isBookable exact true; missing geometry/unknown capacity fail closed",
+      "findings": "R27;R09",
+      "phase": "R4",
+      "complexity": "L"
+    },
+    {
+      "screen": "08",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Managed strict term/Cells/allocated capacity and server quote, no invented percentage; V2 production gate unchanged, no legacy fallback",
+      "findings": "R09;R31",
+      "phase": "R4",
+      "complexity": "L"
+    },
+    {
+      "screen": "09",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;UI_CONTENT_CHANGE",
+      "proposed": "Own mixed-service reservation list; distinguish Self CONTRACTED/DEPOSIT_PAID/CHECKIN_READY/PAID and ManagedV2 CHECKIN_READY; no premature ACTIVE",
+      "findings": "R19;R33",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "10",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE",
+      "proposed": "Branch exact service-family detail; closure marker+diagnostic nullable readiness only if approved; no close/release command; physical staff activation not mobile action",
+      "findings": "R20;R30;R33",
+      "phase": "R3",
+      "complexity": "L"
+    },
+    {
+      "screen": "11",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+      "proposed": "Safe contract detail only; same frozen version/hash progress; partial presentation not enum; Self paper differs V2; no sign until review-bound contract resolved, no unsafe print",
+      "findings": "R01;R03;R26",
+      "phase": "R6",
+      "complexity": "L"
+    },
+    {
+      "screen": "12",
+      "classification": "API_ENDPOINT_CHANGE;DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;NAVIGATION_CHANGE;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Self PayOS checkout/body purpose/header key<=120; status+settlement+application; per-reservation cursor history, server QR only; web-only return dependency; Managed still MOCK gate, no provider reuse/refund",
+      "findings": "R07;R09;R11;R33",
+      "phase": "R6",
+      "complexity": "L"
+    },
+    {
+      "screen": "13",
+      "classification": "DTO_MAPPING_ONLY;ERROR_HANDLING_CHANGE",
+      "proposed": "Owner Item list page-aware; filters ignored in source not global search; stock separately unknown-safe, do not map registered quantity to onHand",
+      "findings": "R24;R28",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "14",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE",
+      "proposed": "Read Item+stock/movements owner-scoped; version/source/batches/actual totals; closure suppress only inbound/edit, not eligible outbound",
+      "findings": "R14;R24",
+      "phase": "R3",
+      "complexity": "L"
+    },
+    {
+      "screen": "15",
+      "classification": "VALIDATION_CHANGE;DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;TEST_UPDATE_REQUIRED",
+      "proposed": "Add required itemCode; exact DTO quantityUnit/unitDimensions fields and real image lifecycle<=10; registration/edit closure fence,REGISTERED/unplaced checks, preserve form409",
+      "findings": "R14;R23;R35",
+      "phase": "R5",
+      "complexity": "L"
+    },
+    {
+      "screen": "16",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Repeated plural requestedQuantity/quantityUnit/declaredUnit*, no note; preserve Idempotency-Key/If-Match/currentversion; closure blocks create/amend, reads/cancel separate",
+      "findings": "R10;R14;R25",
+      "phase": "R5",
+      "complexity": "L"
+    },
+    {
+      "screen": "17",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Canonical body only requestedQuantity; authoritative onHand-held/batches; gate and safe same-key503, no amend/legacy fallback; closure not unconditional outbound block",
+      "findings": "R10;R14;R25",
+      "phase": "R5",
+      "complexity": "L"
+    },
+    {
+      "screen": "18",
+      "classification": "DTO_MAPPING_ONLY;UI_CONTENT_CHANGE",
+      "proposed": "Real owner movements,actual vs declared/batchLines/schema/arithmetic; preserve source/destination/time; MOVE is Staff-produced, never customer relocation control",
+      "findings": "R24",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "19",
+      "classification": "DTO_MAPPING_ONLY;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "REST own list/mark-one; unread derived from actual full list; no typed targets/bulk/delete/push routes; no untrusted arbitrary navigation",
+      "findings": "R22",
+      "phase": "R3",
+      "complexity": "M"
+    },
+    {
+      "screen": "20",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Real support list/detail/public messages/replies; enum/length/singular relatedEntity mapping; private related ownership blocker; attachments unsupported; no fake ticket reference",
+      "findings": "R21;R34",
+      "phase": "R3",
+      "complexity": "L"
+    },
+    {
+      "screen": "21",
+      "classification": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE;BACKEND_DEPENDENCY",
+      "proposed": "Separate User/displayName from identity profile/verification; GET profile side effect; secure session/logout design; no fixture identity/avatar upload assumption",
+      "findings": "R04;R05;R29",
+      "phase": "R2",
+      "complexity": "M"
+    },
+    {
+      "screen": "22",
+      "classification": "DTO_MAPPING_ONLY;SECURITY_FIX_REQUIRED;FEATURE_MUST_REMAIN_DISABLED",
+      "proposed": "Native Bearer login/current-user Customer only; approved secure session policy and401 reset; no Backend refresh route, no Keycloak confidential secret",
+      "findings": "R04;R05;R15",
+      "phase": "R2",
+      "complexity": "L"
+    },
+    {
+      "screen": "23",
+      "classification": "DTO_MAPPING_ONLY;VALIDATION_CHANGE;SECURITY_FIX_REQUIRED",
+      "proposed": "Register displayName/email/password/phone optional per source, Customer forced; do not send consent/password confirmation as API fields, no fake email verification",
+      "findings": "R05;R15",
+      "phase": "R2",
+      "complexity": "M"
+    }
+  ]
+}

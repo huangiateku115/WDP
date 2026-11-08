@@ -1,0 +1,10 @@
+{
+  "head": "b7f09b48299882075d6c16511f8419fdb040488a",
+  "oldCandidate": "7a5cd84",
+  "historicalMatch": 221,
+  "historicalDifferent": [],
+  "worktreeCompared": 1523,
+  "worktreeDifferent": [],
+  "referenceDifferent": [],
+  "note": "Git status unavailable (parent chdir permission); tracked content compared with HEAD, excluding .env. Historical hashes compared raw and CRLF-normalized."
+}
