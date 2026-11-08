@@ -33,7 +33,8 @@ test('Customer repeated receipt screen handles replay, uncertain outcome, safe a
 
 test('Staff repeated receiving page uses the real Facility-scoped API and saves attempts before confirmation', async () => {
   const [source, routes] = await Promise.all([readFile(staffPath, 'utf8'), readFile(routesPath, 'utf8')]);
-  for (const action of ['repeatedInboundQueue', 'repeatedInboundReceivingDetail', 'uploadRepeatedInboundEvidence', 'inspectRepeatedInbound', 'confirmRepeatedInbound', 'completeRepeatedInboundReturn']) assert.match(source, new RegExp(`${action}\\(`));
+  for (const action of ['repeatedInboundQueue', 'repeatedInboundReceivingDetail', 'inspectRepeatedInbound', 'confirmRepeatedInbound', 'completeRepeatedInboundReturn']) assert.match(source, new RegExp(`${action}\\(`));
+  assert.match(source, /uploadEvidence=\{inventoryApi\.uploadRepeatedInboundEvidence\}/);
   assert.match(source, /evidenceUploadIds/);
   assert.match(source, /ACCEPTED_PENDING_CONFIRMATION/);
   assert.match(source, /RETURN_PENDING/);
