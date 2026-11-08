@@ -37,12 +37,15 @@ test('Self-Storage booking may choose a future date for a HELD/OCCUPIED unit, bu
   assert.throws(() => selfStorageRequest({ ...draft, unit: { ...draft.unit, status: 'MAINTENANCE' } }), /Select an available Self Storage unit/);
 });
 
-test('booking creation accepts only a fresh CONTRACTED Self-Storage response without approval identity', () => {
+test('booking confirmation validates identity independently of Deposit eligibility', () => {
   const payload = { facilityId, storageUnitId: unitId, startDate: '2026-12-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z' };
   const reservation = { _id: reservationId, serviceType: 'SELF_STORAGE', status: 'CONTRACTED', facilityId, storageUnitId: unitId, startDate: payload.startDate, endDate: payload.endDate, expiresAt: new Date(Date.now() + 60_000).toISOString() };
-  assert.equal(selfStorageCreation({ data: { success: true, data: reservation } }, payload), reservation);
-  assert.throws(() => selfStorageCreation({ data: { success: true, data: { ...reservation, status: 'RESERVED' } } }, payload), /did not confirm/);
-  assert.throws(() => selfStorageCreation({ data: { success: true, data: { ...reservation, approvedBy: reservationId } } }, payload), /did not confirm/);
+  assert.equal(selfStorageCreation({ status: 201, data: { success: true, data: reservation } }, payload), reservation);
+  const replayed = { ...reservation, status: 'DEPOSIT_PAID' };
+  assert.equal(selfStorageCreation({ status: 200, data: { success: true, data: replayed } }, payload), replayed);
+  const pending = { ...reservation, status: 'RESERVED', expiresAt: undefined };
+  assert.equal(selfStorageCreation({ status: 201, data: { success: true, data: pending } }, payload), pending);
+  assert.throws(() => selfStorageCreation({ status: 201, data: { success: true, data: { ...reservation, storageUnitId: facilityId } } }, payload), /did not confirm/);
 });
 
 test('Customer booking routes to PayOS summary and Step 2 exposes accessible monthly availability UI', async () => {
@@ -52,7 +55,9 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
     readFile(new URL('../src/components/customer/SelfStoragePayosCheckout.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/customer/RentalLifecycleIntegration.jsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(review, /paymentApi\.createPayosCheckout\(createdReservationId, "DEPOSIT", attempt\.idempotencyKey\)/);
+  assert.match(review, /startDepositAfterBooking: response\.status === 201/);
+  assert.doesNotMatch(review, /createPayosCheckout/);
+  assert.match(checkout, /pay\(\{ automatic: true \}\)/);
   assert.match(review, /nav\("\/portal\/payments\/" \+ createdReservationId/);
   assert.match(period, /aria-label=\{`Availability calendar for \$\{visibleMonth\}`\}/);
   assert.match(period, /Previous month/);

@@ -146,6 +146,8 @@ test('Only an eligible pending READY PayOS checkout can be opened; completed URL
   assert.equal(isSafePayosCheckoutUrl('https://evil.example/web/example'), false);
   assert.equal(isSafePayosCheckoutUrl('https://pay.payos.vn.evil.example/web/example'), false);
   assert.equal(isSafePayosCheckoutUrl('https://pay.payos.vn/other/example'), false);
+  assert.equal(isSafePayosCheckoutUrl('https://pay.payos.vn/web/'), false);
+  assert.equal(isSafePayosCheckoutUrl(' https://pay.payos.vn/web/example '), false);
   assert.equal(isSafePayosCheckoutUrl('not a URL'), false);
 });
 
@@ -450,7 +452,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.doesNotMatch(history, /customerDemoStore|staffDemoStore|managerDemoStore|sessionStorage|receiptId|demoReceipt|refunds\.map|charges\.map/i);
   assert.doesNotMatch(financial, /customerDemoStore|useCustomerData|data\.refunds|data\.charges/i);
   assert.match(financial, /Demo records are not shown as account transactions/);
-  const payHandler = checkout.slice(checkout.indexOf('async function pay()'), checkout.indexOf('function continueExistingCheckout'));
+  const payHandler = checkout.slice(checkout.indexOf('async function pay('), checkout.indexOf('function continueExistingCheckout'));
   assert.match(payHandler, /window\.location\.assign/);
   assert.match(payHandler, /canOpenPayosCheckout\(payment\)/);
   assert.doesNotMatch(checkout, /canShowPayosQr|createPayosQrDataUrl|Mã QR|<img/);
@@ -466,7 +468,9 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.match(checkout, /Tiếp tục thanh toán qua PayOS/);
   assert.match(review, /Idempotency-Key/);
   assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
-  assert.match(review, /window\.location\.assign\(result\.payment\.checkoutUrl\)/);
+  assert.match(review, /startDepositAfterBooking: response\.status === 201/);
+  assert.match(checkout, /if \(automatic && attempt\) return/);
+  assert.match(checkout, /startDepositAfterBooking === true && !returnQueryPresent/);
   assert.match(review, /Xác nhận đặt kho và thanh toán/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);

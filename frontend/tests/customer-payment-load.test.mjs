@@ -452,19 +452,13 @@ test("Payment route renders a real loading state instead of Simulated Payment be
   assert.doesNotMatch(html, /Simulated Payment/);
 });
 
-test("Review creates one Reservation and one stable-key Deposit intent after explicit confirmation", async (t) => {
+test("Review submits one Reservation and hands off a saved booking without calling PayOS", async (t) => {
   const previousWindow = globalThis.window;
   const values = new Map();
-  let redirectedTo = null;
   globalThis.window = {
     sessionStorage: {
       getItem: (key) => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, value),
-    },
-    location: {
-      assign: (url) => {
-        redirectedTo = url;
-      },
     },
   };
   t.after(() => {
@@ -499,24 +493,8 @@ test("Review creates one Reservation and one stable-key Deposit intent after exp
     destination = null,
     clearedDraft = null,
     createCalls = 0,
-    checkoutCalls = 0,
-    idempotencyKey = null,
     bookingKey = null,
     createdStatus = null;
-  const readyCheckout = {
-    id: "507f1f77bcf86cd799439016",
-    reservationId,
-    purpose: "DEPOSIT",
-    amount: 1000000,
-    currency: "VND",
-    provider: "PAYOS",
-    status: "PENDING",
-    applicationStatus: "NOT_APPLIED",
-    providerSettlementStatus: "NOT_VERIFIED",
-    checkoutStatus: "READY",
-    checkoutUrl: "https://pay.payos.vn/web/test",
-    reconciliationRequired: false,
-  };
   const hooks = {
     useState(initial) {
       const i = cursor++;
@@ -570,22 +548,6 @@ test("Review creates one Reservation and one stable-key Deposit intent after exp
       }),
       getAccessToken: () => "token",
     },
-    "@/api/paymentApi": {
-      default: {
-        createPayosCheckout: async (_id, purpose, key) => {
-          checkoutCalls++;
-          idempotencyKey = key;
-          assert.equal(purpose, "DEPOSIT");
-          return { payment: readyCheckout };
-        },
-      },
-    },
-    "@/api/payosPaymentClient": {
-      canOpenPayosCheckout: (payment) =>
-        require("../src/api/payosPaymentClient.js").canOpenPayosCheckout(
-          payment,
-        ),
-    },
     "@/lib/selfStoragePayos": { ...require("../src/lib/selfStoragePayos.js") },
     "@/lib/selfStorageReservation": {
       selfStorageRequest: () => payload,
@@ -605,13 +567,13 @@ test("Review creates one Reservation and one stable-key Deposit intent after exp
           createCalls++;
           bookingKey = config?.headers?.["Idempotency-Key"];
           assert.equal(request.facilityId, facilityId);
-          return response({
+          return { ...response({
             _id: reservationId,
             status: "CONTRACTED",
             serviceType: "SELF_STORAGE",
             customerId,
             reservationCode: "BKG-TEST-01",
-          });
+          }), status: 201 };
         },
       },
     },
@@ -688,23 +650,16 @@ test("Review creates one Reservation and one stable-key Deposit intent after exp
       node.props.children === "Xác nhận đặt kho và thanh toán",
   );
   assert(create && !create.props.disabled);
-  await create.props.onClick();
+  await Promise.all([create.props.onClick(), create.props.onClick()]);
   assert.equal(createCalls, 1);
-  assert.equal(checkoutCalls, 1);
-  assert.match(idempotencyKey, /^wdp-/);
   assert.match(bookingKey, /^wdp-booking-/);
-  const storedAttempt = JSON.parse(
-    values.get(`SelfStorage_payos_${customerId}_${reservationId}_DEPOSIT`),
-  );
-  assert.equal(storedAttempt[0].idempotencyKey, idempotencyKey);
-  assert.equal(storedAttempt[0].paymentId, "507f1f77bcf86cd799439016");
+  const saved = readOrCreateSelfStorageBookingAttempt(window.sessionStorage, customerId, payload);
+  assert.equal(saved.reservationId, reservationId);
+  assert.equal(saved.idempotencyKey, bookingKey);
   assert.equal(createdStatus, "CONTRACTED");
-  assert.equal(redirectedTo, "https://pay.payos.vn/web/test");
-  assert.equal(
-    destination,
-    null,
-    "a READY checkout redirects directly to the provider",
-  );
+  assert.deepEqual(destination, ["/portal/payments/" + reservationId, {
+    state: { selfStorageCreated: true, startDepositAfterBooking: true },
+  }]);
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);
 });

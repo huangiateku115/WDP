@@ -38,6 +38,13 @@ export const listSelfStoragePayments = async (req: Request, res: Response) => {
   } catch (error) { return sendError(error, res); }
 };
 
+export const lookupSelfStoragePayosOrder = async (req: Request, res: Response) => {
+  try {
+    const data = await payosPaymentService.lookupCustomerPayosOrder(req.params.id, req.params.orderCode, req.user!._id);
+    return res.json({ success: true, data });
+  } catch (error) { return sendError(error, res); }
+};
+
 export const payosWebhook = async (req: Request, res: Response) => {
   try {
     const data = await payosPaymentService.handleWebhook(req.body);

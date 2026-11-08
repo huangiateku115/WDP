@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 import mongoose, { ClientSession, Types } from 'mongoose';
-import { PayOS, Webhook } from '@payos/node';
+import { InvalidSignatureError, PayOS, Webhook } from '@payos/node';
 import ContractModel from '../../models/contracts/contract.model';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import ReservationModel from '../../models/reservations/reservation.model';
@@ -46,7 +46,7 @@ export interface PayosGateway {
   create(data: { orderCode: number; amount: number; description: string; cancelUrl: string; returnUrl: string }): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; checkoutUrl: string; qrCode?: string; status: string;
   }>;
-  get(orderCode: number): Promise<{ id?: string; orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
+  get(orderCode: number, options?: { requireSignature: true }): Promise<{ id?: string; orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
   verify(webhook: Webhook): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; reference: string; description?: string;
     transactionDateTime: string; code: string; desc: string;
@@ -109,12 +109,31 @@ function defaultGateway(): PayosGateway {
     throw new PayosPaymentError(503, 'PAYOS_CONFIGURATION_MISSING', 'PayOS server configuration is unavailable');
   }
   // SDK debug output can include request details; WDP emits its own allowlisted diagnostics.
-  const sdk = new PayOS({ clientId, apiKey, checksumKey, logLevel: 'off' });
+  const options = { clientId, apiKey, checksumKey, logLevel: 'off' as const };
+  const sdk = new PayOS(options);
   return {
     // A create-link timeout is ambiguous. Never let the SDK silently POST the same
     // financial operation again; keep the intent UNKNOWN and reconcile by orderCode.
     create: async data => sdk.paymentRequests.create(data, { maxRetries: 0 }),
-    get: async orderCode => sdk.paymentRequests.get(orderCode),
+    get: async (orderCode, lookupOptions) => {
+      if (!lookupOptions?.requireSignature) return sdk.paymentRequests.get(orderCode);
+      // The SDK verifies the signature when present. Require it for the new read-only lookup.
+      let signaturePresent = false;
+      const signedLookupSdk = new PayOS({
+        ...options,
+        fetch: async (input, init) => {
+          const response = await globalThis.fetch(input, init);
+          if (response.ok) {
+            const envelope = await response.clone().json().catch(() => null);
+            signaturePresent = typeof envelope?.signature === 'string' && /^[a-f0-9]{64}$/.test(envelope.signature);
+          }
+          return response;
+        },
+      });
+      const link = await signedLookupSdk.paymentRequests.get(orderCode);
+      if (!signaturePresent) throw new InvalidSignatureError('PayOS lookup response is missing a valid signature');
+      return link;
+    },
     verify: async webhook => sdk.webhooks.verify(webhook),
   };
 }
@@ -128,9 +147,14 @@ function versionFilter(value: unknown): Record<string, unknown> {
   return current === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] } : { inventoryVersion: current };
 }
 function paymentKey(key: string): string { return `${PAYOS_INTENT_PREFIX}${key}`; }
-function numericOrderCode(value: unknown): number {
+function parseOrderCode(value: unknown): number | null {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !/^[1-9][0-9]{0,9}$/.test(value))) return null;
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_ORDER_CODE) {
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= MAX_ORDER_CODE ? parsed : null;
+}
+function numericOrderCode(value: unknown): number {
+  const parsed = parseOrderCode(value);
+  if (parsed === null) {
     throw new PayosPaymentError(503, 'PAYOS_ORDER_CODE_INVALID', 'Payment intent has an invalid provider order code');
   }
   return parsed;
@@ -149,12 +173,13 @@ function checkoutCorrelationId(payment: any): string {
 }
 type ProviderCreateErrorCategory = 'PAYOS_PROVIDER_AUTH_ERROR' | 'PAYOS_PROVIDER_VALIDATION_ERROR' |
   'PAYOS_PROVIDER_RATE_LIMITED' | 'PAYOS_PROVIDER_NETWORK_ERROR' | 'PAYOS_PROVIDER_TIMEOUT' |
-  'PAYOS_PROVIDER_SDK_ERROR' | 'PAYOS_PROVIDER_UNKNOWN_ERROR';
+  'PAYOS_PROVIDER_MALFORMED_RESPONSE' | 'PAYOS_PROVIDER_SDK_ERROR' | 'PAYOS_PROVIDER_BUSINESS_NON_SUCCESS' | 'PAYOS_PROVIDER_UNKNOWN_ERROR';
 interface SafeProviderErrorDiagnostic {
   sdkErrorName: string;
   providerHttpStatus: number | null;
   providerErrorCode: string | null;
   networkErrorCode: string | null;
+  providerDescription: string;
   category: ProviderCreateErrorCategory;
 }
 function safeErrorCode(value: unknown): string | null {
@@ -164,7 +189,18 @@ function safeErrorCode(value: unknown): string | null {
 function safeNetworkCode(value: unknown): string | null {
   return typeof value === 'string' && SAFE_NETWORK_ERROR_CODES.has(value) ? value : null;
 }
-function classifyProviderCreateError(error: unknown): SafeProviderErrorDiagnostic {
+// Fixed labels only. Provider descriptions can contain account or request data.
+function safeProviderDescription(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return 'UNAVAILABLE';
+  switch (value.trim().toLowerCase()) {
+    case 'invalid signature': return 'INVALID_SIGNATURE';
+    case 'invalid amount': return 'INVALID_AMOUNT';
+    case 'invalid order code': return 'INVALID_ORDER_CODE';
+    case 'invalid description': return 'INVALID_DESCRIPTION';
+    default: return 'REDACTED';
+  }
+}
+function classifyProviderError(error: unknown): SafeProviderErrorDiagnostic {
   const candidate = error as any;
   const rawName = typeof candidate?.name === 'string' ? candidate.name : '';
   const sdkErrorName = SAFE_SDK_ERROR_NAMES.has(rawName) ? rawName : 'UNKNOWN';
@@ -174,6 +210,11 @@ function classifyProviderCreateError(error: unknown): SafeProviderErrorDiagnosti
   const networkErrorCode = safeNetworkCode(candidate?.cause?.code) ?? safeNetworkCode(candidate?.code);
   const timeout = providerHttpStatus === 408 || rawName === 'ConnectionTimeoutError' ||
     ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(networkErrorCode || '');
+  const successfulHttpError = rawName === 'APIError' && providerHttpStatus !== null &&
+    providerHttpStatus >= 200 && providerHttpStatus < 300;
+  const businessNonSuccess = successfulHttpError && providerErrorCode !== null && providerErrorCode !== '00';
+  const malformedResponse = rawName === 'SyntaxError' || rawName === 'InvalidSignatureError' ||
+    (successfulHttpError && !businessNonSuccess);
   const category: ProviderCreateErrorCategory = providerHttpStatus === 401 || providerHttpStatus === 403
     ? 'PAYOS_PROVIDER_AUTH_ERROR'
     : providerHttpStatus === 429
@@ -184,12 +225,15 @@ function classifyProviderCreateError(error: unknown): SafeProviderErrorDiagnosti
           ? 'PAYOS_PROVIDER_TIMEOUT'
           : networkErrorCode || rawName === 'ConnectionError'
             ? 'PAYOS_PROVIDER_NETWORK_ERROR'
-            : providerHttpStatus !== null
-              ? 'PAYOS_PROVIDER_UNKNOWN_ERROR'
-              : PAYOS_SDK_ERROR_NAMES.has(rawName)
-                ? 'PAYOS_PROVIDER_SDK_ERROR'
-                : 'PAYOS_PROVIDER_UNKNOWN_ERROR';
-  return { sdkErrorName, providerHttpStatus, providerErrorCode, networkErrorCode, category };
+            : malformedResponse
+              ? 'PAYOS_PROVIDER_MALFORMED_RESPONSE'
+              : providerHttpStatus !== null
+                ? businessNonSuccess ? 'PAYOS_PROVIDER_BUSINESS_NON_SUCCESS' : 'PAYOS_PROVIDER_UNKNOWN_ERROR'
+                : PAYOS_SDK_ERROR_NAMES.has(rawName)
+                  ? 'PAYOS_PROVIDER_SDK_ERROR'
+                  : 'PAYOS_PROVIDER_UNKNOWN_ERROR';
+  return { sdkErrorName, providerHttpStatus, providerErrorCode, networkErrorCode,
+    providerDescription: safeProviderDescription(candidate?.desc ?? candidate?.error?.desc), category };
 }
 function logCheckoutDiagnostic(payment: any, category: string, stage: string, providerCreateInvoked: boolean | null,
   providerResponseReceived: boolean, persistenceConfirmed: boolean | null,
@@ -204,6 +248,7 @@ function logCheckoutDiagnostic(payment: any, category: string, stage: string, pr
       providerHttpStatus: providerError.providerHttpStatus ?? 'UNKNOWN',
       providerErrorCode: providerError.providerErrorCode ?? 'UNKNOWN',
       networkErrorCode: providerError.networkErrorCode ?? 'UNKNOWN',
+      providerDescription: providerError.providerDescription,
     } : {}),
   });
 }
@@ -254,9 +299,13 @@ function isConflict(error: any): boolean {
 function statusDto(payment: any, currentIntentEligible = false) {
   const canPresentCheckout = currentIntentEligible && payment.provider === PaymentProvider.PAYOS &&
     payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
-    payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
+    isSafePayosCheckoutUrl(payment.checkoutUrl) && payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
     payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED;
+  const orderCode = parseOrderCode(payment.providerReference);
   return {
+    ...(canPresentCheckout && orderCode !== null &&
+      typeof payment.providerPaymentLinkId === 'string' && payment.providerPaymentLinkId.trim()
+      ? { orderCode, paymentLinkId: payment.providerPaymentLinkId } : {}),
     id: id(payment._id), reservationId: id(payment.reservationId), purpose: payment.purpose,
     amount: payment.amount, currency: payment.currency, provider: payment.provider,
     providerSettlementStatus: payment.providerSettlementStatus ?? ProviderSettlementStatus.NOT_VERIFIED,
@@ -582,7 +631,15 @@ export class PayosPaymentService {
   private async createProviderLink(payment: any) {
     const orderCode = numericOrderCode(payment.providerReference);
     const amount = payment.amount;
+    if (!Number.isSafeInteger(amount) || amount <= 0 || payment.currency !== 'VND') {
+      throw new PayosPaymentError(409, 'INVALID_PAYMENT_AMOUNT', 'PayOS requires a positive whole-VND amount');
+    }
     const { returnUrl, cancelUrl } = customerPaymentUrls(payment);
+    const purpose = assertPurpose(payment.purpose);
+    const description = 'WDP' + (purpose === PaymentPurpose.DEPOSIT ? 'D' : 'B') + id(payment.reservationId).slice(-5);
+    if (!/^WDP[DB][a-f0-9]{5}$/i.test(description)) {
+      throw new PayosPaymentError(503, 'PAYOS_DESCRIPTION_INVALID', 'Payment intent has an invalid checkout description');
+    }
     const claim = await Payments.findOneAndUpdate({ _id: payment._id, provider: PaymentProvider.PAYOS,
       status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' }, {
       $set: { checkoutState: 'CREATING' },
@@ -605,19 +662,22 @@ export class PayosPaymentService {
         // Some PayOS channels backed by a bank account not linked through PayOS
         // accept at most 9 description characters. Keep a compact ASCII identity
         // across supported channel configurations.
-        description: `WDP${payment.purpose === PaymentPurpose.DEPOSIT ? 'D' : 'B'}${id(payment.reservationId).slice(-5)}`,
+        description,
         cancelUrl, returnUrl });
       providerResponseReceived = true;
       stage = 'PROVIDER_RESPONSE_VALIDATION';
-      if (!response || typeof response !== 'object' || response.orderCode !== orderCode || response.amount !== amount || response.currency !== 'VND' ||
-          response.status !== 'PENDING' ||
-          typeof response.paymentLinkId !== 'string' || !response.paymentLinkId.trim() || response.paymentLinkId.length > 200 ||
-          !isSafePayosCheckoutUrl(response.checkoutUrl)) {
+      const malformed = !response || typeof response !== 'object' || !Number.isSafeInteger(response.orderCode) ||
+        !Number.isSafeInteger(response.amount) || typeof response.currency !== 'string' || typeof response.status !== 'string' ||
+        typeof response.paymentLinkId !== 'string' || !response.paymentLinkId.trim() || response.paymentLinkId.length > 200 ||
+        !isSafePayosCheckoutUrl(response.checkoutUrl);
+      if (malformed || response.orderCode !== orderCode || response.amount !== amount || response.currency !== 'VND' ||
+          response.status !== 'PENDING') {
         stage = 'PERSIST_RESPONSE_MISMATCH';
         await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING, checkoutState: 'CREATING' }, {
           $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS create response identity mismatch' },
         }).exec();
-        logCheckoutDiagnostic(payment, 'PROVIDER_RESPONSE_MISMATCH', 'PROVIDER_RESPONSE_VALIDATION', true, true, false);
+        logCheckoutDiagnostic(payment, malformed ? 'PAYOS_PROVIDER_MALFORMED_RESPONSE' : 'PROVIDER_RESPONSE_MISMATCH',
+          'PROVIDER_RESPONSE_VALIDATION', true, true, false);
         throw new PayosPaymentError(503, 'PAYOS_RESPONSE_MISMATCH', 'PayOS checkout response requires reconciliation');
       }
       const identityFilter = { _id: payment._id, reservationId: payment.reservationId, customerId: payment.customerId,
@@ -640,7 +700,8 @@ export class PayosPaymentService {
       if (persisted.matchedCount !== 1) throw new Error('PayOS checkout result was not attached to the payment intent');
       stage = 'VERIFY_CHECKOUT_PERSISTENCE';
       const refreshed = await Payments.findById(payment._id).exec();
-      if (!refreshed?.checkoutUrl || refreshed.providerPaymentLinkId !== response.paymentLinkId ||
+      if (refreshed?.checkoutState !== 'READY' || refreshed.checkoutUrl !== response.checkoutUrl ||
+          refreshed.providerPaymentLinkId !== response.paymentLinkId ||
           (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode)) {
         throw new Error('Persisted PayOS checkout identity could not be verified');
       }
@@ -653,7 +714,7 @@ export class PayosPaymentService {
           $set: { checkoutState: 'UNKNOWN', reconciliationReason: 'PayOS create outcome is unknown; query by the same orderCode before retrying' },
         }).exec();
       } catch { /* Do not include the database error or its payload in logs. */ }
-      const providerError = stage === 'PROVIDER_CREATE' ? classifyProviderCreateError(error) : undefined;
+      const providerError = stage === 'PROVIDER_CREATE' ? classifyProviderError(error) : undefined;
       if ((providerError?.providerHttpStatus !== null && providerError?.providerHttpStatus !== undefined) ||
           providerError?.sdkErrorName === 'SyntaxError' || providerError?.sdkErrorName === 'InvalidSignatureError') {
         providerResponseReceived = true;
@@ -705,6 +766,51 @@ export class PayosPaymentService {
     await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING }, {
       $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: `PayOS link status ${link.status}; settlement must be reconciled` },
     }).exec();
+  }
+
+  async lookupCustomerPayosOrder(reservationIdInput: unknown, orderCodeInput: unknown, customerId: unknown) {
+    const reservationId = id(reservationIdInput);
+    const orderCode = parseOrderCode(orderCodeInput);
+    if (orderCode === null) throw new PayosPaymentError(400, 'INVALID_ORDER_CODE', 'A valid decimal orderCode is required');
+    if (!Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    const reservation = await Reservations.findOne({ _id: reservationId, customerId,
+      serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+    if (!reservation) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    const payment = await Payments.findOne({ reservationId, customerId, serviceType: FacilityServiceType.SELF_STORAGE,
+      provider: PaymentProvider.PAYOS, providerReference: String(orderCode) }).exec();
+    if (!payment) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    assertEnabled(this.enabled);
+    const gateway = this.gateway;
+    let link: Awaited<ReturnType<PayosGateway['get']>>;
+    try {
+      link = await gateway.get(orderCode, { requireSignature: true });
+    } catch (error) {
+      const diagnostic = classifyProviderError(error);
+      logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_FAILED', 'CUSTOMER_LOOKUP_BY_ORDER_CODE', false,
+        diagnostic.providerHttpStatus !== null, null, diagnostic);
+      if (diagnostic.providerHttpStatus === 404) {
+        throw new PayosPaymentError(404, 'PAYOS_LINK_NOT_FOUND', 'PayOS did not find the original payment link');
+      }
+      if (diagnostic.category === 'PAYOS_PROVIDER_AUTH_ERROR') {
+        throw new PayosPaymentError(502, 'PAYOS_LOOKUP_AUTH_FAILED', 'PayOS authentication failed for the lookup');
+      }
+      if (diagnostic.category === 'PAYOS_PROVIDER_TIMEOUT' || diagnostic.category === 'PAYOS_PROVIDER_NETWORK_ERROR' ||
+          diagnostic.category === 'PAYOS_PROVIDER_RATE_LIMITED') {
+        throw new PayosPaymentError(503, 'PAYOS_LOOKUP_UNAVAILABLE', 'PayOS lookup is temporarily unavailable');
+      }
+      throw new PayosPaymentError(502, 'PAYOS_LOOKUP_REJECTED', 'PayOS did not confirm the original payment link');
+    }
+    if (!link || link.orderCode !== orderCode || link.amount !== payment.amount ||
+        !Number.isSafeInteger(link.amountPaid) || link.amountPaid < 0 || !PAYOS_PAYMENT_LINK_STATUSES.has(link.status) ||
+        typeof link.id !== 'string' || !link.id.trim() || link.id.length > 200 ||
+        (payment.providerPaymentLinkId && link.id !== payment.providerPaymentLinkId)) {
+      throw new PayosPaymentError(502, 'PAYOS_LOOKUP_MISMATCH', 'PayOS lookup did not match the stored payment identity');
+    }
+    return { id: id(payment._id), orderCode, paymentLinkId: link.id, amount: payment.amount, currency: payment.currency,
+      amountPaid: link.amountPaid, provider: payment.provider, providerStatus: link.status,
+      status: payment.status, checkoutStatus: payment.checkoutState ?? 'UNKNOWN',
+      providerSettlementStatus: payment.providerSettlementStatus ?? ProviderSettlementStatus.NOT_VERIFIED,
+      applicationStatus: payment.applicationStatus ?? PaymentApplicationStatus.NOT_APPLIED };
   }
 
   async getCustomerStatus(paymentIdInput: unknown, reservationIdInput: unknown, customerId: unknown) {

@@ -59,7 +59,7 @@ export function selfStorageEstimate(response) {
 }
 export const sameEstimate=(a,b)=>['estimatedRent','depositAmount','taxAmount','durationDays','basePrice'].every(key=>a?.[key]===b?.[key]);
 export function selfStorageCreation(response,payload) {
-  const data=response?.data?.success===true?response.data.data:null;
-  if(!data||!validId(id(data))||data.serviceType!=='SELF_STORAGE'||data.status!=='CONTRACTED'||id(data.facilityId)!==payload.facilityId||id(data.storageUnitId)!==payload.storageUnitId||Date.parse(data.startDate)!==Date.parse(payload.startDate)||Date.parse(data.endDate)!==Date.parse(payload.endDate)||!Number.isFinite(Date.parse(data.expiresAt))||Date.parse(data.expiresAt)<=Date.now()||data.approvedBy||data.approvedAt)throw Error('Backend did not confirm the requested Self Storage reservation and active Deposit window. Check My Storage before booking again.');
+  const data=[200,201].includes(response?.status)&&response.data?.success===true?response.data.data:null;
+  if(!data||!validId(id(data))||data.serviceType!=='SELF_STORAGE'||id(data.facilityId)!==payload.facilityId||id(data.storageUnitId)!==payload.storageUnitId||Date.parse(data.startDate)!==Date.parse(payload.startDate)||Date.parse(data.endDate)!==Date.parse(payload.endDate))throw Error('Backend did not confirm the requested Self Storage reservation. Check My Storage before booking again.');
   return data;
 }

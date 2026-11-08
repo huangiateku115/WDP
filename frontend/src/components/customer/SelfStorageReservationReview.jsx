@@ -11,14 +11,7 @@ import {
   writeSelfStorageBookingAttempt,
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
-import paymentApi from "@/api/paymentApi";
-import {
-  newPayosIdempotencyKey,
-  readPayosAttempts,
-  writePayosAttempts,
-  isValidObjectId,
-} from "@/lib/selfStoragePayos";
-import { canOpenPayosCheckout } from "@/api/payosPaymentClient";
+import { isValidObjectId } from "@/lib/selfStoragePayos";
 import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { selfStorageAlternatives } from "./selfStorageSuggestions";
@@ -123,6 +116,27 @@ function Review({ draft, session }) {
     const token = getAccessToken();
     let sent = false;
     try {
+      const customerId = session?.user?.id || session?.user?._id;
+      let bookingStorage = null;
+      try {
+        bookingStorage = window.sessionStorage;
+      } catch {
+        bookingStorage = null;
+      }
+      if (!isValidObjectId(customerId) || !bookingStorage) {
+        throw Error(
+          "This browser cannot safely preserve the booking request. Allow session storage and try again.",
+        );
+      }
+      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+        bookingStorage,
+        customerId,
+        context.payload,
+      );
+      if (bookingAttempt.reservationId) {
+        nav("/portal/payments/" + bookingAttempt.reservationId);
+        return;
+      }
       const fresh = await reviewContext(draft);
       if (getAccessToken() !== token) return;
       if (fresh.profile.verificationStatus !== "VERIFIED")
@@ -139,36 +153,24 @@ function Review({ draft, session }) {
           "The Backend price or selected unit changed. Review the refreshed estimate and confirm again.",
         );
       }
-      const customerId = session?.user?.id || session?.user?._id;
-      let bookingStorage = null;
-      try {
-        bookingStorage = window.sessionStorage;
-      } catch {
-        bookingStorage = null;
-      }
-      if (!isValidObjectId(customerId) || !bookingStorage) {
-        throw Error(
-          "This browser cannot safely preserve the booking request. Allow session storage and try again.",
-        );
-      }
-      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(
-        bookingStorage,
-        customerId,
-        fresh.payload,
-      );
       attempted.current = true;
       sent = true;
-      const created = selfStorageCreation(
-        await reservationApi.createReal(fresh.payload, {
-          headers: { "Idempotency-Key": bookingAttempt.idempotencyKey },
-        }),
-        fresh.payload,
-      );
+      const response = await reservationApi.createReal(fresh.payload, {
+        headers: { "Idempotency-Key": bookingAttempt.idempotencyKey },
+      });
+      const created = selfStorageCreation(response, fresh.payload);
       if (getAccessToken() !== token) return;
       const createdReservationId = recordId(created);
-      writeSelfStorageBookingAttempt(bookingStorage, {
-        ...bookingAttempt,
-        reservationId: createdReservationId,
+      try {
+        writeSelfStorageBookingAttempt(bookingStorage, {
+          ...bookingAttempt,
+          reservationId: createdReservationId,
+        });
+      } catch {
+        // The booking is already saved. Its original key still protects a replay.
+      }
+      nav("/portal/payments/" + createdReservationId, {
+        state: { selfStorageCreated: true, startDepositAfterBooking: response.status === 201 },
       });
       updateRentalDraft({
         facility: null,
@@ -177,88 +179,6 @@ function Review({ draft, session }) {
         startDate: "",
         endDate: "",
         term: null,
-      });
-      let checkoutCreated = false;
-      let checkoutRecoveryNeeded = false;
-      let storage = null;
-      try {
-        storage = window.sessionStorage;
-      } catch {
-        storage = null;
-      }
-      if (
-        isValidObjectId(customerId) &&
-        storage &&
-        isValidObjectId(createdReservationId)
-      ) {
-        try {
-          const tracked = readPayosAttempts(
-            storage,
-            customerId,
-            createdReservationId,
-            "DEPOSIT",
-          );
-          if (tracked.unavailable || tracked.corrupt)
-            throw Error("Payment attempt tracking is unavailable.");
-          let attempts = tracked.attempts;
-          let attempt = attempts.at(-1);
-          if (!attempt) {
-            attempt = {
-              idempotencyKey: newPayosIdempotencyKey(),
-              paymentId: null,
-            };
-            attempts = [...attempts, attempt];
-            writePayosAttempts(
-              storage,
-              customerId,
-              createdReservationId,
-              "DEPOSIT",
-              attempts,
-            );
-          }
-          if (attempt.paymentId) {
-            checkoutRecoveryNeeded = true;
-          } else {
-            const result = await paymentApi.createPayosCheckout(
-              createdReservationId,
-              "DEPOSIT",
-              attempt.idempotencyKey,
-            );
-            if (getAccessToken() !== token) return;
-            attempts = attempts.map((entry) =>
-              entry.idempotencyKey === attempt.idempotencyKey
-                ? { ...entry, paymentId: result.payment.id }
-                : entry,
-            );
-            writePayosAttempts(
-              storage,
-              customerId,
-              createdReservationId,
-              "DEPOSIT",
-              attempts,
-            );
-            checkoutCreated = true;
-            if (
-              result.payment.reservationId === createdReservationId &&
-              result.payment.purpose === "DEPOSIT" &&
-              canOpenPayosCheckout(result.payment)
-            ) {
-              window.location.assign(result.payment.checkoutUrl);
-              return;
-            }
-          }
-        } catch {
-          checkoutRecoveryNeeded = true;
-        }
-      } else {
-        checkoutRecoveryNeeded = true;
-      }
-      nav("/portal/payments/" + createdReservationId, {
-        state: {
-          selfStorageCreated: true,
-          checkoutCreated,
-          checkoutRecoveryNeeded,
-        },
       });
     } catch (e) {
       if (getAccessToken() !== token) return;
