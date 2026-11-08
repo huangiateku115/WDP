@@ -13,10 +13,13 @@ export const facilityApiPages = {
     "inventory/outbound",
     "inventory/relocation",
     "inventory/history",
+    "inventory/stock",
+    "warehouse-map",
     "maintenance",
     "support",
   ],
   manager: [
+    "warehouse-map",
     "operations",
     "tasks",
     "access",
@@ -32,6 +35,7 @@ export const facilityApiPages = {
 };
 export const facilityHome = (role) => `/${role}/reservations`;
 export function facilityPageVisible(role, path = "") {
+  if (role === 'staff' && /^inventory\/items\/[a-f\d]{24}\/history$/i.test(path)) return true;
   return (
     !facilityApiPages[role] ||
     facilityApiPages[role].some(
