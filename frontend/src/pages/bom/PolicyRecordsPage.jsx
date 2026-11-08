@@ -41,13 +41,24 @@ const CONFIGS = {
   },
 };
 
+// Mounted under both /bom and /admin; memoised so the config identity stays stable.
+const CONFIG_ROOTS = { discount: "/policies/discounts", category: "/policies/item-categories" };
+const configCache = new Map();
+function configFor(kind, basePath) {
+  if (!CONFIGS[kind]) return null;
+  const key = `${kind}:${basePath}`;
+  if (!configCache.has(key))
+    configCache.set(key, { ...CONFIGS[kind], root: `${basePath}${CONFIG_ROOTS[kind]}` });
+  return configCache.get(key);
+}
+
 // Bounded server-paged fetch. Category rows are filtered by the backend; discounts are narrowed by type.
 const loadRecords = (config, signal) =>
   fetchPaged(bomPolicyApi.list, config.listParams, { signal })
     .then((page) => ({ ...page, rows: page.rows.filter((row) => config.policyTypes.includes(row.type)) }));
 
-export default function PolicyRecordsPage({ kind, mode = "list" }) {
-  const config = CONFIGS[kind];
+export default function PolicyRecordsPage({ kind, mode = "list", basePath = "/bom" }) {
+  const config = configFor(kind, basePath);
   if (!config) return <BomUnavailable />;
   if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
   if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;
