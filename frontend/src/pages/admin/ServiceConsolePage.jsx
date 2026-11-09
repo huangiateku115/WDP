@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field, Select, Input } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAdminUsers, userId } from "@/lib/adminUsers";
 import { useAuthSession } from "@/lib/authSession";
@@ -114,7 +114,6 @@ function ServiceList({ config }) {
     <Screen
       title={config.title}
       description={`Live list from the confirmed ${config.title.toLowerCase()} API.`}
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
@@ -152,7 +151,7 @@ function ServiceDetail({ config }) {
 
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error))
     return (
-      <Screen title="Record unavailable" notice={LIVE_NOTICE}>
+      <Screen title="Record unavailable">
         <Panel title="Record unavailable"><Link className="manager-link" to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Panel>
       </Screen>
     );
@@ -161,7 +160,6 @@ function ServiceDetail({ config }) {
     <Screen
       title={config.title.replace(/s$/, "") + " detail"}
       description={`Live detail from the confirmed ${config.title.toLowerCase()} API.`}
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
@@ -363,10 +361,6 @@ function ServiceStatusActions({ config, row, onDone }) {
           <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
-      <p className="mt-4 text-sm text-slate-500">
-        Assigning a {config.assigneeLabel.toLowerCase()} needs the ADMIN user directory (GET /users is ADMIN-only),
-        so the assignment controls are not shown here.
-      </p>
       <div className="mt-5 flex flex-wrap gap-3">
         <Button
           variant="orange"

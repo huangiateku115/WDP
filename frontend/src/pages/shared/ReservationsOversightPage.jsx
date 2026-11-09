@@ -4,7 +4,7 @@ import { useAuthSession } from "@/lib/authSession";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, money,
 } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilityReservations } from "@/lib/bomApiData";
@@ -66,7 +66,6 @@ export default function ReservationsOversightPage() {
     <Screen
       title="Reservation oversight"
       description="Review SELF_STORAGE reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract on the backend."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
@@ -142,18 +141,6 @@ export default function ReservationsOversightPage() {
               </Panel>
             )} />
           )}
-
-          <Panel
-            title="Managed reservations"
-            subtitle="Backend chưa có endpoint danh sách Managed reservations."
-          >
-            <p className="text-sm text-slate-500">
-              Trang này chỉ liệt kê reservation SELF_STORAGE từ <code>GET /reservations/facility/:facilityId</code>.
-              Chưa thể hiển thị danh sách Managed Inventory vì backend không có collection endpoint và frontend
-              không gọi chi tiết từng bản ghi (tránh N+1, tránh bắt người dùng nhập ID).
-              Cần bổ sung <code>GET /reservations/managed</code> để hiển thị danh sách này.
-            </p>
-          </Panel>
         </>
       )} />
     </Screen>

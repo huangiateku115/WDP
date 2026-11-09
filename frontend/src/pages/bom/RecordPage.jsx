@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -83,7 +83,6 @@ function RecordList({ kind, config }) {
       description={kind === "pricing"
         ? "Live pricing rules: private-unit prices and Managed capacity rates with effective periods."
         : "Live business policies confirmed by the backend PolicyType contract."}
-      notice={LIVE_NOTICE}
       action={kind === "pricing"
         ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Create pricing rule</Link></Button>
         : undefined}
@@ -152,7 +151,6 @@ function RecordDetail({ kind, config }) {
     <Screen
       title="Record detail"
       description={config.title}
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={config.root}>Back to {config.title.toLowerCase()}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
@@ -282,7 +280,6 @@ function RecordForm({ kind, config, mode }) {
     <Screen
       title={`${isEdit ? "Edit" : "Create"} ${kind}`}
       description="Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."
-      notice={LIVE_NOTICE}
     >
       <AsyncBoundary
         state={state}

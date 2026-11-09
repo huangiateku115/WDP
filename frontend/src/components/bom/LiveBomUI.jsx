@@ -2,9 +2,6 @@ import { useState } from "react";
 import { Dialog, Button, Panel, Message } from "@/components/manager/ManagerUI";
 import { apiErrorMessage } from "@/lib/apiError";
 
-export const LIVE_NOTICE =
-  "Live backend data · Changes are saved to the server through the confirmed ADMIN/BOM APIs. Existing rentals, contracts and payments are never rewritten.";
-
 export function AsyncBoundary({ state, render }) {
   if (state.loading)
     return (

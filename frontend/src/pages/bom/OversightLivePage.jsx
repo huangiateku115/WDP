@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, Field, Input, Select, Details, Button, Meter,
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservations, loadFacilityUnits, loadWarehouseStructure,
@@ -42,7 +42,6 @@ export default function OversightLivePage({
     <Screen
       title="Cross-facility oversight"
       description="Read-only cross-facility visibility built from the live facility, warehouse-map, storage-unit, managed-inventory and reservation APIs."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={managePath}>Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => {

@@ -134,5 +134,6 @@ Các lỗi đã sửa được ở FE được liệt kê ở mục cuối.
 - Xoá các trang demo không còn route nào dùng: `pages/bom/BusinessRecordsPage.jsx`, `pages/bom/OverviewPages.jsx`, `pages/admin/UsersPage.jsx` (bản trùng của `UsersLivePage`), `pages/admin/SystemPages.jsx` (bản trùng của `LiveSystemPages`).
 - Xoá dữ liệu demo chỉ phục vụ các trang trên: `lib/bomDemoStore.js`, `mocks/bomData.js`, `mocks/adminData.js`.
 - Gỡ banner "Isolated business demo" ở `layouts/BomLayout.jsx` và notice sai "BOM APIs ... not connected" ở `components/bom/BomUI.jsx`.
+- Bỏ toàn bộ note hiển thị trên UI: hằng `LIVE_NOTICE` (notice bar của mọi màn hình BOM/Admin), panel "Backend surface" ở Contract lookup, panel "Managed reservations" giải thích thiếu endpoint, đoạn note "GET /users is ADMIN-only" ở Service console, cùng các hint/subtitle lộ endpoint ở Audit page. Comment giải thích trong code vẫn giữ.
 - Bỏ panel "Still demo (backend contract pending)" ở `DashboardLivePage` và `RentalReportLivePage`; viết lại `ReportsPages.jsx` chỉ còn 2 export live và mô tả đúng trạng thái revenue.
 

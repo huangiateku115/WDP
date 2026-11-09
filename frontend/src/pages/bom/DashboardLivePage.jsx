@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Screen, Panel, Table, Status, Button, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 
@@ -21,7 +21,6 @@ export default function DashboardLivePage() {
     <Screen
       title="Business across every facility"
       description="Facilities and reservations from the confirmed BOM APIs. Utilization and business audit are live reports; revenue waits on a cross-facility payment ledger endpoint."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to="/bom/facilities">Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {

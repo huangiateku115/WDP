@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Screen, Panel, OpenLink, Details, Button } from "@/components/manager/ManagerUI";
+import { Screen, Panel, OpenLink, Button } from "@/components/manager/ManagerUI";
 
 // Reports shared by the BOM and Admin workspaces.
 // Utilization and rental reports are live (confirmed read APIs).
@@ -41,7 +41,7 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
             {report.live ? (
               <OpenLink to={`${basePath}/reports/${report.key}`}>Open report</OpenLink>
             ) : (
-              <p className="text-sm text-slate-500">Awaiting a cross-facility payment ledger endpoint.</p>
+              <p className="text-sm text-slate-500">No data available yet.</p>
             )}
           </Panel>
         ))}
@@ -57,22 +57,8 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
       description="Collected revenue, payment status and period summaries."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
-      <Panel title="Revenue needs a cross-facility payment ledger" subtitle="No sample numbers are shown on this page.">
-        <p className="text-sm text-slate-600">
-          Payment records already exist per reservation (PayOS checkout, webhook-confirmed status
-          and the customer payment history), but the backend exposes them only for the owning
-          customer. BOM/Admin revenue reporting needs an aggregated ledger endpoint, so this page
-          stays empty instead of showing demo numbers.
-        </p>
-        <div className="mt-5">
-          <Details
-            values={[
-              ["Needed", "GET /payments with facility, service and status filters plus period totals."],
-              ["Also needed", "GET /reports/revenue and GET /reports/:kind/export for CSV/XLSX downloads."],
-              ["Available today", "Utilization and rental reports read only confirmed APIs."],
-            ]}
-          />
-        </div>
+      <Panel title="Cross-facility revenue">
+        <p className="text-sm text-slate-600">No revenue data is available yet.</p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Open utilization report</Link></Button>
           <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Open rental report</Link></Button>

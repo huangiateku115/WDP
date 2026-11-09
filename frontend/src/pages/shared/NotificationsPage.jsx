@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Screen, Panel, Table, Field, Select, Button, Message } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { apiErrorMessage } from "@/lib/apiError";
@@ -58,7 +58,6 @@ export default function NotificationsPage() {
     <Screen
       title="Notifications"
       description="Operational alerts delivered to your own account. Reading them is the only write the backend currently supports."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" disabled={state.loading} onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={() => (

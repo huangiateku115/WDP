@@ -4,7 +4,7 @@ import { useAuthSession } from "@/lib/authSession";
 import {
   Screen, Panel, Details, Timeline, Status, Button, Field, Input, Message, money,
 } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { bomReservationApi, bomReservationWriteApi } from "@/api/bomApi";
 import { responseData } from "@/lib/bomMappers";
@@ -81,7 +81,6 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
     <Screen
       title={managed ? "Managed reservation detail" : "Reservation detail"}
       description="Backend-verified reservation record. Actions run from this page, not from the list."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" onClick={() => nav(basePath)}>Back to reservations</Button>}
     >
       <AsyncBoundary state={resource} render={(reservation) => (reservation ? (

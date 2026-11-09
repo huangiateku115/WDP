@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Input, Select, Button, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES } from "@/lib/bomMappers";
@@ -26,7 +26,6 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
     <Screen
       title="Rental lifecycle report"
       description="Reservations across every facility from the confirmed reservation API. Revenue totals await a cross-facility payment ledger endpoint."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {

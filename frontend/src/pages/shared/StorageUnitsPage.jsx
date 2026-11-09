@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -52,7 +52,6 @@ export default function StorageUnitsPage() {
     <Screen
       title="Storage units"
       description="Private storage units per facility. Creation, editing, status changes and deletion all run through the confirmed storage-unit API."
-      notice={LIVE_NOTICE}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);

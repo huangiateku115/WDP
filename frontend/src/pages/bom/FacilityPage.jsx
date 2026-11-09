@@ -6,7 +6,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -76,7 +76,6 @@ function FacilityList({ basePath }) {
     <Screen
       title="Facilities"
       description="Live facility records from the backend. Create, edit, activate, deactivate or delete cross-facility resources."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Create facility</Link></Button>}
     >
       <Panel title="Facility filters">
@@ -177,7 +176,6 @@ function FacilityDetail({ basePath, oversightRoot }) {
     <Screen
       title="Facility detail"
       description="Live facility record from the backend."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={backTo}>{backLabel}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(facility) => {
@@ -208,7 +206,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Description", facility.description],
               ]} />
               <p className="bom-warning mt-5">
-                Deactivation only blocks new reservations. Existing active rentals are preserved by the backend contract.
+                Deactivation only blocks new reservations. Existing active rentals are preserved.
               </p>
               <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
@@ -405,7 +403,6 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
     <Screen
       title={isEdit ? "Edit facility" : "Create facility"}
       description="Facility fields confirmed by the backend contract. Code is required on create and is immutable afterwards."
-      notice={LIVE_NOTICE}
     >
       <AsyncBoundary
         state={isEdit ? state : { loading: false, data: null, error: "" }}
@@ -539,8 +536,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   <Textarea aria-label="Description" value={form.description} onChange={(e) => change("description", e.target.value)} />
                 </Field>
                 {form.status === "INACTIVE" && (
-                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>
-                )}
+                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>                )}
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>

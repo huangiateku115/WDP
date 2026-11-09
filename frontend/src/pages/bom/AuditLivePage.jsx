@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { BomScreen } from "@/components/bom/BomUI";
-import { Panel, Details, Table, Status, Field, Select, Message } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Status, Field, Select, Message } from "@/components/manager/ManagerUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import customerProfileApi from "@/api/customerProfileApi";
@@ -44,22 +43,16 @@ export default function AuditLivePage() {
   }, [subjectId]);
 
   return (
-    <BomScreen
+    <Screen
       title="Audit review"
       description="Sign-in events and audit actions for accounts below the BOM level."
     >
-      <Panel
-        title="Reviewable account"
-        subtitle="BOM may review accounts below its own level; the backend refuses ADMIN and BOM targets."
-      >
+      <Panel title="Reviewable account">
         {subjects.loading && <p role="status" className="text-sm text-slate-500">Loading customer accounts…</p>}
         {subjects.error && <Message error={subjects.error} />}
         {!subjects.loading && !subjects.error && (
           <>
-            <Field
-              label="Customer account"
-              hint="Customer accounts come from GET /customers, which the backend allows for BOM."
-            >
+            <Field label="Customer account">
               <Select label="Customer account" value={subjectId} onChange={setSubjectId} options={options} />
             </Field>
             {options.length <= 1 && (
@@ -67,20 +60,11 @@ export default function AuditLivePage() {
             )}
           </>
         )}
-        <div className="mt-5">
-          <Details
-            values={[
-              ["Available now", "GET /customers for the account list, then GET /audit/bom/login-history/:userId and GET /audit/bom/audit-logs/:userId."],
-              ["Still missing", "GET /audit/bom/subjects — required to review FACILITY_STAFF / FACILITY_MANAGER accounts."],
-              ["Not available", "A global audit collection with server-side filters and export."],
-            ]}
-          />
-        </div>
       </Panel>
 
       {subjectId && (
         <>
-          <Panel title="Sign-in history" subtitle="From GET /audit/bom/login-history/:userId.">
+          <Panel title="Sign-in history">
             <AsyncBoundary
               state={records}
               render={({ history }) => (
@@ -100,7 +84,7 @@ export default function AuditLivePage() {
               )}
             />
           </Panel>
-          <Panel title="Audit actions" subtitle="From GET /audit/bom/audit-logs/:userId.">
+          <Panel title="Audit actions">
             <AsyncBoundary
               state={records}
               render={({ logs }) => (
@@ -121,6 +105,6 @@ export default function AuditLivePage() {
           </Panel>
         </>
       )}
-    </BomScreen>
+    </Screen>
   );
 }

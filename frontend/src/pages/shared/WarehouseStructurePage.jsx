@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Button, Details } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { CellDialog, RackDialog, ZoneDialog } from "@/components/bom/WarehouseStructureDialogs";
 import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
@@ -81,7 +81,6 @@ export default function WarehouseStructurePage() {
     <Screen
       title="Warehouse structure"
       description="Zones, racks and rack cells of a Managed Inventory facility. Zones and racks are fully writable through the confirmed warehouse-map API; cells accept a limited patch."
-      notice={LIVE_NOTICE}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);

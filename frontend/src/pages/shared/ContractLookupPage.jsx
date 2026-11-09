@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Details, Field, Input, Select, Status, Button, Message, money } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAuthSession } from "@/lib/authSession";
 import { loadFacilities, loadFacilityReservations, loadContractForReservation } from "@/lib/bomApiData";
@@ -133,7 +133,6 @@ function ContractList({ basePath }) {
     <Screen
       title="Contracts"
       description="Open a facility reservation to review the contract captured when it was approved. Contract detail stays on its own route."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" disabled={reservations.loading} onClick={reservations.reload}>Refresh</Button>}
     >
       <Panel
@@ -201,14 +200,6 @@ function ContractList({ basePath }) {
           )} />
         )}
       </Panel>
-
-      <Panel title="Backend surface" subtitle="Nothing is requested until a reservation is opened.">
-        <Details values={[
-          ["Reservation list", "GET /reservations/facility/:facilityId — one request per selected facility."],
-          ["Contract lookup", "GET /contracts/reservation/:reservationId — one request for the reservation you open."],
-          ["Missing API", "GET /contracts (collection with code/status/facility filters) — needed to search contracts directly across facilities."],
-        ]} />
-      </Panel>
     </Screen>
   );
 }
@@ -223,7 +214,6 @@ function ContractDetail({ id, basePath }) {
     <Screen
       title="Contract detail"
       description="Read-only contract record. Customer and pricing values are copies captured at approval time."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" onClick={() => nav(basePath)}>Back to contracts</Button>}
     >
       <AsyncBoundary

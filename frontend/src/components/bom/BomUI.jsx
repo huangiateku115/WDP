@@ -1,14 +1,9 @@
 import { Link } from 'react-router-dom';
-import { Screen, Panel, Card, CardContent } from '@/components/manager/ManagerUI';
+import { Panel, Card, CardContent } from '@/components/manager/ManagerUI';
 import { Building2 } from 'lucide-react';
 
-// Shared building blocks for the BOM/Admin workspaces.
-// Every BOM/Admin screen reads the confirmed ADMIN/BOM APIs, so these helpers only frame the
-// content; backend role, facility scope and audit permissions stay authoritative.
-
-export function BomScreen(props) {
-  return <Screen {...props} notice="BOM/Admin screens read the confirmed business APIs. Backend role, facility scope and audit permissions still apply to every read and write." />;
-}
+// Shared building blocks for the BOM/Admin workspaces: unavailability panel, KPI cards and a
+// read-only value viewer. Backend role, facility scope and audit permissions stay authoritative.
 
 export function BomUnavailable() {
   return <Panel title="Business record unavailable"><Link className="manager-link" to="/bom/dashboard">Back to BOM dashboard</Link></Panel>;

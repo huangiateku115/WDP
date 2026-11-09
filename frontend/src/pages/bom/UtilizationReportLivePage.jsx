@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, Field, Select, Details, Button, Meter,
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
@@ -49,7 +49,6 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
     <Screen
       title="Utilization report"
       description="Current private-unit occupancy and volume-based physical/allocation utilization from the confirmed warehouse, storage-unit, managed-inventory and capacity APIs."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
