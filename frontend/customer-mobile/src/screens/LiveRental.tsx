@@ -8,8 +8,8 @@ import {mobileRepo} from '../api/mobileRepository';
 import {lifecycle,type ReservationDto} from '../api/contracts/customer';
 import {journal,newAttempt} from '../state/attemptJournal';
 import {useLiveSession} from '../state/useLiveSession';
-import {openDeposit,paymentContext,readRentalPayment} from '../api/selfStoragePayment';
-import {AppText,Button,Card,Filter,StateCard,ui} from '../components/ui';
+import {openSelfStoragePayment,paymentContext,readRentalPayment} from '../api/selfStoragePayment';
+import {AppText,Button,Card,Chip,Filter,StateCard,ui} from '../components/ui';
 import {dateLabel,LiveScreen,money,ResourceState,serviceLabel,useResource} from '../components/liveUI';
 
 import {ReservationProgressTracker} from '../components/ReservationProgressTracker';
@@ -65,7 +65,7 @@ function RentalProgress({reservation,owner,onRetry}:{reservation:ReservationDto;
   const progress=read.data?reservationProgress(reservation,{...read.data,decision:read.data.decision.kind}):null;
   if(!progress)return <ResourceState {...read}/>;
   return <ReservationProgressTracker progress={progress} onAction={action=>router.push(action.destination==='PAYMENT'
-    ?{pathname:'/rentals/[id]/payment',params:{id:reservation._id}}
+    ?{pathname:'/rentals/[id]/payment',params:{id:reservation._id,...(action.purpose?{purpose:action.purpose}:{})}}
     :{pathname:'/rentals/[id]/contract',params:{id:reservation._id}})}/>;
 }
 
@@ -180,39 +180,75 @@ function BookingForm({facilityId,unitId}:{facilityId:string;unitId:string}){
 }
 
 export function Payment(){
+  const {id,purpose}=useLocalSearchParams<{id:string;purpose?:string}>();
+  return <PaymentScreen key={id+':'+purpose} id={id} purpose={purpose==='BALANCE'?'BALANCE':'DEPOSIT'}/>;
+}
+
+const paymentStatus={PENDING:'Đang chờ xác nhận',SUCCEEDED:'Đã nhận thanh toán',FAILED:'Thất bại',RECONCILIATION_REQUIRED:'Cần đối soát'} as const;
+const checkoutStatus={NOT_CREATED:'Chưa tạo',CREATING:'Đang tạo',READY:'Sẵn sàng',UNKNOWN:'Chưa rõ kết quả',
+  RECONCILIATION_REQUIRED:'Cần đối soát'} as const;
+const applicationStatus={APPLIED:'Đã ghi nhận vào đơn',NOT_APPLIED:'Chưa ghi nhận vào đơn',MANUAL_REVIEW:'Chờ đối soát'} as const;
+
+function PaymentScreen({id,purpose}:{id:string;purpose:'DEPOSIT'|'BALANCE'}){
   const router=useRouter();
-  const {id}=useLocalSearchParams<{id:string}>();
   const owner=useLiveSession(s=>s.user?._id??'');
   const data=useResource(owner+':'+id,signal=>paymentContext(id,owner,signal,true));
-  const busy=useRef(false);
+  const busy=useRef(false),redirected=useRef(false);
   const [pending,setPending]=useState(false),[error,setError]=useState('');
+  const balance=purpose==='BALANCE';
+  const decision=balance?data.data?.balanceDecision.kind:data.data?.decision.kind;
+  const state=data.data?.reservation.status;
+  useEffect(()=>{
+    if(!redirected.current&&balance&&decision==='APPLIED'&&(state==='PAID'||state==='ACTIVE')){
+      redirected.current=true;
+      router.replace({pathname:'/preview/[kind]/[id]',params:{kind:'rental',id}});
+    }
+  },[balance,decision,state,router,id]);
+
   async function pay(){
     if(busy.current)return;
     busy.current=true;
     setPending(true);setError('');
-    try {
-      await openDeposit(id,owner,()=>useLiveSession.getState().user?._id===owner,url=>Linking.openURL(url));
+    try{
+      await openSelfStoragePayment(id,owner,purpose,()=>useLiveSession.getState().user?._id===owner,url=>Linking.openURL(url));
     }catch(cause){setError(apiIssue(cause));}
     finally{busy.current=false;setPending(false);data.reload();}
   }
-  const decision=data.data?.decision.kind;
+
   const progress=data.data?reservationProgress(data.data.reservation,{...data.data,decision:data.data.decision.kind}):null;
-  const checkout=(decision==='CREATE'||decision==='READY')&&<Button label={decision==='READY'?'Mở liên kết PayOS hiện có':'Tạo liên kết thanh toán'} loading={pending} onPress={()=>void pay()}/>;
-  return <LiveScreen title="Thanh toán PayOS" eyebrow="TÀI CHÍNH ĐƠN THUÊ" onRefresh={data.reload} refreshing={data.loading}>
+  const checkout=(decision==='CREATE'||decision==='READY')&&<Button
+    label={decision==='READY'?'Mở liên kết PayOS hiện có':balance?'Xác nhận tạo liên kết PayOS':'Tạo liên kết thanh toán'}
+    loading={pending} onPress={()=>void pay()}/>;
+  return <LiveScreen title={balance?'Thanh toán phần còn lại':'Thanh toán PayOS'} eyebrow="TÀI CHÍNH ĐƠN THUÊ" onRefresh={data.reload} refreshing={data.loading}>
     <AppText>Trạng thái thanh toán được xác nhận từ máy chủ. Khi trở lại ứng dụng, giao dịch sẽ được kiểm tra lại.</AppText>
     {data.error?<StateCard kind="error" title="Chưa thể xác minh tiến độ" description={data.error} onRetry={data.reload}/>:<ResourceState {...data}/>}
-    {data.data&&<Card><CardHeading icon="wallet-outline" title={data.data.reservation.reservationCode}/>
+    {data.data&&<Card><CardHeading icon="wallet-outline" title={data.data.reservation.reservationCode}
+      subtitle={balance?'Thanh toán phần còn lại':'Thanh toán tiền cọc'}/>
       <AppText>{rentalLabel(data.data.reservation)}</AppText>
-      {decision==='APPLIED'&&<TintedPanel><AppText accessibilityRole="status">Tiền đặt cọc đã được xác minh và ghi nhận.</AppText></TintedPanel>}
-      {decision==='REVIEW'&&<TintedPanel tone="amber"><AppText>Đã có lần thanh toán. Kiểm tra trạng thái hoặc liên hệ hỗ trợ để đối soát.</AppText></TintedPanel>}
-      {decision==='INELIGIBLE'&&<AppText>Đơn thuê hoặc hợp đồng chưa đủ điều kiện thanh toán tiền cọc.</AppText>}
+      {decision==='APPLIED'&&<TintedPanel><AppText accessibilityRole="status">{balance?'Số dư đã được xác minh và ghi nhận.':'Tiền đặt cọc đã được xác minh và ghi nhận.'}</AppText></TintedPanel>}
+      {decision==='REVIEW'&&<TintedPanel tone="amber"><AppText>{balance?'Giao dịch cần được kiểm tra. Vui lòng không thanh toán lại.':'Đã có lần thanh toán. Kiểm tra trạng thái hoặc liên hệ hỗ trợ để đối soát.'}</AppText></TintedPanel>}
+      {decision==='VERIFYING'&&<AppText>Đã nhận thông tin thanh toán, đang chờ hệ thống ghi nhận.</AppText>}
+      {decision==='PENDING'&&<AppText>Đang chờ xác nhận thanh toán.</AppText>}
+      {decision==='ZERO'&&<AppText>Không có số dư dương. Vui lòng liên hệ cơ sở để xác nhận bước tiếp theo.</AppText>}
+      {decision==='INELIGIBLE'&&<AppText>{balance?'Đơn thuê chưa đủ điều kiện thanh toán số dư.':'Đơn thuê hoặc hợp đồng chưa đủ điều kiện thanh toán tiền cọc.'}</AppText>}
+      {balance&&decision==='CREATE'&&<AppText>Máy chủ xác định số tiền phải trả khi tạo liên kết.</AppText>}
     </Card>}
-    {progress&&<ReservationProgressTracker progress={progress} paymentScreen onAction={()=>router.push({pathname:'/rentals/[id]/contract',params:{id}})}>{checkout}</ReservationProgressTracker>}
+    {progress&&<ReservationProgressTracker progress={progress} paymentScreen paymentPurpose={purpose}
+      onAction={action=>router.push(action.destination==='PAYMENT'
+        ?{pathname:'/rentals/[id]/payment',params:{id,purpose:action.purpose??'DEPOSIT'}}
+        :{pathname:'/rentals/[id]/contract',params:{id}})}>{checkout}</ReservationProgressTracker>}
     {error&&<StateCard kind="error" title="Không mở được thanh toán" description={error} onRetry={data.reload}/>}
-    {data.data?.payments.map(p=><Card key={p.id}><AppText variant="card">{p.purpose==='DEPOSIT'?'Đặt cọc':'Tiền thuê còn lại'} · {money(p.amount)}</AppText>
-      <AppText>{p.reconciliationRequired||p.applicationStatus==='MANUAL_REVIEW'?'Cần đối soát':
-        p.applicationStatus==='APPLIED'&&p.providerSettlementStatus==='VERIFIED'&&p.status==='SUCCEEDED'?'Đã ghi nhận':
-        p.status==='FAILED'?'Thất bại':p.checkoutStatus==='UNKNOWN'?'Chưa xác định kết quả':'Đang chờ xác nhận'}</AppText>
+    {data.data&&<AppText variant="heading">Lịch sử thanh toán</AppText>}
+    {data.data?.payments.map(p=><Card key={p.id}><CardHeading icon="card-outline"
+      title={p.purpose==='DEPOSIT'?'Đặt cọc':'Tiền thuê còn lại'} subtitle={p.provider}/>
+      <AppText variant="heading">{money(p.amount)}</AppText>
+      <Chip label={paymentStatus[p.status]} tone={p.reconciliationRequired?'orange':'neutral'}/>
+      <AppText>Liên kết: {checkoutStatus[p.checkoutStatus]}</AppText>
+      <AppText>Xác minh thanh toán: {p.providerSettlementStatus==='VERIFIED'?'Đã xác minh':'Chưa xác minh'}</AppText>
+      <AppText>{applicationStatus[p.applicationStatus]}</AppText>
+      <AppText>Đối soát: {p.reconciliationRequired||p.checkoutStatus==='UNKNOWN'?'Cần kiểm tra':'Không có yêu cầu'}</AppText>
+      <AppText>Ngày tạo: {p.createdAt?dateLabel(p.createdAt):'Chưa có dữ liệu'}</AppText>
+      {p.succeededAt&&<AppText>Ngày thanh toán: {dateLabel(p.succeededAt)}</AppText>}
     </Card>)}
     <Button label="Kiểm tra trạng thái" icon="refresh-outline" variant="outline" disabled={pending} onPress={data.reload}/>
   </LiveScreen>;

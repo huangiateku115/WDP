@@ -3,17 +3,17 @@ import type {ReservationDto} from '../api/contracts/customer';
 import type {contractDto,paymentDto} from '../api/contracts/documents';
 import {refId} from '../api/contracts/core';
 import {reviewDocument,contractText} from './contractReview';
-import {applied} from './livePayment';
+import {applied,balanceDecision,hasPaperProof} from './livePayment';
 
 type Contract=z.infer<typeof contractDto>;
 type Payment=z.infer<typeof paymentDto>;
 type PaymentDecision='APPLIED'|'REVIEW'|'INELIGIBLE'|'READY'|'CREATE';
-type Action={destination:'PAYMENT'|'CONTRACT';label:string;intent?:'SIGN'};
+type Action={destination:'PAYMENT'|'CONTRACT';label:string;intent?:'SIGN';purpose?:'BALANCE'};
 type StepState='COMPLETED'|'CURRENT'|'UPCOMING'|'BLOCKED'|'FAILED'|'SKIPPED';
 type Mode='CUSTOMER_ACTION_REQUIRED'|'WAITING_FOR_SYSTEM'|'WAITING_FOR_STAFF'|'BLOCKED'|'COMPLETED';
 export type ProgressStep={id:string;title:string;state:StepState;description:string};
 export type ReservationProgress={summary:string;steps:ProgressStep[];next?:{mode:Mode;description:string;action?:Action}};
-type Evidence={contract:Contract|null;payments:Payment[];decision:PaymentDecision};
+type Evidence={contract:Contract|null;payments:Payment[];decision:PaymentDecision;balanceAttemptExists?:boolean};
 
 const titles={booking:'Đặt kho',deposit:'Thanh toán tiền cọc',contract:'Ký hợp đồng',balance:'Thanh toán phần còn lại',handover:'Nhận kho'};
 type StepId=keyof typeof titles;
@@ -27,25 +27,6 @@ function paymentState(rows:Payment[]){
   if(rows.some(p=>p.providerSettlementStatus==='VERIFIED'||p.status==='SUCCEEDED'||p.applicationStatus==='APPLIED'))return 'VERIFYING';
   if(rows.some(p=>p.status==='PENDING'))return rows.some(p=>p.status==='PENDING'&&p.checkoutStatus==='READY')?'READY':'PENDING';
   return rows.some(p=>p.status==='FAILED')?'FAILED':'NONE';
-}
-
-function balanceRequirement(r:ReservationDto,deposit:Payment|undefined){
-  if(!deposit||typeof r.estimatedRent!=='number'||typeof r.depositAmount!=='number')return 'UNKNOWN';
-  const tax=r.taxAmount??0,discount=r.discountAmount??0;
-  if(typeof tax!=='number'||typeof discount!=='number')return 'UNKNOWN';
-  const amounts=[r.estimatedRent,r.depositAmount,tax,discount];
-  if(!amounts.every(n=>Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER))return 'UNKNOWN';
-  const gross=r.estimatedRent+tax;
-  const total=gross-discount;
-  const rounded=(n:number)=>Math.floor(n+0.5);
-  if(gross>Number.MAX_SAFE_INTEGER||total<r.depositAmount||rounded(r.depositAmount)!==deposit.amount)return 'UNKNOWN';
-  return rounded(total)-deposit.amount>0?'REQUIRED':'ZERO';
-}
-
-function hasPaperProof(contract:Contract|null){
-  return contract?.status==='SIGNED'&&typeof contract.signedProofUrl==='string'&&contract.signedProofUrl.trim()!==''&&
-    typeof contract.signedProofPublicId==='string'&&contract.signedProofPublicId.trim()!==''&&
-    typeof contract.verifiedAt==='string'&&Number.isFinite(Date.parse(contract.verifiedAt));
 }
 
 export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date.now()):ReservationProgress|null{
@@ -91,7 +72,7 @@ export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date
   const handedOver=r.status==='ACTIVE'||r.status==='OVERDUE';
   if(handedOver)set('handover','COMPLETED','Máy chủ đã xác nhận bàn giao kho.');
   if(hasPaperProof(contract))set('contract','COMPLETED','Nhân viên đã xác minh bằng chứng hợp đồng giấy.');
-  if(balance==='APPLIED')set('balance','COMPLETED','Số dư đã được xác minh và ghi nhận.');
+  if(balance==='APPLIED'&&r.status!=='CHECKIN_READY')set('balance','COMPLETED','Số dư đã được xác minh và ghi nhận.');
   if(deposit!=='APPLIED'){
     const action:Action={destination:'PAYMENT',label:'Xem trạng thái thanh toán'};
     if(deposit==='REVIEW'||decision==='REVIEW'&&deposit==='NONE'){
@@ -130,19 +111,25 @@ export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date
     return finish('contract','CURRENT','CUSTOMER_ACTION_REQUIRED','Xem và ký hợp đồng thuê kho để tiếp tục.',
       {destination:'CONTRACT',label:'Ký hợp đồng',intent:'SIGN'});
   }
-  if(balance==='REVIEW')return finish('balance','BLOCKED','BLOCKED','Thanh toán số dư cần đối soát.');
-  else if(balance==='FAILED')return finish('balance','FAILED','BLOCKED','Giao dịch thanh toán số dư thất bại. Hãy liên hệ cơ sở.');
-  else if(balance==='VERIFYING'||balance==='PENDING'){
-    return finish('balance','CURRENT','WAITING_FOR_SYSTEM','Đang chờ máy chủ xác minh và ghi nhận số dư.');
+  const balanceAction:Action={destination:'PAYMENT',purpose:'BALANCE',label:'Xem trạng thái thanh toán'};
+  const nextBalance=balanceDecision(r,contract,payments,evidence.balanceAttemptExists).kind;
+  if(balance==='REVIEW'||nextBalance==='REVIEW'&&balance!=='FAILED'){
+    return finish('balance','BLOCKED','BLOCKED','Giao dịch cần được kiểm tra. Vui lòng không thanh toán lại.',balanceAction);
+  }
+  if(balance==='FAILED')return finish('balance','FAILED','BLOCKED','Giao dịch thanh toán số dư thất bại. Hãy liên hệ cơ sở.',balanceAction);
+  if(balance==='VERIFYING'||balance==='APPLIED'&&r.status==='CHECKIN_READY'){
+    return finish('balance','CURRENT','WAITING_FOR_SYSTEM','Đã nhận thông tin thanh toán, đang chờ hệ thống ghi nhận.',balanceAction);
+  }
+  if(nextBalance==='CREATE'||nextBalance==='READY'){
+    return finish('balance','CURRENT','CUSTOMER_ACTION_REQUIRED',nextBalance==='READY'?'Liên kết đã sẵn sàng. Đang chờ xác nhận thanh toán.':
+      'Hợp đồng của bạn đã được xác minh. Vui lòng thanh toán số tiền còn lại để tiếp tục nhận kho.',
+      {...balanceAction,label:'Thanh toán qua PayOS'});
+  }
+  if(balance==='PENDING'||balance==='READY')return finish('balance','CURRENT','WAITING_FOR_SYSTEM','Đang chờ xác nhận thanh toán.',balanceAction);
+  if(nextBalance==='ZERO'){
+    set('balance','SKIPPED','Không có số dư dương để tạo checkout. Liên hệ cơ sở để xác nhận bước tiếp theo.');
   }else if(balance!=='APPLIED'){
-    const requirement=balanceRequirement(r,deposits.find(p=>applied(p)&&p.id===r.depositPaymentId));
-    if(balance==='NONE'&&requirement==='ZERO'){
-      set('balance','SKIPPED','Không có số dư dương để tạo checkout. Liên hệ cơ sở để xác nhận bước tiếp theo.');
-    }else if(r.status==='CHECKIN_READY'&&(requirement==='REQUIRED'||balance==='READY')){
-      return finish('balance','CURRENT','CUSTOMER_ACTION_REQUIRED','Cần thanh toán số dư. Vui lòng dùng Customer Web hoặc liên hệ cơ sở để được hướng dẫn.');
-    }else {
-      return finish('balance','BLOCKED','BLOCKED','Chưa đủ dữ liệu xác minh số dư hoặc điều kiện thanh toán.');
-    }
+    return finish('balance','BLOCKED','BLOCKED','Chưa đủ dữ liệu xác minh số dư hoặc điều kiện thanh toán.');
   }
 
   if(handedOver){

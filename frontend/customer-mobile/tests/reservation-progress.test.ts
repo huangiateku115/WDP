@@ -61,12 +61,12 @@ test('applied deposit leads to paper signing and proof is required beyond SIGNED
   expect(step(run('DEPOSIT_PAID',{contract:null,payments:[settled]}),'contract')?.state).toBe('BLOCKED');
 });
 
-test('verified paper and CHECKIN_READY expose only balance guidance; zero balance does not authorize handover',()=>{
+test('verified paper and CHECKIN_READY enable Balance checkout; zero balance does not authorize handover',()=>{
   const due=run('CHECKIN_READY',{contract:signed,payments:[settled]});
   expect(step(due,'contract')?.state).toBe('COMPLETED');
   expect(step(due,'balance')?.state).toBe('CURRENT');
   expect(due.next).toMatchObject({mode:'CUSTOMER_ACTION_REQUIRED'});
-  expect(due.next?.action).toBeUndefined();
+  expect(due.next?.action).toEqual({destination:'PAYMENT',purpose:'BALANCE',label:'Thanh toán qua PayOS'});
   const zero=run('CHECKIN_READY',{contract:signed,payments:[settled]},{estimatedRent:1000});
   expect(step(zero,'balance')?.state).toBe('SKIPPED');
   expect(step(zero,'handover')?.state).toBe('BLOCKED');

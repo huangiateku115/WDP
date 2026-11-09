@@ -27,8 +27,11 @@ let profileWrites=0,profileReads=0,rangeChecks=0,conflict=false,rejectedBookings
 let signingCount=0,signedAt,contractReads=0;
 let holdStatus,signalStatus,finishStatus,historyError=false;
 let booked=false,paid=false,payment=null,bookingCount=0,paymentCount=0,opened=0;
+const balanceId='8'.repeat(24),balanceHosted='https://pay.payos.vn/web/balance-fixture';
+let paperVerified=false,balancePaid=false,balancePayment=null,balancePosts=0,balanceOpened=0,depositKey;
 const reservation=()=>({_id:reservationId,facilityId,storageUnitId:unitId,customerId:owner,serviceType:'SELF_STORAGE',
-  reservationCode:'R-TEST',startDate,endDate,expiresAt:'2099-01-02T00:00:00Z',status:paid?'DEPOSIT_PAID':'CONTRACTED'});
+  reservationCode:'R-TEST',startDate,endDate,expiresAt:'2099-01-02T00:00:00Z',estimatedRent:2000,depositAmount:1000,...(paid?{depositPaymentId:paymentId}:{}),
+  status:balancePaid?'PAID':paperVerified?'CHECKIN_READY':paid?'DEPOSIT_PAID':'CONTRACTED'});
 const managedRental={_id:managedId,customerId:owner,facilityId:{_id:managedId,name:managedFacility.name},serviceType:'MANAGED_INVENTORY',
   reservationCode:'MIR-FIXTURE',status:'ACTIVE',bookingFlowVersion:2,startDate,endDate,allocatedCapacity:0.5,usedCapacityM3:0.01,allocatedCellIds:[cellOne,cellTwo]};
 const managedItem={_id:cellOne,customerId:owner,managedReservationId:managedId,facilityId:managedId,itemCode:'MI-BOX',name:'Thùng hàng kiểm thử',
@@ -57,6 +60,7 @@ async function main(){
     await context.route('**/*',async route=>{
       const req=route.request(),url=new URL(req.url()),method=req.method();
       if(url.origin===origin)return route.continue();
+      if(url.href===balanceHosted){balanceOpened++;return route.fulfill({status:200,contentType:'text/html',body:'<h1>Balance fixture</h1>'});}
       if(url.href===hosted){opened++;return route.fulfill({status:200,contentType:'text/html',body:'<h1>Checkout fixture</h1>'});}
       if(url.origin!=='https://fixture.invalid')return route.abort();
       const headers={'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Headers':'content-type,authorization,idempotency-key',
@@ -145,7 +149,7 @@ async function main(){
         booked=true;bookingCount++;data=reservation();status=201;
       }else if(p==='/contracts/reservation/'+reservationId){
         contractReads++;
-        data={_id:contractId,customerId:owner,reservationId,status:signedAt?'SIGNED':'DRAFT',signedByCustomerAt:signedAt,terms:['Điều khoản kiểm thử kho']};
+        data={_id:contractId,customerId:owner,reservationId,status:signedAt?'SIGNED':'DRAFT',signedByCustomerAt:signedAt,...(paperVerified?{signedProofUrl:'https://proof.invalid/proof.png',signedProofPublicId:'proof',verifiedAt:startDate}:{}),terms:['Điều khoản kiểm thử kho']};
       }else if(p==='/contracts/'+contractId+'/sign'&&method==='PATCH'){
         assert.equal(req.headers()['authorization'],'Bearer fixture-access');
         assert.equal(req.postData(),null);
@@ -156,8 +160,10 @@ async function main(){
       }
       else if(p===scope+'payos'&&method==='GET'){
         if(historyError)return route.fulfill({status:503,headers,json:{success:false}});
-        data={items:payment?[{...payment,createdAt:startDate}]:[],nextCursor:null};
+        data={items:[...(payment?[{...payment,createdAt:startDate}]:[]),
+          ...(balancePayment?[{...balancePayment,createdAt:endDate}]:[])],nextCursor:null};
       }
+      else if(p===scope+balanceId)data=balancePayment;
       else if(p===scope+paymentId){
         data=payment;
         if(holdStatus){
@@ -171,7 +177,16 @@ async function main(){
       else if(p===scope+'payos'&&method==='POST'){
         assert.equal(req.headers()['authorization'],'Bearer fixture-access');
         assert.match(req.headers()['idempotency-key'],/^wdp-mobile-/);
+        if(req.postDataJSON().purpose==='BALANCE'){
+          assert.deepEqual(req.postDataJSON(),{purpose:'BALANCE'});
+          assert.notEqual(req.headers()['idempotency-key'],depositKey);
+          balancePosts++;
+          balancePayment={...payment,id:balanceId,purpose:'BALANCE',amount:1079,status:'PENDING',
+            providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED',checkoutStatus:'READY',checkoutUrl:balanceHosted,succeededAt:null};
+          return route.fulfill({status:201,headers,json:{success:true,data:balancePayment,outcome:'CREATED'}});
+        }
         assert.deepEqual(req.postDataJSON(),{purpose:'DEPOSIT'});
+        depositKey=req.headers()['idempotency-key'];
         paymentCount++;
         payment={id:paymentId,reservationId,provider:'PAYOS',purpose:'DEPOSIT',amount:1000,currency:'VND',status:'PENDING',
           providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED',checkoutStatus:'READY',checkoutUrl:hosted,
@@ -316,7 +331,34 @@ async function main(){
     assert.equal(paymentCount,1);
     await page.goBack();
     await page.getByText('Hợp đồng đã được ký. Đang chờ nhân viên xác minh.').first().waitFor();
-    await page.goBack();
+    paperVerified=true;
+    const foreground=()=>page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await foreground();
+    await page.getByRole('button',{name:'Thanh toán qua PayOS',exact:true}).click();
+    const confirmBalance=page.getByRole('button',{name:'Xác nhận tạo liên kết PayOS',exact:true});
+    await Promise.all([
+      context.waitForEvent('request',{predicate:req=>req.url()===balanceHosted,timeout:15000}),
+      confirmBalance.evaluate(button=>{button.click();button.click();}),
+    ]);
+    await page.getByRole('button',{name:'Mở liên kết PayOS hiện có',exact:true}).waitFor();
+    await page.getByText(/1[.,]079/).first().waitFor();
+    await assertFits();
+    assert.equal(balancePosts,1);
+    assert.equal(balanceOpened,1);
+    balancePayment={...balancePayment,checkoutStatus:'UNKNOWN',checkoutUrl:null};
+    await foreground();
+    await page.getByText('Giao dịch cần được kiểm tra. Vui lòng không thanh toán lại.').first().waitFor();
+    assert.equal(await confirmBalance.count(),0);
+    assert.equal(balancePosts,1);
+    balancePayment={...balancePayment,status:'SUCCEEDED',checkoutStatus:'READY',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED',succeededAt:endDate};
+    balancePaid=true;
+    await foreground();
+    await page.waitForURL('**/preview/rental/'+reservationId,{timeout:15000});
+    await page.getByRole('heading',{name:'Chi tiết đơn thuê',exact:true}).waitFor();
+    await page.getByText('Đang chờ bàn giao kho',{exact:true}).filter({visible:true}).first().waitFor();
+    assert.equal(balancePosts,1);
+    await page.goto(origin,{waitUntil:'commit'});
+    await signIn();
     await page.getByText('Tài khoản',{exact:true}).last().click();
     await page.getByRole('button',{name:'Chỉnh sửa hồ sơ'}).click();
     assert.equal(await page.getByLabel('Địa chỉ',{exact:true}).inputValue(),'');

@@ -10,7 +10,7 @@ const nextLabels={CUSTOMER_ACTION_REQUIRED:'Bạn cần thực hiện',WAITING_F
   BLOCKED:'Cần kiểm tra',COMPLETED:'Đã hoàn tất'} as const;
 type Action=NonNullable<NonNullable<ReservationProgress['next']>['action']>;
 
-export function ReservationProgressTracker({progress,onAction,paymentScreen=false,children}:{progress:ReservationProgress;onAction:(action:Action)=>void;paymentScreen?:boolean;children?:ReactNode}){
+export function ReservationProgressTracker({progress,onAction,paymentScreen=false,paymentPurpose='DEPOSIT',children}:{progress:ReservationProgress;onAction:(action:Action)=>void;paymentScreen?:boolean;paymentPurpose?:'DEPOSIT'|'BALANCE';children?:ReactNode}){
   const {steps,next}=progress;
   const action=next?.action;
   return <Card>
@@ -18,7 +18,7 @@ export function ReservationProgressTracker({progress,onAction,paymentScreen=fals
     {steps.map((step,index)=>{
       const status=step.id==='contract'&&step.state==='CURRENT'
         ?next?.mode==='WAITING_FOR_STAFF'?'Chờ xác minh':next?.mode==='CUSTOMER_ACTION_REQUIRED'?'Cần thực hiện':labels[step.state]
-        :labels[step.state];
+        :step.id==='balance'&&step.state==='CURRENT'&&next?.mode==='CUSTOMER_ACTION_REQUIRED'?'Cần thanh toán':labels[step.state];
       const warning=step.state==='BLOCKED'||step.state==='FAILED';
       const active=step.state==='CURRENT'||step.state==='COMPLETED';
       return <View style={styles.row} key={step.id} accessible accessibilityLabel={step.title+'. '+status+'. '+step.description}>
@@ -38,7 +38,7 @@ export function ReservationProgressTracker({progress,onAction,paymentScreen=fals
       <AppText variant="label">Bước tiếp theo</AppText>
       <Chip label={nextLabels[next.mode]} tone={next.mode==='BLOCKED'?'orange':'neutral'}/>
       {next.description!==steps.find(s=>s.state==='CURRENT')?.description&&<AppText accessibilityLiveRegion="polite">{next.description}</AppText>}
-      {action&&!(paymentScreen&&action.destination==='PAYMENT')&&<Button label={action.label} variant="outline" onPress={()=>onAction(action)}/>}
+      {action&&!(paymentScreen&&action.destination==='PAYMENT'&&(action.purpose??'DEPOSIT')===paymentPurpose)&&<Button label={action.label} variant="outline" onPress={()=>onAction(action)}/>}
       {children}
     </View>}
   </Card>;

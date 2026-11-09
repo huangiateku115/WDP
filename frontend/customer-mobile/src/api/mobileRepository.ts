@@ -156,12 +156,16 @@ export const mobileRepo = {
     return result;
   },
   async deposit(r:ReservationDto,key:string,owner:string) {
+    return mobileRepo.checkout(r,key,owner,'DEPOSIT');
+  },
+  async checkout(r:ReservationDto,key:string,owner:string,purpose:'DEPOSIT'|'BALANCE') {
     assertOwner(r,owner);
     if(r.serviceType!=='SELF_STORAGE') throw new MobileInputError('Thanh toán PayOS chỉ dành cho kho tự quản.');
-    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose:'DEPOSIT'}});
+    if(purpose==='BALANCE'&&r.status!=='CHECKIN_READY')throw new MobileInputError('Đơn thuê chưa đủ điều kiện thanh toán số dư.');
+    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose}});
     z.object({outcome:z.enum(['CREATED','REPLAYED'])}).parse(response);
     const result=mapSelfPayment(response,r,owner);
-    if(result.purpose!=='DEPOSIT') throw new MobileInputError('Loại giao dịch không khớp.');
+    if(result.purpose!==purpose) throw new MobileInputError('Loại giao dịch không khớp.');
     return result;
   },
   async inventory(owner:string,page=1,signal?:AbortSignal) {

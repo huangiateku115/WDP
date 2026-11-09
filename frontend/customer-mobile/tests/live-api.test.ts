@@ -19,7 +19,7 @@ const {mobileRepo}=require('../src/api/mobileRepository') as typeof import('../s
 const {useLiveSession}=require('../src/state/useLiveSession') as typeof import('../src/state/useLiveSession');
 const {journal,newAttempt}=require('../src/state/attemptJournal') as typeof import('../src/state/attemptJournal');
 const {loadContractReview,submitReviewedContract}=require('../src/api/selfStorageContract') as typeof import('../src/api/selfStorageContract');
-const {paymentContext,openDeposit}=require('../src/api/selfStoragePayment') as typeof import('../src/api/selfStoragePayment');
+const {paymentContext,openDeposit,openSelfStoragePayment}=require('../src/api/selfStoragePayment') as typeof import('../src/api/selfStoragePayment');
 const {checkoutLink,depositDecision}=require('../src/domain/livePayment') as typeof import('../src/domain/livePayment');
 
 const [owner,other,facilityId,unitId,pricingId,rentalId,contractId,paymentId]=['1','2','3','4','5','6','7','8'].map(i=>i.repeat(24)) as [string,string,string,string,string,string,string,string];
@@ -447,4 +447,119 @@ test('signing timeout reconciles via GET, without re-signing or initiating check
   expect(read.canSign).toBe(false);
   expect(adapter.mock.calls.filter(([c])=>c.method==='patch')).toHaveLength(1);
   expect(adapter.mock.calls.some(([c])=>c.method==='post')).toBe(false);
+});
+
+const balanceId='b'.repeat(24);
+const balanceUrl='https://pay.payos.vn/web/balance-fixture';
+const checkin={...reservation,status:'CHECKIN_READY',estimatedRent:3000,depositAmount:2000,depositPaymentId:paymentId};
+const proof={...contract,status:'SIGNED',signedProofUrl:'https://example.invalid/proof.png',signedProofPublicId:'proof',
+  verifiedAt:'2098-12-01T00:00:00Z'};
+const verifiedDeposit={...payment,status:'SUCCEEDED' as const,providerSettlementStatus:'VERIFIED' as const,applicationStatus:'APPLIED' as const,checkoutUrl:null};
+const readyBalance={...payment,id:balanceId,purpose:'BALANCE' as const,amount:1079,checkoutUrl:balanceUrl};
+type FixturePayment=Parameters<typeof checkoutLink>[0];
+
+function balanceFixture(options:{r?:object;document?:object|null;deposit?:FixturePayment;balance?:FixturePayment;timeout?:boolean}={}){
+  const launch=jest.fn(async (_url:string)=>{});
+  const adapter=fixture(c=>{
+    expect(c.headers.get('Authorization')).toBe('Bearer fixture-access');
+    if(c.url==='/reservations/me')return envelope([options.r??checkin]);
+    if(c.url===contractPath)return envelope(options.document===undefined?proof:options.document);
+    if(c.url===historyPath&&c.method==='post'){
+      expect(JSON.parse(c.data)).toEqual({purpose:'BALANCE'});
+      expect(c.headers.get('Idempotency-Key')).toMatch(/^wdp-mobile-/);
+      if(options.timeout)throw new AxiosError('Fixture timeout','ECONNABORTED',c);
+      return {success:true,data:readyBalance,outcome:'CREATED'};
+    }
+    if(c.url===historyPath)return envelope({items:[{...(options.deposit??verifiedDeposit),createdAt:'2098-12-01T00:00:00Z'},
+      ...(options.balance?[{...options.balance,createdAt:'2098-12-02T00:00:00Z'}]:[])],nextCursor:null});
+    if(c.url===statusPath)return envelope(options.deposit??verifiedDeposit);
+    if(c.url==='/reservations/'+rentalId+'/payments/'+balanceId)return envelope(options.balance);
+    throw Error('Unexpected '+c.url);
+  });
+  return {adapter,launch,open:()=>openSelfStoragePayment(rentalId,owner,'BALANCE',()=>true,launch)};
+}
+
+test('Balance is created once, opens the verified URL and stores a key separate from Deposit',async()=>{
+  configureApiSession('fixture-access');
+  const depositStore=await journal('deposit',owner,rentalId);
+  const depositAttempt=newAttempt();
+  await depositStore.claim(depositAttempt);
+  const {adapter,launch,open}=balanceFixture();
+  await Promise.all([open(),open()]);
+  const posts=adapter.mock.calls.filter(([c])=>c.method==='post');
+  expect(posts).toHaveLength(1);
+  expect(launch).toHaveBeenCalledTimes(1);
+  expect(launch).toHaveBeenCalledWith(balanceUrl);
+  const balanceStore=await journal('balance',owner,rentalId);
+  const stored=await balanceStore.read();
+  expect(stored?.key).toBe(posts[0]?.[0].headers.get('Idempotency-Key'));
+  expect(stored?.key).not.toBe(depositAttempt.key);
+  expect((await depositStore.read())?.key).toBe(depositAttempt.key);
+});
+
+test.each([
+  {r:{...checkin,status:'CONTRACTED'}},
+  {r:{...checkin,status:'DEPOSIT_PAID'}},
+  {document:{...proof,status:'DRAFT'}},
+  {document:{...proof,signedProofUrl:undefined}},
+  {deposit:payment},
+  {r:{...checkin,estimatedRent:2000}},
+])('ineligible Balance never sends checkout (%#)',async options=>{
+  configureApiSession('fixture-access');
+  const {adapter,launch,open}=balanceFixture(options);
+  await open();
+  expect(adapter.mock.calls.some(([c])=>c.method==='post')).toBe(false);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+test.each([
+  [readyBalance,'READY'],
+  [{...readyBalance,checkoutUrl:null,checkoutStatus:'NOT_CREATED'},'PENDING'],
+  [{...readyBalance,checkoutStatus:'UNKNOWN',checkoutUrl:null},'REVIEW'],
+  [{...readyBalance,providerSettlementStatus:'VERIFIED',checkoutUrl:null},'VERIFYING'],
+  [{...readyBalance,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED',checkoutUrl:null},'APPLIED'],
+] as const)('Balance status %s is read from Backend without an extra POST (%#)',async (balance,kind)=>{
+  configureApiSession('fixture-access');
+  const {adapter,launch,open}=balanceFixture({balance});
+  const context=await paymentContext(rentalId,owner,undefined,true);
+  expect(context.balanceDecision.kind).toBe(kind);
+  expect(context.payments.map(p=>[p.purpose,p.amount])).toEqual([['BALANCE',1079],['DEPOSIT',2000]]);
+  await open();
+  expect(launch).toHaveBeenCalledTimes(kind==='READY'?1:0);
+  expect(adapter.mock.calls.every(([c])=>c.method==='get')).toBe(true);
+});
+
+test('Balance timeout retains the original attempt, refresh and second click do not retry POST',async()=>{
+  configureApiSession('fixture-access');
+  const {adapter,launch,open}=balanceFixture({timeout:true});
+  await expect(open()).rejects.toMatchObject({step:'checkout',status:null});
+  expect((await paymentContext(rentalId,owner,undefined,true)).balanceDecision.kind).toBe('REVIEW');
+  await open();
+  expect(adapter.mock.calls.filter(([c])=>c.method==='post')).toHaveLength(1);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+test('older UNKNOWN Balance on a second history page blocks even the latest READY checkout',async()=>{
+  configureApiSession('fixture-access');
+  const oldBalance={...readyBalance,id:'c'.repeat(24),checkoutStatus:'UNKNOWN',checkoutUrl:null};
+  const adapter=fixture(c=>{
+    if(c.url==='/reservations/me')return envelope([checkin]);
+    if(c.url===contractPath)return envelope(proof);
+    if(c.method==='get'&&c.url===historyPath){
+      return c.params.cursor
+        ?envelope({items:[{...oldBalance,createdAt:'2098-12-02T00:00:00Z'},
+          {...verifiedDeposit,createdAt:'2098-12-01T00:00:00Z'}],nextCursor:null})
+        :envelope({items:[{...readyBalance,createdAt:'2098-12-03T00:00:00Z'}],nextCursor:'next-page'});
+    }
+    if(c.url===statusPath)return envelope(verifiedDeposit);
+    if(c.url==='/reservations/'+rentalId+'/payments/'+balanceId)return envelope(readyBalance);
+    throw Error('Unexpected '+c.method+' '+c.url);
+  });
+  const context=await paymentContext(rentalId,owner,undefined,true);
+  expect(context.payments.map(p=>p.id)).toEqual([balanceId,oldBalance.id,paymentId]);
+  expect(context.balanceDecision.kind).toBe('REVIEW');
+  const launch=jest.fn(async (_url:string)=>{});
+  await openSelfStoragePayment(rentalId,owner,'BALANCE',()=>true,launch);
+  expect(launch).not.toHaveBeenCalled();
+  expect(adapter.mock.calls.every(([c])=>c.method==='get')).toBe(true);
 });
