@@ -1,2 +1,1 @@
-import InventoryRequestScreen from '../../../src/screens/InventoryRequestScreen';
-export default function Outbound(){return <InventoryRequestScreen kind="OUTBOUND"/>;}
+export {UnavailableScreen as default} from '../../../src/components/liveUI';

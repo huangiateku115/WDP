@@ -28,6 +28,6 @@ test('unknown or inconsistent stock never becomes positive availability',()=>{
 });
 test.each(['get','post','put','patch','delete'] as const)('%s cannot reach a transport even with an injected adapter',async method=>{
   const adapter=jest.fn();
-  await expect(apiClient.request({url:'https://must-not-connect.invalid',method,adapter})).rejects.toMatchObject({code:'PHASE1_OFFLINE'});
+  await expect(apiClient.request({url:'https://must-not-connect.invalid',method,adapter})).rejects.toMatchObject({code:'API_ORIGIN_REJECTED'});
   expect(adapter).not.toHaveBeenCalled();
 });
