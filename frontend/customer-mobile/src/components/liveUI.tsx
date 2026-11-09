@@ -1,7 +1,8 @@
 import {useCallback, useRef, useState, type PropsWithChildren} from 'react';
 import {AppState} from 'react-native';
 import {useFocusEffect} from 'expo-router';
-import {AppText,Screen,StateCard} from './ui';
+import {ScreenHeading} from './livePresentation';
+import {Screen,StateCard} from './ui';
 import {apiIssue} from '../api/client';
 
 export function useResource<T>(key:string, load:(signal:AbortSignal)=>Promise<T>) {
@@ -31,8 +32,8 @@ export function useResource<T>(key:string, load:(signal:AbortSignal)=>Promise<T>
   return {data:current?.data,error:current?.error,loading:!current,reload};
 }
 
-export function LiveScreen({title,children,onRefresh,refreshing}:PropsWithChildren<{title:string;onRefresh?:()=>void;refreshing?:boolean}>) {
-  return <Screen onRefresh={onRefresh} refreshing={refreshing}><AppText variant="title">{title}</AppText>{children}</Screen>;
+export function LiveScreen({title,eyebrow,subtitle,children,onRefresh,refreshing}:PropsWithChildren<{title:string;eyebrow?:string;subtitle?:string;onRefresh?:()=>void;refreshing?:boolean}>) {
+  return <Screen onRefresh={onRefresh} refreshing={refreshing}><ScreenHeading title={title} eyebrow={eyebrow} subtitle={subtitle}/>{children}</Screen>;
 }
 export function ResourceState({loading,error,reload}:ReturnType<typeof useResource<unknown>>) {
   if(loading)return <StateCard kind="loading" title="Đang tải dữ liệu"/>;

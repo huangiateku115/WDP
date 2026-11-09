@@ -116,6 +116,19 @@ export const mobileRepo = {
       throw error;
     }
   },
+  async signSelfStorageContract(r:ReservationDto,contract:z.infer<typeof contractDto>,owner:string) {
+    assertOwner(r,owner);
+    assertOwner(contract,owner);
+    if(r.serviceType!=='SELF_STORAGE'||r.status!=='DEPOSIT_PAID'||contract.status!=='DRAFT'||refId(contract.reservationId)!==r._id){
+      throw new MobileInputError('Đơn thuê hoặc hợp đồng chưa đủ điều kiện ký.');
+    }
+    const result=mapContract(await wire('PATCH','/contracts/'+id(contract._id)+'/sign'),owner,r.serviceType).contract;
+    if(result._id!==contract._id||refId(result.reservationId)!==r._id||result.status!=='SIGNED'||
+      typeof result.signedByCustomerAt!=='string'||!Number.isFinite(Date.parse(result.signedByCustomerAt))){
+      throw new MobileInputError('Máy chủ chưa xác nhận được kết quả ký cho hợp đồng này.');
+    }
+    return result;
+  },
   async contracts(owner:string,signal?:AbortSignal) {
     const rows=readData(z.array(contractDto),await wire('GET','/contracts/me',{signal}));
     rows.forEach(row=>assertOwner(row,owner));

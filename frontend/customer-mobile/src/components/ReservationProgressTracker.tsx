@@ -1,7 +1,8 @@
 import type {ReactNode} from 'react';
 import {StyleSheet,View} from 'react-native';
 import {AppText,Button,Card,Chip,Icon} from './ui';
-import {colors} from '../theme/tokens';
+import {CardHeading} from './livePresentation';
+import {colors,radius} from '../theme/tokens';
 import type {ReservationProgress} from '../domain/reservationProgress';
 
 const labels={COMPLETED:'Hoàn thành',CURRENT:'Đang thực hiện',UPCOMING:'Chưa đến',BLOCKED:'Tạm dừng',FAILED:'Thất bại',SKIPPED:'Bỏ qua'} as const;
@@ -13,17 +14,22 @@ export function ReservationProgressTracker({progress,onAction,paymentScreen=fals
   const {steps,next}=progress;
   const action=next?.action;
   return <Card>
-    <AppText variant="card" accessibilityRole="header">Tiến độ đơn thuê</AppText>
+    <CardHeading icon="git-commit-outline" title="Tiến độ đơn thuê"/>
     {steps.map((step,index)=>{
+      const status=step.id==='contract'&&step.state==='CURRENT'
+        ?next?.mode==='WAITING_FOR_STAFF'?'Chờ xác minh':next?.mode==='CUSTOMER_ACTION_REQUIRED'?'Cần thực hiện':labels[step.state]
+        :labels[step.state];
       const warning=step.state==='BLOCKED'||step.state==='FAILED';
       const active=step.state==='CURRENT'||step.state==='COMPLETED';
-      return <View style={styles.row} key={step.id} accessible accessibilityLabel={step.title+'. '+labels[step.state]+'. '+step.description}>
+      return <View style={styles.row} key={step.id} accessible accessibilityLabel={step.title+'. '+status+'. '+step.description}>
+        <View style={styles.rail}>
+        {index<steps.length-1&&<View style={styles.connector}/>}
         <View style={[styles.marker,{backgroundColor:warning?colors.orangeTint:active?colors.mint:colors.soft}]}>
           {step.state==='COMPLETED'?<Icon name="checkmark" size={17}/>:warning?<Icon name="alert" size={17} color={colors.orangeText}/>:<AppText variant="label">{index+1}</AppText>}
-        </View>
-        <View style={styles.step}>
+        </View></View>
+        <View style={[styles.step,step.state==='CURRENT'&&styles.currentStep]}>
           <AppText variant="medium" style={active&&step.state==='CURRENT'?styles.current:undefined}>{step.title}</AppText>
-          <AppText variant="label" style={{color:warning?colors.orangeText:active?colors.primary:colors.muted}}>{labels[step.state]}</AppText>
+          <AppText variant="label" style={{color:warning?colors.orangeText:active?colors.primary:colors.muted}}>{status}</AppText>
           <AppText style={{color:colors.muted}}>{step.description}</AppText>
         </View>
       </View>;
@@ -40,8 +46,10 @@ export function ReservationProgressTracker({progress,onAction,paymentScreen=fals
 
 const styles=StyleSheet.create({
   row:{flexDirection:'row',alignItems:'flex-start',gap:12},
+  rail:{alignSelf:'stretch',alignItems:'center',width:32},connector:{position:'absolute',top:32,bottom:-12,width:2,backgroundColor:colors.line},
   marker:{width:32,height:32,borderRadius:16,alignItems:'center',justifyContent:'center'},
-  step:{flex:1,gap:2},
+  step:{flex:1,minWidth:0,gap:2,paddingBottom:6},
+  currentStep:{padding:10,borderRadius:radius.md,backgroundColor:colors.soft},
   current:{color:colors.primary},
-  next:{gap:8,borderTopWidth:1,borderTopColor:colors.line,paddingTop:12},
+  next:{gap:8,padding:12,borderRadius:radius.md,backgroundColor:colors.mint},
 });

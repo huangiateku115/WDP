@@ -18,6 +18,7 @@ const {apiClient,wire,resolveApiBase,configureApiSession,apiIssue}=require('../s
 const {mobileRepo}=require('../src/api/mobileRepository') as typeof import('../src/api/mobileRepository');
 const {useLiveSession}=require('../src/state/useLiveSession') as typeof import('../src/state/useLiveSession');
 const {journal,newAttempt}=require('../src/state/attemptJournal') as typeof import('../src/state/attemptJournal');
+const {loadContractReview,submitReviewedContract}=require('../src/api/selfStorageContract') as typeof import('../src/api/selfStorageContract');
 const {paymentContext,openDeposit}=require('../src/api/selfStoragePayment') as typeof import('../src/api/selfStoragePayment');
 const {checkoutLink,depositDecision}=require('../src/domain/livePayment') as typeof import('../src/domain/livePayment');
 
@@ -375,3 +376,75 @@ test.each([[403,undefined],[409,'DEPOSIT_NOT_ELIGIBLE'],[503,'PAYOS_CHECKOUT_OUT
     expect(adapter.mock.calls.filter(([config])=>config.method==='post')).toHaveLength(1);
     expect(launch).not.toHaveBeenCalled();
   });
+
+function signingFixture(options:{patchStatus?:number;timeout?:boolean;unsettled?:boolean;draft?:boolean}={}){
+  let signed=options.draft===false;
+  let terms=['Điều khoản chính thức'];
+  const signatureTime='2099-01-02T10:00:00Z';
+  const signPath='/contracts/'+contractId+'/sign';
+  const adapter=fixture(config=>{
+    if(config.url==='/reservations/me')return envelope([{...reservation,status:'DEPOSIT_PAID'}]);
+    if(config.url===contractPath)return envelope({...contract,terms,status:signed?'SIGNED':'DRAFT',signedByCustomerAt:signed?signatureTime:undefined});
+    if(config.url===signPath){
+      expect(config.method).toBe('patch');
+      expect(config.data).toBeUndefined();
+      expect(config.headers.get('Authorization')).toBe('Bearer fixture-access');
+      if(options.patchStatus)return httpError(config,options.patchStatus);
+      signed=true;
+      if(options.timeout)throw new AxiosError('Fixture timeout','ECONNABORTED',config);
+      return envelope({...contract,status:'SIGNED',signedByCustomerAt:signatureTime});
+    }
+    const settled={...payment,status:'SUCCEEDED' as const,providerSettlementStatus:'VERIFIED' as const,
+      applicationStatus:'APPLIED' as const,checkoutUrl:null};
+    return depositFixture(config,options.unsettled?payment:settled);
+  });
+  return {adapter,changeTerms:()=>{terms=['Điều khoản mới'];}};
+}
+
+test('reviews the owned draft, signs by Contract ID, then GET confirms signature awaiting staff',async()=>{
+  configureApiSession('fixture-access');
+  const {adapter}=signingFixture();
+  const review=await loadContractReview(rentalId,owner);
+  expect(review.canSign).toBe(true);
+  expect(await submitReviewedContract(review,owner,()=>true)).toMatchObject({_id:contractId,status:'SIGNED'});
+  const refreshed=await loadContractReview(rentalId,owner);
+  expect(refreshed.canSign).toBe(false);
+  expect(refreshed.reason).toMatch(/chờ nhân viên xác minh/);
+  await submitReviewedContract(refreshed,owner,()=>true);
+  expect(adapter.mock.calls.filter(([c])=>c.method==='patch')).toHaveLength(1);
+  expect(adapter.mock.calls.some(([c])=>c.method==='post')).toBe(false);
+});
+
+test('unapplied deposit, wrong owner or changed terms prevent PATCH',async()=>{
+  configureApiSession('fixture-access');
+  let run=signingFixture({unsettled:true});
+  const unpaid=await loadContractReview(rentalId,owner);
+  expect(unpaid.canSign).toBe(false);
+  await submitReviewedContract(unpaid,owner,()=>true);
+  await expect(loadContractReview(rentalId,other)).rejects.toThrow();
+  expect(run.adapter.mock.calls.some(([c])=>c.method==='patch')).toBe(false);
+  run=signingFixture();
+  const reviewed=await loadContractReview(rentalId,owner);
+  run.changeTerms();
+  await expect(submitReviewedContract(reviewed,owner,()=>true)).rejects.toThrow(/đã thay đổi/);
+  expect(run.adapter.mock.calls.some(([c])=>c.method==='patch')).toBe(false);
+});
+
+test.each([400,401,403,409])('signing HTTP %s sends one PATCH and does not retry',async status=>{
+  configureApiSession('fixture-access');
+  const {adapter}=signingFixture({patchStatus:status});
+  await expect(submitReviewedContract(await loadContractReview(rentalId,owner),owner,()=>true))
+    .rejects.toMatchObject({response:{status}});
+  expect(adapter.mock.calls.filter(([c])=>c.method==='patch')).toHaveLength(1);
+});
+
+test('signing timeout reconciles via GET, without re-signing or initiating checkout',async()=>{
+  configureApiSession('fixture-access');
+  const {adapter}=signingFixture({timeout:true});
+  await expect(submitReviewedContract(await loadContractReview(rentalId,owner),owner,()=>true)).rejects.toMatchObject({code:'ECONNABORTED'});
+  const read=await loadContractReview(rentalId,owner);
+  expect(read.contract?.status).toBe('SIGNED');
+  expect(read.canSign).toBe(false);
+  expect(adapter.mock.calls.filter(([c])=>c.method==='patch')).toHaveLength(1);
+  expect(adapter.mock.calls.some(([c])=>c.method==='post')).toBe(false);
+});

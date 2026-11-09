@@ -2,19 +2,20 @@ import type {z} from 'zod';
 import type {ReservationDto} from '../api/contracts/customer';
 import type {contractDto,paymentDto} from '../api/contracts/documents';
 import {refId} from '../api/contracts/core';
+import {reviewDocument,contractText} from './contractReview';
 import {applied} from './livePayment';
 
 type Contract=z.infer<typeof contractDto>;
 type Payment=z.infer<typeof paymentDto>;
 type PaymentDecision='APPLIED'|'REVIEW'|'INELIGIBLE'|'READY'|'CREATE';
-type Action={destination:'PAYMENT'|'CONTRACT';label:string};
+type Action={destination:'PAYMENT'|'CONTRACT';label:string;intent?:'SIGN'};
 type StepState='COMPLETED'|'CURRENT'|'UPCOMING'|'BLOCKED'|'FAILED'|'SKIPPED';
 type Mode='CUSTOMER_ACTION_REQUIRED'|'WAITING_FOR_SYSTEM'|'WAITING_FOR_STAFF'|'BLOCKED'|'COMPLETED';
 export type ProgressStep={id:string;title:string;state:StepState;description:string};
 export type ReservationProgress={summary:string;steps:ProgressStep[];next?:{mode:Mode;description:string;action?:Action}};
 type Evidence={contract:Contract|null;payments:Payment[];decision:PaymentDecision};
 
-const titles={booking:'Đặt kho',deposit:'Thanh toán tiền cọc',contract:'Hợp đồng giấy',balance:'Thanh toán phần còn lại',handover:'Nhận kho'};
+const titles={booking:'Đặt kho',deposit:'Thanh toán tiền cọc',contract:'Ký hợp đồng',balance:'Thanh toán phần còn lại',handover:'Nhận kho'};
 type StepId=keyof typeof titles;
 const stepIds=Object.keys(titles) as StepId[];
 const makeStep=(id:StepId,state:StepState,description:string):ProgressStep=>({id,title:titles[id],state,description});
@@ -114,9 +115,20 @@ export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date
     return finish('contract','BLOCKED','BLOCKED',contract.status==='EXPIRED'?'Hợp đồng đã hết hạn.':'Hợp đồng đã chấm dứt.',viewContract);
   }
   if(!hasPaperProof(contract)){
-    return finish('contract','CURRENT','WAITING_FOR_STAFF',contract.status==='DRAFT'
-      ?'Liên hệ cơ sở để ký hợp đồng giấy. Nhân viên sẽ xác minh bằng chứng sau khi ký.'
-      :'Đang chờ nhân viên xác minh bằng chứng hợp đồng giấy.',viewContract);
+    if(contract.status==='SIGNED'){
+      const message=contractText(contract.signedByCustomerAt)&&Number.isFinite(Date.parse(String(contract.signedByCustomerAt)))
+        ?'Hợp đồng đã được ký. Đang chờ nhân viên xác minh.'
+        :'Hợp đồng ở trạng thái đã ký. Đang chờ nhân viên xác minh bằng chứng.';
+      return finish('contract','CURRENT','WAITING_FOR_STAFF',message,viewContract);
+    }
+    if(r.status!=='DEPOSIT_PAID'||contract.signedByCustomerAt){
+      return finish('contract','BLOCKED','BLOCKED','Trạng thái đơn thuê hoặc chữ ký chưa đủ điều kiện để ký.',viewContract);
+    }
+    if(!reviewDocument(contract).available){
+      return finish('contract','BLOCKED','BLOCKED','Backend chưa cung cấp nội dung hợp đồng để bạn đọc trước khi ký.',viewContract);
+    }
+    return finish('contract','CURRENT','CUSTOMER_ACTION_REQUIRED','Xem và ký hợp đồng thuê kho để tiếp tục.',
+      {destination:'CONTRACT',label:'Ký hợp đồng',intent:'SIGN'});
   }
   if(balance==='REVIEW')return finish('balance','BLOCKED','BLOCKED','Thanh toán số dư cần đối soát.');
   else if(balance==='FAILED')return finish('balance','FAILED','BLOCKED','Giao dịch thanh toán số dư thất bại. Hãy liên hệ cơ sở.');

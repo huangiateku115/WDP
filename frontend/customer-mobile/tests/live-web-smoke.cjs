@@ -13,14 +13,26 @@ const startDate=start+'T00:00:00.000Z',endDate=end+'T00:00:00.000Z';
 const hosted='https://pay.payos.vn/web/mobile-fixture';
 const user={_id:owner,role:'CUSTOMER',displayName:'Khách kiểm thử',email:'fixture@example.invalid',isActive:true};
 const facility={_id:facilityId,name:'Kho kiểm thử',address:{city:'Hồ Chí Minh'},serviceTypes:['SELF_STORAGE']};
+const [managedId,zoneId,rackId,cellOne,cellTwo,cellBusy]='abcdef'.split('').map(value=>value.repeat(24));
+const managedFacility={...facility,_id:managedId,name:'Cơ sở ký gửi kiểm thử',serviceTypes:['MANAGED_INVENTORY']};
+const dimensions={widthM:0.5,depthM:0.5,usableHeightM:1};
+const mapCell={dimensions,operationalStatus:'AVAILABLE',displayStatus:'AVAILABLE',periodStatus:'AVAILABLE',physicalUsageKnown:true,
+  maxWeightKg:100,maxVolumeM3:0.25,usedWeightKg:0,usedVolumeM3:0,isBookable:true};
+let managedQuotes=0,showManagedStock=false,missingRackPosition=false;
+const upperCell='9'.repeat(24);
 const unit={_id:unitId,facilityId,unitCode:'FIX-01',size:'SMALL',status:'AVAILABLE'};
 const unavailable=['OCCUPIED','MAINTENANCE','BLOCKED','UNKNOWN_STATE'].map((status,i)=>({...unit,_id:'abcde'[i].repeat(24),unitCode:'FIX-NO-'+i,status}));
 let customerProfile={userId:owner,verificationStatus:'UNVERIFIED',address:'ư',taxCode:null};
 let profileWrites=0,profileReads=0,rangeChecks=0,conflict=false,rejectedBookings=0;
+let signingCount=0,signedAt,contractReads=0;
 let holdStatus,signalStatus,finishStatus,historyError=false;
 let booked=false,paid=false,payment=null,bookingCount=0,paymentCount=0,opened=0;
 const reservation=()=>({_id:reservationId,facilityId,storageUnitId:unitId,customerId:owner,serviceType:'SELF_STORAGE',
   reservationCode:'R-TEST',startDate,endDate,expiresAt:'2099-01-02T00:00:00Z',status:paid?'DEPOSIT_PAID':'CONTRACTED'});
+const managedRental={_id:managedId,customerId:owner,facilityId:{_id:managedId,name:managedFacility.name},serviceType:'MANAGED_INVENTORY',
+  reservationCode:'MIR-FIXTURE',status:'ACTIVE',bookingFlowVersion:2,startDate,endDate,allocatedCapacity:0.5,usedCapacityM3:0.01,allocatedCellIds:[cellOne,cellTwo]};
+const managedItem={_id:cellOne,customerId:owner,managedReservationId:managedId,facilityId:managedId,itemCode:'MI-BOX',name:'Thùng hàng kiểm thử',
+  category:'Thùng',quantity:2,quantityUnit:'kiện',unitWeightKg:1,unitDimensionsM:{widthM:.1,depthM:.1,heightM:.1},status:'IN_STORAGE'};
 const scope='/reservations/'+reservationId+'/payments/';
 const artifact=path.resolve(__dirname,'../artifacts/live-web');
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.ttf':'font/ttf','.png':'image/png'};
@@ -40,7 +52,7 @@ async function main(){
   const origin='http://127.0.0.1:'+server.address().port;
   const browser=await chromium.launch({channel:'msedge',headless:true});
   try{
-    const context=await browser.newContext({serviceWorkers:'block'});
+    const context=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
     const unexpected=[],errors=[];
     await context.route('**/*',async route=>{
       const req=route.request(),url=new URL(req.url()),method=req.method();
@@ -61,11 +73,20 @@ async function main(){
         if(profileWrites===1)return route.fulfill({status:400,headers,json:{success:false}});
         customerProfile={...customerProfile,address:'12 Nguyễn Huệ',verificationStatus:'PENDING'};data=customerProfile;
       }
-      else if(p==='/reservations/me')data=booked?[reservation()]:[];
+      else if(p==='/reservations/me')data=[...(booked?[reservation()]:[]),...(showManagedStock?[managedRental]:[])];
+      else if(p==='/reservations/managed/'+managedId&&showManagedStock)data=managedRental;
       else if(p==='/contracts/me'||p==='/notifications/me')data=[];
-      else if(p==='/inventory-items/me'){data=[];pagination={page:1,limit:20,total:0,totalPages:0};}
-      else if(p==='/public/facilities'){data=[facility];pagination={page:1,limit:20,total:1,totalPages:1};}
+      else if(p==='/inventory-items/me'){
+        data=showManagedStock?[managedItem]:[];pagination={page:1,limit:20,total:data.length,totalPages:data.length};
+      }else if(p==='/inventory-items/'+cellOne+'/stock-balance'&&showManagedStock){
+        data={itemId:cellOne,customerId:owner,managedReservationId:managedId,facilityId:managedId,currentCellId:null,
+          schemaVersion:1,source:'LEDGER_V2',version:0,onHandQuantity:0,heldQuantity:0,actualTotalWeightKg:0,actualTotalVolumeM3:0,batches:[]};
+      }else if(p==='/inventory-items/'+cellOne+'/movements'&&showManagedStock){
+        data=[];
+      }
+      else if(p==='/public/facilities'){data=url.searchParams.get('serviceType')==='MANAGED_INVENTORY'?[managedFacility]:[facility];pagination={page:1,limit:20,total:1,totalPages:1};}
       else if(p==='/public/facilities/'+facilityId)data=facility;
+      else if(p==='/public/facilities/'+managedId)data=managedFacility;
       else if(p==='/facilities/'+facilityId+'/storage-units'){data=[unit,...unavailable];pagination={page:1,limit:20,total:5,totalPages:1};}
       else if(p==='/storage-units/'+unitId)data=unit;
       else if(p==='/storage-units/'+unitId+'/availability'){
@@ -78,6 +99,33 @@ async function main(){
       else if(p==='/pricing-rules/resolve'){
         data={_id:pricingId,facilityId,serviceType:'SELF_STORAGE',unitSize:'SMALL',
           term:{value:Number(url.searchParams.get('termValue')),unit:url.searchParams.get('termUnit')},currency:'VND',price:2000,isActive:true,effectiveFrom:'2098-01-01T00:00:00Z'};
+      }
+      else if(p==='/warehouse-map'||p==='/racks/'+rackId+'/detail-map'||p==='/reservations/managed/capacity/'+managedId){
+        const range=url.searchParams.has('startDate')?{startDate:url.searchParams.get('startDate'),endDate:url.searchParams.get('endDate')}:undefined;
+        if(p==='/warehouse-map'){
+          assert.equal(url.searchParams.get('facilityId'),managedId);
+          data={facilityId:managedId,requestedInterval:range,zones:[{_id:zoneId,code:'Z1',name:'Khu kiểm thử',
+            aisles:[{aisleCode:'A',racks:[{_id:rackId,rackCode:'R1',mapX:1,mapY:2,orientation:0,dimensions:{widthM:2,depthM:1,heightM:2}}]}]}]};
+        }else if(p.endsWith('detail-map')){
+          data={rack:{_id:rackId,zoneId,facilityId:managedId,rackCode:'R1',operationalStatus:'AVAILABLE',cellsPerLevel:3},requestedInterval:range,
+            levels:[{levelNumber:1,cells:[{...mapCell,_id:cellOne,code:'C1',cellNumber:missingRackPosition?undefined:1},{...mapCell,_id:cellTwo,code:'C2',cellNumber:2},
+              {...mapCell,_id:cellBusy,code:'C3',cellNumber:3,periodStatus:'RESERVED',isBookable:false}]},
+              {levelNumber:2,cells:[{...mapCell,_id:upperCell,code:'C4',cellNumber:2,periodStatus:'OCCUPIED',displayStatus:'OCCUPIED',isBookable:false}]}]};
+        }else data={facilityId:managedId,interval:range,availableCapacityM3:4,sellableCapacityM3:5};
+      }
+      else if(p==='/reservations/managed/quote'&&method==='POST'){
+        assert.deepEqual(req.postDataJSON(),{facilityId:managedId,startDate,allocatedCapacityM3:0.5,term:{value:1,unit:'MONTH'},cellIds:[cellOne,cellTwo]});
+        managedQuotes++;
+        data={bookingFlowVersion:2,facilityId:managedId,startDate,endDate,allocatedCapacityM3:0.5,term:{value:1,unit:'MONTH'},availableCapacityM3:4,
+          pricing:{ruleId:pricingId,version:1,billingBasis:'PER_M3',ratePerM3:10000,currency:'VND',estimatedRent:5000},
+          deposit:{policyId:pricingId,version:1,calculation:'PERCENT_OF_RENT',percentage:10,amount:500},taxAmount:0,
+          paymentBreakdown:{totalDue:5000,depositCredit:500,balanceDue:4500}};
+      }
+      else if(p==='/pricing-rules'&&url.searchParams.get('serviceType')==='MANAGED_INVENTORY'){
+        assert.equal(url.searchParams.get('billingBasis'),'PER_M3');
+        data=[1,2].map(value=>({facilityId:managedId,serviceType:'MANAGED_INVENTORY',billingBasis:'PER_M3',
+          term:{value,unit:'MONTH'},currency:'VND',price:10000,isActive:true,effectiveFrom:'2098-01-01T00:00:00Z'}));
+        pagination={page:1,limit:100,total:2,totalPages:1};
       }
       else if(p==='/pricing-rules'){
         data=['DAY','MONTH','YEAR'].map(unit=>({_id:pricingId,facilityId,serviceType:'SELF_STORAGE',unitSize:'SMALL',
@@ -95,7 +143,17 @@ async function main(){
         }
         assert.deepEqual(body,{facilityId,storageUnitId:unitId,pricingPolicyId:pricingId,startDate,endDate});
         booked=true;bookingCount++;data=reservation();status=201;
-      }else if(p==='/contracts/reservation/'+reservationId)data={_id:contractId,customerId:owner,reservationId,status:'DRAFT'};
+      }else if(p==='/contracts/reservation/'+reservationId){
+        contractReads++;
+        data={_id:contractId,customerId:owner,reservationId,status:signedAt?'SIGNED':'DRAFT',signedByCustomerAt:signedAt,terms:['Điều khoản kiểm thử kho']};
+      }else if(p==='/contracts/'+contractId+'/sign'&&method==='PATCH'){
+        assert.equal(req.headers()['authorization'],'Bearer fixture-access');
+        assert.equal(req.postData(),null);
+        assert.equal(signedAt,undefined);
+        signingCount++;
+        signedAt=startDate;
+        data={_id:contractId,customerId:owner,reservationId,status:'SIGNED',signedByCustomerAt:signedAt};
+      }
       else if(p===scope+'payos'&&method==='GET'){
         if(historyError)return route.fulfill({status:503,headers,json:{success:false}});
         data={items:payment?[{...payment,createdAt:startDate}]:[],nextCursor:null};
@@ -129,11 +187,13 @@ async function main(){
     await page.clock.setFixedTime(new Date('2098-12-31T12:00:00Z'));
     page.on('pageerror',error=>errors.push(error.message));
     page.setDefaultTimeout(15000);
+    const assertFits=async()=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     await page.goto(origin,{waitUntil:'commit'});
     await page.getByLabel('Email',{exact:true}).fill(user.email);
     await page.getByLabel('Mật khẩu',{exact:true}).fill('fixture-only');
     await page.getByRole('button',{name:'Đăng nhập',exact:true}).click();
     await page.getByText('Xin chào, '+user.displayName).waitFor();
+    await assertFits();
     await page.getByRole('button',{name:'Khám phá kho'}).click();
     await page.getByRole('button',{name:'Xem cơ sở'}).click();
     await page.getByRole('button',{name:'Chọn kho tự quản'}).click();
@@ -187,6 +247,7 @@ async function main(){
     const create=page.getByRole('button',{name:'Tạo liên kết thanh toán'});
     await create.evaluate(button=>{button.click();button.click();});
     await page.getByRole('button',{name:'Mở liên kết PayOS hiện có'}).waitFor();
+    await assertFits();
     assert.equal(bookingCount,1);
     assert.equal(paymentCount,1);
     assert.equal(opened,1);
@@ -218,7 +279,7 @@ async function main(){
     await page.getByText('Tiền đặt cọc đã được xác minh và ghi nhận.').waitFor();
     releaseOld();
     await oldFinished;
-    await page.getByText(/Liên hệ cơ sở để ký hợp đồng giấy/).first().waitFor();
+    await page.getByText(/Xem và ký hợp đồng thuê kho để tiếp tục/).first().waitFor();
     assert.equal(await page.getByText('Tiền cọc cần đối soát. Hãy kiểm tra giao dịch hiện có.').count(),0);
     assert.equal(paymentCount,1);
     const signIn=async()=>{
@@ -240,7 +301,21 @@ async function main(){
     await page.getByRole('button',{name:'Thử lại',exact:true}).click();
     await page.getByText('Tiến độ đơn thuê',{exact:true}).waitFor();
     await page.getByText('Đang ở bước hợp đồng giấy',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Ký hợp đồng',exact:true}).click();
+    await page.getByText(/Điều khoản kiểm thử kho/).waitFor();
+    await page.getByRole('button',{name:'Ký hợp đồng',exact:true}).click();
+    const beforeSigningReads=contractReads;
+    await page.getByRole('button',{name:'Xác nhận ký',exact:true}).evaluate(button=>{button.click();button.click();});
+    await page.getByText('Hợp đồng đã được ký. Đang chờ nhân viên xác minh.').waitFor();
+    assert.equal(signingCount,1);
+    assert.ok(contractReads>=beforeSigningReads+2);
+    assert.equal(await page.getByRole('button',{name:'Ký hợp đồng',exact:true}).count(),0);
+    await page.getByRole('button',{name:'Tải lại hợp đồng'}).click();
+    await page.getByText('Hợp đồng đã được ký. Đang chờ nhân viên xác minh.').waitFor();
+    assert.equal(signingCount,1);
     assert.equal(paymentCount,1);
+    await page.goBack();
+    await page.getByText('Hợp đồng đã được ký. Đang chờ nhân viên xác minh.').first().waitFor();
     await page.goBack();
     await page.getByText('Tài khoản',{exact:true}).last().click();
     await page.getByRole('button',{name:'Chỉnh sửa hồ sơ'}).click();
@@ -253,6 +328,7 @@ async function main(){
     assert.equal(await page.getByText('Đã lưu thay đổi.').count(),0);
     await save.evaluate(button=>{button.click();button.click();});
     await page.getByText('Địa chỉ: 12 Nguyễn Huệ').waitFor();
+    await assertFits();
     await page.getByText('Đang xét duyệt').waitFor();
     assert.equal(profileWrites,2);
     assert.ok(profileReads>=2);
@@ -260,9 +336,66 @@ async function main(){
     await signIn();
     await page.getByText('Tài khoản',{exact:true}).last().click();
     await page.getByText('Địa chỉ: 12 Nguyễn Huệ').waitFor();
+    await page.setViewportSize({width:390,height:844});
+    await page.getByText('Hàng hóa',{exact:true}).last().click();
+    await page.getByText('Bạn chưa có kho ký gửi nào.').waitFor();
+    showManagedStock=true;
+    await page.getByRole('button',{name:'Làm mới kho hàng',exact:true}).click();
+    await page.getByText(managedItem.name,{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Xem tồn kho',exact:true}).click();
+    await page.getByText('Khả dụng: Chưa có xác nhận',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Xem đơn kho ký gửi',exact:true}).click();
+    await page.getByText('Dung tích đã dùng: 0.01 m³',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Quay lại',exact:true}).last().click();
+    await page.getByRole('button',{name:'Tìm kho ký gửi',exact:true}).click();
+    await page.getByRole('button',{name:'Xem cơ sở ký gửi',exact:true}).click();
+    await page.getByText('Thuê kho ký gửi',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Xem sơ đồ kho',exact:true}).click();
+    const lower=page.getByRole('button',{name:'Xem ô C2',exact:true}),upper=page.getByRole('button',{name:'Xem ô C4',exact:true});
+    await upper.waitFor();
+    const [lowerBox,upperBox]=await Promise.all([lower.boundingBox(),upper.boundingBox()]);
+    assert.equal(lowerBox.x,upperBox.x);
+    assert.ok(upperBox.y<lowerBox.y);
+    await page.getByRole('button',{name:'Phóng to sơ đồ',exact:true}).click();
+    await page.getByText('125%',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Thu nhỏ sơ đồ',exact:true}).click();
+    await page.getByText('100%',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Xem ô C1',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'Thêm ô vào kỳ thuê'}).count(),0);
+    await page.getByRole('button',{name:'Quay lại',exact:true}).last().click();
+    await page.getByRole('button',{name:'Chọn ngày bắt đầu kho ký gửi'}).click();
+    await page.getByRole('button',{name:'Tháng sau',exact:true}).click();
+    await page.getByRole('button',{name:'Chọn ngày 01/01/2099'}).click();
+    await page.getByRole('button',{name:'1 tháng',exact:true}).click();
+    await page.getByRole('button',{name:'Xem ô C4',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'Thêm ô vào kỳ thuê',exact:true}).isDisabled(),true);
+    await page.getByRole('button',{name:'Xem ô C3',exact:true}).click();
+    const add=page.getByRole('button',{name:'Thêm ô vào kỳ thuê',exact:true});
+    assert.equal(await add.isDisabled(),true);
+    for(const code of ['C1','C2']){
+      await page.getByRole('button',{name:'Xem ô '+code,exact:true}).click();
+      await add.click();
+      await page.getByRole('button',{name:'Xem ô '+code,exact:true}).getByText('✓ Đã chọn',{exact:true}).waitFor();
+    }
+    await page.getByRole('button',{name:'Kiểm tra khả dụng và báo giá',exact:true}).click();
+    await page.getByText('Báo giá kho ký gửi V2',{exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Xác nhận tạo đơn thuê',exact:true}).isDisabled(),true);
+    await page.getByRole('button',{name:'2 tháng',exact:true}).click();
+    await page.getByText('Ngày kết thúc: 01/03/2099').waitFor();
+    assert.equal(await page.getByText('Báo giá kho ký gửi V2',{exact:true}).count(),0);
+    missingRackPosition=true;
+    await page.getByRole('button',{name:'Làm mới sơ đồ',exact:true}).click();
+    await page.getByText(/Danh sách ô chỉ dùng để xem chi tiết/).waitFor();
+    await page.getByRole('button',{name:'Xem ô C1',exact:true}).click();
+    assert.equal(await add.isDisabled(),true);
+    assert.equal(await page.getByRole('button',{name:'Kiểm tra khả dụng và báo giá',exact:true}).isDisabled(),true);
+    assert.equal(managedQuotes,1);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    assert.equal(bookingCount,1);
+    assert.equal(paymentCount,1);
     assert.deepEqual(errors,[]);
     assert.deepEqual(unexpected,[]);
-    console.log('PASS: Expo web Unit controls, calendar, stale quote rejection, booking/PayOS regression, progress refresh and Profile persistence');
+    console.log('PASS: Expo web Unit controls, calendar, stale quote rejection, booking/PayOS regression, progress refresh, Profile persistence and Managed Inventory read/quote flow');
   }finally{await browser.close();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>server.close());

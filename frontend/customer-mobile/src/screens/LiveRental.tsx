@@ -1,3 +1,4 @@
+import {CardHeading,TintedPanel} from '../components/livePresentation';
 import {useEffect,useRef,useState} from 'react';
 import axios from 'axios';
 import {Linking,View} from 'react-native';
@@ -25,14 +26,14 @@ function rentalLabel(r:ReservationDto){
 
 export function RentalCard({r}:{r:ReservationDto}){
   const router=useRouter();
-  return <Card><AppText variant="card">{r.reservationCode}</AppText><AppText>{serviceLabel(r.serviceType)} · {rentalLabel(r)}</AppText>
+  return <Card><CardHeading icon="key-outline" title={r.reservationCode}/><AppText>{serviceLabel(r.serviceType)} · {rentalLabel(r)}</AppText>
     <AppText>{dateLabel(r.startDate)} – {dateLabel(r.endDate)}</AppText>
-    <Button label="Xem đơn thuê" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'rental',id:r._id}})}/></Card>;
+    <Button label="Xem đơn thuê" icon="arrow-forward-outline" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'rental',id:r._id}})}/></Card>;
 }
 export function Rentals(){
   const owner=useLiveSession(s=>s.user?._id??'');
   const data=useResource(owner,signal=>mobileRepo.rentals(owner,signal));
-  return <LiveScreen title="Kho của tôi" onRefresh={data.reload} refreshing={data.loading}>
+  return <LiveScreen title="Kho của tôi" eyebrow="ĐƠN THUÊ" subtitle="Theo dõi trạng thái và các bước tiếp theo của từng đơn." onRefresh={data.reload} refreshing={data.loading}>
     <ResourceState {...data}/>{data.data?.length===0&&<StateCard title="Bạn chưa có đơn thuê"/>}
     {data.data?.map(r=><RentalCard key={r._id} r={r}/>)}
   </LiveScreen>;
@@ -43,15 +44,15 @@ export function RentalDetail({id}:{id:string}){
   const r=data.data;
   const facility=typeof r?.facilityId==='object'&&typeof r.facilityId.name==='string'?r.facilityId.name:undefined;
   const unit=typeof r?.storageUnitId==='object'&&typeof r.storageUnitId?.unitCode==='string'?r.storageUnitId.unitCode:undefined;
-  return <LiveScreen title="Chi tiết đơn thuê" onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
+  return <LiveScreen title="Chi tiết đơn thuê" eyebrow="HỒ SƠ THUÊ" subtitle="Thông tin kho, hợp đồng và tiến độ của đơn thuê." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
     {r&&<Card><AppText variant="card">{r.reservationCode}</AppText><AppText>{rentalLabel(r)}</AppText>
       <AppText>{dateLabel(r.startDate)} – {dateLabel(r.endDate)}</AppText>
       {r.serviceType==='SELF_STORAGE'&&<>
         <AppText>Cơ sở: {facility??'Chưa có thông tin'}</AppText>
         <AppText>Kho: {unit??'Chưa có thông tin'}</AppText>
       </>}
-      <Button label="Xem hợp đồng" variant="outline" onPress={()=>router.push({pathname:'/rentals/[id]/contract',params:{id}})}/>
-      {r.serviceType==='SELF_STORAGE'&&<Button label="Thanh toán và lịch sử" onPress={()=>router.push({pathname:'/rentals/[id]/payment',params:{id}})}/>}
+      <Button label="Xem hợp đồng" icon="document-text-outline" variant="outline" onPress={()=>router.push({pathname:'/rentals/[id]/contract',params:{id}})}/>
+      {r.serviceType==='SELF_STORAGE'&&<Button label="Thanh toán và lịch sử" icon="card-outline" onPress={()=>router.push({pathname:'/rentals/[id]/payment',params:{id}})}/>}
     </Card>}
     {r?.serviceType==='SELF_STORAGE'&&<RentalProgress key={owner+':'+id} reservation={r} owner={owner} onRetry={data.reload}/>}
   </LiveScreen>;
@@ -68,17 +69,8 @@ function RentalProgress({reservation,owner,onRetry}:{reservation:ReservationDto;
     :{pathname:'/rentals/[id]/contract',params:{id:reservation._id}})}/>;
 }
 
-export function Contract(){
-  const {id}=useLocalSearchParams<{id:string}>();
-  const owner=useLiveSession(s=>s.user?._id??'');
-  const data=useResource(owner+':'+id,async signal=>mobileRepo.contract(await mobileRepo.rental(id,owner,signal),owner,signal));
-  return <LiveScreen title="Hợp đồng" onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
-    {data.data===null&&<StateCard title="Chưa có hợp đồng cho đơn thuê"/>}
-    {data.data&&<Card><AppText variant="card">{typeof data.data.contractCode==='string'?data.data.contractCode:'Hợp đồng thuê kho'}</AppText>
-      <AppText>{({DRAFT:'Bản nháp',SIGNED:'Đã ký',TERMINATED:'Đã chấm dứt',EXPIRED:'Đã hết hạn'})[data.data.status]}</AppText>
-      <AppText>Ứng dụng hiện hỗ trợ xem trạng thái hợp đồng.</AppText></Card>}
-  </LiveScreen>;
-}
+export {Contract} from './LiveContract';
+
 export function BookingReview(){
   const {facilityId,unitId}=useLocalSearchParams<{facilityId:string;unitId:string}>();
   return <BookingForm key={facilityId+':'+unitId} facilityId={facilityId} unitId={unitId}/>;
@@ -155,11 +147,11 @@ function BookingForm({facilityId,unitId}:{facilityId:string;unitId:string}){
   const quote=review.data?.quote;
   const availableUnits=(['DAY','MONTH','YEAR'] as const).filter(unit=>terms.data?.some(term=>term.unit===unit));
   const activeUnit=availableUnits.includes(durationUnit)?durationUnit:availableUnits[0];
-  return <LiveScreen title="Kỳ thuê và xác nhận">
+  return <LiveScreen title="Kỳ thuê và xác nhận" eyebrow="ĐẶT KHO · THỜI HẠN" subtitle="Chọn ngày bắt đầu và kỳ hạn để xem báo giá.">
     <ResourceState {...unitData}/>
     {unitData.data&&!unitReady?<StateCard title="Kho không khả dụng" description="Vui lòng quay lại và chọn kho khác."/>:null}
     {unitReady&&<Card>
-      <AppText variant="card">Kho {unitData.data?.unitCode}</AppText>
+      <CardHeading icon="calendar-outline" title={`Kho ${unitData.data?.unitCode??''}`}/>
       <AppText variant="label">Ngày bắt đầu</AppText>
       <Button label={calendarOpen?'Đóng lịch':start?bookingDateLabel(start):'Chọn ngày bắt đầu'} variant="outline" disabled={pending}
         onPress={()=>setCalendarOpen(!calendarOpen)}/>
@@ -177,9 +169,9 @@ function BookingForm({facilityId,unitId}:{facilityId:string;unitId:string}){
       </>:null}
       {end?<AppText>Ngày kết thúc: {bookingDateLabel(end)}</AppText>:null}
       {period&&<ResourceState {...review}/>}
-      {quote&&<><AppText>Tiền thuê dự kiến {money(quote.estimate.estimatedRent)}</AppText>
+      {quote&&<TintedPanel><AppText variant="label">CHI PHÍ DỰ KIẾN</AppText><AppText>Tiền thuê dự kiến {money(quote.estimate.estimatedRent)}</AppText>
         <AppText>Tiền đặt cọc {money(quote.estimate.depositAmount)}</AppText>
-        <AppText>Thuế {money(quote.estimate.taxAmount)}</AppText></>}
+        <AppText>Thuế {money(quote.estimate.taxAmount)}</AppText></TintedPanel>}
       <Button label={review.data?.attempt?'Khôi phục lần đặt kho':'Xác nhận đặt kho'} loading={pending}
         disabled={!review.data||(!review.data.quote&&!review.data.attempt)} onPress={()=>void confirm()}/>
     </Card>}
@@ -206,13 +198,13 @@ export function Payment(){
   const decision=data.data?.decision.kind;
   const progress=data.data?reservationProgress(data.data.reservation,{...data.data,decision:data.data.decision.kind}):null;
   const checkout=(decision==='CREATE'||decision==='READY')&&<Button label={decision==='READY'?'Mở liên kết PayOS hiện có':'Tạo liên kết thanh toán'} loading={pending} onPress={()=>void pay()}/>;
-  return <LiveScreen title="Thanh toán PayOS" onRefresh={data.reload} refreshing={data.loading}>
+  return <LiveScreen title="Thanh toán PayOS" eyebrow="TÀI CHÍNH ĐƠN THUÊ" onRefresh={data.reload} refreshing={data.loading}>
     <AppText>Trạng thái thanh toán được xác nhận từ máy chủ. Khi trở lại ứng dụng, giao dịch sẽ được kiểm tra lại.</AppText>
     {data.error?<StateCard kind="error" title="Chưa thể xác minh tiến độ" description={data.error} onRetry={data.reload}/>:<ResourceState {...data}/>}
-    {data.data&&<Card><AppText variant="card">{data.data.reservation.reservationCode}</AppText>
+    {data.data&&<Card><CardHeading icon="wallet-outline" title={data.data.reservation.reservationCode}/>
       <AppText>{rentalLabel(data.data.reservation)}</AppText>
-      {decision==='APPLIED'&&<AppText accessibilityRole="status">Tiền đặt cọc đã được xác minh và ghi nhận.</AppText>}
-      {decision==='REVIEW'&&<AppText>Đã có lần thanh toán. Kiểm tra trạng thái hoặc liên hệ hỗ trợ để đối soát.</AppText>}
+      {decision==='APPLIED'&&<TintedPanel><AppText accessibilityRole="status">Tiền đặt cọc đã được xác minh và ghi nhận.</AppText></TintedPanel>}
+      {decision==='REVIEW'&&<TintedPanel tone="amber"><AppText>Đã có lần thanh toán. Kiểm tra trạng thái hoặc liên hệ hỗ trợ để đối soát.</AppText></TintedPanel>}
       {decision==='INELIGIBLE'&&<AppText>Đơn thuê hoặc hợp đồng chưa đủ điều kiện thanh toán tiền cọc.</AppText>}
     </Card>}
     {progress&&<ReservationProgressTracker progress={progress} paymentScreen onAction={()=>router.push({pathname:'/rentals/[id]/contract',params:{id}})}>{checkout}</ReservationProgressTracker>}
@@ -222,6 +214,6 @@ export function Payment(){
         p.applicationStatus==='APPLIED'&&p.providerSettlementStatus==='VERIFIED'&&p.status==='SUCCEEDED'?'Đã ghi nhận':
         p.status==='FAILED'?'Thất bại':p.checkoutStatus==='UNKNOWN'?'Chưa xác định kết quả':'Đang chờ xác nhận'}</AppText>
     </Card>)}
-    <Button label="Kiểm tra trạng thái" variant="outline" disabled={pending} onPress={data.reload}/>
+    <Button label="Kiểm tra trạng thái" icon="refresh-outline" variant="outline" disabled={pending} onPress={data.reload}/>
   </LiveScreen>;
 }

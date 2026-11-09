@@ -1,1 +1,1 @@
-export {UnavailableScreen as default} from '../../../src/components/liveUI';
+export {ManagedMap as default} from '../../../src/screens/ManagedWarehouse';
