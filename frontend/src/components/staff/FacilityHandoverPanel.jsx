@@ -18,7 +18,7 @@ export default function FacilityHandoverPanel({reservationId}) {
   if(!objectId(recordId(contract))||recordId(contract.reservationId)!==reservationId||recordId(contract.customerId)!==recordId(reservation.customerId))throw Error('The contract does not match the reservation or customer.');
   return {reservation,contract};
  },[reservationId,facilityId]);
- const resource=useFacilityResource(load,permitted),data=resource.data;
+ const resource=useFacilityResource(load,permitted,{refreshOnFocus:false}),data=resource.data;
  const paperEligible=d=>['CONTRACTED','DEPOSIT_PAID'].includes(d.reservation.status)&&!d.contract.signedProofUrl;
  const handoverEligible=d=>d.reservation.status==='PAID'&&d.contract.status==='SIGNED'&&!!d.contract.signedProofUrl;
  async function run(event){event?.preventDefault();if(busy.current||!data)return;busy.current=true;setSaving(true);setFeedback({});try{

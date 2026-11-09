@@ -8,6 +8,7 @@ export default {
  update:(kind,ticketId,body)=>client.patch(`${endpoint(kind)}/${id(ticketId)}`,body),
  assign:(kind,ticketId,staffId)=>client.post(`${endpoint(kind)}/${id(ticketId)}/assign`,kind==='maintenance'?{assignedTo:staffId}:{staffId}),
  unassign:(kind,ticketId)=>client.post(`${endpoint(kind)}/${id(ticketId)}/unassign`),
+ escalate:ticketId=>client.post(`/support-requests/${id(ticketId)}/escalate`),
  status:(kind,ticketId,status,resolutionNote)=>client.patch(`${endpoint(kind)}/${id(ticketId)}/status`,{status,...(status==='RESOLVED'?{resolutionNote}: {})}),
  messages:(ticketId,config)=>client.get(`/support-requests/${id(ticketId)}/messages`,config),
  message:(ticketId,message,isInternal)=>client.post(`/support-requests/${id(ticketId)}/messages`,{message,isInternal}),

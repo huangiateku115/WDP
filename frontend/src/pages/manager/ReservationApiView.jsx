@@ -18,7 +18,7 @@ function ReservationApiContent({workspace}){
  const [status,setStatus]=useState(''),[lookup,setLookup]=useState(''),[modal,setModal]=useState(null),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[feedback,setFeedback]=useState({}),busy=useRef(false);
  const facilityId=user?.assignedFacilityId,manager=!!accessToken&&user?.role==='FACILITY_MANAGER',reader=!!accessToken&&['FACILITY_MANAGER','FACILITY_STAFF'].includes(user?.role)&&(!managed||user?.role==='FACILITY_MANAGER'),hasFacility=objectId(facilityId),valid=!id||objectId(id);
  const load=useCallback(async signal=>id?reservationRecord(apiRecord(await facilityReservationApi.detail(id,managed,{signal}))):apiRows(await facilityReservationApi.list(facilityId,{signal})).map(reservationRecord),[id,managed,facilityId]);
- const resource=useFacilityResource(load,reader&&hasFacility&&valid&&(!!id||!managed));
+ const resource=useFacilityResource(load,reader&&hasFacility&&valid&&(!!id||!managed),{refreshOnFocus:!id});
  const row=id?resource.data:null,scoped=!!row&&row.facility===facilityId,expired=!!row?.expiresAt&&Date.parse(row.expiresAt)<=Date.now(),canDecide=manager&&scoped&&row.status==='RESERVED'&&!expired;
  const submit=async event=>{event.preventDefault();if(busy.current||!canDecide||!modal||modal==='reject'&&!reason.trim())return;busy.current=true;setSaving(true);setFeedback({});try{
   if(row.expiresAt&&Date.parse(row.expiresAt)<=Date.now())throw Error('The reservation hold has expired. Please refresh.');
