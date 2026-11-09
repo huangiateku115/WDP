@@ -195,7 +195,7 @@ function FacilityScope({ facilityId, facilities, data }) {
               { key: "code", label: "Item code" },
               { key: "name", label: "Name" },
               { key: "category", label: "Category" },
-              { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit}` },
+                { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
               { key: "totalVolumeM3", label: "Volume", render: (r) => m3(r.totalVolumeM3) },
               { key: "totalWeightKg", label: "Weight", render: (r) => kg(r.totalWeightKg) },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },

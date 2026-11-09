@@ -10,10 +10,10 @@ import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_SERVICE_TYPES, BOM_DISCOUNT_KINDS, BOM_DISCOUNT_VALUE_TYPES, BOM_DISCOUNT_TYPES, BOM_CATEGORY_STATUS,
-  bomFutureDate, responseData,
-  discountFromDto, discountValueLabel, discountBody,
-  categoryFromDto, categoryBody,
+  BOM_SERVICE_TYPES, BOM_DISCOUNT_KINDS, BOM_DISCOUNT_VALUE_TYPES, BOM_DISCOUNT_TYPES,
+  bomFutureDate, responseData, isEffectiveRecord,
+  discountFromDto, discountValueLabel, discountBody, discountUpdateBody,
+  categoryFromDto, categoryBody, categoryUpdateBody,
 } from "@/lib/bomMappers";
 
 // Live Discounts/Waivers and Item-category policies, backed by the confirmed /policies API
@@ -24,20 +24,20 @@ const blankDiscount = () => ({
   conditions: "", effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
 });
 const blankCategory = () => ({
-  facilityId: "", service: "", name: "", description: "", allowedStatus: "ALLOWED",
-  handlingNotes: "", restrictions: "", effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
+  facilityId: "", service: "MANAGED_INVENTORY", allowedCategories: "", blockedCategories: "",
+  effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
 });
 
 const CONFIGS = {
   discount: {
     root: "/bom/policies/discounts", title: "Discounts and waivers", single: "discount policy",
     policyTypes: BOM_DISCOUNT_TYPES, listParams: {},
-    fromDto: discountFromDto, body: discountBody, blank: blankDiscount,
+    fromDto: discountFromDto, body: discountBody, updateBody: discountUpdateBody, blank: blankDiscount,
   },
   category: {
     root: "/bom/policies/item-categories", title: "Item categories", single: "item category",
     policyTypes: ["CATEGORY"], listParams: { type: "CATEGORY" },
-    fromDto: categoryFromDto, body: categoryBody, blank: blankCategory,
+    fromDto: categoryFromDto, body: categoryBody, updateBody: categoryUpdateBody, blank: blankCategory,
   },
 };
 
@@ -70,9 +70,10 @@ function RecordList({ kind, config }) {
   const state = useAsyncData(({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]), [kind]);
   const [status, setStatus] = useState("");
   const [filter, setFilter] = useState("");
+  // Discounts are narrowed by kind client-side; CATEGORY policies only need the status filter.
   const typeFilter = kind === "discount"
     ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, k.replaceAll("_", " ")])]
-    : [["", "All acceptance policies"], ...BOM_CATEGORY_STATUS];
+    : null;
 
   return (
     <Screen
@@ -86,14 +87,14 @@ function RecordList({ kind, config }) {
       <Panel title="Filters">
         <div className="manager-filters">
           <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
-          <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />
+          {typeFilter && <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />}
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
         const records = recordPage.rows;
         const rows = records.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
-          (!filter || (kind === "discount" ? row.kind === filter : row.allowedStatus === filter)));
+          (!typeFilter || !filter || row.kind === filter));
         return (
           <Panel title={config.title} subtitle={`${rows.length} of ${records.length} records`}>
             {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
@@ -109,8 +110,8 @@ function RecordList({ kind, config }) {
                 { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
                 { key: "revision", label: "Version" },
               ] : [
-                { key: "name", label: "Category", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-                { key: "acceptance", label: "Acceptance", render: (r) => <Status value={r.allowedStatus} /> },
+                { key: "name", label: "Allowed categories", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
+                { key: "blocked", label: "Blocked", render: (r) => r.blockedCount },
                 { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "effectiveFrom", label: "Effective from" },
                 { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
@@ -157,11 +158,9 @@ function RecordDetail({ kind, config }) {
                 ["Status", <Status value={record.status} />],
                 ["Version", record.revision],
               ] : [
-                ["Category", record.name],
-                ["Acceptance", <Status value={record.allowedStatus} />],
-                ["Description", record.description],
-                ["Handling notes", record.handlingNotes],
-                ["Restrictions", record.restrictions],
+                ["Allowed categories", record.allowedCategories || "—"],
+                ["Blocked categories", record.blockedCategories || "—"],
+                ["Service model", record.service || "MANAGED_INVENTORY"],
                 ["Effective from", record.effectiveFrom],
                 ["Effective end", record.effectiveTo || "Open-ended"],
                 ["Status", <Status value={record.status} />],
@@ -216,6 +215,8 @@ function RecordForm({ kind, config, mode }) {
   }, [state.data, isEdit, config]);
 
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  // An already-effective policy is immutable except for a prospective effectiveTo.
+  const locked = isEdit && isEffectiveRecord(form);
 
   async function submit(event) {
     event.preventDefault();
@@ -223,7 +224,11 @@ function RecordForm({ kind, config, mode }) {
     setError("");
     setPending(true);
     try {
-      const body = config.body(form);
+      if (!form.facilityId) throw new Error("Select a facility.");
+      if (locked && !form.effectiveTo) {
+        throw new Error("This policy is already effective. Set a future effective end date to close it.");
+      }
+      const body = isEdit ? config.updateBody(form, { effective: locked }) : config.body(form);
       if (isEdit) await bomPolicyApi.update(id, body);
       else await bomPolicyApi.create(body);
       nav(config.root);
@@ -235,6 +240,9 @@ function RecordForm({ kind, config, mode }) {
   }
 
   const minDate = bomFutureDate(1);
+  const lockNotice = locked
+    ? "This policy is already effective: scope, type and config are immutable. Only a future effective end date can be saved."
+    : "";
 
   return (
     <Screen
@@ -246,56 +254,65 @@ function RecordForm({ kind, config, mode }) {
         <Panel title="Rule form">
           <form className="bom-form" onSubmit={submit}>
             <Field label="Facility scope">
-              <Select label="Facility scope" value={form.facilityId} onChange={(v) => change("facilityId", v)}
+              <Select label="Facility scope" value={form.facilityId} disabled={locked} onChange={(v) => change("facilityId", v)}
                 options={[["", "Select a facility"], ...facilities.map((f) => [f.id, f.name])]} />
             </Field>
-            <Field label="Service model (optional)">
-              <Select label="Service model" value={form.service} onChange={(v) => change("service", v)}
-                options={[["", "Any service"], ...BOM_SERVICE_TYPES]} />
-            </Field>
+            {kind === "discount" && (
+              <Field label="Service model (optional)">
+                <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)}
+                  options={[["", "Any service"], ...BOM_SERVICE_TYPES]} />
+              </Field>
+            )}
 
             {kind === "discount" && (
               <>
                 <Field label="Discount kind">
-                  <Select label="Discount kind" value={form.kind} onChange={(v) => change("kind", v)}
+                  <Select label="Discount kind" value={form.kind} disabled={locked} onChange={(v) => change("kind", v)}
                     options={BOM_DISCOUNT_KINDS.map((k) => [k, k.replaceAll("_", " ")])} />
                 </Field>
-                <Field label="Discount name"><Input aria-label="Discount name" required value={form.name} onChange={(e) => change("name", e.target.value)} /></Field>
+                <Field label="Discount name"><Input aria-label="Discount name" required disabled={locked} value={form.name} onChange={(e) => change("name", e.target.value)} /></Field>
                 <Field label="Value type">
-                  <Select label="Value type" value={form.valueType} onChange={(v) => change("valueType", v)}
+                  <Select label="Value type" value={form.valueType} disabled={locked} onChange={(v) => change("valueType", v)}
                     options={BOM_DISCOUNT_VALUE_TYPES.map((t) => [t, t.replaceAll("_", " ")])} />
                 </Field>
                 {form.valueType !== "UNDEFINED" && (
                   <Field label={form.valueType === "PERCENTAGE" ? "Percentage (0-100)" : "Fixed amount (VND)"}>
-                    <Input aria-label="Discount value" type="number" min="0" step="any" required
+                    <Input aria-label="Discount value" type="number" min="0" step="any" required disabled={locked}
                       value={form.value} onChange={(e) => change("value", e.target.value)} />
                   </Field>
                 )}
-                <div className="bom-wide"><Field label="Conditions"><Textarea aria-label="Conditions" required value={form.conditions} onChange={(e) => change("conditions", e.target.value)} /></Field></div>
+                <div className="bom-wide"><Field label="Conditions"><Textarea aria-label="Conditions" required disabled={locked} value={form.conditions} onChange={(e) => change("conditions", e.target.value)} /></Field></div>
               </>
             )}
 
             {kind === "category" && (
               <>
-                <Field label="Category name"><Input aria-label="Category name" required value={form.name} onChange={(e) => change("name", e.target.value)} /></Field>
-                <Field label="Acceptance">
-                  <Select label="Acceptance" value={form.allowedStatus} onChange={(v) => change("allowedStatus", v)} options={BOM_CATEGORY_STATUS} />
-                </Field>
-                <div className="bom-wide"><Field label="Description"><Textarea aria-label="Description" required value={form.description} onChange={(e) => change("description", e.target.value)} /></Field></div>
-                <div className="bom-wide"><Field label="Handling notes"><Textarea aria-label="Handling notes" required value={form.handlingNotes} onChange={(e) => change("handlingNotes", e.target.value)} /></Field></div>
-                <div className="bom-wide"><Field label="Restrictions"><Textarea aria-label="Restrictions" required value={form.restrictions} onChange={(e) => change("restrictions", e.target.value)} /></Field></div>
+                <div className="bom-wide">
+                  <Field label="Allowed categories" hint="Required. Managed Inventory is rejected for any item outside this list. Separate entries with commas or new lines.">
+                    <Textarea aria-label="Allowed categories" required disabled={locked} value={form.allowedCategories} onChange={(e) => change("allowedCategories", e.target.value)} />
+                  </Field>
+                </div>
+                <div className="bom-wide">
+                  <Field label="Blocked categories" hint="Optional. Blocked entries win over allowed ones; the backend stores at most 100 entries per list.">
+                    <Textarea aria-label="Blocked categories" disabled={locked} value={form.blockedCategories} onChange={(e) => change("blockedCategories", e.target.value)} />
+                  </Field>
+                </div>
+                <p className="bom-wide text-sm text-slate-500">
+                  CATEGORY policies apply to Managed Inventory only, so the service model is fixed to MANAGED_INVENTORY.
+                </p>
               </>
             )}
 
             <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
-              <Input aria-label="Effective from" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
+              <Input aria-label="Effective from" type="date" min={minDate} required disabled={locked} value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
             </Field>
-            <Field label="Effective end (optional)">
+            <Field label="Effective end (optional)" hint={locked ? "Required to close an effective policy; must be in the future." : undefined}>
               <Input aria-label="Effective end" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
             </Field>
-            <Field label="Status">
-              <Select label="Status" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
+            <Field label="Status" hint={locked ? "Effective policies cannot be toggled." : undefined}>
+              <Select label="Status" value={form.status} disabled={locked} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
             </Field>
+            {lockNotice && <p className="bom-warning bom-wide">{lockNotice}</p>}
 
             <div className="bom-wide">
               {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}

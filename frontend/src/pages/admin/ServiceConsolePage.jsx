@@ -13,7 +13,9 @@ import maintenanceApi from "@/api/maintenanceApi";
 // Reads are live; assign / unassign / status / escalate write through the confirmed
 // ADMIN/BOM/FACILITY_MANAGER endpoints (assign, unassign and escalate are manager-only).
 const SERVICE_STATUSES = ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED"];
-const ASSIGNEE_ROLES = ["FACILITY_STAFF", "FACILITY_MANAGER"];
+// Assign/unassign only accepts an active FACILITY_STAFF assigned to the ticket facility,
+// so managers must not be offered as assignees.
+const ASSIGNEE_ROLES = ["FACILITY_STAFF"];
 
 const unwrap = (response) => response?.data?.data ?? null;
 const unwrapList = (response) => (Array.isArray(response?.data?.data) ? response.data.data : []);
@@ -243,7 +245,7 @@ function ServiceAdminActions({ config, row, onDone }) {
       <div className="manager-filters mt-4">
         <Field
           label={config.assigneeLabel}
-          hint={assignees.length ? undefined : "The user collection returned no FACILITY_STAFF or FACILITY_MANAGER account."}
+          hint={assignees.length ? undefined : "The user collection returned no FACILITY_STAFF account."}
         >
           <Select
             label={`${config.assigneeLabel} to assign`}

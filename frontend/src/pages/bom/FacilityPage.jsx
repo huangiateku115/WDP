@@ -19,7 +19,7 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 
 const EMPTY_FORM = {
   code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
-  openingHours: "", allDay: false,
+  openingHours: "", allDay: false, contactPhone: "", contactEmail: "",
   description: "", serviceTypes: ["SELF_STORAGE"], images: [], status: "ACTIVE",
 };
 
@@ -370,6 +370,9 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       if (!form.ward.trim()) throw new Error("Select or enter a ward / commune.");
       if (!form.district.trim()) throw new Error("Enter the street / area.");
       if (!form.line1.trim()) throw new Error("Enter the address / house number.");
+      if (form.contactEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail.trim())) {
+        throw new Error("Enter a valid contact email address.");
+      }
       const hours = form.allDay ? "" : form.openingHours.trim();
       if (hours) {
         const message = hoursError(hours);
@@ -492,6 +495,12 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               </div>
               <Field label="Business status">
                 <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
+              </Field>
+              <Field label="Contact phone" hint="Optional. Sent as contact.phone.">
+                <Input aria-label="Contact phone" value={form.contactPhone || ""} onChange={(e) => change("contactPhone", e.target.value)} />
+              </Field>
+              <Field label="Contact email" hint="Optional. Sent as contact.email and must be a valid address.">
+                <Input aria-label="Contact email" type="email" value={form.contactEmail || ""} onChange={(e) => change("contactEmail", e.target.value)} />
               </Field>
               <Field label="Service models" hint="At least one service model is required.">
                 <div className="flex flex-wrap gap-4 py-2">

@@ -182,7 +182,9 @@ function ContractList({ basePath }) {
               columns={[
                 { key: "code", label: "Reservation", render: (row) => row.code || row.id },
                 { key: "customer", label: "Customer", render: (row) => row.customerName },
-                { key: "service", label: "Service", render: (row) => (row.serviceType || "SELF_STORAGE").replaceAll("_", " ") },
+                // reservationFromDto exposes the service model as `service`; `serviceType` is kept
+                // as a fallback for raw backend rows.
+                { key: "service", label: "Service", render: (row) => (row.service || row.serviceType || "—").replaceAll("_", " ") },
                 { key: "window", label: "Rental window", render: (row) => `${day(row.startDate)} → ${day(row.endDate)}` },
                 { key: "status", label: "Reservation status", render: (row) => <Status value={row.status} /> },
                 {

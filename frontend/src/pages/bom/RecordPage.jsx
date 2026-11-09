@@ -11,9 +11,9 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
-  bomFutureDate, responseData,
-  pricingFromDto, pricingLabel, pricingBody,
-  policyFromDto, policyBody,
+  bomFutureDate, responseData, isEffectiveRecord,
+  pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
+  policyFromDto, policyBody, policyUpdateBody,
 } from "@/lib/bomMappers";
 
 const blankPricing = () => ({
@@ -28,12 +28,14 @@ const blankPolicy = () => ({
 const CONFIGS = {
   pricing: {
     api: bomPricingApi, root: "/bom/pricing", title: "Pricing rules", code: "P051",
-    fromDto: pricingFromDto, body: pricingBody, blank: blankPricing, hasService: true,
+    fromDto: pricingFromDto, body: pricingBody, updateBody: pricingUpdateBody,
+    blank: blankPricing, hasService: true,
   },
   policy: {
     api: bomPolicyApi, root: "/bom/policies", title: "Business policies", code: "P052",
     policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
-    fromDto: policyFromDto, body: policyBody, blank: blankPolicy, hasService: false,
+    fromDto: policyFromDto, body: policyBody, updateBody: policyUpdateBody,
+    blank: blankPolicy, hasService: false,
   },
 };
 
@@ -244,6 +246,8 @@ function RecordForm({ kind, config, mode }) {
   }, [state.data, isEdit, config]);
 
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  // An already-effective rule is immutable except for a prospective effectiveTo.
+  const locked = isEdit && isEffectiveRecord(form);
 
   async function submit(event) {
     event.preventDefault();
@@ -251,7 +255,14 @@ function RecordForm({ kind, config, mode }) {
     setError("");
     setPending(true);
     try {
-      const body = config.body(form);
+      if (!form.facilityId) throw new Error("Select a facility.");
+      if (kind === "pricing" && !/^[A-Za-z]{3}$/.test(String(form.currency || "").trim())) {
+        throw new Error("Currency must be exactly three letters (for example VND).");
+      }
+      if (locked && !form.effectiveTo) {
+        throw new Error("This record is already effective. Set a future effective end date to close it.");
+      }
+      const body = isEdit ? config.updateBody(form, { effective: locked }) : config.body(form);
       if (isEdit) await config.api.update(id, body);
       else await config.api.create(body);
       nav(config.root);
@@ -263,6 +274,9 @@ function RecordForm({ kind, config, mode }) {
   }
 
   const minDate = bomFutureDate(1);
+  const lockNotice = locked
+    ? "This record is already effective: the scope, price and start date are immutable. Only a future effective end date can be saved."
+    : "";
 
   return (
     <Screen
@@ -279,37 +293,38 @@ function RecordForm({ kind, config, mode }) {
                 <Select
                   label="Facility scope"
                   value={form.facilityId}
+                  disabled={locked}
                   onChange={(v) => change("facilityId", v)}
                   options={[["", "Select a facility"], ...facilities.map((f) => [f.id, f.name])]}
                 />
               </Field>
               {kind === "policy" && (
                 <Field label="Policy type">
-                  <Select label="Policy type" value={form.type} onChange={(v) => change("type", v)}
+                  <Select label="Policy type" value={form.type} disabled={locked} onChange={(v) => change("type", v)}
                     options={BOM_POLICY_TYPES.map(({ key, label }) => [key, label])} />
                 </Field>
               )}
               {config.hasService && (
                 <Field label="Service model">
-                  <Select label="Service model" value={form.service} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES} />
+                  <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES} />
                 </Field>
               )}
               {kind === "pricing" && form.service === "SELF_STORAGE" && (
                 <Field label="Private unit size">
-                  <Select label="Private unit size" value={form.unitSize} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
+                  <Select label="Private unit size" value={form.unitSize} disabled={locked} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
                 </Field>
               )}
               {kind === "pricing" && (
                 <>
                   <Field label="Billing duration (months)">
-                    <Select label="Billing duration (months)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
+                    <Select label="Billing duration (months)" value={form.billingMonths} disabled={locked} onChange={(v) => change("billingMonths", Number(v))}
                       options={BOM_TERM_MONTHS.map((m) => [m, `${m} month(s)`])} />
                   </Field>
                   <Field label={form.service === "MANAGED_INVENTORY" ? "Rate per m³ per billing period (VND)" : "Price per billing period (VND)"}>
-                    <Input aria-label="Rate" type="number" min="0" step="any" required value={form.rate} onChange={(e) => change("rate", e.target.value)} />
+                    <Input aria-label="Rate" type="number" min="0" step="any" required disabled={locked} value={form.rate} onChange={(e) => change("rate", e.target.value)} />
                   </Field>
                   <Field label="Currency">
-                    <Input aria-label="Currency" value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
+                    <Input aria-label="Currency" maxLength={3} disabled={locked} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
                   </Field>
                 </>
               )}
@@ -317,25 +332,26 @@ function RecordForm({ kind, config, mode }) {
                 <>
                   <div className="bom-wide">
                     <Field label="Policy description">
-                      <Textarea aria-label="Policy description" required value={form.description} onChange={(e) => change("description", e.target.value)} />
+                      <Textarea aria-label="Policy description" required disabled={locked} value={form.description} onChange={(e) => change("description", e.target.value)} />
                     </Field>
                   </div>
                   <div className="bom-wide">
                     <Field label="Policy rule">
-                      <Textarea aria-label="Policy rule" required value={form.rule} onChange={(e) => change("rule", e.target.value)} />
+                      <Textarea aria-label="Policy rule" required disabled={locked} value={form.rule} onChange={(e) => change("rule", e.target.value)} />
                     </Field>
                   </div>
                 </>
               )}
               <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
-                <Input aria-label="Effective from" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
+                <Input aria-label="Effective from" type="date" min={minDate} required disabled={locked} value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
-              <Field label="Effective end (optional)">
+              <Field label="Effective end (optional)" hint={locked ? "Required to close an effective record; must be in the future." : undefined}>
                 <Input aria-label="Effective end" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
               </Field>
-              <Field label="Status">
-                <Select label="Status" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
+              <Field label="Status" hint={locked ? "Effective records cannot be toggled." : undefined}>
+                <Select label="Status" value={form.status} disabled={locked} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
               </Field>
+              {lockNotice && <p className="bom-warning bom-wide">{lockNotice}</p>}
               <div className="bom-wide">
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
