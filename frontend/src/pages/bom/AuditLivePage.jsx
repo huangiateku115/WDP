@@ -56,7 +56,7 @@ export default function AuditLivePage() {
               <Select label="Customer account" value={subjectId} onChange={setSubjectId} options={options} />
             </Field>
             {options.length <= 1 && (
-              <p className="mt-3 text-sm text-slate-500">The backend returned no customer account to review.</p>
+              <p className="mt-3 text-sm text-slate-500">No customer account is available to review.</p>
             )}
           </>
         )}

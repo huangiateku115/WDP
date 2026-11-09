@@ -79,8 +79,8 @@ function RecordList({ kind, config }) {
     <Screen
       title={config.title}
       description={kind === "discount"
-        ? "Live promotional, loyalty and fee-waiver policies stored as backend DISCOUNT/WAIVER policy types."
-        : "Live Managed Inventory category acceptance policies stored as backend CATEGORY policy types."}
+        ? "Promotional, loyalty and fee-waiver policies."
+        : "Managed Inventory category acceptance policies."}
       action={<Button asChild variant="orange"><Link to={`${config.root}/new`}>Create {config.single}</Link></Button>}
     >
       <Panel title="Filters">
@@ -148,7 +148,7 @@ function RecordDetail({ kind, config }) {
               <Details values={kind === "discount" ? [
                 ["Discount", record.name],
                 ["Kind", record.kind.replaceAll("_", " ")],
-                ["Backend policy type", record.policyType],
+                ["Policy type", record.policyType],
                 ["Value", discountValueLabel(record)],
                 ["Conditions", record.conditions],
                 ["Effective from", record.effectiveFrom],
@@ -181,7 +181,7 @@ function RecordDetail({ kind, config }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  This policy will be set to <b>{nextStatus}</b> on the backend. Existing rentals, contracts and payments are not rewritten.
+                  This policy will be set to <b>{nextStatus}</b>. Existing rentals, contracts and payments are not rewritten.
                 </p>
               </ConfirmDialog>
             )}
@@ -290,7 +290,7 @@ function RecordForm({ kind, config, mode }) {
                   </Field>
                 </div>
                 <div className="bom-wide">
-                  <Field label="Blocked categories" hint="Optional. Blocked entries win over allowed ones; the backend stores at most 100 entries per list.">
+                  <Field label="Blocked categories" hint="Optional. Blocked entries win over allowed ones; up to 100 entries per list.">
                     <Textarea aria-label="Blocked categories" disabled={locked} value={form.blockedCategories} onChange={(e) => change("blockedCategories", e.target.value)} />
                   </Field>
                 </div>
@@ -300,7 +300,7 @@ function RecordForm({ kind, config, mode }) {
               </>
             )}
 
-            <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
+            <Field label="Effective from" hint={`Must be ${minDate} or later.`}>
               <Input aria-label="Effective from" type="date" min={minDate} required disabled={locked} value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
             </Field>
             <Field label="Effective end (optional)" hint={locked ? "Required to close an effective policy; must be in the future." : undefined}>

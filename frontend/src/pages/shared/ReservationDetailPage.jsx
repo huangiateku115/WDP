@@ -80,7 +80,7 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
   return (
     <Screen
       title={managed ? "Managed reservation detail" : "Reservation detail"}
-      description="Backend-verified reservation record. Actions run from this page, not from the list."
+      description="Reservation record. Actions run from this page, not from the list."
       action={<Button variant="outline" onClick={() => nav(basePath)}>Back to reservations</Button>}
     >
       <AsyncBoundary state={resource} render={(reservation) => (reservation ? (
@@ -135,7 +135,7 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
           summary={(
             <p className="text-sm text-slate-500">
               {decision.kind === "approve"
-                ? "Approving moves the reservation to CONTRACTED and creates the draft contract on the backend."
+                ? "Approving moves the reservation to CONTRACTED and creates the draft contract."
                 : "Rejecting cancels the reservation and stores the reason you enter."}
             </p>
           )}

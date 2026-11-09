@@ -112,7 +112,7 @@ function CustomerDetail({ id, basePath }) {
     setSuccess("");
     try {
       await customerProfileApi.verify(id, { status: decision, note });
-      setSuccess("Verification updated through the backend API.");
+      setSuccess("Verification updated.");
       state.reload();
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to verify this profile."));
@@ -144,7 +144,7 @@ function CustomerDetail({ id, basePath }) {
                 ["Note", row.note],
               ]} />
             </Panel>
-            <Panel title="Verification decision" subtitle="Sent through PATCH /customers/:id/verify.">
+            <Panel title="Verification decision" subtitle="Approve or reject this customer profile.">
               <form className="space-y-5" onSubmit={submit}>
                 <Field label="Decision">
                   <Select label="Verification decision" value={decision} onChange={setDecision} options={VERIFY_DECISIONS} />

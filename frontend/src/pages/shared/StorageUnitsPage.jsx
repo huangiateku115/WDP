@@ -60,7 +60,7 @@ export default function StorageUnitsPage() {
         return (
           <>
             <Kpis items={[
-              ["Facilities", facilities.length, "Backend facility collection"],
+              ["Facilities", facilities.length, "Across all facilities"],
               ["Units loaded", units.data?.total ?? "—", "Matches the current filters"],
               ["Available", countBy(rows, "status", "AVAILABLE"), "Ready to rent"],
               ["Registered volume", m3(sumBy(rows, "volumeM3")), "Derived from unit dimensions"],
@@ -68,7 +68,7 @@ export default function StorageUnitsPage() {
 
             <Panel
               title="Unit scope"
-              subtitle="Reads work for any facility; creating units additionally requires ACTIVE + SELF_STORAGE on the backend."
+              subtitle="Creating units requires an ACTIVE facility that offers SELF_STORAGE."
             >
               <div className="manager-filters">
                 <Field label="Facility">
@@ -101,7 +101,7 @@ export default function StorageUnitsPage() {
               </div>
               {facility && !canWrite && (
                 <p className="bom-warning mt-5">
-                  {facility.name} is {facility.status} and does not offer SELF_STORAGE, so the backend rejects unit creation with 409.
+                  {facility.name} is {facility.status} and does not offer SELF_STORAGE, so unit creation is disabled.
                 </p>
               )}
             </Panel>

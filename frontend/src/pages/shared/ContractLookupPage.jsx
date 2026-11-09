@@ -120,7 +120,7 @@ function ContractList({ basePath }) {
     setFeedback({});
     try {
       const contract = await loadContractForReservation(reservationId);
-      if (!contract.id) throw new Error("The backend returned a contract without an id.");
+      if (!contract.id) throw new Error("The contract could not be opened.");
       nav(`${basePath}/${contract.id}`);
     } catch (error) {
       setFeedback({ error: apiErrorMessage(error, "No contract is available for this reservation yet.") });
@@ -168,11 +168,11 @@ function ContractList({ basePath }) {
             />
           </Field>
         </div>
-        {facilityScoped && <p className="mb-4 text-sm text-slate-500">The backend narrows the reservation collection to your assigned facility.</p>}
+        {facilityScoped && <p className="mb-4 text-sm text-slate-500">Only reservations of your assigned facility are listed.</p>}
         <Message {...feedback} />
 
         {!facilityId ? (
-          <p className="text-sm text-slate-500">Choose a facility first. Contracts cannot be listed globally because the backend has no contract collection endpoint.</p>
+          <p className="text-sm text-slate-500">Choose a facility first. Contracts are opened per reservation.</p>
         ) : (
           <AsyncBoundary state={reservations} render={() => (
             <Table

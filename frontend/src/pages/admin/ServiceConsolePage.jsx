@@ -132,7 +132,7 @@ function ServiceList({ config }) {
                 { key: "assignedTo", label: "Assigned to" },
                 { key: "createdAt", label: "Created" },
               ]}
-              empty="No records were returned by the backend."
+              empty="No records to show."
             />
           </Panel>
         );
@@ -183,7 +183,7 @@ function ServiceDetail({ config }) {
             </Panel>
             <ServiceActions config={config} row={row} onDone={state.reload} />
             {config.messages && (
-              <Panel title="Conversation" subtitle="Internal messages are hidden from customers by the backend.">
+              <Panel title="Conversation" subtitle="Internal messages are hidden from customers.">
                 {messages.loading && <p role="status" className="text-sm text-slate-500">Loading messages…</p>}
                 {messages.error && <Message error={messages.error} />}
                 {messages.data && (
@@ -238,7 +238,7 @@ function ServiceAdminActions({ config, row, onDone }) {
   const assigneeName = assignees.find(([id]) => id === assignee)?.[1] || assignee;
 
   return (
-    <Panel title="Actions" subtitle="Every change is sent to the backend API. The backend authorizes the action and validates the transition.">
+    <Panel title="Actions" subtitle="Every change is saved immediately and validated before it is applied.">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field
@@ -317,7 +317,7 @@ function ServiceAdminActions({ config, row, onDone }) {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 }),
-                "Status saved through the backend API.",
+                "Status saved.",
               ),
             })
             : setError("Select the new status first."))}
@@ -333,7 +333,7 @@ function ServiceAdminActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>
@@ -351,7 +351,7 @@ function ServiceStatusActions({ config, row, onDone }) {
   const open = (next) => { setError(""); setNotice(""); setDialog(next); };
 
   return (
-    <Panel title="Actions" subtitle="Status changes are sent to the backend API. Assignment stays with ADMIN.">
+    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment stays with ADMIN.">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field label="New status">
@@ -379,7 +379,7 @@ function ServiceStatusActions({ config, row, onDone }) {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 });
-                setNotice("Status saved through the backend API.");
+                setNotice("Status saved.");
                 onDone?.();
               },
             })
@@ -396,7 +396,7 @@ function ServiceStatusActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>

@@ -212,7 +212,7 @@ function RecordDetail({ kind, config }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  This rule will be set to <b>{nextStatus}</b> on the backend. Historical contract and payment snapshots are not rewritten.
+                  This rule will be set to <b>{nextStatus}</b>. Historical contract and payment snapshots are not rewritten.
                 </p>
               </ConfirmDialog>
             )}
@@ -339,7 +339,7 @@ function RecordForm({ kind, config, mode }) {
                   </div>
                 </>
               )}
-              <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
+                <Field label="Effective from" hint={`Must be ${minDate} or later.`}>
                 <Input aria-label="Effective from" type="date" min={minDate} required disabled={locked} value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
               <Field label="Effective end (optional)" hint={locked ? "Required to close an effective record; must be in the future." : undefined}>

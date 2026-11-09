@@ -57,7 +57,7 @@ export default function NotificationsPage() {
   return (
     <Screen
       title="Notifications"
-      description="Operational alerts delivered to your own account. Reading them is the only write the backend currently supports."
+      description="Alerts delivered to your own account. Mark them as read once handled."
       action={<Button variant="outline" disabled={state.loading} onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={() => (
@@ -69,7 +69,7 @@ export default function NotificationsPage() {
             ["Oldest", rows.length ? rows[rows.length - 1].at.slice(0, 10) : "—", "Oldest message in the inbox"],
           ]} />
 
-          <Panel title="Inbox" subtitle="Notifications are returned newest first by the backend.">
+          <Panel title="Inbox" subtitle="Newest notifications first.">
             <div className="manager-filters">
               <Field label="Read state">
                 <Select

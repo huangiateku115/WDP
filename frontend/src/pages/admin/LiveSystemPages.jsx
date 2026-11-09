@@ -20,7 +20,7 @@ const unwrap = (response) => {
 const stamp = (value) => (value ? new Date(value).toLocaleString("en-GB") : "—");
 
 function UserPicker({ state, value, onChange, label }) {
-  const options = [["", "Select a backend user"], ...state.users.filter((u) => userId(u)).map((u) => [userId(u), u.displayName || u.email || userId(u)])];
+  const options = [["", "Select an account"], ...state.users.filter((u) => userId(u)).map((u) => [userId(u), u.displayName || u.email || userId(u)])];
   return (
     <Field label={label}>
       <Select label={label} value={value} onChange={onChange} options={options} />
@@ -43,12 +43,12 @@ export function DashboardPage() {
     <AdminScreen
       title="System administration overview"
       description="Account and facility metrics. Login history and audit logs are scoped to one account."
-      action={<Button asChild variant="orange"><Link to="/admin/users">Manage backend users</Link></Button>}
+      action={<Button asChild variant="orange"><Link to="/admin/users">Manage users</Link></Button>}
     >
       <UserApiState state={state} />
-      <Panel title="Backend user metrics" subtitle="Derived from a successful real GET Users response.">
+        <Panel title="User metrics" subtitle="Derived from the loaded accounts.">
         <Kpis items={[
-          ["Total users", ready ? state.users.length : "Unavailable", "Backend collection count"],
+          ["Total users", ready ? state.users.length : "Unavailable", "Total accounts"],
           ["Active users", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Unavailable", "Shown when all returned statuses are available"],
           ["Customers", count("CUSTOMER"), "Returned CUSTOMER roles"],
           ["Facility Staff", count("FACILITY_STAFF"), "Returned FACILITY_STAFF roles"],
@@ -60,7 +60,7 @@ export function DashboardPage() {
           <Table
             label="Returned role distribution"
             rows={[...new Set(state.users.map((u) => u.role || "Role not returned"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Role not returned") === role).length }))}
-            columns={[{ key: "role", label: "Backend role" }, { key: "count", label: "Users" }]}
+            columns={[{ key: "role", label: "Role" }, { key: "count", label: "Users" }]}
           />
         </Panel>
       )}
@@ -75,15 +75,15 @@ export function DashboardPage() {
             ? <p role="status" className="text-sm text-slate-500">Loading facilities…</p>
             : (
               <Kpis items={[
-                ["Total facilities", facilitiesData.length, "Backend facility records"],
+                ["Total facilities", facilitiesData.length, "Facility records"],
                 ["Active facilities", activeFacilities, "Accepting new reservations"],
                 ["Inactive facilities", facilitiesData.length - activeFacilities, "Blocked for new reservations"],
                 ["Service models", serviceModels.length, serviceModels.join(", ") || "None returned"],
               ]} />
             )}
       </Panel>
-      <Panel title="Login history & audit" subtitle="Backend audit endpoints are scoped to one backend user.">
-        <p className="mb-4 text-sm text-slate-500">Select a backend user on the dedicated pages to inspect their sign-in events or the audit actions they performed.</p>
+      <Panel title="Login history & audit" subtitle="Sign-in events and audit actions are scoped to one account.">
+        <p className="mb-4 text-sm text-slate-500">Select an account on the dedicated pages to inspect its sign-in events or the audit actions it performed.</p>
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link to="/admin/login-history">Open login history</Link></Button>
           <Button asChild variant="outline"><Link to="/admin/audit">Open audit logs</Link></Button>
@@ -107,9 +107,9 @@ export function LoginHistoryPage() {
       <UserApiState state={state} />
       <Panel title="User selection">
         <div className="manager-filters">
-          <UserPicker state={state} value={selected} onChange={setSelected} label="Backend user" />
+          <UserPicker state={state} value={selected} onChange={setSelected} label="Account" />
         </div>
-        {!selected && <p className="text-sm text-slate-500">Select a backend user to load their login history.</p>}
+        {!selected && <p className="text-sm text-slate-500">Select an account to load its login history.</p>}
       </Panel>
       {selected && (
         <Panel title="Login events" subtitle={`${rows.length} event(s)`} action={<Button variant="outline" onClick={history.reload}>Refresh</Button>}>
@@ -152,9 +152,9 @@ export function AuditPage() {
       <UserApiState state={state} />
       <Panel title="User selection">
         <div className="manager-filters">
-          <UserPicker state={state} value={selected} onChange={(v) => { setSelected(v); setOpenId(""); }} label="Backend user" />
+          <UserPicker state={state} value={selected} onChange={(v) => { setSelected(v); setOpenId(""); }} label="Account" />
         </div>
-        {!selected && <p className="text-sm text-slate-500">Select a backend user to load the audit actions they performed.</p>}
+        {!selected && <p className="text-sm text-slate-500">Select an account to load the audit actions it performed.</p>}
       </Panel>
       {selected && (
         <>
@@ -185,7 +185,7 @@ export function AuditPage() {
           )}
         </>
       )}
-      <Details values={[["Note", "Audit endpoints return the actions performed by one backend user. Server-side authorization remains authoritative."]]} />
+      <Details values={[["Note", "Audit history lists the actions performed by one account."]]} />
     </AdminScreen>
   );
 }

@@ -65,7 +65,7 @@ export default function ReservationsOversightPage() {
   return (
     <Screen
       title="Reservation oversight"
-      description="Review SELF_STORAGE reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract on the backend."
+      description="Review SELF_STORAGE reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract."
       action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
@@ -79,7 +79,7 @@ export default function ReservationsOversightPage() {
 
           <Panel
             title="Review scope"
-            subtitle="The facility endpoint returns reservations without paging, so the status and search filters apply to the rows already loaded."
+            subtitle="The list is not paged, so the status and search filters apply to the rows already loaded."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -110,7 +110,7 @@ export default function ReservationsOversightPage() {
             </div>
             {!canReview && (
               <p className="bom-warning mt-5">
-                {role} can read every reservation of a facility, but the backend only lets FACILITY_MANAGER and ADMIN approve or reject
+                {role} can read every reservation of a facility; only FACILITY_MANAGER and ADMIN can approve or reject
                 one. This console stays read-only for your role.
               </p>
             )}
@@ -118,7 +118,7 @@ export default function ReservationsOversightPage() {
 
           {!facilityId && (
             <Panel title="Select a facility">
-              <p className="text-sm text-slate-500">Reservations are listed facility by facility because the backend has no global reservation collection.</p>
+              <p className="text-sm text-slate-500">Reservations are listed facility by facility.</p>
             </Panel>
           )}
 

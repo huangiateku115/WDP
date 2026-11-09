@@ -64,7 +64,7 @@ function ItemList({ basePath }) {
 
           <Panel
             title="Filters"
-            subtitle="Filters run on the backend (facilityId, status, category, search). Leave the facility empty to list every facility."
+            subtitle="Filters apply to the whole list. Leave the facility empty to list every facility."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -91,7 +91,7 @@ function ItemList({ basePath }) {
               </Field>
             </div>
             <p className="bom-warning mt-5">
-              The backend enforces the effective Item Category policy at inbound, so a lot can only be stored when its category is
+              The effective Item Category policy applies at inbound, so a lot can only be stored when its category is
               allowed by the facility policy.
             </p>
           </Panel>
@@ -170,7 +170,7 @@ function ItemDetail({ id, basePath }) {
           <AsyncBoundary state={movements} render={(ledger) => (
             <Panel
               title="Movement ledger"
-              subtitle={`${ledger.length} movement${ledger.length === 1 ? "" : "s"} · newest first, written by the backend`}
+              subtitle={`${ledger.length} movement${ledger.length === 1 ? "" : "s"} · newest first`}
             >
               {ledger.length > 0 && (
                 <div className="mb-5">

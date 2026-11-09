@@ -44,12 +44,12 @@ function UserDirectory({ state }) {
       render: (r) => (key === "role" ? <Status value={r.source[key]} /> : r.source[key] ?? "Not returned"),
     })),
     ...(hasStatus ? [{ key: "status", label: "Status", render: (r) => (userStatus(r.source) ? <Status value={userStatus(r.source)} /> : "Not returned") }] : []),
-    { key: "detail", label: "Action", render: (r) => (userId(r.source) ? <OpenLink to={`/admin/users/${encodeURIComponent(userId(r.source))}`}>View user</OpenLink> : "Detail unavailable without a backend ID") },
+    { key: "detail", label: "Action", render: (r) => (userId(r.source) ? <OpenLink to={`/admin/users/${encodeURIComponent(userId(r.source))}`}>View user</OpenLink> : "Detail unavailable") },
   ];
 
   return (
     <AdminScreen
-      title="Backend users"
+      title="Users"
       description="Search and manage user accounts."
       action={<Button asChild variant="orange"><Link to="/admin/users/new">Create user</Link></Button>}
     >
@@ -57,7 +57,7 @@ function UserDirectory({ state }) {
       {state.status === "ready" && state.sessionToken && (
         <Panel
           title="User directory"
-          subtitle="This collection contains backend records only."
+          subtitle="Accounts you can manage."
           action={<Button variant="outline" onClick={() => loadAdminUsers(true)}>Refresh users</Button>}
         >
           <div className="manager-filters">
@@ -73,7 +73,7 @@ function UserDirectory({ state }) {
               </Field>
             )}
           </div>
-          <Table label="Backend users" rows={rows} columns={columns} />
+          <Table label="Users" rows={rows} columns={columns} />
         </Panel>
       )}
     </AdminScreen>
@@ -85,7 +85,7 @@ function UserDetail({ state, id }) {
   const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
-      <AdminScreen title="Backend user detail" description="Details are resolved from the loaded user collection.">
+      <AdminScreen title="User detail" description="Details are resolved from the loaded user collection.">
         <UserApiState state={state} />
       </AdminScreen>
     );
@@ -115,7 +115,7 @@ function UserDetail({ state, id }) {
   ];
 
   return (
-    <AdminScreen title={row.displayName || row.email || "Backend user"} description="Identity and supported account actions from the loaded backend user collection.">
+    <AdminScreen title={row.displayName || row.email || "Account"} description="Identity and supported account actions.">
       <UserApiState state={state} />
       <Panel title="Account identity" action={<Button asChild variant="outline"><Link to="/admin/users">Back to users</Link></Button>}>
         <Details values={values} />
@@ -129,18 +129,18 @@ function UserDetail({ state, id }) {
 
       <FacilityScope row={row} id={id} facilities={facilities.data || []} />
 
-      <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded backend data." : "This account is active according to the loaded backend data."}>
+      <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded data." : "This account is active according to the loaded data."}>
         {inactive
           ? <ApiConfirmation
               label="Reactivate account"
               title="Confirm account reactivation"
-              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Reactivate (PATCH /users/:id/reactivate)"]]} />}
+              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Reactivate"]]} />}
               run={() => reactivateAdminUser(id)}
             />
           : <ApiConfirmation
               label="Deactivate account"
               title="Confirm account deactivation"
-              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Deactivate (DELETE /users/:id)"]]} />}
+              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Deactivate"]]} />}
               run={() => deactivateAdminUser(id)}
             />}
       </Panel>
@@ -159,7 +159,7 @@ function FacilityScope({ row, id, facilities }) {
       </Panel>
     );
   return (
-    <Panel title="Facility scope" subtitle="PATCH/DELETE /users/:id/facility-assignment.">
+        <Panel title="Facility scope" subtitle="Assign or clear the facility this account is scoped to.">
       <Field label="Assigned facility">
         <Select
           label="Assigned facility"
@@ -210,7 +210,7 @@ function EditAccount({ row, id }) {
     setSuccess("");
     try {
       await updateAdminUser(id, form);
-      setSuccess("User profile updated through the backend API.");
+      setSuccess("User profile updated.");
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to update the account."));
     } finally {
@@ -283,7 +283,7 @@ function CreateUser({ state }) {
   }
 
   return (
-    <AdminScreen title="Create backend user" description="Create an account. Identity, password and role are validated on submit.">
+    <AdminScreen title="Create user" description="Create an account. Identity, password and role are validated on submit.">
       {!state.sessionToken && <UserApiState state={state} />}
       <Panel title="New account">
         <form onSubmit={submit} className="admin-form">

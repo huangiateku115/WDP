@@ -88,8 +88,8 @@ export function ManagedCapacityDialog({ facilityId, facilityLabel, configured, o
           </Field>
         </div>
         <p className="bom-warning">
-          Saving writes the quota configuration to the backend and increments the booking version. The read endpoint only answers for a
-          facility that is ACTIVE, offers MANAGED_INVENTORY and has an active capacity row.
+          Saving stores the quota configuration and increments the booking version. Capacity is only read for a
+          facility that is ACTIVE, offers Managed Inventory and has an active capacity row.
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">

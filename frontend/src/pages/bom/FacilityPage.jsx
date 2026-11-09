@@ -75,7 +75,7 @@ function FacilityList({ basePath }) {
   return (
     <Screen
       title="Facilities"
-      description="Live facility records from the backend. Create, edit, activate, deactivate or delete cross-facility resources."
+      description="Create, edit, activate, deactivate or delete facilities."
       action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Create facility</Link></Button>}
     >
       <Panel title="Facility filters">
@@ -175,7 +175,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
   return (
     <Screen
       title="Facility detail"
-      description="Live facility record from the backend."
+      description="Facility details and status."
       action={<Button asChild variant="outline"><Link to={backTo}>{backLabel}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(facility) => {
@@ -218,7 +218,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");
               return (
-                <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones → aisles → racks → cells).">
+                <Panel title="Warehouse structure" subtitle="Zones → aisles → racks → cells.">
                   {!available && (
                     <p className="bom-warning mb-5">
                       The warehouse map does not apply to this facility: {reason || "it is not an ACTIVE Managed Inventory facility"}.
@@ -285,7 +285,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  The facility <b>{facility.name}</b> will be set to <b>{nextStatus}</b> on the backend.
+                  The facility <b>{facility.name}</b> will be set to <b>{nextStatus}</b>.
                 </p>
               </ConfirmDialog>
             )}
@@ -302,7 +302,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
               >
                 <p className="text-sm text-slate-500">
                   <b>{facility.name}</b> is soft deleted: it leaves every list, the warehouse map and the rent wizard, and only
-                  ADMIN/BOM can list and restore it again. The backend refuses the delete while storage units or warehouse zones still
+                  ADMIN/BOM can list and restore it again. The delete is blocked while storage units or warehouse zones still
                   reference the facility.
                 </p>
               </ConfirmDialog>
