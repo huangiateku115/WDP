@@ -238,7 +238,20 @@ export function assertConfirmedRequest(config) {
       /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(
         path,
       ));
+  // Verified Staff MI-06 routes. Server authentication, Facility scope and gates remain authoritative.
+  const staffInventoryOperations =
+    (method === "GET" &&
+      (/^inbound-requests\/receiving-queue$/i.test(path) ||
+        /^inbound-requests\/[a-f\d]{24}\/receiving$/i.test(path) ||
+        /^outbound-requests\/staff-queue$/i.test(path) ||
+        /^outbound-requests\/[a-f\d]{24}\/staff-detail$/i.test(path) ||
+        /^inventory-items\/[a-f\d]{24}\/relocate-canonical\/context$/i.test(path))) ||
+    (method === "POST" &&
+      (/^inbound-requests\/[a-f\d]{24}\/(evidence-uploads|inspection|return-completed|confirm)$/i.test(path) ||
+        /^outbound-requests\/[a-f\d]{24}\/confirm$/i.test(path) ||
+        /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
   const allowed =
+    staffInventoryOperations ||
     customerInventoryRequests ||
     facilityHandover ||
     customerPayosHistory ||

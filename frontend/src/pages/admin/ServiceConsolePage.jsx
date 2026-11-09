@@ -4,6 +4,8 @@ import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field
 import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAdminUsers, userId } from "@/lib/adminUsers";
+import { useAuthSession } from "@/lib/authSession";
+import { isAdmin } from "@/lib/roles";
 import supportApi from "@/api/supportApi";
 import maintenanceApi from "@/api/maintenanceApi";
 
@@ -84,8 +86,21 @@ const CONFIGS = {
   },
 };
 
-export default function ServiceConsolePage({ kind, mode = "list" }) {
-  const config = CONFIGS[kind];
+// Mounted in both workspaces: ADMIN keeps assign/unassign/escalate, BOM gets status changes.
+// Config objects are memoised per (kind, basePath) so their identity stays stable for hooks.
+const CONFIG_PATHS = { support: "/support", maintenance: "/maintenance" };
+const configCache = new Map();
+function configFor(kind, basePath) {
+  if (!CONFIGS[kind]) return null;
+  const key = `${kind}:${basePath}`;
+  if (!configCache.has(key))
+    configCache.set(key, { ...CONFIGS[kind], basePath: `${basePath}${CONFIG_PATHS[kind]}` });
+  return configCache.get(key);
+}
+
+export default function ServiceConsolePage({ kind, mode = "list", basePath = "/admin" }) {
+  const config = configFor(kind, basePath);
+  if (!config) return <Panel title="Service console unavailable"><p>Unknown console kind.</p></Panel>;
   return mode === "detail"
     ? <ServiceDetail config={config} />
     : <ServiceList config={config} />;
@@ -196,6 +211,12 @@ function ServiceDetail({ config }) {
 }
 
 function ServiceActions({ config, row, onDone }) {
+  const { user } = useAuthSession();
+  if (isAdmin(user?.role)) return <ServiceAdminActions config={config} row={row} onDone={onDone} />;
+  return <ServiceStatusActions config={config} row={row} onDone={onDone} />;
+}
+
+function ServiceAdminActions({ config, row, onDone }) {
   const directory = useAdminUsers();
   const assignees = directory.users
     .filter((user) => userId(user) && ASSIGNEE_ROLES.includes(user.role))
@@ -298,6 +319,73 @@ function ServiceActions({ config, row, onDone }) {
                 }),
                 "Status saved through the backend API.",
               ),
+            })
+            : setError("Select the new status first."))}
+        >
+          Save status
+        </Button>
+      </div>
+      {dialog && (
+        <ConfirmDialog
+          title={dialog.title}
+          confirmLabel={dialog.confirmLabel}
+          summary={dialog.summary}
+          onConfirm={dialog.execute}
+          onClose={() => setDialog(null)}
+        >
+          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+        </ConfirmDialog>
+      )}
+    </Panel>
+  );
+}
+
+// BOM (and any non-ADMIN viewer) can change status but cannot assign: the assignee picker needs
+// the ADMIN-only user directory. Rendering this variant also avoids calling GET /users at all.
+function ServiceStatusActions({ config, row, onDone }) {
+  const [status, setStatus] = useState("");
+  const [note, setNote] = useState("");
+  const [dialog, setDialog] = useState(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const open = (next) => { setError(""); setNotice(""); setDialog(next); };
+
+  return (
+    <Panel title="Actions" subtitle="Status changes are sent to the backend API. Assignment stays with ADMIN.">
+      <Message error={error} success={notice} />
+      <div className="manager-filters mt-4">
+        <Field label="New status">
+          <Select label="New status" value={status} onChange={setStatus} options={[["", "Select a status"], ...SERVICE_STATUSES]} />
+        </Field>
+        <Field label="Resolution note" hint="Sent only when the new status is RESOLVED.">
+          <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+        </Field>
+      </div>
+      <p className="mt-4 text-sm text-slate-500">
+        Assigning a {config.assigneeLabel.toLowerCase()} needs the ADMIN user directory (GET /users is ADMIN-only),
+        so the assignment controls are not shown here.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <Button
+          variant="orange"
+          onClick={() => (status
+            ? open({
+              title: "Change status",
+              confirmLabel: "Save status",
+              summary: <Details values={[
+                ["Record", row.subject || row.title],
+                ["From", row.status],
+                ["To", status],
+                ["Resolution note", status === "RESOLVED" ? note.trim() || "—" : "Not sent"],
+              ]} />,
+              execute: async () => {
+                await config.setStatus(row.id, {
+                  status,
+                  ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
+                });
+                setNotice("Status saved through the backend API.");
+                onDone?.();
+              },
             })
             : setError("Select the new status first."))}
         >

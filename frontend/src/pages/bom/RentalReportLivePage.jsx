@@ -12,7 +12,7 @@ const MAX_FACILITY_FETCHES = 12;
 
 // Rental lifecycle report driven by the confirmed reservation API.
 // Payment history / revenue stay demo until the payment module exists.
-export default function RentalReportLivePage() {
+export default function RentalReportLivePage({ basePath = "/bom" }) {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
     const { rows, truncated } = await loadReservations(facilities, { signal });
@@ -27,7 +27,7 @@ export default function RentalReportLivePage() {
       title="Rental lifecycle report"
       description="Reservations across every facility from the confirmed reservation API. Payment history stays demo until the payment module exists."
       notice={LIVE_NOTICE}
-      action={<Button asChild variant="outline"><Link to="/bom/reports">Back to reports</Link></Button>}
+      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {
         const rows = reservations.filter((r) =>

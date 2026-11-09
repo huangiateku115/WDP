@@ -37,6 +37,18 @@ const CONFIGS = {
   },
 };
 
+// The same page is mounted under /bom and /admin. Config objects are memoised per
+// (kind, basePath) so they stay referentially stable for the useAsyncData dependency arrays.
+const CONFIG_ROOTS = { pricing: "/pricing", policy: "/policies" };
+const configCache = new Map();
+function configFor(kind, basePath) {
+  if (!CONFIGS[kind]) return null;
+  const key = `${kind}:${basePath}`;
+  if (!configCache.has(key))
+    configCache.set(key, { ...CONFIGS[kind], root: `${basePath}${CONFIG_ROOTS[kind]}` });
+  return configCache.get(key);
+}
+
 // Bounded server-paged fetch. Results are narrowed to the configured policy types when present.
 const loadRecords = (config, signal) =>
   fetchPaged(config.api.list, config.listParams || {}, { signal })
@@ -45,8 +57,8 @@ const loadRecords = (config, signal) =>
       rows: config.policyTypes ? page.rows.filter((row) => config.policyTypes.includes(row.type)) : page.rows,
     }));
 
-export default function RecordPage({ kind, mode = "list" }) {
-  const config = CONFIGS[kind];
+export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
+  const config = configFor(kind, basePath);
   if (!config) return <BomUnavailable />;
   if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
   if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;
@@ -71,7 +83,7 @@ function RecordList({ kind, config }) {
         : "Live business policies confirmed by the backend PolicyType contract."}
       notice={LIVE_NOTICE}
       action={kind === "pricing"
-        ? <Button asChild variant="orange"><Link to="/bom/pricing/new">Create pricing rule</Link></Button>
+        ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Create pricing rule</Link></Button>
         : undefined}
     >
       <Panel title="Filters">

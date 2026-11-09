@@ -19,11 +19,11 @@ test('incorrect methods remain blocked on every added path',()=>{
   if(!routes.some(([m,p])=>m===method&&p===path))assert.throws(()=>assertConfirmedRequest({method,url:'/'+path}),/not confirmed/);
  }
 });
-test('invalid IDs, suffixes and unconfirmed Staff operations are not permitted',()=>{
+test('invalid IDs, suffixes and unconfirmed operation variants are not permitted',()=>{
  for(const [method,path] of routes){
   for(const url of ['/'+path.replace(id,'not-an-id'),'/'+path+'/extra'])assert.throws(()=>assertConfirmedRequest({method,url}),/not confirmed/);
  }
- for(const url of [`/inbound-requests/${id}/confirm`,`/outbound-requests/${id}/confirm`,`/inventory-items/${id}/relocate-canonical`])assert.throws(()=>assertConfirmedRequest({method:'POST',url}),/not confirmed/);
+ for(const url of [`/inbound-requests/${id}/confirm/extra`,`/outbound-requests/${id}/confirm/extra`,`/inventory-items/${id}/relocate-canonical/extra`])assert.throws(()=>assertConfirmedRequest({method:'POST',url}),/not confirmed/);
 });
 test('existing Customer confirmed API entries remain allowed',()=>{
  for(const [method,url] of [['POST','/auth/login'],['GET','/users/me/'],['GET','/reservations/me'],['POST','/reservations'],['GET','/warehouse-map'],['GET',`/racks/${id}/detail-map`],['POST','/inventory-items/image-uploads'],['GET',`/inventory-items/${id}/movements`],['POST',`/inventory-items/${id}/inbound-request`],['POST',`/inventory-items/${id}/outbound-request`],['PATCH',`/contracts/${id}/sign`]])assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
