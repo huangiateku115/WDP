@@ -402,7 +402,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   return (
     <Screen
       title={isEdit ? "Edit facility" : "Create facility"}
-      description="Facility fields confirmed by the backend contract. Code is required on create and is immutable afterwards."
+      description="Code is required on create and is immutable afterwards."
     >
       <AsyncBoundary
         state={isEdit ? state : { loading: false, data: null, error: "" }}

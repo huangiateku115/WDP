@@ -51,7 +51,7 @@ export default function StorageUnitsPage() {
   return (
     <Screen
       title="Storage units"
-      description="Private storage units per facility. Creation, editing, status changes and deletion all run through the confirmed storage-unit API."
+      description="Private storage units per facility. Create, edit, change status or delete the units of a facility."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);

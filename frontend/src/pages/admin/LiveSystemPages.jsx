@@ -42,7 +42,7 @@ export function DashboardPage() {
   return (
     <AdminScreen
       title="System administration overview"
-      description="Backend account and facility metrics from the confirmed APIs. Login history and audit logs are scoped to one backend user."
+      description="Account and facility metrics. Login history and audit logs are scoped to one account."
       action={<Button asChild variant="orange"><Link to="/admin/users">Manage backend users</Link></Button>}
     >
       <UserApiState state={state} />
@@ -66,7 +66,7 @@ export function DashboardPage() {
       )}
       <Panel
         title="Facility metrics"
-        subtitle="From the confirmed read-only GET Facilities response."
+        subtitle="Facility directory."
         action={<Button asChild variant="outline"><Link to="/admin/facilities">Open facility oversight</Link></Button>}
       >
         {facilities.error
@@ -103,7 +103,7 @@ export function LoginHistoryPage() {
   const rows = (history.data || []).map((row, index) => ({ id: row._id || `login-${index}`, source: row }));
 
   return (
-    <AdminScreen title="Login history" description="Sign-in events for a selected backend user, from the confirmed Admin audit API.">
+    <AdminScreen title="Login history" description="Sign-in events for the selected account.">
       <UserApiState state={state} />
       <Panel title="User selection">
         <div className="manager-filters">
@@ -148,7 +148,7 @@ export function AuditPage() {
   const open = records.find((row) => row._id === openId);
 
   return (
-    <AdminScreen title="Audit logs" description="Actions performed by a selected backend user, from the confirmed Admin audit API.">
+    <AdminScreen title="Audit logs" description="Actions performed by the selected account.">
       <UserApiState state={state} />
       <Panel title="User selection">
         <div className="manager-filters">
@@ -200,7 +200,7 @@ export function FacilitiesPage() {
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
 
   return (
-    <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility from the confirmed Facility API. Management stays in the BOM workspace.">
+    <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility. Management stays in the BOM workspace.">
       <Panel title="Filters">
         <div className="manager-filters">
           <Field label="Search">

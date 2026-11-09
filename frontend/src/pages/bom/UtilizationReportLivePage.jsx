@@ -48,7 +48,7 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
   return (
     <Screen
       title="Utilization report"
-      description="Current private-unit occupancy and volume-based physical/allocation utilization from the confirmed warehouse, storage-unit, managed-inventory and capacity APIs."
+      description="Private-unit occupancy and volume-based physical/allocation utilization per facility."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (

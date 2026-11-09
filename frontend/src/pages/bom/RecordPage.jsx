@@ -81,8 +81,8 @@ function RecordList({ kind, config }) {
     <Screen
       title={config.title}
       description={kind === "pricing"
-        ? "Live pricing rules: private-unit prices and Managed capacity rates with effective periods."
-        : "Live business policies confirmed by the backend PolicyType contract."}
+        ? "Private-unit prices and Managed capacity rates with effective periods."
+        : "Business policies grouped by policy type."}
       action={kind === "pricing"
         ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Create pricing rule</Link></Button>
         : undefined}
@@ -279,7 +279,7 @@ function RecordForm({ kind, config, mode }) {
   return (
     <Screen
       title={`${isEdit ? "Edit" : "Create"} ${kind}`}
-      description="Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."
+      description="Effective dates must start in the future."
     >
       <AsyncBoundary
         state={state}

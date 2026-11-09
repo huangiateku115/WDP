@@ -1,5 +1,5 @@
 import {useEffect,useId,useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useLocation} from 'react-router-dom';
 import {ArrowUpRight,X} from 'lucide-react';
 import {Card,CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -8,7 +8,15 @@ import {Input} from '@/components/ui/input';
 import FadeContent from '@/components/reactbits/FadeContent';
 import {managerDemoEnabled,money} from '@/lib/managerDemoStore';
 export {Button,Input,Card,CardContent,money};
-export function Screen({title,description,code,action,notice,children}){return <div className="manager-screen"><FadeContent blur={false} duration={350} distance={10} className="manager-motion"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="label text-[#176B3A]">FACILITY WORKSPACE</p><h1 className="mt-2 font-heading text-3xl font-bold tracking-tight md:text-4xl">{title}</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500">{description}</p></div>{action}</div></FadeContent><p className="manager-demo mt-5">{notice??(managerDemoEnabled?'Demo facility · Changes are saved in this browser only. No real approvals, messages, rental activation or payments are performed.':'Manager API is not connected · Live data and actions are unavailable.')}</p><div className="mt-6 space-y-6">{children}</div></div>;}
+// The demo notice describes browser-local demo data, so it only applies to the manager/staff demo
+// workspaces. BOM and Admin screens read live APIs and must not inherit it.
+export function Screen({title,description,code,action,notice,children}){
+  const {pathname}=useLocation();
+  const liveWorkspace=/^\/(bom|admin)(\/|$)/.test(pathname);
+  const eyebrow=/^\/bom(\/|$)/.test(pathname)?'BUSINESS OPERATIONS':/^\/admin(\/|$)/.test(pathname)?'SYSTEM ADMINISTRATION':'FACILITY WORKSPACE';
+  const resolvedNotice=liveWorkspace?notice:notice??(managerDemoEnabled?'Demo facility · Changes are saved in this browser only. No real approvals, messages, rental activation or payments are performed.':'Manager API is not connected · Live data and actions are unavailable.');
+  return <div className="manager-screen"><FadeContent blur={false} duration={350} distance={10} className="manager-motion"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="label text-[#176B3A]">{eyebrow}</p><h1 className="mt-2 font-heading text-3xl font-bold tracking-tight md:text-4xl">{title}</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500">{description}</p></div>{action}</div></FadeContent>{resolvedNotice?<p className="manager-demo mt-5">{resolvedNotice}</p>:null}<div className="mt-6 space-y-6">{children}</div></div>;
+}
 export function Panel({title,subtitle,children,action}){return <Card><CardContent><div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{title}</h2>{subtitle&&<p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p>}</div>{action}</div>{children}</CardContent></Card>;}
 export function Status({value}){const positive=['ACTIVE','VERIFIED','APPROVED','PAID','COMPLETED','RESOLVED','AVAILABLE','CLEAR','IN_STORAGE','CHECKED_OUT','CLOSED','Paid','Active','Closed','InStorage','CheckedOut','PASSED','REFUNDED'].includes(value);const danger=['REJECTED','OVERDUE','HIGH','UNAVAILABLE'].includes(value);return <Badge variant={positive?'green':'orange'} className={danger?'bg-red-50 text-red-700':''}>{String(value||'Unassigned').replaceAll('_',' ')}</Badge>;}
 export function Details({values}){return <dl className="grid gap-5 sm:grid-cols-2">{values.map(([label,value])=><div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-semibold">{value??'—'}</dd></div>)}</dl>;}

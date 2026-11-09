@@ -48,7 +48,7 @@ function CustomerList({ basePath }) {
   return (
     <Screen
       title="Customer profiles"
-      description="Customer identity and verification from the confirmed customer-profile API."
+      description="Customer identity and verification details."
     >
       <Panel title="Filters">
         <div className="manager-filters">
@@ -124,7 +124,7 @@ function CustomerDetail({ id, basePath }) {
   return (
     <Screen
       title="Customer profile"
-      description="Identity and verification from the confirmed customer-profile API."
+      description="Identity and verification details."
       action={<Button asChild variant="outline"><Link to={basePath}>Back to customers</Link></Button>}
     >
       <AsyncBoundary state={state} render={(profile) => {

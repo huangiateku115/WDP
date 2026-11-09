@@ -3,7 +3,8 @@ import {Link} from 'react-router-dom';
 import {Screen,Panel,Button,Dialog,Message} from '@/components/manager/ManagerUI';
 import {Checkbox} from '@/components/ui/checkbox';
 import {apiErrorMessage} from '@/lib/apiError';
-export function AdminScreen({demo=false,...props}){return <Screen {...props} notice={demo?'Admin demo / API-ready · Login, audit and facility examples are isolated fixtures, not live backend activity.':'Backend Users · User collection and supported changes use the confirmed API. Failed requests never fall back to demo users.'}/>;}
+// Admin workspace shell. No workspace notice is rendered: these screens read the live APIs.
+export function AdminScreen(props){return <Screen {...props}/>;}
 export function UserApiState({state}){return <><Message success={state.notice}/>{!state.sessionToken?<Panel title="Sign in to load backend users"><p className="mb-4 text-sm">User administration requires your existing authenticated session. Backend permissions remain authoritative.</p><Button asChild><Link to="/login">Sign in</Link></Button></Panel>:state.status==='loading'||state.status==='idle'?<Panel title="Loading backend users"><p role="status" className="text-sm">Loading the real user collection…</p></Panel>:state.status==='error'?<Panel title="Backend user data unavailable"><Message error={state.error}/><p className="my-4 text-sm text-slate-500">No example users are substituted for this failed request.</p><RetryUsers/></Panel>:null}</>;}
 import {loadAdminUsers} from '@/lib/adminUsers';
 function RetryUsers(){return <Button variant="outline" onClick={()=>loadAdminUsers(true)}>Retry loading users</Button>;}

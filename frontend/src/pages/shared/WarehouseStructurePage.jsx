@@ -80,7 +80,7 @@ export default function WarehouseStructurePage() {
   return (
     <Screen
       title="Warehouse structure"
-      description="Zones, racks and rack cells of a Managed Inventory facility. Zones and racks are fully writable through the confirmed warehouse-map API; cells accept a limited patch."
+      description="Zones, racks and rack cells of a Managed Inventory facility. Zones and racks are fully editable; cells accept limited updates."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);

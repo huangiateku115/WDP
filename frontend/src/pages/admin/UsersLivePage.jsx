@@ -50,7 +50,7 @@ function UserDirectory({ state }) {
   return (
     <AdminScreen
       title="Backend users"
-      description="Search and manage accounts returned by the confirmed User API."
+      description="Search and manage user accounts."
       action={<Button asChild variant="orange"><Link to="/admin/users/new">Create user</Link></Button>}
     >
       <UserApiState state={state} />
@@ -85,14 +85,14 @@ function UserDetail({ state, id }) {
   const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
-      <AdminScreen title="Backend user detail" description="Details are resolved from the confirmed user collection, never a user-detail endpoint.">
+      <AdminScreen title="Backend user detail" description="Details are resolved from the loaded user collection.">
         <UserApiState state={state} />
       </AdminScreen>
     );
 
   if (!row)
     return (
-      <AdminScreen title="User unavailable in the loaded collection" description="No user-detail endpoint is confirmed. Reload the backend collection or return to the directory.">
+      <AdminScreen title="User unavailable in the loaded collection" description="This account is not in the loaded collection. Reload the directory or return to it.">
         <UserApiState state={state} />
         <Panel title="Account unavailable">
           <div className="flex flex-wrap gap-3">
@@ -220,7 +220,7 @@ function EditAccount({ row, id }) {
   }
 
   return (
-    <Panel title="Edit account" subtitle="Sends displayName, phone and email through the confirmed Admin User API.">
+    <Panel title="Edit account" subtitle="Update the display name, phone and email.">
       <form className="admin-form" onSubmit={submit}>
         <Field label="Display name"><Input aria-label="Edit display name" required value={form.displayName} onChange={(e) => change("displayName", e.target.value)} disabled={pending} /></Field>
         <Field label="Email"><Input aria-label="Edit email" type="email" required value={form.email} onChange={(e) => change("email", e.target.value)} disabled={pending} /></Field>
@@ -238,9 +238,9 @@ function RoleChange({ row, id, roles }) {
   const [selected, setSelected] = useState("");
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-500">Only Postman-confirmed roles or role values observed in this backend collection are selectable.</p>
+      <p className="text-sm text-slate-500">Only supported roles or roles already present in the collection are selectable.</p>
       <Field label="New account role">
-        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select confirmed role"], ...roles]} />
+        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select role"], ...roles]} />
       </Field>
       <ApiConfirmation
         label="Review role change"
@@ -283,7 +283,7 @@ function CreateUser({ state }) {
   }
 
   return (
-    <AdminScreen title="Create backend user" description="Create an account using the confirmed Admin User API. The backend validates identity, password and role permissions.">
+    <AdminScreen title="Create backend user" description="Create an account. Identity, password and role are validated on submit.">
       {!state.sessionToken && <UserApiState state={state} />}
       <Panel title="New account">
         <form onSubmit={submit} className="admin-form">
@@ -293,7 +293,7 @@ function CreateUser({ state }) {
           <Field label="Phone"><Input aria-label="New user phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} disabled={pending} /></Field>
           <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles} disabled={pending} /></Field>
           <div className="admin-wide space-y-4">
-            <p className="text-xs text-slate-500">Role options are confirmed Postman examples plus values observed in the loaded backend data. Passwords are cleared immediately after submission and never stored.</p>
+            <p className="text-xs text-slate-500">Role choices are the supported roles plus any role already present in the loaded data. Passwords are cleared immediately after submission.</p>
             <Message error={error} />
             <div className="flex flex-wrap gap-3">
               <Button type="submit" variant="orange" disabled={pending}>{pending ? "Creating…" : "Create user"}</Button>

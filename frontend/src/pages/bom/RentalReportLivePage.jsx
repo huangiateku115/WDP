@@ -25,7 +25,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   return (
     <Screen
       title="Rental lifecycle report"
-      description="Reservations across every facility from the confirmed reservation API. Revenue totals await a cross-facility payment ledger endpoint."
+      description="Reservations across every facility, with facility, status and search filters."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {

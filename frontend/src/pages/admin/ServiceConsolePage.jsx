@@ -113,7 +113,7 @@ function ServiceList({ config }) {
   return (
     <Screen
       title={config.title}
-      description={`Live list from the confirmed ${config.title.toLowerCase()} API.`}
+      description={`All ${config.title.toLowerCase()}.`}
       action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
@@ -159,7 +159,7 @@ function ServiceDetail({ config }) {
   return (
     <Screen
       title={config.title.replace(/s$/, "") + " detail"}
-      description={`Live detail from the confirmed ${config.title.toLowerCase()} API.`}
+      description={`${config.title.replace(/s$/, "")} detail.`}
       action={<Button asChild variant="outline"><Link to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
@@ -269,7 +269,7 @@ function ServiceAdminActions({ config, row, onDone }) {
               title: `Assign ${config.assigneeLabel.toLowerCase()}`,
               confirmLabel: "Assign",
               summary: <Details values={[["Record", row.subject || row.title], [config.assigneeLabel, assigneeName]]} />,
-              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved through the backend API."),
+              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved."),
             })
             : setError(`Select a ${config.assigneeLabel.toLowerCase()} first.`))}
         >
@@ -282,7 +282,7 @@ function ServiceAdminActions({ config, row, onDone }) {
             title: "Remove assignment",
             confirmLabel: "Unassign",
             summary: <Details values={[["Record", row.subject || row.title], ["Currently assigned to", row.assignedTo]]} />,
-            execute: confirmed(() => config.unassign(row.id), "Assignment removed through the backend API."),
+            execute: confirmed(() => config.unassign(row.id), "Assignment removed."),
           })}
         >
           Unassign
@@ -294,7 +294,7 @@ function ServiceAdminActions({ config, row, onDone }) {
               title: "Escalate request",
               confirmLabel: "Escalate",
               summary: <Details values={[["Record", row.subject || row.title], ["Current status", row.status]]} />,
-              execute: confirmed(() => config.escalate(row.id), "Request escalated through the backend API."),
+              execute: confirmed(() => config.escalate(row.id), "Request escalated."),
             })}
           >
             Escalate

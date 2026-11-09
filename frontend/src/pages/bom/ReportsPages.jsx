@@ -11,13 +11,13 @@ const REPORTS = [
   {
     key: "utilization",
     title: "Cross-facility utilization",
-    description: "Private unit occupancy and Managed Inventory volume from the confirmed read APIs.",
+    description: "Private unit occupancy and Managed Inventory volume.",
     live: true,
   },
   {
     key: "rentals",
     title: "Rental / customer history",
-    description: "Reservation lifecycle across every facility from the confirmed reservation API.",
+    description: "Reservation lifecycle across every facility.",
     live: true,
   },
   {

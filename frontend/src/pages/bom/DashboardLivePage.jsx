@@ -20,7 +20,7 @@ export default function DashboardLivePage() {
   return (
     <Screen
       title="Business across every facility"
-      description="Facilities and reservations from the confirmed BOM APIs. Utilization and business audit are live reports; revenue waits on a cross-facility payment ledger endpoint."
+      description="Facilities and reservations across every facility."
       action={<Button asChild variant="outline"><Link to="/bom/facilities">Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {
@@ -53,7 +53,7 @@ export default function DashboardLivePage() {
               ["Cancelled", countBy(reservations, "CANCELLED"), "Reservations with status CANCELLED"],
             ]} />
             {truncated && <TruncatedNotice total={facilities.length} shown={Math.min(facilities.length, MAX_FACILITY_FETCHES)} />}
-            <Panel title="Reservations by facility" subtitle="Counts derived from the confirmed per-facility reservation API.">
+            <Panel title="Reservations by facility" subtitle="Counts per facility.">
               <Table
                 label="Reservations by facility"
                 rows={byFacility}

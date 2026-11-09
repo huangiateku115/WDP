@@ -67,7 +67,7 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
       }
       setDecision(null);
       setReason("");
-      setFeedback({ success: "Backend confirmed the action." });
+      setFeedback({ success: "Action completed." });
       resource.reload();
     } catch (error) {
       setFeedback({ error: error?.response?.data?.message || error?.message || "Unable to update the reservation." });

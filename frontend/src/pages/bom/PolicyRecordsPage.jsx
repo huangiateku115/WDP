@@ -245,7 +245,7 @@ function RecordForm({ kind, config, mode }) {
   return (
     <Screen
       title={`${isEdit ? "Edit" : "Create"} ${config.single}`}
-      description="Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."
+      description="Effective dates must start in the future."
     >
       <AsyncBoundary state={state} render={([, facilities = []]) => (
         <Panel title="Rule form">
