@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Screen, Panel, Table, Status, Field, Input, Select, Details, Button, money } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Status, Field, Input, Select, Button, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -11,7 +11,7 @@ const countBy = (rows, status) => rows.filter((row) => row.status === status).le
 const MAX_FACILITY_FETCHES = 12;
 
 // Rental lifecycle report driven by the confirmed reservation API.
-// Payment history / revenue stay demo until the payment module exists.
+// Payment/revenue totals still need a cross-facility payment ledger endpoint.
 export default function RentalReportLivePage({ basePath = "/bom" }) {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
@@ -25,7 +25,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   return (
     <Screen
       title="Rental lifecycle report"
-      description="Reservations across every facility from the confirmed reservation API. Payment history stays demo until the payment module exists."
+      description="Reservations across every facility from the confirmed reservation API. Revenue totals await a cross-facility payment ledger endpoint."
       notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
@@ -74,12 +74,6 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 ]}
                 empty="No reservations match the filters."
               />
-            </Panel>
-            <Panel title="Still demo (backend contract pending)">
-              <Details values={[
-                ["Payment history", "Demo — no payment module yet"],
-                ["Revenue report", "Demo — no payment/aggregation API yet"],
-              ]} />
             </Panel>
           </>
         );

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Screen, Panel, Table, Status, Details, Button, money } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Status, Button, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -9,7 +9,7 @@ const countBy = (rows, status) => rows.filter((row) => row.status === status).le
 const MAX_FACILITY_FETCHES = 12;
 
 // Live BOM dashboard: facility inventory + cross-facility reservations from the confirmed APIs.
-// Revenue/utilization/audit stay demo until their backend contracts exist.
+// Revenue aggregation still needs a cross-facility payment ledger endpoint (see reports).
 export default function DashboardLivePage() {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
@@ -20,7 +20,7 @@ export default function DashboardLivePage() {
   return (
     <Screen
       title="Business across every facility"
-      description="Live facility and reservation data from the confirmed BOM APIs. Revenue, utilization and audit stay demo until their backend contracts exist."
+      description="Facilities and reservations from the confirmed BOM APIs. Utilization and business audit are live reports; revenue waits on a cross-facility payment ledger endpoint."
       notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to="/bom/facilities">Manage facilities</Link></Button>}
     >
@@ -85,17 +85,6 @@ export default function DashboardLivePage() {
                 ]}
                 empty="No reservations were returned for the fetched facilities."
               />
-            </Panel>
-            <Panel title="Still demo (backend contract pending)">
-              <Details values={[
-                ["Revenue reports", "Demo — no payment/report API yet"],
-                ["Inventory placement", "Backend inbound confirmation exists (items land on cells); no live console screen for it yet"],
-                ["Business audit", "Demo — backend audit endpoints are per-user only"],
-              ]} />
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Button asChild variant="outline"><Link to="/bom/oversight">Open oversight</Link></Button>
-                <Button asChild variant="outline"><Link to="/bom/reports">Open reports</Link></Button>
-              </div>
             </Panel>
           </>
         );

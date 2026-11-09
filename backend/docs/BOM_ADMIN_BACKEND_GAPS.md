@@ -90,3 +90,49 @@ Các lỗi đã sửa được ở FE được liệt kê ở mục cuối.
 | `quantityUnit` render "undefined" | `src/pages/bom/OversightLivePage.jsx` | Guard chuỗi rỗng |
 | Assignee support/maintenance có FACILITY_MANAGER (409) | `src/pages/admin/ServiceConsolePage.jsx` | Chỉ offer `FACILITY_STAFF` |
 | Thiếu kiểm tra facility/currency trước khi gửi | `RecordPage.jsx`, `PolicyRecordsPage.jsx` | Bắt buộc `facilityId`, currency đúng 3 chữ cái |
+
+---
+
+## P1-5 (mới). BOM không đọc được danh sách tài khoản → không gán được ticket
+
+- **Hiện tượng**: ở `/bom/support` và `/bom/maintenance`, ô chọn assignee luôn rỗng ("no assignable account"), nên BOM không thể assign dù backend cho phép.
+- **Nguyên nhân**: `GET /users` chỉ cho `ADMIN` (`backend/src/routes/user.routes.ts:24-25`), trong khi UI lấy danh sách assignee từ endpoint này (`frontend/src/lib/adminUsers.js` → `useAdminUsers`) và backend cho `BOM` assign ticket (`support-request.routes.ts:8`, `maintenance-ticket.routes.ts:8`).
+- **Đề xuất**: thêm endpoint tối thiểu `GET /users/staff?facilityId=&role=FACILITY_STAFF` cho `ADMIN|BOM|FACILITY_MANAGER`, chỉ trả `_id, displayName, role, assignedFacilityId, isActive`.
+- **Acceptance**: BOM gọi được danh sách FACILITY_STAFF của một facility và assign thành công.
+
+---
+
+## Trạng thái triển khai chức năng BOM/Admin (cập nhật 2026-11-09)
+
+| Nhóm chức năng | Route | Nguồn dữ liệu | Trạng thái |
+|---|---|---|---|
+| Dashboard (BOM) | `/bom/dashboard` | `GET /facilities`, `GET /reservations/facility/:id` | Đầy đủ (thiếu reservation Managed – P0-1) |
+| Facility oversight | `/bom/oversight`, `/bom/oversight/facilities/:id` | facilities + warehouse-map + storage-units + inventory-items + reservations | Đầy đủ (managed chưa thấy – P0-1) |
+| Facilities CRUD | `/bom|/admin/facilities*` | `POST/PATCH/DELETE /facilities`, `POST /facilities/:id/restore` | Đầy đủ |
+| Warehouse structure | `/bom|/admin/warehouse` | `/warehouse-zones`, `/racks`, `/rack-cells`, `PUT /reservations/managed/capacity/:facilityId` | Đầy đủ (thiếu echo capacity – P1-1) |
+| Storage units | `/bom|/admin/units` | `/facilities/:id/storage-units`, `/storage-units/:id(/status|/restore)` | Đầy đủ |
+| Reservations | `/bom|/admin/reservations*` | `/reservations/facility/:id`, `/reservations/:id`, `/reservations/managed/:id`, approve/reject/activate/mock-pay | Một phần (managed không list được – P0-1) |
+| Managed inventory | `/bom|/admin/inventory*` | `GET /inventory-items`, `/:id`, `/:id/movements` | Chỉ đọc (đúng thiết kế; chưa có màn hình placement) |
+| Customers | `/bom|/admin/customers*` | `GET /customers`, `/:id`, `PATCH /customers/:id/verify` | Đầy đủ |
+| Contracts | `/bom|/admin/contracts*` | `GET /contracts/reservation/:id`, `GET /contracts/:id` | Đầy đủ (snapshot Self-Storage nghèo – P1-3) |
+| Pricing rules | `/bom|/admin/pricing*` | `/pricing-rules` CRUD + `/status` | Đầy đủ sau khi sửa FE |
+| Policies | `/bom|/admin/policies*` | `/policies` CRUD + `/status` | Đầy đủ sau khi sửa FE |
+| Discounts / waivers | `/bom|/admin/policies/discounts*` | `/policies` type DISCOUNT/WAIVER | Đầy đủ sau khi sửa FE (config free-form) |
+| Item categories | `/bom|/admin/policies/item-categories*` | `/policies` type CATEGORY | Đầy đủ sau khi sửa FE |
+| Reports – utilization | `/bom|/admin/reports/utilization` | warehouse-map + units + inventory + managed capacity | Đầy đủ |
+| Reports – rentals | `/bom|/admin/reports/rentals` | reservations | Đầy đủ (managed thiếu – P0-1) |
+| Reports – revenue | `/bom|/admin/reports/revenue` | **không có endpoint** | Chưa triển khai (chờ `GET /payments` + `/reports/revenue`) |
+| Business audit (BOM) | `/bom/audit` | `GET /customers` + `/audit/bom/*` | Một phần (chỉ audit được CUSTOMER – P2-2) |
+| System audit (Admin) | `/admin/audit`, `/admin/login-history` | `/audit/admin/*` | Đầy đủ |
+| Users (Admin) | `/admin/users*` | `GET/POST/PUT/PATCH/DELETE /users*` | Đầy đủ (thiếu phân trang – P2-1) |
+| Notifications | `/bom|/admin/notifications` | `/notifications/me`, `/:id/read` | Đầy đủ |
+| Support / maintenance | `/bom|/admin/support|maintenance` | `/support-requests*`, `/maintenance-tickets*` | Đầy đủ với Admin; BOM thiếu assignee – P1-5 |
+| Export báo cáo | — | — | Chưa có (`GET /reports/:kind/export`) |
+
+## UI đã dọn trong lần này (FE)
+
+- Xoá các trang demo không còn route nào dùng: `pages/bom/BusinessRecordsPage.jsx`, `pages/bom/OverviewPages.jsx`, `pages/admin/UsersPage.jsx` (bản trùng của `UsersLivePage`), `pages/admin/SystemPages.jsx` (bản trùng của `LiveSystemPages`).
+- Xoá dữ liệu demo chỉ phục vụ các trang trên: `lib/bomDemoStore.js`, `mocks/bomData.js`, `mocks/adminData.js`.
+- Gỡ banner "Isolated business demo" ở `layouts/BomLayout.jsx` và notice sai "BOM APIs ... not connected" ở `components/bom/BomUI.jsx`.
+- Bỏ panel "Still demo (backend contract pending)" ở `DashboardLivePage` và `RentalReportLivePage`; viết lại `ReportsPages.jsx` chỉ còn 2 export live và mô tả đúng trạng thái revenue.
+

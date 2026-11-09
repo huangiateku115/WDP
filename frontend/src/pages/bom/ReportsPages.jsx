@@ -1,20 +1,11 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Screen, Panel, Table, Status, OpenLink, Meter, Timeline, Input, Field, Select, Textarea, Details, Button, money,
-} from "@/components/manager/ManagerUI";
-import { BomScreen, BusinessFilters, Kpis, ReadOnlyValues } from "@/components/bom/BomUI";
-import { RevenueBars, RentalTable, ActivityTable } from "@/pages/bom/OverviewPages";
-import { LIVE_NOTICE } from "@/components/bom/LiveBomUI";
-// The demo store below is still imported by the legacy `ReportsPage` / `AuditPage` helpers that
-// remain in this file for reference. Neither helper is routed any more: revenues come from
-// `RevenueReportPendingPage` and business audit from `AuditLivePage`.
-import * as store from "@/lib/bomDemoStore";
-import { bomToday } from "@/mocks/bomData";
+import { Screen, Panel, OpenLink, Details, Button } from "@/components/manager/ManagerUI";
 
-// Reports index and the revenue placeholder shared by the BOM and Admin workspaces.
-// Utilization and rental reports are live (confirmed read APIs); revenue needs the payment
-// ledger and /reports/revenue, neither of which exists yet. No demo ledger is rendered.
+// Reports shared by the BOM and Admin workspaces.
+// Utilization and rental reports are live (confirmed read APIs).
+// Revenue aggregation still needs a payment-ledger endpoint: PayOS payment records exist per
+// reservation, but there is no cross-facility payment/revenue endpoint yet, so this page
+// shows the requirement instead of demo numbers.
 
 const REPORTS = [
   {
@@ -50,7 +41,7 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
             {report.live ? (
               <OpenLink to={`${basePath}/reports/${report.key}`}>Open report</OpenLink>
             ) : (
-              <p className="text-sm text-slate-500">Waiting on the backend payment ledger.</p>
+              <p className="text-sm text-slate-500">Awaiting a cross-facility payment ledger endpoint.</p>
             )}
           </Panel>
         ))}
@@ -64,19 +55,20 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
     <Screen
       title="Cross-facility revenue"
       description="Collected revenue, payment status and period summaries."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
-      <Panel title="Revenue reporting is waiting on the backend" subtitle="No sample ledger is shown on this page.">
+      <Panel title="Revenue needs a cross-facility payment ledger" subtitle="No sample numbers are shown on this page.">
         <p className="text-sm text-slate-600">
-          Revenue is derived from the payment ledger. The backend has no payment module yet, so this
-          report shows nothing instead of demo numbers.
+          Payment records already exist per reservation (PayOS checkout, webhook-confirmed status
+          and the customer payment history), but the backend exposes them only for the owning
+          customer. BOM/Admin revenue reporting needs an aggregated ledger endpoint, so this page
+          stays empty instead of showing demo numbers.
         </p>
         <div className="mt-5">
           <Details
             values={[
-              ["Needed", "GET /payments (ledger with facility and status) and GET /reports/revenue."],
-              ["Also needed", "GET /reports/:kind/export for CSV/XLSX downloads."],
+              ["Needed", "GET /payments with facility, service and status filters plus period totals."],
+              ["Also needed", "GET /reports/revenue and GET /reports/:kind/export for CSV/XLSX downloads."],
               ["Available today", "Utilization and rental reports read only confirmed APIs."],
             ]}
           />
@@ -89,7 +81,3 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
     </Screen>
   );
 }
-
-const titles={revenue:'Cross-facility revenue',utilization:'Cross-facility utilization',rentals:'Rental / customer history'};
-export function ReportsPage({kind}){const data=store.useBomData(),[filters,setFilters]=useState({});if(!kind)return <BomScreen title="Business reports" description="Compare facility performance with the correct units for each service model."><div className="grid gap-5 md:grid-cols-3">{Object.entries(titles).map(([k,title])=><Panel key={k} title={title}><p className="mb-5 text-sm text-slate-500">{k==='revenue'?'Collected revenue, payment status and period summaries':k==='utilization'?'Private unit occupancy and Managed Inventory volume':'Rental lifecycle and customer history'}</p><OpenLink to={'/bom/reports/'+k}>Open report</OpenLink></Panel>)}</div></BomScreen>;const payments=store.filteredPayments(data,filters),paid=payments.filter(p=>p.status==='PAID'),revenue=paid.reduce((s,p)=>s+p.amount,0),rentals=store.filteredRentals(data,filters),facilities=store.filteredFacilities(data,filters),m=store.totalMetrics(data,filters);return <BomScreen title={titles[kind]} description={kind==='utilization'?'Current snapshot. Private units use occupancy counts; Managed Inventory uses m³, never occupied shelf counts.':'Demo ledger data, filtered by facility, service and period.'}><BusinessFilters {...{data}} value={filters} onChange={setFilters} dates={kind!=='utilization'} search={kind==='rentals'} rentalStatus={kind==='rentals'}/>{kind==='revenue'&&<><Kpis items={ [['Collected revenue',money(revenue),'PAID ledger entries only'],['Pending payments',money(payments.filter(p=>p.status==='PENDING').reduce((s,p)=>s+p.amount,0)),'Excluded from revenue'],['Failed payments',payments.filter(p=>p.status==='FAILED').length,'Excluded from revenue'],['Paid payment count',paid.length,'Selected transaction period']]}/><Panel title="Revenue by facility"><RevenueBars total={revenue} rows={facilities.map(f=>({id:f.id,name:f.name,amount:paid.filter(p=>p.facilityId===f.id).reduce((s,p)=>s+p.amount,0)}))}/></Panel><Panel title="Revenue by service type"><Table rows={['SELF_STORAGE','MANAGED_INVENTORY'].filter(s=>!filters.service||s===filters.service).map(service=>({id:service,service,amount:paid.filter(p=>data.rentals.find(r=>r.id===p.rentalId)?.service===service).reduce((s,p)=>s+p.amount,0)}))} columns={ [{key:'service',label:'Service type'},{key:'amount',label:'Collected revenue',render:r=>money(r.amount)}]}/></Panel><Panel title="Revenue by period"><Table rows={[...new Set(payments.map(p=>p.date.slice(0,7)))].sort().map(period=>({id:period,period,amount:paid.filter(p=>p.date.startsWith(period)).reduce((s,p)=>s+p.amount,0)}))} columns={ [{key:'period',label:'Month'},{key:'amount',label:'Collected revenue',render:r=>money(r.amount)}]}/></Panel><Panel title="Payment status summary"><Table rows={['PAID','PENDING','FAILED'].map(status=>({id:status,status,count:payments.filter(p=>p.status===status).length,amount:payments.filter(p=>p.status===status).reduce((s,p)=>s+p.amount,0)}))} columns={ [{key:'status',label:'Status',render:r=><Status value={r.status}/>},{key:'count',label:'Count'},{key:'amount',label:'Amount',render:r=>money(r.amount)}]}/></Panel><Panel title="Payment ledger"><Table rows={payments} columns={ [{key:'id',label:'Payment'},{key:'facility',label:'Facility',render:p=>store.facilityName(data,p.facilityId)},{key:'service',label:'Service',render:p=>data.rentals.find(r=>r.id===p.rentalId)?.service},{key:'date',label:'Date'},{key:'customer',label:'Customer',render:p=>store.customerName(data,p.customerId)},{key:'amount',label:'Amount',render:p=>money(p.amount)},{key:'status',label:'Status',render:p=><Status value={p.status}/>} ]}/></Panel></>}{kind==='utilization'&&<><p className="bom-snapshot">As of {bomToday}. Current physical and contractual capacity snapshots; historical utilization requires a confirmed time-series backend.</p>{filters.service!=='MANAGED_INVENTORY'&&<><Panel title="Self-Storage occupancy by size"><div className="grid gap-7 md:grid-cols-3">{['Small','Medium','Large'].map(size=>{const ids=new Set(facilities.map(f=>f.id)),units=data.units.filter(u=>ids.has(u.facilityId)&&u.size===size);return <div key={size}><Meter label={size+' private units'} used={units.filter(u=>u.status==='OCCUPIED').length} max={units.length} unit="units"/><p className="mt-4 text-xs text-slate-500">{units.filter(u=>u.status==='AVAILABLE').length} available · {units.filter(u=>u.status==='MAINTENANCE').length} maintenance</p></div>;})}</div></Panel><Panel title="Private unit occupancy by facility and size"><Table rows={facilities.flatMap(f=>['Small','Medium','Large'].map(size=>{const units=data.units.filter(u=>u.facilityId===f.id&&u.size===size),occupied=units.filter(u=>u.status==='OCCUPIED').length;return {id:f.id+size,facility:f.name,size,total:units.length,occupied,available:units.filter(u=>u.status==='AVAILABLE').length,maintenance:units.filter(u=>u.status==='MAINTENANCE').length,occupancy:store.percent(occupied,units.length)+'%'};}))} columns={ [{key:'facility',label:'Facility'},{key:'size',label:'Unit size'},{key:'total',label:'Total'},{key:'occupied',label:'Occupied'},{key:'available',label:'Available'},{key:'maintenance',label:'Maintenance'},{key:'occupancy',label:'Occupancy %'}]}/></Panel></>}{filters.service!=='SELF_STORAGE'&&<><Panel title="Managed Inventory volume capacity"><div className="grid gap-6 lg:grid-cols-2"><Meter label="Physical volume used" used={m.used} max={m.physical}/><Meter label="Rental allocation committed" used={m.allocated} max={m.physical}/></div><p className="mt-5 text-sm">{m.unallocated} m³ unallocated physical capacity · {m.unusedAllocated} m³ unused within allocated rentals</p></Panel><Panel title="Managed capacity by facility"><Table rows={facilities.map(f=>({...store.facilityMetrics(data,f.id,{service:'MANAGED_INVENTORY'}),facility:f.name}))} columns={ [{key:'facility',label:'Facility'},{key:'physical',label:'Operational capacity m³'},{key:'allocated',label:'allocated_capacity_m3'},{key:'used',label:'used_capacity_m3'},{key:'unallocated',label:'Available unallocated m³'},{key:'unusedAllocated',label:'Available within allocations m³'},{key:'utilization',label:'Physical utilization %',render:r=>store.percent(r.used,r.physical)+'%'},{key:'allocationUsage',label:'Used / allocated %',render:r=>store.percent(r.used,r.allocated)+'%'}]}/></Panel></>}</>}{kind==='rentals'&&<><Panel title="Rental lifecycle and payment history"><RentalTable {...{data,filters}} rows={rentals}/></Panel><div className="grid gap-5 lg:grid-cols-2">{rentals.map(r=><Panel key={r.id} title={r.id} subtitle={store.customerName(data,r.customerId)+' · '+store.facilityName(data,r.facilityId)}><Timeline entries={r.timeline}/></Panel>)}</div><Panel title="Customer activity"><Table rows={data.customers.filter(c=>rentals.some(r=>r.customerId===c.id))} columns={ [{key:'name',label:'Customer'},{key:'facility',label:'Facility',render:c=>store.facilityName(data,c.facilityId)},{key:'rentals',label:'Rentals in period',render:c=>rentals.filter(r=>r.customerId===c.id).length},{key:'active',label:'Active',render:c=>rentals.filter(r=>r.customerId===c.id&&r.status==='ACTIVE').length},{key:'paid',label:'Collected payments in period',render:c=>money(payments.filter(p=>p.customerId===c.id&&p.status==='PAID').reduce((s,p)=>s+p.amount,0))}]}/></Panel></>}</BomScreen>;}
-export function AuditPage(){const data=store.useBomData(),[search,setSearch]=useState(''),[scope,setScope]=useState(''),[action,setAction]=useState('');const all=store.auditRecords(data),rows=all.filter(r=>(!scope||r.scope===scope)&&(!action||r.action===action)&&`${r.actor} ${r.target} ${r.summary}`.toLowerCase().includes(search.toLowerCase()));return <BomScreen title="Business audit visibility" description="Read-only local demonstration of BOM-visible business changes. Real audit authorization is unconfirmed."><p className="bom-warning">Demo audit permission applies only to synthetic/local BOM records. Real audit access must wait for the confirmed SRS/backend permission contract. No edit, delete or clear-history action is available.</p><Panel title="Audit filters"><div className="manager-filters"><Field label="Audit search"><Input aria-label="Audit search" value={search} onChange={e=>setSearch(e.target.value)}/></Field><Select label="Audit scope" value={scope} onChange={setScope} options={ [['','All scopes'],['ALL','All facilities'],['MANAGED_INVENTORY','Managed Inventory'],...data.facilities.map(f=>[f.id,f.name])]}/><Select label="Audit action" value={action} onChange={setAction} options={ [['','All business actions'],...new Set(all.map(r=>r.action))]}/></div><ActivityTable {...{data,rows}}/></Panel><Panel title="Read-only before / after values"><div className="space-y-6">{rows.filter(r=>r.before||r.after).map(r=><div className="bom-snapshot" key={r.id}><h3 className="font-bold">{r.action} · {r.target}</h3><p className="my-3">{r.actor} · {new Date(r.timestamp).toLocaleString('en-GB')}</p><div className="grid gap-5 md:grid-cols-2"><div><h4 className="mb-2 font-bold">Before</h4><ReadOnlyValues value={r.before}/></div><div><h4 className="mb-2 font-bold">After</h4><ReadOnlyValues value={r.after}/></div></div></div>)}{!rows.some(r=>r.before||r.after)&&<p className="text-sm text-slate-500">No business revisions in this selected demo scope.</p>}</div></Panel></BomScreen>;}
