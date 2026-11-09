@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/DashboardScreen';
+export {Dashboard as default} from '../../src/screens/LiveAccount';

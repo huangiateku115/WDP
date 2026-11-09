@@ -1,1 +1,1 @@
-export {default} from '../src/screens/NotificationsScreen';
+export {Notifications as default} from '../src/screens/LiveAccount';

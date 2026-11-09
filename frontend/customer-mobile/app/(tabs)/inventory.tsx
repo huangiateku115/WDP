@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/InventoryScreen';
+export {Inventory as default} from '../../src/screens/LiveAccount';

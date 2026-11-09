@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/BookingConfirmationScreen';
+export {UnavailableScreen as default} from '../../../src/components/liveUI';

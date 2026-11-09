@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/LoginScreen';
+export {Login as default} from '../../src/screens/LiveAccount';

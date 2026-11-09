@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/ExploreScreen';
+export {Explore as default} from '../../src/screens/LiveCatalog';

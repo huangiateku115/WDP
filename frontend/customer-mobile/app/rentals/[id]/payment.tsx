@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/PaymentDetailScreen';
+export {Payment as default} from '../../../src/screens/LiveRental';

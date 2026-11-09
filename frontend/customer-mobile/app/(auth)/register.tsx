@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/RegisterScreen';
+export {Register as default} from '../../src/screens/LiveAccount';

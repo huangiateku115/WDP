@@ -1,5 +1,5 @@
 import type {ComponentProps,PropsWithChildren,ReactNode} from 'react';
-import {ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,type TextProps,type TextInputProps,type ViewStyle,type StyleProp} from 'react-native';
+import {ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,type TextProps,type TextInputProps,type ViewStyle,type StyleProp} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {colors,spacing,radius,typography,elevation,fonts} from '../theme/tokens';
@@ -8,7 +8,7 @@ export function AppText({variant='body',style,...props}:TextProps&{variant?:keyo
   return <Text {...props} style={[{color:colors.text},typography[variant],style]}/>;
 }
 export function Icon({name,size=22,color=colors.primary}:{name:ComponentProps<typeof Ionicons>['name'];size?:number;color?:ComponentProps<typeof Ionicons>['color']}){return <Ionicons name={name} size={size} color={color} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"/>;}
-export function Screen({children,safeTop=true,testID,footer}:PropsWithChildren<{safeTop?:boolean;testID?:string;footer?:ReactNode}>){return <SafeAreaView testID={testID} style={s.screen} edges={safeTop?['top','left','right']:['left','right','bottom']}><KeyboardAvoidingView style={s.flex} behavior={Platform.OS==='ios'?'padding':undefined}><ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>{footer&&<View style={{borderTopWidth:1,borderTopColor:colors.line,backgroundColor:colors.card,padding:12}}>{footer}</View>}</KeyboardAvoidingView></SafeAreaView>;}
+export function Screen({children,safeTop=true,testID,footer,onRefresh,refreshing}:PropsWithChildren<{safeTop?:boolean;testID?:string;footer?:ReactNode;onRefresh?:()=>void;refreshing?:boolean}>){return <SafeAreaView testID={testID} style={s.screen} edges={safeTop?['top','left','right']:['left','right','bottom']}><KeyboardAvoidingView style={s.flex} behavior={Platform.OS==='ios'?'padding':undefined}><ScrollView refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh}/> : undefined} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>{footer&&<View style={{borderTopWidth:1,borderTopColor:colors.line,backgroundColor:colors.card,padding:12}}>{footer}</View>}</KeyboardAvoidingView></SafeAreaView>;}
 export function Card({children,style,testID}:PropsWithChildren<{style?:StyleProp<ViewStyle>;testID?:string}>){return <View testID={testID} style={[s.card,style]}>{children}</View>;}
 export function Button({label,onPress,variant='primary',disabled=false,loading=false,testID}:{label:string;onPress:()=>void;variant?:'primary'|'orange'|'outline'|'quiet';disabled?:boolean;loading?:boolean;testID?:string}){
   const filled=variant==='primary'||variant==='orange';
