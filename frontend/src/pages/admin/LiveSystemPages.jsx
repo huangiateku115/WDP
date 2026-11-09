@@ -50,9 +50,9 @@ export function DashboardPage() {
         <Kpis items={[
           ["Total users", ready ? state.users.length : "Unavailable", "Total accounts"],
           ["Active users", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Unavailable", "Shown when all returned statuses are available"],
-          ["Customers", count("CUSTOMER"), "Returned CUSTOMER roles"],
-          ["Facility Staff", count("FACILITY_STAFF"), "Returned FACILITY_STAFF roles"],
-          ["Facility Managers", count("FACILITY_MANAGER"), "Returned FACILITY_MANAGER roles"],
+          ["Customers", count("CUSTOMER"), "Customer accounts"],
+          ["Facility Staff", count("FACILITY_STAFF"), "Facility staff accounts"],
+          ["Facility Managers", count("FACILITY_MANAGER"), "Facility manager accounts"],
         ]} />
       </Panel>
       {ready && (
@@ -200,7 +200,7 @@ export function FacilitiesPage() {
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
 
   return (
-    <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility. Management stays in the BOM workspace.">
+    <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility. Management stays in the business workspace.">
       <Panel title="Filters">
         <div className="manager-filters">
           <Field label="Search">

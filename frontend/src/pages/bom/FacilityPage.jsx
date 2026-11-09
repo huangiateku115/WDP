@@ -12,7 +12,7 @@ import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilitiesIncludingDeleted, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
-  BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData,
+  BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData, serviceLabel,
 } from "@/lib/bomMappers";
 import { COUNTRIES, CUSTOM_WARD, citiesFor, wardsFor } from "@/lib/addressData";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
@@ -89,7 +89,7 @@ function FacilityList({ basePath }) {
           <Field label="City">
             <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
           </Field>
-          <Field label="Records" hint="Soft deleted facilities can only be listed by ADMIN/BOM.">
+            <Field label="Records" hint="Only administrators and business operations can list deleted facilities.">
             <Select
               label="Record filter"
               value={showDeleted ? "deleted" : "live"}
@@ -221,7 +221,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 <Panel title="Warehouse structure" subtitle="Zones → aisles → racks → cells.">
                   {!available && (
                     <p className="bom-warning mb-5">
-                      The warehouse map does not apply to this facility: {reason || "it is not an ACTIVE Managed Inventory facility"}.
+                      The warehouse map does not apply to this facility: {reason || "this facility does not offer Managed Inventory"}.
                       Storage units are the storage model that applies here.
                     </p>
                   )}
@@ -504,7 +504,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   {BOM_SERVICE_TYPES.map((service) => (
                     <label key={service} className="flex items-center gap-2 text-sm">
                       <Checkbox aria-label={service} checked={form.serviceTypes.includes(service)} onCheckedChange={() => toggleService(service)} />
-                      {service.replaceAll("_", " ")}
+                      {serviceLabel(service)}
                     </label>
                   ))}
                 </div>

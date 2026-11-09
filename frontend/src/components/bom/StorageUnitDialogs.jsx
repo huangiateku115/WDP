@@ -100,8 +100,8 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
         </Field>
         <p className="bom-warning">
           {editing
-            ? "A HELD or OCCUPIED unit cannot be edited; finish or release its reservation first."
-            : "Units can only be created in a facility that is ACTIVE and offers SELF_STORAGE."}
+            ? "A held or occupied unit cannot be edited; finish or release its reservation first."
+            : "Units can only be created in an active facility that offers Self Storage."}
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">
@@ -138,7 +138,7 @@ export function UnitStatusDialog({ unit, onClose, onSaved }) {
     <Dialog title={`Unit status ${unit.code}`} onClose={onClose}>
       <form className="space-y-5" onSubmit={submit}>
         <div className="manager-filters">
-          <Field label="Status" hint="HELD and OCCUPIED are driven by reservations and rentals.">
+          <Field label="Status" hint="Held and occupied states are set by reservations and rentals.">
             <Select label="Unit status" value={status} onChange={setStatus} options={MANAGEMENT_STATUSES} />
           </Field>
         </div>

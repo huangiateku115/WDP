@@ -9,7 +9,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservations, loadFacilityUnits, loadWarehouseStructure,
 } from "@/lib/bomApiData";
-import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES } from "@/lib/bomMappers";
+import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES, serviceLabel } from "@/lib/bomMappers";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 // Cross-facility oversight rebuilt on live reads.
@@ -54,8 +54,8 @@ export default function OversightLivePage({
             <Kpis items={[
               ["Facilities", facilities.length, "Across all facilities"],
               ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "SELF_STORAGE service model"],
-              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "MANAGED_INVENTORY service model"],
+              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
+              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
             ]} />
 
             <Panel title="Facility directory" subtitle={`${rows.length} of ${facilities.length} facilities`}>
@@ -69,7 +69,7 @@ export default function OversightLivePage({
                 </Field>
                 <Field label="Service model">
                   <Select label="Service model filter" value={service} onChange={setService}
-                    options={[["", "All service models"], ...BOM_SERVICE_TYPES]} />
+                    options={[["", "All service models"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
                 </Field>
               </div>
               <Table
@@ -213,7 +213,7 @@ function FacilityScope({ facilityId, facilities, data }) {
             columns={[
               { key: "code", label: "Reservation" },
               { key: "customer", label: "Customer", render: (r) => r.customerName },
-              { key: "service", label: "Service", render: (r) => String(r.service || "").replaceAll("_", " ") },
+                  { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
               { key: "resource", label: "Unit / capacity", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
               { key: "period", label: "Period", render: (r) => `${r.startDate} → ${r.endDate}` },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },

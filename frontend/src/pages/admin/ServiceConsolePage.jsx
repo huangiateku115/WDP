@@ -243,7 +243,7 @@ function ServiceAdminActions({ config, row, onDone }) {
       <div className="manager-filters mt-4">
         <Field
           label={config.assigneeLabel}
-          hint={assignees.length ? undefined : "The user collection returned no FACILITY_STAFF account."}
+          hint={assignees.length ? undefined : "No facility staff account is available."}
         >
           <Select
             label={`${config.assigneeLabel} to assign`}
@@ -351,7 +351,7 @@ function ServiceStatusActions({ config, row, onDone }) {
   const open = (next) => { setError(""); setNotice(""); setDialog(next); };
 
   return (
-    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment stays with ADMIN.">
+    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment is an admin action.">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field label="New status">

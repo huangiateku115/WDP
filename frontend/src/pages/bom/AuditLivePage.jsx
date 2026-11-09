@@ -45,7 +45,7 @@ export default function AuditLivePage() {
   return (
     <Screen
       title="Audit review"
-      description="Sign-in events and audit actions for accounts below the BOM level."
+      description="Sign-in events and audit actions for accounts you can review."
     >
       <Panel title="Reviewable account">
         {subjects.loading && <p role="status" className="text-sm text-slate-500">Loading customer accounts…</p>}

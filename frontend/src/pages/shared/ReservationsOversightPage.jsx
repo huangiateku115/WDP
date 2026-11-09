@@ -65,16 +65,16 @@ export default function ReservationsOversightPage() {
   return (
     <Screen
       title="Reservation oversight"
-      description="Review SELF_STORAGE reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract."
+      description="Review Self Storage reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract."
       action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-            ["Reservations loaded", list.data ? list.data.self.length : "—", "SELF_STORAGE reservations of the selected facility"],
+            ["Reservations loaded", list.data ? list.data.self.length : "—", "Self Storage reservations of the selected facility"],
             ["Awaiting review", countBy(list.data?.self || [], "status", "RESERVED"), "Status RESERVED"],
             ["Contracted", countBy(list.data?.self || [], "status", "CONTRACTED"), "Approved, contract drafted"],
-            ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "ADMIN may change the review status" : `${role || "This role"} cannot approve or reject`],
+            ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "Approvers can change the review status" : "Your role cannot approve or reject"],
           ]} />
 
           <Panel
@@ -110,7 +110,7 @@ export default function ReservationsOversightPage() {
             </div>
             {!canReview && (
               <p className="bom-warning mt-5">
-                {role} can read every reservation of a facility; only FACILITY_MANAGER and ADMIN can approve or reject
+                You can read every reservation of a facility; only facility managers and admins can approve or reject
                 one. This console stays read-only for your role.
               </p>
             )}

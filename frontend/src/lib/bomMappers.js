@@ -17,6 +17,12 @@ export const BOM_POLICY_TYPES = [
 ];
 export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
 
+// Display labels for backend enum values rendered in the console (never show raw codes).
+export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Self Storage", MANAGED_INVENTORY: "Managed Inventory" };
+export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Promotional", LOYALTY: "Loyalty", FEE_WAIVER: "Fee waiver" };
+export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Percentage", FIXED: "Fixed amount", UNDEFINED: "Not defined" };
+export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
+
 export const responseData = (response) => response?.data?.data ?? response?.data ?? null;
 export function responseList(response) {
   const body = response?.data;

@@ -7,6 +7,7 @@ import { useAuthSession } from "@/lib/authSession";
 import { loadFacilities, loadFacilityReservations, loadContractForReservation } from "@/lib/bomApiData";
 import { apiErrorMessage } from "@/lib/apiError";
 import contractApi from "@/api/contractApi";
+import { serviceLabel } from "@/lib/bomMappers";
 
 // Shared contract workspace for BOM and Admin.
 // The backend exposes no contract collection, only GET /contracts/:id and
@@ -132,7 +133,7 @@ function ContractList({ basePath }) {
   return (
     <Screen
       title="Contracts"
-      description="Open a facility reservation to review the contract captured when it was approved. Contract detail stays on its own route."
+      description="Open a facility reservation to review the contract captured when it was approved. Contract detail opens on its own page."
       action={<Button variant="outline" disabled={reservations.loading} onClick={reservations.reload}>Refresh</Button>}
     >
       <Panel
@@ -183,7 +184,7 @@ function ContractList({ basePath }) {
                 { key: "customer", label: "Customer", render: (row) => row.customerName },
                 // reservationFromDto exposes the service model as `service`; `serviceType` is kept
                 // as a fallback for raw backend rows.
-                { key: "service", label: "Service", render: (row) => (row.service || row.serviceType || "—").replaceAll("_", " ") },
+                { key: "service", label: "Service", render: (row) => serviceLabel(row.service || row.serviceType) },
                 { key: "window", label: "Rental window", render: (row) => `${day(row.startDate)} → ${day(row.endDate)}` },
                 { key: "status", label: "Reservation status", render: (row) => <Status value={row.status} /> },
                 {

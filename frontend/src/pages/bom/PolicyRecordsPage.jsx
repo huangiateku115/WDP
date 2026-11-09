@@ -11,7 +11,8 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_DISCOUNT_KINDS, BOM_DISCOUNT_VALUE_TYPES, BOM_DISCOUNT_TYPES,
-  bomFutureDate, responseData, isEffectiveRecord,
+  bomFutureDate, responseData, isEffectiveRecord, serviceLabel,
+  BOM_DISCOUNT_KIND_LABELS, BOM_DISCOUNT_VALUE_LABELS,
   discountFromDto, discountValueLabel, discountBody, discountUpdateBody,
   categoryFromDto, categoryBody, categoryUpdateBody,
 } from "@/lib/bomMappers";
@@ -72,7 +73,7 @@ function RecordList({ kind, config }) {
   const [filter, setFilter] = useState("");
   // Discounts are narrowed by kind client-side; CATEGORY policies only need the status filter.
   const typeFilter = kind === "discount"
-    ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, k.replaceAll("_", " ")])]
+    ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])]
     : null;
 
   return (
@@ -102,7 +103,7 @@ function RecordList({ kind, config }) {
               rows={rows}
               columns={kind === "discount" ? [
                 { key: "name", label: "Discount", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-                { key: "kind", label: "Kind", render: (r) => r.kind.replaceAll("_", " ") },
+                { key: "kind", label: "Kind", render: (r) => BOM_DISCOUNT_KIND_LABELS[r.kind] || r.kind },
                 { key: "value", label: "Value", render: (r) => discountValueLabel(r) },
                 { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "effectiveFrom", label: "Effective from" },
@@ -158,7 +159,7 @@ function RecordDetail({ kind, config }) {
               ] : [
                 ["Allowed categories", record.allowedCategories || "—"],
                 ["Blocked categories", record.blockedCategories || "—"],
-                ["Service model", record.service || "MANAGED_INVENTORY"],
+                ["Service model", record.service ? serviceLabel(record.service) : "Managed Inventory"],
                 ["Effective from", record.effectiveFrom],
                 ["Effective end", record.effectiveTo || "Open-ended"],
                 ["Status", <Status value={record.status} />],
@@ -257,7 +258,7 @@ function RecordForm({ kind, config, mode }) {
             {kind === "discount" && (
               <Field label="Service model (optional)">
                 <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)}
-                  options={[["", "Any service"], ...BOM_SERVICE_TYPES]} />
+                  options={[["", "Any service"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
               </Field>
             )}
 
@@ -265,12 +266,12 @@ function RecordForm({ kind, config, mode }) {
               <>
                 <Field label="Discount kind">
                   <Select label="Discount kind" value={form.kind} disabled={locked} onChange={(v) => change("kind", v)}
-                    options={BOM_DISCOUNT_KINDS.map((k) => [k, k.replaceAll("_", " ")])} />
+                    options={BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])} />
                 </Field>
                 <Field label="Discount name"><Input aria-label="Discount name" required disabled={locked} value={form.name} onChange={(e) => change("name", e.target.value)} /></Field>
                 <Field label="Value type">
                   <Select label="Value type" value={form.valueType} disabled={locked} onChange={(v) => change("valueType", v)}
-                    options={BOM_DISCOUNT_VALUE_TYPES.map((t) => [t, t.replaceAll("_", " ")])} />
+                    options={BOM_DISCOUNT_VALUE_TYPES.map((t) => [t, BOM_DISCOUNT_VALUE_LABELS[t] || t])} />
                 </Field>
                 {form.valueType !== "UNDEFINED" && (
                   <Field label={form.valueType === "PERCENTAGE" ? "Percentage (0-100)" : "Fixed amount (VND)"}>

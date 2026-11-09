@@ -42,7 +42,7 @@ export default function StorageUnitsPage() {
   function removeUnit(unit) {
     setConfirm({
       title: `Delete unit ${unit.code}?`,
-      summary: "Units are soft deleted: HELD and OCCUPIED units are rejected with 409. Deleted units disappear from every list, so they cannot be restored from this console.",
+      summary: "Units are soft deleted: held and occupied units cannot be deleted. Deleted units disappear from every list and cannot be restored from this console.",
       label: "Delete unit",
       run: async () => { await bomUnitApi.remove(unit.id); units.reload(); },
     });
@@ -68,7 +68,7 @@ export default function StorageUnitsPage() {
 
             <Panel
               title="Unit scope"
-              subtitle="Creating units requires an ACTIVE facility that offers SELF_STORAGE."
+              subtitle="Creating units requires an active facility that offers Self Storage."
             >
               <div className="manager-filters">
                 <Field label="Facility">

@@ -11,7 +11,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
-  bomFutureDate, responseData, isEffectiveRecord,
+  bomFutureDate, responseData, isEffectiveRecord, serviceLabel,
   pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
   policyFromDto, policyBody, policyUpdateBody,
 } from "@/lib/bomMappers";
@@ -96,7 +96,7 @@ function RecordList({ kind, config }) {
           )}
           {kind === "pricing" && (
             <Select label="Service filter" value={service} onChange={setService}
-              options={[["", "Both services"], ...BOM_SERVICE_TYPES]} />
+              options={[["", "Both services"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
           )}
         </div>
       </Panel>
@@ -114,7 +114,7 @@ function RecordList({ kind, config }) {
               rows={rows}
               columns={kind === "pricing" ? [
                 { key: "scope", label: "Scope", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{pricingLabel(r)}</OpenLink> },
-                { key: "service", label: "Service" },
+                { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
                 { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "rate", label: "Price", render: (r) => `${money(r.rate)} ${r.currency}` },
                 { key: "effectiveFrom", label: "Effective from" },
@@ -163,7 +163,7 @@ function RecordDetail({ kind, config }) {
             >
               <Details values={kind === "pricing" ? [
                 ["Scope", pricingLabel(record)],
-                ["Service", record.service],
+                ["Service", serviceLabel(record.service)],
                 ["Private unit size", record.unitSize || "—"],
                 ["Billing term", `${record.billingMonths} month(s)`],
                 ["Price", `${money(record.rate)} ${record.currency}`],
@@ -174,7 +174,7 @@ function RecordDetail({ kind, config }) {
               ] : [
                 ["Policy", record.name],
                 ["Policy type", record.type],
-                ["Service", record.service || "Any"],
+                ["Service", record.service ? serviceLabel(record.service) : "Any"],
                 ["Description", record.description],
                 ["Rule", record.rule],
                 ["Effective from", record.effectiveFrom],
@@ -303,7 +303,7 @@ function RecordForm({ kind, config, mode }) {
               )}
               {config.hasService && (
                 <Field label="Service model">
-                  <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES} />
+                  <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])} />
                 </Field>
               )}
               {kind === "pricing" && form.service === "SELF_STORAGE" && (

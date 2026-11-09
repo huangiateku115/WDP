@@ -71,7 +71,7 @@ export default function WarehouseStructurePage() {
   function removeRack(rack) {
     setConfirm({
       title: `Delete rack ${rack.rackCode}?`,
-      summary: "A rack can only be deleted once every cell is BLOCKED or under MAINTENANCE, and no cell holds inventory, holds or bookings.",
+      summary: "A rack can only be deleted once every cell is blocked or under maintenance, and no cell holds inventory, holds or bookings.",
       label: "Delete rack",
       run: async () => { await bomWarehouseApi.deleteRack(rack.id); if (rack.id === rackId) setRackId(""); reloadStructure(); },
     });
@@ -88,7 +88,7 @@ export default function WarehouseStructurePage() {
         return (
           <>
             <Kpis items={[
-              ["Facilities shown", options.length, "ACTIVE and offering MANAGED_INVENTORY"],
+              ["Facilities shown", options.length, "Active facilities offering Managed Inventory"],
               ["Zones", zones.data?.total ?? "—", "Zones in the selected facility"],
               ["Racks", racks.data?.total ?? "—", "Racks in the selected facility"],
               ["Cells", sumBy(racks.data?.rows || [], "cellCount") || "—", "Generated per rack"],
@@ -96,7 +96,7 @@ export default function WarehouseStructurePage() {
 
             <Panel
               title="Structure scope"
-              subtitle="The warehouse map validates the facility on every read and write, so only ACTIVE facilities that offer Managed Inventory are listed."
+              subtitle="The warehouse map only lists active facilities that offer Managed Inventory."
             >
               <div className="manager-filters">
                 <Field label="Facility">

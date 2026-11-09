@@ -135,7 +135,7 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
           summary={(
             <p className="text-sm text-slate-500">
               {decision.kind === "approve"
-                ? "Approving moves the reservation to CONTRACTED and creates the draft contract."
+                ? "Approving moves the reservation to the contracted stage and creates the draft contract."
                 : "Rejecting cancels the reservation and stores the reason you enter."}
             </p>
           )}

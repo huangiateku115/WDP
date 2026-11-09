@@ -78,7 +78,7 @@ export function ManagedCapacityDialog({ facilityId, facilityLabel, configured, o
               onChange={(e) => change("holdDurationMinutes", e.target.value)}
             />
           </Field>
-          <Field label="Capacity state" hint="Inactive capacity answers 404 on read.">
+          <Field label="Capacity state" hint="Turn this off to stop new Managed reservations.">
             <Select
               label="Capacity state"
               value={form.isActive}

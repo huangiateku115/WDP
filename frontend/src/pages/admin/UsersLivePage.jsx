@@ -10,6 +10,7 @@ import {
   assignAdminUserFacility, unassignAdminUserFacility,
 } from "@/lib/adminUsers";
 import { apiErrorMessage } from "@/lib/apiError";
+import { ROLE_LABELS } from "@/lib/roles";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities } from "@/lib/bomApiData";
 
@@ -41,7 +42,7 @@ function UserDirectory({ state }) {
     { key: "identity", label: "User ID", render: (r) => userId(r.source) || "ID not returned" },
     ...fields.map(([key, label]) => ({
       key, label,
-      render: (r) => (key === "role" ? <Status value={r.source[key]} /> : r.source[key] ?? "Not returned"),
+        render: (r) => (key === "role" ? <Status value={ROLE_LABELS[r.source[key]] || r.source[key]} /> : r.source[key] ?? "Not returned"),
     })),
     ...(hasStatus ? [{ key: "status", label: "Status", render: (r) => (userStatus(r.source) ? <Status value={userStatus(r.source)} /> : "Not returned") }] : []),
     { key: "detail", label: "Action", render: (r) => (userId(r.source) ? <OpenLink to={`/admin/users/${encodeURIComponent(userId(r.source))}`}>View user</OpenLink> : "Detail unavailable") },
@@ -65,7 +66,7 @@ function UserDirectory({ state }) {
               <Input aria-label="User search" value={search} onChange={(e) => setSearch(e.target.value)} />
             </Field>
             <Field label="Role">
-              <Select label="User role filter" value={role} onChange={setRole} options={[["", "All returned roles"], ...state.roles]} />
+              <Select label="User role filter" value={role} onChange={setRole} options={[["", "All roles"], ...state.roles.map((r) => [r, ROLE_LABELS[r] || r])]} />
             </Field>
             {hasStatus && (
               <Field label="Status">
@@ -85,18 +86,18 @@ function UserDetail({ state, id }) {
   const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
-      <AdminScreen title="User detail" description="Details are resolved from the loaded user collection.">
+      <AdminScreen title="User detail" description="Details are resolved from the loaded account list.">
         <UserApiState state={state} />
       </AdminScreen>
     );
 
   if (!row)
     return (
-      <AdminScreen title="User unavailable in the loaded collection" description="This account is not in the loaded collection. Reload the directory or return to it.">
+      <AdminScreen title="User unavailable" description="This account is not in the loaded list. Reload the directory or return to it.">
         <UserApiState state={state} />
         <Panel title="Account unavailable">
           <div className="flex flex-wrap gap-3">
-            <Button onClick={() => loadAdminUsers(true)}>Reload user collection</Button>
+            <Button onClick={() => loadAdminUsers(true)}>Reload accounts</Button>
             <Button asChild variant="outline"><Link to="/admin/users">Back to users</Link></Button>
           </div>
         </Panel>
@@ -238,15 +239,15 @@ function RoleChange({ row, id, roles }) {
   const [selected, setSelected] = useState("");
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-500">Only supported roles or roles already present in the collection are selectable.</p>
+      <p className="text-sm text-slate-500">Only supported roles, or roles already in use, are selectable.</p>
       <Field label="New account role">
-        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select role"], ...roles]} />
+        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select role"], ...roles.map((r) => [r, ROLE_LABELS[r] || r])]} />
       </Field>
       <ApiConfirmation
         label="Review role change"
         title="Confirm role change"
         disabled={!selected || selected === row.role}
-        summary={<Details values={[["Account", row.email || userId(row)], ["Current role", <Status value={row.role} />], ["New role", <Status value={selected} />]]} />}
+        summary={<Details values={[["Account", row.email || userId(row)], ["Current role", <Status value={ROLE_LABELS[row.role] || row.role} />], ["New role", <Status value={ROLE_LABELS[selected] || selected} />]]} />}
         run={() => changeAdminUserRole(id, selected)}
       />
     </div>
@@ -291,7 +292,7 @@ function CreateUser({ state }) {
           <Field label="Password"><Input aria-label="New user password" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={pending} /></Field>
           <Field label="Display name"><Input aria-label="New user display name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={pending} /></Field>
           <Field label="Phone"><Input aria-label="New user phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} disabled={pending} /></Field>
-          <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles} disabled={pending} /></Field>
+          <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles.map((r) => [r, ROLE_LABELS[r] || r])} disabled={pending} /></Field>
           <div className="admin-wide space-y-4">
             <p className="text-xs text-slate-500">Role choices are the supported roles plus any role already present in the loaded data. Passwords are cleared immediately after submission.</p>
             <Message error={error} />

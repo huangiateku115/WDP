@@ -56,8 +56,8 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
           <Kpis items={[
               ["Facilities", facilities.length, "Across all facilities"],
             ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-            ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "SELF_STORAGE service model"],
-            ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "MANAGED_INVENTORY service model"],
+              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
+              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
           ]} />
 
           <Panel

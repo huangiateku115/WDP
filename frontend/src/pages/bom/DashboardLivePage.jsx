@@ -4,6 +4,7 @@ import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
+import { serviceLabel } from "@/lib/bomMappers";
 
 const countBy = (rows, status) => rows.filter((row) => row.status === status).length;
 const MAX_FACILITY_FETCHES = 12;
@@ -76,7 +77,7 @@ export default function DashboardLivePage() {
                   { key: "code", label: "Reservation" },
                   { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
                   { key: "customer", label: "Customer", render: (r) => r.customerName },
-                  { key: "service", label: "Service", render: (r) => String(r.service || "").replaceAll("_", " ") },
+                  { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
                   { key: "resource", label: "Unit / capacity", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
                   { key: "period", label: "Period", render: (r) => `${r.startDate} → ${r.endDate}` },
                   { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
