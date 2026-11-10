@@ -47,6 +47,61 @@
 .customer-portal .portal-summary-label svg{color:#1d7546}
 .customer-portal .portal-summary-card strong{display:block;color:var(--portal-green);font-size:30px;line-height:1.3;margin-top:12px;letter-spacing:-.04em}
 .customer-portal .portal-summary-source{display:block;margin-top:6px;font-size:10px;color:#84917e}
+.customer-portal .customer-screen-heading:has(+.customer-screen-content .my-storage-list){padding-bottom:16px;border-bottom:0}
+.customer-portal .customer-screen-heading:has(+.customer-screen-content .my-storage-list) .label{font-size:10px;letter-spacing:.16em}
+.customer-portal .customer-screen-heading:has(+.customer-screen-content .my-storage-list) h1{margin-top:7px;font-size:clamp(28px,3vw,38px)}
+.customer-portal .customer-screen-heading:has(+.customer-screen-content .my-storage-list) h1+p{margin-top:7px;font-size:14px}
+.customer-portal .my-storage-rent-cta{box-shadow:0 5px 14px #f28c2838}
+.customer-portal .my-storage-rent-cta:hover{transform:translateY(-1px);box-shadow:0 8px 18px #f28c2845}
+.customer-portal .my-storage-kpis{gap:16px}
+.customer-portal .my-storage-kpi{border:1px solid #d4e2d8!important;border-radius:17px!important;background:#fff;box-shadow:0 7px 20px #163b2410!important;transition:transform 180ms ease,box-shadow 180ms ease}
+.customer-portal .my-storage-kpi:hover{transform:translateY(-2px);box-shadow:0 11px 25px #163b2418!important}
+.customer-portal .my-storage-kpi:after{left:0;top:0;bottom:auto;width:100%;height:3px;background:#248052}
+.customer-portal .my-storage-kpi-orange:after{background:#f28c28}
+.customer-portal .my-storage-kpi-blue:after{background:#3b6a8b}
+.customer-portal .my-storage-kpi>div{display:flex;align-items:center;gap:16px;padding:20px 22px}
+.customer-portal .my-storage-kpi-icon{display:grid;place-items:center;flex:0 0 48px;height:48px;border-radius:14px;background:#e9f5ed;color:#187546}
+.customer-portal .my-storage-kpi-orange .my-storage-kpi-icon{background:#fff2df;color:#b96516}
+.customer-portal .my-storage-kpi-blue .my-storage-kpi-icon{background:#eaf1f7;color:#3b6a8b}
+.customer-portal .my-storage-kpi-copy{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 14px;min-width:0}
+.customer-portal .my-storage-kpi-copy>span{font-size:14px;font-weight:650;color:#385144}
+.customer-portal .my-storage-kpi-copy strong{grid-column:2;grid-row:1/3;margin:0;font-size:34px;line-height:1;color:#123d2a}
+.customer-portal .my-storage-kpi-copy small{font-size:12px;color:#607366}
+.customer-portal .my-storage-list{display:grid;gap:20px}
+.customer-portal .my-storage-list-heading{display:flex;align-items:end;justify-content:space-between;gap:16px}
+.customer-portal .my-storage-list-heading h2{margin:3px 0 0;font-size:22px;font-weight:680}
+.customer-portal .my-storage-overline{font-size:10px;font-weight:700;letter-spacing:.13em;color:#65806a}
+.customer-portal .my-storage-count{font-size:12px;font-weight:600;color:#53695a}
+.customer-portal .my-storage-filter-bar{padding:14px 16px;align-items:end}
+.customer-portal .my-storage-filter-bar select{margin-top:6px;min-height:42px;padding-inline:12px}
+.customer-portal .my-storage-clear{min-height:42px;justify-self:start;padding:0 12px;border:1px solid #d5dfd2;border-radius:8px;background:white;color:#315740;font-size:13px;font-weight:650}
+.customer-portal .my-storage-clear:hover{background:#f1f6ed}
+.customer-portal .my-storage-clear:focus-visible,.customer-portal .my-storage-detail:focus-visible{outline:2px solid #f28c28;outline-offset:3px}
+.customer-portal .my-storage-group{display:grid;gap:12px}
+.customer-portal .my-storage-group>h2{margin:0!important}
+.customer-portal .portal-rental-grid.my-storage-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:16px}
+.customer-portal .portal-rental-grid.my-storage-grid>div{display:flex;min-width:0}
+.customer-portal .my-storage-card{width:100%;border:1px solid #d4e2d8!important;border-radius:16px!important;background:#fff;box-shadow:0 8px 24px #163b2410!important;transition:transform 180ms ease,box-shadow 180ms ease}
+.customer-portal .my-storage-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px #163b2418!important}
+.customer-portal .my-storage-card>div{display:flex;height:100%;min-width:0;flex-direction:column;padding:19px 20px}
+.customer-portal .my-storage-card-head{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:48px;padding-bottom:14px;border-bottom:1px solid #e7eee7}
+.customer-portal .my-storage-service-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#eaf5ed;color:#187546}
+.customer-portal .my-storage-service-icon.is-managed{background:#edf2f8;color:#456d8b}
+.customer-portal .my-storage-card-title{min-width:0}
+.customer-portal .my-storage-card-title p{margin:0;color:#526b59;font-size:11px;font-weight:700;letter-spacing:.04em}
+.customer-portal .my-storage-card-title h3{overflow-wrap:anywhere;margin:3px 0 0;color:#173e29;font-size:16px;font-weight:680;line-height:1.35}
+.customer-portal .my-storage-status{max-width:180px;padding:6px 9px;border-radius:999px;background:#fff2dc;color:#865512;font-size:11px;font-weight:700;line-height:1.35;text-align:center}
+.customer-portal .my-storage-status.is-active{background:#e7f5ec;color:#1d6940}
+.customer-portal .my-storage-status.is-cancelled{background:#fff0ed;color:#a34232}
+.customer-portal .my-storage-status.is-closed{background:#eef1ee;color:#59655c}
+.customer-portal .my-storage-card-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;padding:16px 0;flex:1}
+.customer-portal .my-storage-field{min-width:0}
+.customer-portal .my-storage-field>span{display:block;color:#66766a;font-size:11px}
+.customer-portal .my-storage-field>strong{display:block;margin-top:4px;color:#243f2e;font-size:13px;font-weight:650;line-height:1.5;overflow-wrap:anywhere}
+.customer-portal .my-storage-card-footer{display:flex;justify-content:flex-end;align-items:center;min-height:42px;border-top:1px solid #e7eee7}
+.customer-portal .my-storage-detail{display:inline-flex;min-height:38px;align-items:center;gap:8px;color:#176b3a;font-size:13px;font-weight:700}
+.customer-portal .my-storage-detail:hover{color:#0d4e2a}
+.customer-portal .my-storage-no-detail{color:#66766a;font-size:12px}
 .customer-portal .portal-filter-bar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;background:#fff;border:1px solid var(--portal-border);border-radius:12px;padding:16px}
 .customer-portal .portal-filter-bar .field-label{margin:0}
 .customer-portal .portal-rental-group>h2{display:flex;align-items:center;gap:10px;font-size:18px}
@@ -135,8 +190,21 @@
  .customer-portal .portal-support .vs-help-grid,.customer-portal .portal-support .vs-faq{grid-template-columns:1fr;gap:14px}
  .customer-portal .warehouse-dashboard{margin:14px 16px 24px}
 }
+@media(max-width:767px){
+ .customer-portal .my-storage-kpis{grid-template-columns:1fr;gap:10px}
+ .customer-portal .my-storage-kpi>div{padding:15px 17px}
+ .customer-portal .my-storage-kpi-icon{width:42px;height:42px;flex-basis:42px}
+ .customer-portal .my-storage-kpi-copy strong{font-size:30px}
+ .customer-portal .my-storage-list-heading{align-items:start;flex-direction:column;gap:4px}
+ .customer-portal .my-storage-filter-bar{grid-template-columns:1fr;gap:12px}
+ .customer-portal .portal-rental-grid.my-storage-grid{grid-template-columns:1fr}
+ .customer-portal .my-storage-card-head{grid-template-columns:38px minmax(0,1fr);gap:10px}
+ .customer-portal .my-storage-service-icon{width:38px;height:38px}
+ .customer-portal .my-storage-status{grid-column:2;justify-self:start;max-width:100%;text-align:left}
+}
 @media(max-width:389px){.customer-portal .portal-summary-grid,.customer-portal .portal-filter-bar{grid-template-columns:1fr}.customer-portal .portal-summary-label{min-height:0}.customer-portal .portal-summary-card>div{display:grid;grid-template-columns:1fr auto;gap:4px 12px}.customer-portal .portal-summary-card strong{grid-column:2;grid-row:1/3;margin:0}.customer-portal .portal-summary-label svg{display:none}}
 @media(prefers-reduced-motion:reduce){
- .customer-portal :is(button,a).inline-flex,.customer-portal .inventory-image-gallery>button{transition:none}
+ .customer-portal :is(button,a).inline-flex,.customer-portal .inventory-image-gallery>button,.customer-portal .my-storage-kpi,.customer-portal .my-storage-card{transition:none}
+ .customer-portal .my-storage-kpi:hover,.customer-portal .my-storage-card:hover{transform:none}
  .customer-portal .experience-motion div[style*="opacity"][style*="transform"]{opacity:1!important;transform:none!important;filter:none!important;transition:none!important}
 }
