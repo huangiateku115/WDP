@@ -18,7 +18,7 @@ import { ContractStatus } from '../../types/contract.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { PricingBasis, PolicyType, TermUnit } from '../../types/pricing-policy.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
-import { ReservationStatus } from '../../types/reservation.type';
+import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { IUser, UserRole } from '../../types/user.type';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
@@ -240,9 +240,11 @@ async function lockSelectedCells(cellIds: Types.ObjectId[], facilityId: Types.Ob
   }
   return locked;
 }
-async function assertCellIntervalsAvailable(cells: any[], startDate: Date, endDate: Date, now: Date, session: ClientSession) {
+async function assertCellIntervalsAvailable(cells: any[], startDate: Date, endDate: Date, now: Date, session: ClientSession, ownReservationId?: Types.ObjectId) {
   for (const cell of cells) {
-    const conflict = await CellAllocationModel.findOne({ $or: [
+    const conflict = await CellAllocationModel.findOne({
+      ...(ownReservationId ? { reservationId: { $ne: ownReservationId } } : {}),
+      $or: [
       { cellId: cell._id, status: CellAllocationStatus.OCCUPIED },
       { cellId: cell._id, status: CellAllocationStatus.RESERVED, startDate: { $lt: endDate }, endDate: { $gt: startDate } },
       { cellId: cell._id, status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, startDate: { $lt: endDate }, endDate: { $gt: startDate } },
@@ -250,6 +252,38 @@ async function assertCellIntervalsAvailable(cells: any[], startDate: Date, endDa
     }).session(session).exec();
     if (conflict) fail(409, `Cell ${cell.code} is already allocated for an overlapping rental period`);
   }
+}
+// Share the booking write locks so an overlapping booking cannot pass between
+// validating the holds and promoting them. The caller owns the transaction.
+export async function lockManagedDepositHolds(
+  reservation: Pick<IReservation, '_id' | 'customerId' | 'facilityId' | 'allocatedCellIds' | 'startDate' | 'endDate' | 'expiresAt'>,
+  now: Date, session: ClientSession,
+) {
+  const cellIds = reservation.allocatedCellIds ?? [];
+  const expected = new Set(cellIds.map(String));
+  const { startDate, endDate, expiresAt } = reservation;
+  if (!cellIds.length || expected.size !== cellIds.length || !expiresAt || expiresAt <= now ||
+      !(startDate instanceof Date) || !(endDate instanceof Date) || !(startDate < endDate)) {
+    fail(409, 'Managed V3 reservation has an invalid Cell hold or rental interval');
+  }
+
+  await lockCapacity(reservation.facilityId, session);
+  const cells = await lockSelectedCells(cellIds, reservation.facilityId, session);
+  const holds = await CellAllocationModel.find({ reservationId: reservation._id }).session(session).exec();
+  if (holds.length !== cellIds.length || holds.some(hold =>
+    !expected.delete(String(hold.cellId)) || !hold.customerId.equals(reservation.customerId) ||
+    !hold.facilityId.equals(reservation.facilityId) || hold.status !== CellAllocationStatus.HOLD ||
+    hold.startDate?.getTime() !== startDate.getTime() || hold.endDate?.getTime() !== endDate.getTime() ||
+    hold.holdExpiresAt?.getTime() !== expiresAt.getTime())) {
+    fail(409, 'Managed V3 Cell holds no longer match the reservation');
+  }
+  await assertCellIntervalsAvailable(cells, startDate, endDate, now, session, reservation._id);
+
+  return {
+    _id: { $in: holds.map(hold => hold._id) }, reservationId: reservation._id,
+    customerId: reservation.customerId, facilityId: reservation.facilityId, cellId: { $in: cellIds },
+    startDate, endDate, status: CellAllocationStatus.HOLD, holdExpiresAt: { $eq: expiresAt, $gt: now },
+  };
 }
 async function releaseReservationCells(reservationId: Types.ObjectId, session: ClientSession) {
   const allocations = await CellAllocationModel.find({ reservationId, status: { $in: [CellAllocationStatus.HOLD, CellAllocationStatus.RESERVED] } }).session(session).exec();
@@ -445,7 +479,7 @@ export class ManagedReservationService {
     if (![UserRole.FACILITY_MANAGER, UserRole.ADMIN].includes(actor.role)) fail(403, 'Facility Manager or Admin required');
     const reservationId = id(idInput, 'reservationId');
     return withTransaction(async session => {
-      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, status: ReservationStatus.RESERVED, expiresAt: { $gt: new Date() } }).session(session).exec();
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] }, status: ReservationStatus.RESERVED, expiresAt: { $gt: new Date() } }).session(session).exec();
       if (!reservation) fail(409, 'Managed reservation is missing, expired or not RESERVED');
       assertFacilityScope(actor, reservation.facilityId);
       const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
@@ -480,7 +514,7 @@ export class ManagedReservationService {
     if (!initial) fail(404, 'Managed reservation not found'); assertFacilityScope(actor, initial.facilityId);
     return withTransaction(async session => {
       await lockCapacity(initial.facilityId, session, false);
-      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, status: ReservationStatus.RESERVED }).session(session).exec();
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] }, status: ReservationStatus.RESERVED }).session(session).exec();
       if (!reservation) fail(409, 'Only RESERVED Managed reservations can be rejected');
       reservation.status = ReservationStatus.CANCELLED; reservation.rejectReason = reason;
       reservation.statusHistory.push({ status: ReservationStatus.CANCELLED, actorId: actor._id, reason: `Managed reservation rejected: ${reason}`, createdAt: new Date() } as any);
@@ -518,7 +552,7 @@ export class ManagedReservationService {
       if (!contract || contract.status !== ContractStatus.SIGNED || !contract.signedByCustomerAt) fail(409, 'Customer-signed contract required before payment');
       if (actor.role === UserRole.CUSTOMER) { if (!contract.customerId.equals(actor._id)) fail(404, 'Managed reservation not found'); }
       else if (![UserRole.ADMIN, UserRole.BOM].includes(actor.role)) fail(403, 'Reservation owner or authorized test role required');
-      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, customerId: contract.customerId, status: ReservationStatus.CONTRACTED, expiresAt: { $gt: new Date() } }).session(session).exec();
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] }, customerId: contract.customerId, status: ReservationStatus.CONTRACTED, expiresAt: { $gt: new Date() } }).session(session).exec();
       if (!reservation) fail(409, 'Only a valid held CONTRACTED reservation can receive mock payment');
       reservation.status = ReservationStatus.PAID; reservation.set('expiresAt', undefined);
       reservation.paymentSimulation = { simulated: true, provider: 'MOCK', paidAt: new Date(), actorId: actor._id };

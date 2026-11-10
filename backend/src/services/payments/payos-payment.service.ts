@@ -2,6 +2,9 @@ import { createHash, randomInt } from 'node:crypto';
 import mongoose, { ClientSession, Types } from 'mongoose';
 import { InvalidSignatureError, PayOS, Webhook } from '@payos/node';
 import ContractModel from '../../models/contracts/contract.model';
+import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
+import { CellAllocationStatus } from '../../types/warehouse-map.type';
+import { lockManagedDepositHolds, ManagedReservationError } from '../reservations/managed-reservation.service';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import ReservationModel from '../../models/reservations/reservation.model';
 import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
@@ -785,7 +788,7 @@ export class PayosPaymentService {
         throw new PayosPaymentError(503, 'PAYOS_RESPONSE_MISMATCH', 'PayOS checkout response requires reconciliation');
       }
       const identityFilter = { _id: payment._id, reservationId: payment.reservationId, customerId: payment.customerId,
-        facilityId: payment.facilityId, serviceType: FacilityServiceType.SELF_STORAGE, purpose: payment.purpose,
+        facilityId: payment.facilityId, serviceType: payment.serviceType, purpose: payment.purpose,
         amount, currency: 'VND', provider: PaymentProvider.PAYOS, providerReference: String(orderCode),
         status: PaymentStatus.PENDING, checkoutState: 'CREATING',
         $and: [
@@ -1160,10 +1163,23 @@ export class PayosPaymentService {
             currentPayment.reconciliationReason = 'Verified Deposit cannot be applied because the existing Contract state changed';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
+          let holdFilter: Awaited<ReturnType<typeof lockManagedDepositHolds>> | undefined;
+          if (managed) {
+            try {
+              holdFilter = await lockManagedDepositHolds(reservation, time, session);
+            } catch (error) {
+              if (!(error instanceof ManagedReservationError) || error.status !== 409) throw error;
+              currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+              currentPayment.reconciliationReason = 'Verified Managed V3 Deposit cannot be applied because the reserved Cell holds are no longer valid';
+              await currentPayment.save({ session });
+              result = { reconciled: true, paymentId: currentPayment._id };
+              return;
+            }
+          }
           const eligibleStatus = managed ? ReservationStatus.RESERVED : ReservationStatus.CONTRACTED;
           const locked = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId: reservation.customerId,
             facilityId: reservation.facilityId, serviceType: reservation.serviceType,
-            ...(managed ? { bookingFlowVersion: 3 } : { status: ReservationStatus.CONTRACTED, expiresAt: { $gt: time } }),
+            ...(managed ? { bookingFlowVersion: 3 } : {}), expiresAt: { $gt: time },
             status: eligibleStatus, $and: [versionFilter(reservation.inventoryVersion)] }, {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.DEPOSIT_PAID, depositPaymentId: currentPayment._id },
             ...(managed ? { $unset: { expiresAt: 1 } } : {}),
@@ -1173,6 +1189,14 @@ export class PayosPaymentService {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Reservation changed while applying verified Deposit';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+          }
+          if (holdFilter) {
+            const transition = await CellAllocationModel.updateMany(holdFilter,
+              { $set: { status: CellAllocationStatus.RESERVED }, $unset: { holdExpiresAt: 1 } }, { session }).exec();
+            if (transition.matchedCount !== reservation.allocatedCellIds.length) {
+              // Abort even if some rows matched. The provider may replay this signed event.
+              throw new PayosPaymentError(503, 'WEBHOOK_CONCURRENT_RETRY', 'Managed V3 Cell holds changed during settlement; provider should retry');
+            }
           }
         } else {
           const managed = managedV3(reservation);

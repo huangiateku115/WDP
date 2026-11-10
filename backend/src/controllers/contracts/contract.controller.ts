@@ -162,6 +162,9 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
 
     if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
       assertManagedProofFacilityScope(req.user!, reservation.facilityId);
+      if (reservation.bookingFlowVersion === 3) {
+        return res.status(409).json({ success: false, message: 'Managed V3 contracts require the versioned digital-signature flow.' });
+      }
       if (reservation.status === ReservationStatus.CHECKIN_READY && contract.status === ContractStatus.SIGNED &&
           contract.signedProofPublicId && contract.verifiedAt) {
         return res.json({ success: true, message: 'Signed-paper proof was already confirmed.', data: { contract, reservation } });
@@ -190,6 +193,9 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
             serviceType: FacilityServiceType.MANAGED_INVENTORY }).session(session).exec();
           if (!current) throw new ContractControllerError(404, 'Đơn đặt chỗ liên kết không tồn tại.');
           assertManagedProofFacilityScope(req.user!, current.facilityId);
+          if (current.bookingFlowVersion === 3) {
+            throw new ContractControllerError(409, 'Managed V3 contracts require the versioned digital-signature flow.');
+          }
           if (current.bookingFlowVersion === 2) {
             throw new ContractControllerError(409, 'Version 2 Managed contracts must use the versioned digital-signature and balance flow.');
           }
@@ -214,7 +220,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
           const updatedReservation = await ReservationModel.findOneAndUpdate({
             _id: current._id,
             serviceType: FacilityServiceType.MANAGED_INVENTORY,
-            bookingFlowVersion: { $ne: 2 },
+            bookingFlowVersion: { $nin: [2, 3] },
             status: { $in: [ReservationStatus.CONTRACTED, ReservationStatus.DEPOSIT_PAID] },
             activeClosureRequestId: null,
             $and: [transactionVersionFilter(current.inventoryVersion)],

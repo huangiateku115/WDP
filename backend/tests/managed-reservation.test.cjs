@@ -682,6 +682,33 @@ test('cross-Facility Manager cannot approve a Managed reservation', async t => {
   await assert.rejects(service.approve(String(reservation._id), wrongManager), { status: 403 });
 });
 
+test('legacy approve, reject, mock-pay and activate filters exclude Managed V3', async t => {
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const reservationId = oid('507f1f77bcf86cd7994390c3');
+  const versions = [];
+  t.mock.method(Reservation, 'findOne', filter => {
+    if (filter.status) {
+      versions.push(filter.bookingFlowVersion);
+      return new Query(null);
+    }
+    return new Query({ facilityId: fid });
+  });
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({}));
+  t.mock.method(Contract, 'findOne', () => new Query({ status: 'SIGNED', signedByCustomerAt: new Date(), customerId: cid }));
+  const oldGate = process.env.MI_MOCK_PAYMENT_ENABLED;
+  try {
+    process.env.MI_MOCK_PAYMENT_ENABLED = 'true';
+    await assert.rejects(service.approve(String(reservationId), manager), { status: 409 });
+    await assert.rejects(service.reject(String(reservationId), { reason: 'fixture' }, manager), { status: 409 });
+    await assert.rejects(service.mockPay(String(reservationId), customer), { status: 409 });
+    await assert.rejects(service.activate(String(reservationId), manager), { status: 409 });
+  } finally {
+    if (oldGate === undefined) delete process.env.MI_MOCK_PAYMENT_ENABLED;
+    else process.env.MI_MOCK_PAYMENT_ENABLED = oldGate;
+  }
+  assert.deepEqual(versions, [{ $nin: [2, 3] }, { $nin: [2, 3] }, { $nin: [2, 3] }, { $ne: 3 }]);
+});
+
 test('paid, signed Managed reservation activates quota only and never assigns a physical Cell', async t => {
   const startDate = new Date(Date.now() - 60_000), endDate = new Date(Date.now() + 86_400_000);
   const reservation = new Reservation({

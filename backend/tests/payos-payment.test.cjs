@@ -330,7 +330,17 @@ test('Managed V3 creates a server-priced PayOS Deposit intent and same key repla
   t.mock.method(ContractModel, 'findOne', () => query(null));
   t.mock.method(ReservationPaymentModel.prototype, 'save', async function () { saved = this; return this; });
   t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => { Object.assign(saved, update.$set); return query(saved); });
-  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => { Object.assign(saved, update.$set); return query({ matchedCount: 1 }); });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
+    if (filter.serviceType !== undefined && filter.serviceType !== saved.serviceType) return query({ matchedCount: 0 });
+    if (update.$set.checkoutState === 'READY') {
+      assert.equal(filter.serviceType, saved.serviceType);
+      for (const key of ['_id', 'reservationId', 'customerId', 'facilityId', 'purpose', 'provider', 'providerReference', 'amount', 'currency', 'status', 'checkoutState']) {
+        assert.equal(filter[key], saved[key]);
+      }
+    }
+    Object.assign(saved, update.$set);
+    return query({ matchedCount: 1 });
+  });
   t.mock.method(ReservationPaymentModel, 'findById', () => query(saved));
   const service = new PayosPaymentService({ enabled: true, gateway, createSession: async () => fakeSession });
   const created = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'stable-managed-key', reservation.customerId);
@@ -338,6 +348,42 @@ test('Managed V3 creates a server-priced PayOS Deposit intent and same key repla
   const replay = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'stable-managed-key', reservation.customerId);
   assert.equal(replay.httpStatus, 200); assert.equal(replay.id, String(saved._id)); assert.equal(providerCalls, 1);
 });
+
+for (const serviceType of ['SELF_STORAGE', 'MANAGED_INVENTORY']) {
+  for (const purpose of [PaymentPurpose.DEPOSIT, PaymentPurpose.BALANCE]) {
+    test(serviceType + ' ' + purpose + ' persists READY with the exact Payment intent identity', async t => {
+      setPayosCheckoutTestConfig();
+      const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType,
+        provider: PaymentProvider.PAYOS, providerReference: '1234567890', purpose, amount: 100000, currency: 'VND',
+        status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+      t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (filter, update) => {
+        assert.equal(filter.checkoutState, 'NOT_CREATED');
+        Object.assign(payment, update.$set);
+        return query(payment);
+      });
+      t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
+        if (filter.serviceType !== payment.serviceType) return query({ matchedCount: 0 });
+        for (const key of ['_id', 'reservationId', 'customerId', 'facilityId', 'provider', 'providerReference', 'purpose', 'amount', 'currency', 'status', 'checkoutState']) {
+          assert.equal(filter[key], payment[key]);
+        }
+        assert.equal(filter.$and.length, 2, 'link identity and QR CAS are retained');
+        Object.assign(payment, update.$set);
+        return query({ matchedCount: 1 });
+      });
+      t.mock.method(ReservationPaymentModel, 'findById', () => query(payment));
+      const service = new PayosPaymentService({ gateway: { create: async request => ({
+        orderCode: request.orderCode, amount: request.amount, currency: 'VND', status: 'PENDING',
+        paymentLinkId: 'link-1', checkoutUrl: 'https://pay.example/checkout',
+      }) } });
+      // The public-create tests check eligibility and DTO exposure. Here isolate the storage CAS.
+      t.mock.method(service, 'customerStatusDto', async row => ({ checkoutStatus: row.checkoutState, checkoutUrl: row.checkoutUrl }));
+      const result = await service.createProviderLink(payment);
+      assert.equal(result.httpStatus, 201);
+      assert.equal(result.checkoutStatus, 'READY');
+      assert.equal(result.checkoutUrl, 'https://pay.example/checkout');
+    });
+  }
+}
 
 test('missing or malformed provider QR is omitted while the verified original Hosted Checkout remains usable', async t => {
   setPayosCheckoutTestConfig();
@@ -1201,31 +1247,249 @@ test('valid verified Deposit webhook applies once; duplicate callback does not a
   assert.equal(payment.providerPaymentLinkId, 'link-1', 'signed webhook may arrive before create-link response persistence');
 });
 
-test('verified Managed V3 Deposit webhook applies atomically to DEPOSIT_PAID and never activates inventory', async t => {
+function managedDepositFixture(t, issue) {
+  const now = new Date();
   const reservation = { ...baseReservation(ReservationStatus.RESERVED), serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
-    expiresAt: new Date(Date.now() + 60_000), allocatedCellIds: [oid()], allocatedCapacity: 0.5 };
+    startDate: new Date(+now - 60_000), endDate: new Date(+now + 86_400_000),
+    expiresAt: new Date(+now + (issue === 'expired reservation' ? -1 : 60_000)), allocatedCellIds: [oid(), oid()], allocatedCapacity: 0.5 };
   const payment = { _id: oid(), reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
     serviceType: 'MANAGED_INVENTORY', purpose: PaymentPurpose.DEPOSIT, amount: 100000, currency: 'VND', provider: PaymentProvider.PAYOS,
     providerReference: '1234567891', providerCaptures: [], status: PaymentStatus.PENDING,
-    save: async function (options) { assert.ok(options.session); return this; } };
-  let writes = 0;
+    async save(options) { assert.equal(options.session, transaction); return this; } };
+  const rows = reservation.allocatedCellIds.map(cellId => ({
+    _id: oid(), cellId, reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
+    startDate: reservation.startDate, endDate: reservation.endDate, status: 'HOLD', holdExpiresAt: reservation.expiresAt,
+  }));
+  if (issue === 'missing allocation') rows.pop();
+  if (issue === 'extra allocation') rows.push({ ...rows[0], _id: oid(), cellId: oid() });
+  if (issue === 'wrong Cell') rows[0].cellId = oid();
+  if (issue === 'wrong owner') rows[0].customerId = oid();
+  if (issue === 'wrong Facility') rows[0].facilityId = oid();
+  if (issue === 'wrong interval') rows[0].endDate = new Date(+reservation.endDate - 1000);
+  if (issue === 'expired hold') rows[0].holdExpiresAt = new Date(+now - 1);
+  const cell = { zoneId: oid(), rackId: oid() };
+  const allocation = mongoose.model('CellAllocation');
+  const capacity = mongoose.model('ManagedFacilityCapacity');
+  const cells = mongoose.model('WarehouseCell');
+  const zone = mongoose.model('WarehouseZone');
+  const rack = mongoose.model('WarehouseRack');
+  const writes = { reservation: 0, allocation: 0 };
+  const transaction = { ...session(), async withTransaction(work) {
+    const previousPayment = { ...payment };
+    const previousReservation = { ...reservation };
+    const previousRows = rows.map(row => ({ ...row }));
+    try { return await work(); }
+    catch (error) {
+      Object.keys(payment).forEach(key => delete payment[key]);
+      Object.assign(payment, previousPayment);
+      Object.keys(reservation).forEach(key => delete reservation[key]);
+      Object.assign(reservation, previousReservation);
+      rows.splice(0, rows.length, ...previousRows);
+      throw error;
+    }
+  } };
   const gateway = { verify: async () => ({ orderCode: 1234567891, amount: 100000, currency: 'VND', paymentLinkId: 'managed-link',
     reference: 'managed-bank-ref', transactionDateTime: '2026-11-10 10:00:00', code: '00', desc: 'success' }) };
-  t.mock.method(mongoose, 'startSession', async () => session());
   t.mock.method(ReservationPaymentModel, 'findOne', filter => query(filter._id?.$ne ? null : payment));
-  t.mock.method(ReservationModel, 'findOne', filter => { assert.equal(filter.bookingFlowVersion, 3); return query(reservation); });
-  t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update) => {
-    writes++; assert.equal(filter.status, ReservationStatus.RESERVED); assert.equal(filter.bookingFlowVersion, 3);
-    reservation.status = update.$set.status; reservation.depositPaymentId = update.$set.depositPaymentId;
-    reservation.statusHistory.push(update.$push.statusHistory); return query(reservation);
+  t.mock.method(ReservationModel, 'findOne', filter => {
+    assert.equal(filter.bookingFlowVersion, 3);
+    assert.equal(filter.customerId, reservation.customerId);
+    return query(reservation);
   });
-  t.mock.method(ReservationPaymentModel.prototype, 'save', async function (options) { assert.ok(options.session); return this; });
-  const service = new PayosPaymentService({ gateway, createSession: async () => session() });
-  const result = await service.handleWebhook({ data: {}, signature: 'verified-test-gateway' });
-  assert.equal(result.success, true); assert.equal(result.reconciled, false); assert.equal(reservation.status, ReservationStatus.DEPOSIT_PAID);
-  assert.equal(reservation.depositPaymentId, payment._id); assert.equal(writes, 1);
+  t.mock.method(capacity, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(options.session, transaction);
+    assert.deepEqual(filter, { facilityId: reservation.facilityId, isActive: true });
+    assert.equal(update.$inc.bookingVersion, 1);
+    return query({});
+  });
+  t.mock.method(cells, 'findOne', filter => query({ ...cell, _id: filter._id }));
+  t.mock.method(zone, 'findOneAndUpdate', () => query({}));
+  t.mock.method(rack, 'findOneAndUpdate', () => query({}));
+  t.mock.method(cells, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(options.session, transaction);
+    assert.equal(filter.facilityId, reservation.facilityId);
+    assert.equal(filter.operationalStatus, 'AVAILABLE');
+    assert.equal(update.$inc.allocationVersion, 1);
+    return query(issue === 'locked Cell' ? null : { _id: filter._id });
+  });
+  t.mock.method(allocation, 'find', filter => {
+    assert.deepEqual(filter, { reservationId: reservation._id });
+    return query(rows);
+  });
+  t.mock.method(allocation, 'findOne', filter => {
+    assert.deepEqual(filter.reservationId, { $ne: reservation._id });
+    assert.deepEqual(filter.$or.map(row => row.status), ['OCCUPIED', 'RESERVED', 'HOLD']);
+    assert.deepEqual(filter.$or[1].startDate, { $lt: reservation.endDate });
+    assert.deepEqual(filter.$or[2].holdExpiresAt, { $gt: now });
+    return query(issue === 'conflicting booking' ? { _id: oid(), status: 'HOLD' } : null);
+  });
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update, options) => {
+    writes.reservation++;
+    assert.equal(options.session, transaction);
+    assert.equal(filter.status, ReservationStatus.RESERVED);
+    assert.equal(filter.bookingFlowVersion, 3);
+    assert.deepEqual(filter.$and, [{ inventoryVersion: 4 }]);
+    assert.deepEqual(filter.expiresAt, { $gt: now });
+    if (issue === 'stale revision') return query(null);
+    if (issue === 'write conflict' && writes.reservation === 1) {
+      throw Object.assign(new Error('fixture write conflict'), { code: 112 });
+    }
+    Object.assign(reservation, update.$set);
+    return query(reservation);
+  });
+  t.mock.method(allocation, 'updateMany', (filter, update, options) => {
+    writes.allocation++;
+    assert.equal(options.session, transaction);
+    assert.deepEqual(filter, {
+      _id: { $in: rows.map(row => row._id) }, reservationId: reservation._id, facilityId: reservation.facilityId,
+      customerId: reservation.customerId, cellId: { $in: reservation.allocatedCellIds }, status: 'HOLD',
+      startDate: reservation.startDate, endDate: reservation.endDate, holdExpiresAt: { $eq: reservation.expiresAt, $gt: now },
+    });
+    const matched = issue === 'partial update' ? rows.slice(0, 1) : rows;
+    for (const row of matched) {
+      row.status = update.$set.status;
+      if (update.$unset.holdExpiresAt === 1) delete row.holdExpiresAt;
+    }
+    return query({ matchedCount: matched.length });
+  });
+  const service = new PayosPaymentService({ now: () => now, gateway, createSession: async () => transaction });
+  return { payment, reservation, rows, writes, apply: () => service.handleWebhook({ data: {}, signature: 'fixture-signature' }) };
+}
+
+test('verified Managed V3 Deposit promotes every HOLD and records DEPOSIT_PAID once', async t => {
+  const { reservation, payment, rows, writes, apply } = managedDepositFixture(t);
+  assert.deepEqual(await apply(), { success: true, duplicate: false, reconciled: false });
+  assert.equal(reservation.status, ReservationStatus.DEPOSIT_PAID);
+  assert.equal(reservation.depositPaymentId, payment._id);
   assert.equal(payment.applicationStatus, PaymentApplicationStatus.APPLIED);
+  assert.ok(rows.every(row => row.status === 'RESERVED' && row.holdExpiresAt === undefined));
+  assert.equal((await apply()).duplicate, true);
+  assert.deepEqual(writes, { reservation: 1, allocation: 1 });
+  assert.equal(payment.providerCaptures.length, 1);
 });
+
+for (const issue of ['expired reservation', 'missing allocation', 'extra allocation', 'wrong Cell', 'wrong owner', 'wrong Facility',
+  'wrong interval', 'expired hold', 'locked Cell', 'conflicting booking', 'stale revision']) {
+  test('verified Managed V3 Deposit goes to review without promoting holds: ' + issue, async t => {
+    const { reservation, payment, rows, writes, apply } = managedDepositFixture(t, issue);
+    assert.equal((await apply()).reconciled, true);
+    assert.equal(reservation.status, ReservationStatus.RESERVED);
+    assert.equal(payment.providerSettlementStatus, 'VERIFIED');
+    assert.equal(payment.applicationStatus, PaymentApplicationStatus.MANUAL_REVIEW);
+    assert.equal(payment.providerCaptures.length, 1);
+    assert.ok(rows.every(row => row.status === 'HOLD'));
+    assert.equal(writes.allocation, 0);
+  });
+}
+
+test('partial Managed V3 allocation write aborts payment and reservation and requests signed webhook retry', async t => {
+  const { reservation, payment, rows, writes, apply } = managedDepositFixture(t, 'partial update');
+  await assert.rejects(apply, { status: 503, code: 'WEBHOOK_CONCURRENT_RETRY' });
+  assert.deepEqual(writes, { reservation: 1, allocation: 1 });
+  assert.equal(reservation.status, ReservationStatus.RESERVED);
+  assert.equal(payment.status, PaymentStatus.PENDING);
+  assert.equal(payment.providerCaptures.length, 0);
+  assert.ok(rows.every(row => row.status === 'HOLD'));
+});
+
+test('concurrent Managed V3 reservation write aborts cleanly and signed redelivery applies once', async t => {
+  const { reservation, payment, rows, writes, apply } = managedDepositFixture(t, 'write conflict');
+  await assert.rejects(apply, { status: 503, code: 'WEBHOOK_CONCURRENT_RETRY' });
+  assert.equal(reservation.status, ReservationStatus.RESERVED);
+  assert.equal(payment.providerCaptures.length, 0);
+  assert.ok(rows.every(row => row.status === 'HOLD'));
+  assert.equal((await apply()).reconciled, false);
+  assert.equal((await apply()).duplicate, true);
+  assert.deepEqual(writes, { reservation: 2, allocation: 1 });
+  assert.equal(payment.providerCaptures.length, 1);
+  assert.ok(rows.every(row => row.status === 'RESERVED'));
+});
+
+for (const zeroBalance of [false, true]) {
+  test('Managed V3 ' + (zeroBalance ? 'zero Balance' : 'Balance checkout and webhook') + ' permits handover with promoted Cells', async t => {
+    setPayosCheckoutTestConfig();
+    const { ManagedReservationService } = require('../dist/services/reservations/managed-reservation.service');
+    const { payment: deposit, reservation, rows, apply } = managedDepositFixture(t);
+    if (zeroBalance) reservation.estimatedRent = deposit.amount;
+    assert.equal((await apply()).reconciled, false);
+    const hash = 'a'.repeat(64);
+    const signed = { status: 'SIGNED', currentContentVersion: 1, contentVersions: [{ version: 1, contentHash: hash }],
+      signatures: ['CUSTOMER', 'FACILITY_STAFF'].map(signerRole => ({ signerRole, version: 1, contentHash: hash })) };
+    const fakeSession = session();
+    t.mock.method(mongoose, 'startSession', async () => fakeSession);
+    let balance;
+    let providerCalls = 0;
+    let event;
+    t.mock.method(ContractModel, 'findOne', () => query(signed));
+    t.mock.method(ReservationModel, 'findOne', filter => query(
+      typeof filter.status === 'string' && filter.status !== reservation.status ? null : reservation,
+    ));
+    t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update) => {
+      assert.equal(filter.bookingFlowVersion, 3);
+      assert.equal(filter.status, reservation.status);
+      assert.deepEqual(filter.$and, [{ inventoryVersion: reservation.inventoryVersion }]);
+      reservation.inventoryVersion += update.$inc.inventoryVersion;
+      Object.assign(reservation, update.$set);
+      return query(reservation);
+    });
+    t.mock.method(ReservationPaymentModel, 'findOne', filter => {
+      if (filter._id?.$ne) return query(null);
+      if (filter.purpose === PaymentPurpose.DEPOSIT && filter._id === deposit._id) return query(deposit);
+      if (balance && (filter._id === balance._id || filter.providerReference === balance.providerReference)) return query(balance);
+      return query(null);
+    });
+    t.mock.method(ReservationPaymentModel.prototype, 'save', async function () { balance = this; return this; });
+    t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (filter, update) => {
+      assert.equal(filter._id, balance._id);
+      Object.assign(balance, update.$set);
+      return query(balance);
+    });
+    t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
+      if (filter.serviceType !== balance.serviceType) return query({ matchedCount: 0 });
+      Object.assign(balance, update.$set);
+      return query({ matchedCount: 1 });
+    });
+    t.mock.method(ReservationPaymentModel, 'findById', () => query(balance));
+    const gateway = { async create({ orderCode, amount }) {
+      providerCalls++;
+      assert.equal(amount, 200000);
+      event = { orderCode, amount, currency: 'VND', paymentLinkId: 'balance-v3-link',
+        reference: 'balance-v3-bank-ref', transactionDateTime: '2026-11-10 10:00:00', code: '00', desc: 'success' };
+      return { ...event, status: 'PENDING', checkoutUrl: 'https://pay.example/managed-balance' };
+    }, verify: async () => event };
+    const service = new PayosPaymentService({ enabled: true, gateway, createSession: async () => fakeSession });
+    const result = await service.createCheckout(String(reservation._id), PaymentPurpose.BALANCE, 'balance-v3-key', reservation.customerId);
+    if (zeroBalance) {
+      assert.equal(result.httpStatus, 200);
+      assert.equal(result.outcome, 'SETTLED');
+      assert.equal(result.zeroBalance, true);
+      assert.equal(balance, undefined);
+      assert.equal((await service.createCheckout(String(reservation._id), PaymentPurpose.BALANCE, 'balance-v3-key', reservation.customerId)).outcome, 'SETTLED');
+    } else {
+      assert.equal(result.httpStatus, 201);
+      assert.equal(result.checkoutStatus, 'READY');
+      assert.equal(result.amount, 200000);
+      assert.equal(reservation.status, ReservationStatus.DEPOSIT_PAID);
+      assert.equal((await service.handleWebhook({})).reconciled, false);
+      assert.equal(balance.applicationStatus, PaymentApplicationStatus.APPLIED);
+    }
+    assert.equal(providerCalls, zeroBalance ? 0 : 1);
+    assert.equal(reservation.status, ReservationStatus.PAID);
+    t.mock.method(mongoose.model('CellAllocation'), 'countDocuments', filter => {
+      assert.equal(filter.status, 'RESERVED');
+      assert.deepEqual(filter.cellId.$in, reservation.allocatedCellIds);
+      return query(rows.filter(row => row.status === filter.status).length);
+    });
+    t.mock.method(mongoose.model('Facility'), 'findOne', () => query({}));
+    t.mock.method(ManagedReservationAuditModel.prototype, 'save', async function () { return this; });
+    reservation.save = async ({ session }) => { assert.equal(session, fakeSession); return reservation; };
+    const handedOver = await ManagedReservationService.confirmHandover(String(reservation._id),
+      { storageCondition: 'GOOD', accessNotes: 'Fixture access handover' },
+      { _id: oid(), role: 'FACILITY_STAFF', assignedFacilityId: reservation.facilityId });
+    assert.equal(handedOver.status, ReservationStatus.ACTIVE);
+    assert.ok(rows.every(row => row.status === 'RESERVED'));
+  });
+}
 
 test('documented signed PayOS registration sample is acknowledged without creating or mutating a payment', async t => {
   let paymentWrites = 0;
