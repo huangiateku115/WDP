@@ -43,9 +43,15 @@ export function assertConfirmedRequest(config) {
   const customerPayosStatus =
     method === "GET" &&
     /^reservations\/[a-f\d]{24}\/payments\/[a-f\d]{24}$/i.test(path);
+  const customerPayosReconcile = method === "POST" &&
+    /^reservations\/[a-f\d]{24}\/payments\/[a-f\d]{24}\/reconcile$/i.test(path);
   const customerPayosHistory =
     method === "GET" &&
     /^reservations\/[a-f\d]{24}\/payments\/payos(?:\?[^#]*)?$/i.test(path);
+  const managedCustomerPayos =
+    (method === "POST" && /^reservations\/managed\/[a-f\d]{24}\/payments\/payos$/i.test(path)) ||
+    (method === "GET" && /^reservations\/managed\/[a-f\d]{24}\/payments\/(?:payos(?:\?[^#]*)?|[a-f\d]{24})$/i.test(path)) ||
+    (method === "POST" && /^reservations\/managed\/[a-f\d]{24}\/payments\/[a-f\d]{24}\/reconcile$/i.test(path));
   const warehouseRead =
     method === "GET" &&
     (path === "warehouse-map" ||
@@ -235,7 +241,7 @@ export function assertConfirmedRequest(config) {
   const facilityHandover =
     (method === "GET" && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
     (method === "POST" &&
-      /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(
+      /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover|reservations\/managed\/[a-f\d]{24}\/handover)$/i.test(
         path,
       ));
   const allowed =
@@ -243,6 +249,8 @@ export function assertConfirmedRequest(config) {
     facilityHandover ||
     customerPayosHistory ||
     customerPayosStatus ||
+    customerPayosReconcile ||
+    managedCustomerPayos ||
     bomInventoryRead ||
     bomReservationAdmin ||
     bomStorageUnitWrite ||

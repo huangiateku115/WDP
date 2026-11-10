@@ -81,6 +81,18 @@ async function currentContent(reservation: any, session: ClientSession) {
   return { content, ready: accepted.length > 0 && !unresolved && !hasDiscrepancies && !hasRejectedGoods };
 }
 function hashContent(content: unknown) { return crypto.createHash('sha256').update(JSON.stringify(content)).digest('hex'); }
+function v3SnapshotMatchesReservation(content: any, reservation: any) {
+  const cells = (reservation.allocatedCellIds ?? []).map(String).sort();
+  const snapshot = content?.reservation;
+  return content?.schemaVersion === 3 && snapshot?.id === String(reservation._id) && snapshot?.facilityId === String(reservation.facilityId) &&
+    JSON.stringify(snapshot?.cellIds) === JSON.stringify(cells) && snapshot?.allocatedCapacityM3 === reservation.allocatedCapacity &&
+    new Date(snapshot?.startDate).getTime() === new Date(reservation.startDate).getTime() &&
+    new Date(snapshot?.endDate).getTime() === new Date(reservation.endDate).getTime() &&
+    JSON.stringify(content?.pricing?.snapshot) === JSON.stringify(reservation.managedPricingSnapshot) &&
+    content?.pricing?.estimatedRent === reservation.estimatedRent && content?.pricing?.depositAmount === reservation.depositAmount &&
+    content?.pricing?.taxAmount === reservation.taxAmount && content?.pricing?.discountAmount === reservation.discountAmount &&
+    content?.facility?.id === String(reservation.facilityId);
+}
 async function ensureVersion(contract: IContract, reservation: any, actorId: Types.ObjectId, session: ClientSession) {
   const { content } = await currentContent(reservation, session);
   const contentHash = hashContent(content);
@@ -242,8 +254,11 @@ export class ManagedCheckinService {
   }
 
   static async createOrRefreshContract(reservationIdInput: unknown, actor: Actor) {
+    const candidateId = id(reservationIdInput, 'reservationId');
+    const candidate = await ReservationModel.findOne({ _id: candidateId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).select('_id bookingFlowVersion').lean().exec();
+    if (candidate?.bookingFlowVersion === 3) return this.createV3Contract(candidateId, actor);
     if (!enabled()) fail(404, 'Managed check-in flow is disabled');
-    const reservationId = id(reservationIdInput, 'reservationId');
+    const reservationId = candidateId;
     if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
     return tx(async session => {
       const reservation = await loadV2Reservation(reservationId, session);
@@ -271,6 +286,77 @@ export class ManagedCheckinService {
     });
   }
 
+  private static async createV3Contract(reservationId: Types.ObjectId, actor: Actor) {
+    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
+    return tx(async session => {
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).session(session).exec();
+      if (!reservation) fail(404, 'Managed V3 reservation not found');
+      assertFacilityRepresentative(actor, reservation.facilityId);
+      if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Managed V3 contract requires a verified applied Deposit');
+      await lockFacility(reservation.facilityId, session);
+      const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).session(session).lean().exec();
+      if (!facility) fail(409, 'Active Managed Facility required for contract');
+      const profile = await CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec();
+      const customer = await UserModel.findById(reservation.customerId).session(session).exec();
+      if (!profile || !customer) fail(409, 'Customer profile is unavailable for contract snapshot');
+      const pricing = reservation.managedPricingSnapshot as any;
+      const content = { schemaVersion: 3,
+        reservation: { id: String(reservation._id), code: reservation.reservationCode, serviceType: reservation.serviceType,
+          facilityId: String(reservation.facilityId), cellIds: (reservation.allocatedCellIds ?? []).map(String).sort(),
+          allocatedCapacityM3: reservation.allocatedCapacity, startDate: reservation.startDate, endDate: reservation.endDate,
+          term: pricing?.term ?? pricing?.pricingRule?.term },
+        facility: { id: String(facility._id), name: facility.name, code: facility.code },
+        pricing: { snapshot: pricing, estimatedRent: reservation.estimatedRent, depositAmount: reservation.depositAmount,
+          taxAmount: reservation.taxAmount, discountAmount: reservation.discountAmount } };
+      const contentHash = hashContent(content);
+      let contract = await ContractModel.findOne({ reservationId }).session(session).exec();
+      if (contract) {
+        const current = contract.contentVersions?.find(version => version.version === contract!.currentContentVersion);
+        if (!current || current.contentHash !== contentHash) fail(409, 'Managed V3 contract snapshot changed; a new signed contract version requires support review');
+        return contract;
+      }
+      contract = new ContractModel({ contractCode: `CTR-${reservation.reservationCode}`, reservationId, customerId: reservation.customerId,
+        status: ContractStatus.DRAFT, customerSnapshot: { fullName: customer.displayName, email: customer.email, phone: customer.phone, address: profile.address },
+        pricingSnapshot: content.pricing, currentContentVersion: 1,
+        contentVersions: [{ version: 1, contentHash, content, createdBy: actor._id, createdAt: new Date() }], signatures: [], termsVersion: 'MI-V3-1' });
+      await contract.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.CONTRACT_VERSION_CREATED, { contractId: contract._id, version: 1, contentHash }, session);
+      return contract;
+    });
+  }
+
+  static async signV3Contract(contractIdInput: unknown, actor: Actor, signer: 'CUSTOMER' | 'FACILITY') {
+    const contractId = id(contractIdInput, 'contractId');
+    return tx(async session => {
+      const contract = await ContractModel.findById(contractId).session(session).exec();
+      if (!contract) fail(404, 'Managed contract not found');
+      const reservation = await ReservationModel.findOne({ _id: contract.reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
+        ...(signer === 'CUSTOMER' ? { customerId: actor._id } : {}) }).session(session).exec();
+      if (!reservation) fail(404, 'Managed V3 reservation not found');
+      if (signer === 'CUSTOMER') {
+        if (actor.role !== UserRole.CUSTOMER) fail(403, 'Reservation owner must sign as Customer');
+      } else {
+        assertFacilityRepresentative(actor, reservation.facilityId);
+        if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
+      }
+      if (![ReservationStatus.DEPOSIT_PAID, ReservationStatus.PAID].includes(reservation.status)) fail(409, 'Managed V3 contract signing requires deposit settlement');
+      await lockFacility(reservation.facilityId, session);
+      const active = contract.contentVersions?.find(version => version.version === contract.currentContentVersion);
+      if (!active || !/^[a-f\d]{64}$/i.test(active.contentHash) || hashContent(active.content) !== active.contentHash ||
+          contract.termsVersion !== 'MI-V3-1' || !v3SnapshotMatchesReservation(active.content, reservation)) fail(409, 'Current Managed V3 contract snapshot no longer matches the reserved Cells, dates, capacity or pricing');
+      const role = signer === 'CUSTOMER' ? UserRole.CUSTOMER : actor.role;
+      if (signer === 'FACILITY' && !contract.signatures?.some(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole === UserRole.CUSTOMER)) fail(409, 'Customer must sign the current Managed V3 contract version first');
+      const existing = contract.signatures?.find(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole === role);
+      if (!existing) contract.signatures = [...(contract.signatures ?? []), { version: active.version, contentHash: active.contentHash, signerId: actor._id, signerRole: role, signedAt: new Date() }] as any;
+      await updateSignedState(contract, active.version, active.contentHash);
+      syncLegacySignatureFields(contract, active.version, active.contentHash);
+      await contract.save({ session });
+      await audit(reservation, actor, ManagedReservationAction.CONTRACT_SIGNED, { contractId, version: active.version, contentHash: active.contentHash, signerRole: role }, session);
+      return contract;
+    });
+  }
+
   static async signContract(contractIdInput: unknown, actor: Actor) {
     if (!enabled()) fail(404, 'Managed check-in flow is disabled');
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'Reservation owner must sign as Customer');
@@ -294,9 +380,15 @@ export class ManagedCheckinService {
   }
 
   static async signFacilityContract(contractIdInput: unknown, actor: Actor) {
+    const candidateId = id(contractIdInput, 'contractId');
+    const candidateContract = await ContractModel.findById(candidateId).select('reservationId').lean().exec();
+    if (candidateContract) {
+      const candidateReservation = await ReservationModel.findOne({ _id: candidateContract.reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).select('_id bookingFlowVersion').lean().exec();
+      if (candidateReservation?.bookingFlowVersion === 3) return this.signV3Contract(candidateId, actor, 'FACILITY');
+    }
     if (!enabled()) fail(404, 'Managed check-in flow is disabled');
     if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
-    const contractId = id(contractIdInput, 'contractId');
+    const contractId = candidateId;
     return tx(async session => {
       const contract = await ContractModel.findById(contractId).session(session).exec();
       if (!contract) fail(404, 'Managed contract not found');

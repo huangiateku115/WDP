@@ -46,6 +46,8 @@ const paymentRecord = (overrides = {}) => ({
   qrCode: '00020101021229370016A0000006770101110113006688123456785204581253037045802VN6304ABCD',
   succeededAt: null,
   reconciliationRequired: false,
+  retryAllowed: false,
+  cancelVerifiedAt: null,
   ...overrides,
 });
 const response = (status, data, outcome = 'CREATED') => ({
@@ -57,12 +59,23 @@ test('PayOS allowlist permits only the exact Customer create and status paths', 
   assert.doesNotThrow(() => assertConfirmedRequest({ method: 'POST', url: `/reservations/${reservationId}/payments/payos` }));
   assert.doesNotThrow(() => assertConfirmedRequest({ method: 'GET', url: `/reservations/${reservationId}/payments/${paymentId}` }));
   assert.doesNotThrow(() => assertConfirmedRequest({ method: 'GET', url: `/reservations/${reservationId}/payments/payos?limit=10` }));
+  assert.doesNotThrow(() => assertConfirmedRequest({ method: 'POST', url: `/reservations/${reservationId}/payments/${paymentId}/reconcile` }));
   for (const config of [
     { method: 'POST', url: `/reservations/${reservationId}/payments/${paymentId}` },
     { method: 'POST', url: `/reservations/${reservationId}/payments/payos/extra` },
     { method: 'GET', url: `/reservations/${reservationId}/payments/not-an-id` },
     { method: 'PUT', url: `/reservations/${reservationId}/payments/payos` },
   ]) assert.throws(() => assertConfirmedRequest(config));
+});
+
+test('Managed V3 PayOS paths and explicit handover are allowlisted with exact methods', () => {
+  for (const config of [
+    { method: 'POST', url: `/reservations/managed/${reservationId}/payments/payos` },
+    { method: 'GET', url: `/reservations/managed/${reservationId}/payments/payos?limit=5` },
+    { method: 'GET', url: `/reservations/managed/${reservationId}/payments/${paymentId}` },
+    { method: 'POST', url: `/reservations/managed/${reservationId}/handover` },
+  ]) assert.doesNotThrow(() => assertConfirmedRequest(config));
+  assert.throws(() => assertConfirmedRequest({ method: 'PATCH', url: `/reservations/managed/${reservationId}/payments/payos` }));
 });
 
 test('Payment history API validates Reservation, bounded pagination and response identity', async () => {
@@ -108,6 +121,26 @@ test('PayOS API client posts only purpose with the stable Idempotency-Key and pa
   const replay = await api.createPayosCheckout(reservationId, 'DEPOSIT', 'wdp-stable-attempt');
   assert.equal(replay.httpStatus, 200);
   assert.equal(replay.outcome, 'REPLAYED');
+});
+
+test('Managed V3 PayOS calls use the managed routes and zero balance requires a Backend PAID confirmation', async () => {
+  const calls = [];
+  const client = {
+    post: async (...args) => { calls.push(args); return response(201, paymentRecord()); },
+    get: async (...args) => { calls.push(args); return { status: 200, data: { success: true, data: { items: [], nextCursor: null } } }; },
+  };
+  const api = createPayosPaymentApi(client);
+  await api.createPayosCheckout(reservationId, 'DEPOSIT', 'wdp-managed-key', 'MANAGED_INVENTORY');
+  await api.listPayosPaymentsForReservation(reservationId, { limit: 10, serviceType: 'MANAGED_INVENTORY' });
+  assert.equal(calls[0][0], `/reservations/managed/${reservationId}/payments/payos`);
+  assert.equal(calls[0][2].headers['Idempotency-Key'], 'wdp-managed-key');
+  assert.equal(calls[1][0], `/reservations/managed/${reservationId}/payments/payos?limit=10`);
+
+  const zero = createPayosPaymentApi({ post: async () => response(200, { zeroBalance: true,
+    reservation: { serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3, status: 'PAID', balanceSettledAt: '2026-11-10T00:00:00.000Z' } }, 'SETTLED'), get: async () => undefined });
+  assert.equal((await zero.createPayosCheckout(reservationId, 'BALANCE', 'wdp-managed-balance', 'MANAGED_INVENTORY')).zeroBalance, true);
+  const malformed = createPayosPaymentApi({ post: async () => response(200, { zeroBalance: true, reservation: { serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3, status: 'ACTIVE' } }, 'SETTLED'), get: async () => undefined });
+  await assert.rejects(malformed.createPayosCheckout(reservationId, 'BALANCE', 'wdp-managed-balance', 'MANAGED_INVENTORY'));
 });
 
 test('PayOS API rejects invalid IDs, purpose, idempotency keys and malformed payment DTOs', async () => {
@@ -319,6 +352,21 @@ test('Balance eligibility requires CHECKIN_READY and verified signed-paper proof
   assert.equal(eligiblePayosPurpose({ ...reservation, status: 'PAID' }, contract), null);
 });
 
+test('Managed V3 Deposit and Balance eligibility follow V3 hold, current hash signatures, and ownership', () => {
+  const v3 = { _id: reservationId, customerId, facilityId: '507f1f77bcf86cd799439015', serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
+    status: 'RESERVED', expiresAt: new Date(Date.now() + 60_000).toISOString() };
+  assert.equal(assessPayosEligibility(v3, null, Date.now(), customerId).purpose, 'DEPOSIT');
+  assert.equal(assessPayosEligibility({ ...v3, customerId: '507f1f77bcf86cd799439099' }, null, Date.now(), customerId).purpose, null);
+  const active = { version: 1, contentHash: 'a'.repeat(64) };
+  const contract = { _id: contractId, reservationId, customerId, status: 'SIGNED', currentContentVersion: 1,
+    contentVersions: [active], signatures: [
+      { version: 1, contentHash: active.contentHash, signerRole: 'CUSTOMER' },
+      { version: 1, contentHash: active.contentHash, signerRole: 'FACILITY_STAFF' },
+    ] };
+  assert.equal(assessPayosEligibility({ ...v3, status: 'DEPOSIT_PAID', expiresAt: undefined }, contract, Date.now(), customerId).purpose, 'BALANCE');
+  assert.equal(assessPayosEligibility({ ...v3, status: 'DEPOSIT_PAID' }, { ...contract, signatures: [contract.signatures[0]] }, Date.now(), customerId).purpose, null);
+});
+
 test('Payment status never confuses provider success with applied Reservation payment', () => {
   assert.equal(paymentStatusView(paymentRecord({ providerSettlementStatus: 'VERIFIED', applicationStatus: 'APPLIED' })).key, 'APPLIED');
   assert.equal(paymentStatusView(paymentRecord({ providerSettlementStatus: 'VERIFIED', applicationStatus: 'MANUAL_REVIEW' })).key, 'MANUAL_REVIEW');
@@ -352,12 +400,21 @@ test('Payment history honors only an owned Reservation target and otherwise sele
   assert.equal(selectOwnedSelfStorageReservation([], reservationId), '');
 });
 
-test('A new attempt is permitted only after authoritative terminal FAILED without verified funds', () => {
-  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', checkoutStatus: 'RECONCILIATION_REQUIRED', reconciliationRequired: false })), true);
+test('A new attempt is permitted only after Backend-authorized terminal outcome without verified funds', () => {
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', checkoutStatus: 'FAILED', retryAllowed: true })), true);
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'CANCELLED', checkoutStatus: 'CANCELLED', cancelVerifiedAt: '2026-11-10T00:00:00Z', retryAllowed: true })), true);
   assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'PENDING' })), false);
-  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', providerSettlementStatus: 'VERIFIED' })), false);
-  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', applicationStatus: 'MANUAL_REVIEW' })), false);
-  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', reconciliationRequired: true })), false);
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'CANCELLED', cancelVerifiedAt: null, retryAllowed: true })), false);
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', retryAllowed: true, providerSettlementStatus: 'VERIFIED' })), false);
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', retryAllowed: true, applicationStatus: 'MANUAL_REVIEW' })), false);
+  assert.equal(canStartNewPayosAttempt(paymentRecord({ status: 'FAILED', retryAllowed: true, reconciliationRequired: true })), false);
+});
+
+test('cancel return URL never supplies status evidence and only a confirmed DTO is shown as cancelled', () => {
+  assert.equal(paymentStatusView(paymentRecord({ status: 'PENDING', checkoutStatus: 'READY' })).key, 'PENDING');
+  assert.equal(paymentStatusView(paymentRecord({ status: 'CANCELLED', cancelVerifiedAt: null })).key, 'UNKNOWN');
+  assert.equal(paymentStatusView(paymentRecord({ status: 'CANCELLED', cancelVerifiedAt: '2026-11-10T00:00:00Z' })).label, 'Đã hủy thanh toán');
+  assert.equal(customerPaymentStatus(paymentRecord({ status: 'CANCELLED', cancelVerifiedAt: '2026-11-10T00:00:00Z' })).label, 'Đã hủy thanh toán');
 });
 
 test('409 and uncertain 503/network outcomes never instruct the Customer to create a new payment', () => {
@@ -467,7 +524,7 @@ test('Self-Storage always uses PayOS and never has a Customer mock fallback', as
   assert.match(review, /Idempotency-Key/);
   assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
   assert.match(review, /window\.location\.assign\(result\.payment\.checkoutUrl\)/);
-  assert.match(review, /Xác nhận đặt kho và thanh toán/);
+  assert.match(review, /Xác nhận đặt thuê/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);
   assert.match(checkout, /returnQueryPresent/);

@@ -75,14 +75,14 @@ function eligibilityText(reason) {
   return messages[reason] || "Không thể xác minh điều kiện thanh toán. Vui lòng thử làm mới trạng thái.";
 }
 
-async function loadCompletePayosHistory(reservationId) {
-  let page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25 });
+async function loadCompletePayosHistory(reservationId, serviceType = "SELF_STORAGE") {
+  let page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25, serviceType });
   let items = mergePayosPaymentHistory([], page.items, reservationId);
   let cursor = page.nextCursor;
   let pagesRead = 1;
   while (cursor) {
     if (pagesRead >= 100) throw Error("Payment history could not be fully verified. Do not start another payment yet.");
-    page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25, cursor });
+    page = await paymentApi.listPayosPaymentsForReservation(reservationId, { limit: 25, cursor, serviceType });
     items = mergePayosPaymentHistory(items, page.items, reservationId);
     cursor = page.nextCursor;
     pagesRead += 1;
@@ -137,6 +137,7 @@ export default function SelfStoragePayosCheckout({
   const navigate = useNavigate();
   const customerId = customerIdFromSession(session);
   const reservation = initialReservation || null;
+  const serviceType = reservation?.serviceType;
   const context = { data: reservation ? { reservation } : null, loading: !reservation, error: "", retry: onReservationRefresh };
   const contractResource = useBackend(
     (config) => reservation ? loadContract(reservationId, normalizePayosReferenceId(reservation.customerId), config) : Promise.resolve(null),
@@ -174,7 +175,8 @@ export default function SelfStoragePayosCheckout({
   function goToHistory(paymentId, verifiedApplied = false) {
     if (completionNavigated.current) return;
     completionNavigated.current = true;
-    navigate("/portal/payments", { replace: true, state: { reservationId, paymentId: paymentId || null, returnContext: { reservationId, verifiedApplied } } });
+    const query = new URLSearchParams({ reservationId, ...(paymentId ? { paymentId } : {}), ...(verifiedApplied ? { verified: "applied" } : {}) });
+    navigate(`/portal/payments?${query}`, { replace: true });
   }
 
   useEffect(() => {
@@ -250,7 +252,7 @@ export default function SelfStoragePayosCheckout({
     let active = true;
     setHistoryLoaded(false);
     setHistoryError("");
-    void loadCompletePayosHistory(reservationId)
+    void loadCompletePayosHistory(reservationId, serviceType)
       .then((page) => {
         if (!active || getAccessToken() !== token) return;
         setPaymentsById((previous) => Object.fromEntries(
@@ -273,7 +275,7 @@ export default function SelfStoragePayosCheckout({
       })
       .finally(() => { if (active && getAccessToken() === token) setHistoryLoaded(true); });
     return () => { active = false; };
-  }, [customerId, reservationId, session.accessToken]);
+  }, [customerId, reservationId, serviceType, session.accessToken]);
 
   async function loadOlderPayments() {
     if (!historyNextCursor || historyLoadingMore || !customerId) return;
@@ -281,7 +283,7 @@ export default function SelfStoragePayosCheckout({
     setHistoryLoadingMore(true);
     setHistoryError("");
     try {
-      const page = await paymentApi.listPayosPaymentsForReservation(reservationId, { cursor: historyNextCursor });
+      const page = await paymentApi.listPayosPaymentsForReservation(reservationId, { cursor: historyNextCursor, serviceType });
       if (!alive.current || getAccessToken() !== token) return;
       setPaymentsById((previous) => Object.fromEntries(
         mergePayosPaymentHistory(Object.values(previous), page.items, reservationId).map((payment) => [payment.id, payment]),
@@ -308,7 +310,7 @@ export default function SelfStoragePayosCheckout({
     setHistoryRefreshing(true);
     setHistoryError("");
     try {
-      const page = await loadCompletePayosHistory(reservationId);
+      const page = await loadCompletePayosHistory(reservationId, serviceType);
       if (!alive.current || getAccessToken() !== token) return;
       setPaymentsById((previous) => Object.fromEntries(
         mergePayosPaymentHistory(Object.values(previous), page.items, reservationId).map((payment) => [payment.id, payment]),
@@ -337,10 +339,7 @@ export default function SelfStoragePayosCheckout({
         for (const attempt of stored.attempts) {
           if (!attempt.paymentId) continue;
           try {
-            const payment = await paymentApi.getPayosPaymentStatus(
-              reservationId,
-              attempt.paymentId,
-            );
+            const payment = await paymentApi.getPayosPaymentStatus(reservationId, attempt.paymentId, serviceType);
             if (getAccessToken() !== token || !active) return;
             loaded[payment.id] = payment;
           } catch {
@@ -386,7 +385,7 @@ export default function SelfStoragePayosCheckout({
       const token = getAccessToken();
       const fresh = await loadContext(reservationId);
       if (!alive.current || getAccessToken() !== token) return null;
-      if (recordId(fresh?.reservation) !== reservationId || fresh?.reservation?.serviceType !== "SELF_STORAGE") {
+      if (recordId(fresh?.reservation) !== reservationId || fresh?.reservation?.serviceType !== serviceType) {
         throw Error("Reservation could not be verified for this payment.");
       }
       setSnapshot(fresh);
@@ -409,7 +408,7 @@ export default function SelfStoragePayosCheckout({
     setNotice("");
     const token = getAccessToken();
     try {
-      const fresh = await paymentApi.getPayosPaymentStatus(reservationId, payment.id);
+      const fresh = await paymentApi.getPayosPaymentStatus(reservationId, payment.id, serviceType);
       if (!alive.current || getAccessToken() !== token) return;
       setPaymentsById((previous) => ({ ...previous, [fresh.id]: fresh }));
       if (fresh.providerSettlementStatus === "VERIFIED" && fresh.applicationStatus === "APPLIED") {
@@ -467,7 +466,7 @@ export default function SelfStoragePayosCheckout({
       let attempt = attempts.at(-1);
       let priorPayment = null;
       if (attempt?.paymentId) {
-        priorPayment = await paymentApi.getPayosPaymentStatus(reservationId, attempt.paymentId);
+        priorPayment = await paymentApi.getPayosPaymentStatus(reservationId, attempt.paymentId, serviceType);
         if (!alive.current || getAccessToken() !== token) return;
         setPaymentsById((previous) => ({ ...previous, [priorPayment.id]: priorPayment }));
         if (
@@ -503,8 +502,17 @@ export default function SelfStoragePayosCheckout({
         reservationId,
         purpose,
         attempt.idempotencyKey,
+        serviceType,
       );
       if (!alive.current || getAccessToken() !== token) return;
+      if (result.zeroBalance) {
+        const refreshed = await loadContext(reservationId);
+        if (!alive.current || getAccessToken() !== token || refreshed?.reservation?.status !== "PAID" || !refreshed.reservation.balanceSettledAt) throw Error("Backend did not confirm the zero-balance settlement. Refresh reservation status before continuing.");
+        setSnapshot(refreshed);
+        onReservationRefresh?.();
+        navigate(`/portal/reservations/${reservationId}`, { replace: true });
+        return;
+      }
       const payment = result.payment;
       attempts = attempts.map((entry) => entry.idempotencyKey === attempt.idempotencyKey
         ? { ...entry, paymentId: payment.id }
@@ -589,7 +597,7 @@ export default function SelfStoragePayosCheckout({
       <div className="mx-auto flex w-full max-w-3xl flex-wrap gap-3">
         {historyNextCursor && <Button variant="outline" disabled={historyLoadingMore} onClick={loadOlderPayments}>{historyLoadingMore ? "Đang tải…" : "Xem giao dịch cũ hơn"}</Button>}
         <Button variant="outline" disabled={!!pending} onClick={refreshReservation}>{pending === "reservation" ? "Đang làm mới…" : "Làm mới thông tin thanh toán"}</Button>
-        <Button asChild variant="outline"><RouterLink to="/portal/payments" state={{ reservationId }}>Xem lịch sử thanh toán</RouterLink></Button>
+        <Button asChild variant="outline"><RouterLink to={`/portal/payments?reservationId=${encodeURIComponent(reservationId)}`}>Xem lịch sử thanh toán</RouterLink></Button>
         <Button asChild variant="outline"><RouterLink to={"/portal/reservations/" + reservationId}>Quay lại đơn thuê</RouterLink></Button>
         <Button asChild variant="outline"><RouterLink to="/portal">Về kho của tôi</RouterLink></Button>
       </div>

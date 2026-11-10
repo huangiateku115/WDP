@@ -6,7 +6,17 @@ function breakdown(value,depositRequired,currency){
   return {totalRentPayable:value.totalDue,advanceDepositRequired:value.depositCredit,balanceAfterDeposit:value.balanceDue,currency};
 }
 export function managedQuoteFinancials(quote){
-  if(quote?.bookingFlowVersion!==2)throw Error('A confirmed Managed V2 quote is required.');
+  if(quote?.bookingFlowVersion===3){
+    const vndAmount=value=>Number.isSafeInteger(value)&&value>=0;
+    const rent=quote.pricing?.estimatedRent,tax=quote.taxAmount,deposit=quote.deposit?.amount;
+    if(quote.pricing?.currency!=='VND'||!vndAmount(rent)||rent<=0||!vndAmount(tax)||!vndAmount(deposit)||deposit<=0)
+      throw Error('Managed V3 quote amounts are unavailable or inconsistent. Refresh the server quote.');
+    const result=breakdown(quote.paymentBreakdown,deposit,'VND');
+    if(result.totalRentPayable!==rent+tax)
+      throw Error('Managed V3 quote total does not match server rent and tax. Refresh the server quote.');
+    return result;
+  }
+  if(quote?.bookingFlowVersion!==2)throw Error('Unsupported Managed quote version.');
   if(![quote.pricing?.estimatedRent,quote.taxAmount,quote.deposit?.amount].every(amount))throw Error('Managed V2 quote amounts are unavailable or inconsistent.');
   const result=breakdown(quote.paymentBreakdown,quote.deposit.amount,quote.pricing.currency);
   // publicQuote returns rent and tax; its confirmed implementation applies no quote discount.

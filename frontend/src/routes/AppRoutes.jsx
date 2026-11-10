@@ -30,6 +30,7 @@ import WarehouseFacilitySelectionPage from '@/pages/customer/WarehouseFacilitySe
 import WarehouseMapPage, {InteractiveWarehouseRackDetailPage as WarehouseRackDetailPage} from '@/pages/customer/WarehouseMapPage';
 import ProfilePage from '@/pages/customer/ProfilePage';
 import PaymentHistoryPage from '@/pages/customer/PaymentHistoryPage';
+import PayosPaymentReturnPage from '@/pages/customer/PayosPaymentReturnPage';
 import NotificationsPage from '@/pages/customer/NotificationsPage';
 import RentalExtensionPage from '@/pages/customer/RentalExtensionPage';
 import RentalAccessPage from '@/pages/customer/RentalAccessPage';
@@ -80,6 +81,7 @@ export default function AppRoutes() {
         <Route path="refunds/:id" element={<FinancialDetailPage kind="refund" />} />
         <Route path="charges/:id" element={<FinancialDetailPage kind="charge" />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="payments/return" element={<PayosPaymentReturnPage />} />
         <Route
           path="contracts"
           element={<ContractsPage />}

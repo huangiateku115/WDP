@@ -33,7 +33,7 @@ export interface IReservation extends Document {
   bookingIdempotencyKey?: string;
   bookingPayloadHash?: string;
   /** Absent on legacy records. Version 2 is never inferred from legacy status/payment fields. */
-  bookingFlowVersion?: 2;
+  bookingFlowVersion?: 2 | 3;
   storageUnitId?: Types.ObjectId;
   /** Cells exclusively allocated to this Managed Inventory reservation. */
   allocatedCellIds?: Types.ObjectId[];
@@ -50,9 +50,12 @@ export interface IReservation extends Document {
   balanceSettledBy?: Types.ObjectId;
   depositPaymentId?: Types.ObjectId;
   balancePaymentId?: Types.ObjectId;
+  /** Idempotency identity for a Backend-confirmed zero-balance V3 settlement. */
+  balanceSettlementKey?: string;
   handoverByStaffId?: Types.ObjectId;
   handoverAt?: Date;
   storageCondition?: string;
+  handoverAccessNotes?: string;
   
   startDate: Date;
   endDate: Date;

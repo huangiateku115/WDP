@@ -21,6 +21,7 @@ import {
   canSign,
   contractAmounts,
   isManagedV2,
+  isManagedV3,
   isLegacyManaged,
   hasLegacyRentalFlow,
   reservationLifecycle,
@@ -85,14 +86,14 @@ async function loadSelfStorageContract(reservationId, customerId, config) {
       throw Error("The contract does not match this Reservation. Payment is unavailable.");
     }
     if (!normalizePayosReferenceId(customerId) ||
-        normalizePayosReferenceId(contract.customerId) !== normalizePayosReferenceId(customerId)) {
+      normalizePayosReferenceId(contract.customerId) !== normalizePayosReferenceId(customerId)) {
       throw Error("Contract ownership could not be verified. Payment is unavailable.");
     }
     return contract;
   } catch (error) {
     if (error.response?.status === 404) return null;
     if (error.message?.includes("does not match this Reservation") ||
-        error.message?.includes("ownership could not be verified")) throw error;
+      error.message?.includes("ownership could not be verified")) throw error;
     throw Error("The reservation is saved, but its contract could not be loaded. Retry here; you do not need to book again.");
   }
 }
@@ -109,8 +110,10 @@ async function loadSelfStorageOverview(reservation, config) {
     const unit = record(unitResponse);
     const durationMs = Date.parse(reservation.endDate) - Date.parse(reservation.startDate);
     const durationDays = Number.isFinite(durationMs) && durationMs > 0 ? Math.ceil(durationMs / 86_400_000) : null;
-    const estimate = { estimatedRent: reservation.estimatedRent, depositAmount: reservation.depositAmount,
-      taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0, durationDays };
+    const estimate = {
+      estimatedRent: reservation.estimatedRent, depositAmount: reservation.depositAmount,
+      taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0, durationDays
+    };
     if (recordId(facility) === facilityId && recordId(unit) === unitId && recordId(unit.facilityId) === facilityId) Object.assign(overview, { facility, unit, estimate });
     else overview.error = "Facility or StorageUnit details did not match the owned Reservation.";
   } catch {
@@ -126,6 +129,13 @@ async function selfStoragePaymentContext(reservationId, config) {
     loadSelfStorageOverview(reservation, config),
   ]);
   return { contract, reservation, rentalOverview };
+}
+async function managedV3PaymentContext(reservationId, config) {
+  const reservation = record(await managedReservationApi.detail(reservationId, config));
+  if (recordId(reservation) !== normalizePayosReferenceId(reservationId) || reservation.serviceType !== MANAGED_INVENTORY || reservation.bookingFlowVersion !== 3) throw Error("The owned Managed V3 reservation could not be verified.");
+  const customerId = normalizePayosReferenceId(reservation.customerId);
+  const contract = await loadSelfStorageContract(reservationId, customerId, config);
+  return { contract, reservation };
 }
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
@@ -144,60 +154,60 @@ export function RentalsIntegration() {
     ) || [];
   return (
     <BackendScreen
-      title="My Storage"
-      description="Your spaces, reservations and rental details in one place."
-      notice="Rental details reflect the information returned for your account. Available actions depend on each reservation."
+      title="Kho lưu trữ của tôi"
+      description="Quản lý các kho và đơn thuê của bạn."
+      notice="Các thao tác khả dụng tùy theo trạng thái của từng đơn thuê."
       action={
         <Button asChild variant="orange">
-          <Link to="/portal/rent">Rent New Unit</Link>
+          <Link to="/portal/rent">Thuê kho mới</Link>
         </Button>
       }
     >
       <LoadState resource={resource} />
-      {resource.data && !resource.error && <PortalSummaryCards items={[{ label: "Active rentals", value: resource.data.filter(r => r.status === 'ACTIVE').length }, { label: "Awaiting handover", value: resource.data.filter(r => ['PAID', 'CHECKIN_READY'].includes(r.status)).length }, { label: "Reservations returned", value: resource.data.length }]} />}
+      {resource.data && !resource.error && <PortalSummaryCards items={[{ label: "Đang thuê", value: resource.data.filter(r => r.status === 'ACTIVE').length }, { label: "Cần xử lý", value: resource.data.filter(r => ['PAID', 'CHECKIN_READY'].includes(r.status)).length }, { label: "Tổng đơn thuê", value: resource.data.length }]} />}
       <div className="portal-filter-bar">
         <label className="block field-label">
-          Storage service
+          Loại dịch vụ
           <select
-            aria-label="Storage service"
+            aria-label="Loại dịch vụ"
             className="customer-select mt-2"
             value={service}
             onChange={(e) => setService(e.target.value)}
           >
-            <option value="">All services</option>
+            <option value="">Tất cả dịch vụ</option>
             <option value={SELF_STORAGE}>Self Storage</option>
             <option value={MANAGED_INVENTORY}>Managed Inventory</option>
-            <option value="UNKNOWN">Unsupported / unknown</option>
+            <option value="UNKNOWN">Khác</option>
           </select>
         </label>
         <label className="block field-label">
-          Reservation status
+          Trạng thái
           <select
-            aria-label="Reservation status"
+            aria-label="Trạng thái đơn thuê"
             className="customer-select mt-2"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
-            <option value="">All returned statuses</option>
+            <option value="">Tất cả trạng thái</option>
             {[
               ...new Set(
                 resource.data?.map((r) => r.status).filter(Boolean) || [],
               ),
             ].map((s) => (
               <option key={s} value={s}>
-                {s === 'RESERVED' && resource.data?.some(isManagedV2) ? 'RESERVED — see rental flow' : statusLabels[s] || s}
+                {s === 'RESERVED' && resource.data?.some(isManagedV2) ? 'Đã đặt chỗ' : statusLabels[s] || s}
               </option>
             ))}
           </select>
         </label>
       </div>
       {[
-        ["Active Rentals", ["ACTIVE", "OVERDUE"]],
-        ["Awaiting activation / handover", ["PAID", "CHECKIN_READY"]],
-        ["Rental History", ["CHECKED_OUT", "CLOSED"]],
-        ["Reservations", ["RESERVED", "DEPOSIT_PAID", "CONTRACTED", "CANCELLED"]],
+        ["Đang thuê", ["ACTIVE", "OVERDUE"]],
+        ["Chờ bàn giao", ["PAID", "CHECKIN_READY"]],
+        ["Lịch sử thuê", ["CHECKED_OUT", "CLOSED"]],
+        ["Đơn thuê", ["RESERVED", "DEPOSIT_PAID", "CONTRACTED", "CANCELLED"]],
         [
-          "Other returned statuses",
+          "Trạng thái khác",
           records
             .map((r) => r.status)
             .filter(
@@ -227,7 +237,7 @@ export function RentalsIntegration() {
                   <div key={recordId(r)}>
                     <RentalSummary item={r} localizeManagedV2 />
                     {validId(recordId(r)) && (
-                      <PortalTextLink to={`/portal/reservations/${recordId(r)}`}>View reservation</PortalTextLink>
+                    <PortalTextLink to={`/portal/reservations/${recordId(r)}`}>Xem chi tiết</PortalTextLink>
                     )}
                   </div>
                 ))}
@@ -237,12 +247,8 @@ export function RentalsIntegration() {
         );
       })}
       {!resource.loading && !resource.error && !records.length && (
-        <PortalEmptyState title="No reservations match your filter." description="Try another service or status, or explore a new storage space." />
+        <PortalEmptyState title="Không có đơn thuê phù hợp." description="Hãy thử chọn loại dịch vụ hoặc trạng thái khác, hoặc tìm kho mới." />
       )}
-      <p className="text-xs text-slate-500">
-        Extensions, notifications, inventory and payment history remain separate
-        demo/API-ready features.
-      </p>
     </BackendScreen>
   );
 }
@@ -273,7 +279,7 @@ export function ReservationDetailIntegration() {
         <Message success="Self Storage booking confirmed. The advance-rent Deposit is pending; continue from the PayOS payment page." />
       )}
       {location.state?.managedCreated && (
-        <Message success={isManagedV2(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
+        <Message success={isManagedV2(resource.data) || isManagedV3(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
       )}
       {resource.data && (
         <>
@@ -282,6 +288,7 @@ export function ReservationDetailIntegration() {
           {isManagedV2(resource.data) && <CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(id, config).then(record)} onReservationRefresh={resource.retry} />}
           {isManagedV2(resource.data) && <CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => contractContext(id, config)} onReservationRefresh={resource.retry} />}
           <ManagedCellSummary reservation={resource.data} />{isManagedV2(resource.data) && <div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data) && <Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Deposit and balance</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status === 'RESERVED' && <p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
+          {isManagedV3(resource.data) && <div className="flex flex-wrap gap-3">{['RESERVED','DEPOSIT_PAID'].includes(resource.data.status)&&<Button asChild variant="orange"><Link to={`/portal/payments/${id}`}>{resource.data.status==='RESERVED'?'Pay advance rent with PayOS':'Review balance payment'}</Link></Button>}{['DEPOSIT_PAID','PAID','ACTIVE'].includes(resource.data.status)&&<Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review Managed V3 contract</Link></Button>}{resource.data.status==='PAID'&&<p role="status" className="text-sm text-orange-700">Rent is settled. Facility Staff must record the Cell access handover before the rental becomes ACTIVE.</p>}{resource.data.status==='ACTIVE'&&<p role="status" className="text-sm text-emerald-700">Access handover is recorded. Physical inbound is tracked separately.</p>}</div>}
           <p>
             {reservationLifecycle(resource.data).description}
           </p>
@@ -409,6 +416,13 @@ export function ContractDetailIntegration() {
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
   if (isManagedV2(reservation) && contract) return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2 /><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={() => contractContext(reservationId)} onRefresh={resource.retry} /><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  if (isManagedV3(reservation) && contract) {
+    const active = contract.contentVersions?.find(version => version.version === contract.currentContentVersion);
+    const content = active?.content;
+    const customerSigned = contract.signatures?.some(signature => signature.version === active?.version && signature.contentHash === active?.contentHash && signature.signerRole === 'CUSTOMER');
+    const canSignV3 = contract.status === 'DRAFT' && reservation.status === 'DEPOSIT_PAID' && !!active && content?.schemaVersion === 3 && /^[a-f\d]{64}$/i.test(active.contentHash || '') && !customerSigned;
+    return <BackendScreen title="Review Managed V3 contract" description="Review the Backend's Cell, capacity, dates, term and pricing snapshot. Both parties sign the same version and hash."><LoadState resource={resource}/><Message error={signatureNotice}/><RentalStatus status={contract.status}/><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId}/>{content?.reservation&&<Card><CardContent><h2 className="text-xl font-bold">Quote snapshot</h2><Details values={[["Snapshot version",active.version],["Content hash",active.contentHash],["Facility ID",content.facility?.id||content.reservation.facilityId],["Selected Cells",Array.isArray(content.reservation.cellIds)?content.reservation.cellIds.join(', '):'Not returned'],["Allocated capacity",typeof content.reservation.allocatedCapacityM3==='number'?`${content.reservation.allocatedCapacityM3} m³`:'Not returned'],["Rental dates",`${content.reservation.startDate||'—'} – ${content.reservation.endDate||'—'}`],["Term",content.reservation.term?JSON.stringify(content.reservation.term):'Not returned'],["Rent",content.pricing?.estimatedRent],["Deposit",content.pricing?.depositAmount],["Tax",content.pricing?.taxAmount],["Discount",content.pricing?.discountAmount]]}/></CardContent></Card>}{canSignV3&&<ConfirmAction label="Sign Managed V3 contract snapshot" onAction={async()=>{const token=getAccessToken(),latest=await contractContext(reservationId);if(getAccessToken()!==token)return;if(recordId(latest.contract)!==recordId(contract)||!isManagedV3(latest.reservation)||latest.reservation.status!=='DEPOSIT_PAID')throw Error('Managed V3 reservation or contract changed. Refresh before signing.');const current=latest.contract.contentVersions?.find(version=>version.version===latest.contract.currentContentVersion);if(!current||current.version!==active.version||current.contentHash!==active.contentHash||current.content?.schemaVersion!==3)throw Error('Managed V3 snapshot version changed. Refresh before signing.');const signed=record(await contractApi.signReal(recordId(contract)));const accepted=signed.signatures?.some(signature=>signature.version===active.version&&signature.contentHash===active.contentHash&&signature.signerRole==='CUSTOMER');if(recordId(signed)!==recordId(contract)||!accepted)throw Error('Backend did not confirm the Customer signature on the current V3 version.');setSignatureNotice('Customer signature saved for this contract version. Facility Staff or Manager must sign the same version before Balance payment is available.');resource.retry();}}/>}{contract.status==='DRAFT'&&!canSignV3&&<p className="mt-4 text-sm text-orange-700">{reservation.status!=='DEPOSIT_PAID'?'Contract signing requires the applied Deposit.':customerSigned?'Your signature is saved. Facility Staff or Manager must sign the same current version.':'The current V3 snapshot is incomplete; signing is disabled.'}</p>}<Details values={[["Terms version",contract.termsVersion],["Facility signature",contract.signedByFMAt||'Pending'],["Customer signature",contract.signedByCustomerAt||'Pending']]}/><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  }
   return (
     <BackendScreen
       title="Review rental contract"
@@ -527,15 +541,16 @@ export function PaymentIntegration() {
     (config) =>
       validId(reservationId)
         ? reservationApi.detailForCustomer(reservationId, config).then((response) => {
-            const reservation = record(response);
-            if (normalizePayosReferenceId(reservation) !== normalizePayosReferenceId(reservationId)) throw Error("Reservation does not match this payment route.");
-            return reservation;
-          })
+          const reservation = record(response);
+          if (normalizePayosReferenceId(reservation) !== normalizePayosReferenceId(reservationId)) throw Error("Reservation does not match this payment route.");
+          return reservation;
+        })
         : Promise.reject(Error("Invalid reservation ID.")),
     [reservationId],
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
   const managedDeposit = isManagedV2(resource.data);
+  const managedV3 = managed && resource.data?.bookingFlowVersion === 3;
   const contracts = useBackend(
     (config) =>
       isLegacyManaged(resource.data) ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
@@ -547,6 +562,7 @@ export function PaymentIntegration() {
   if (resource.loading) return <BackendScreen title="Loading payment details" description="Loading your reservation from the Backend."><LoadState resource={resource} /></BackendScreen>;
   if (resource.error || !resource.data) return <BackendScreen title="Payment unavailable" description="A payment can only be shown for a verified reservation."><Message error="Không tải được thông tin đơn thuê. Vui lòng thử lại." /><Button variant="outline" onClick={resource.retry}>Retry reservation</Button></BackendScreen>;
   if (serviceType(resource.data) === SELF_STORAGE) return <SelfStoragePayosCheckout key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} initialReservation={resource.data} loadContext={selfStoragePaymentContext} loadContract={loadSelfStorageContract} loadOverview={loadSelfStorageOverview} onReservationRefresh={resource.retry} />;
+  if (managedV3) return <SelfStoragePayosCheckout key={`${session.accessToken}:${reservationId}:managed-v3`} reservationId={reservationId} initialReservation={resource.data} loadContext={managedV3PaymentContext} loadContract={loadSelfStorageContract} onReservationRefresh={resource.retry} />;
   if (managedDeposit) return (
     <BackendScreen title="Managed Inventory payments" description="The Backend confirms each payment stage. Deposit is advance rent credited toward the balance.">
       <LoadState resource={resource} />

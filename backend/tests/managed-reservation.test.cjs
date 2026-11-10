@@ -263,6 +263,26 @@ test('versioned Managed booking creates only a RESERVED reservation and HOLD all
   assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
 });
 
+test('Managed V3 booking retry with the same Idempotency-Key replays one reservation', async t => {
+  const { cap } = mockQuote(t);
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  mockCellLocks(t);
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  let saved, saveCount = 0;
+  t.mock.method(Reservation, 'findOne', () => new Query(saved ?? null));
+  t.mock.method(Reservation.prototype, 'save', async function () { saveCount += 1; saved = this; return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+
+  const key = 'customer-cell-booking-retry-0001';
+  const first = await service.create(request({ cellIds: [String(cellA)] }), customer, key);
+  const replay = await service.create(request({ cellIds: [String(cellA)] }), customer, key);
+  assert.equal(first.reservation.bookingFlowVersion, 3);
+  assert.equal(replay.idempotent, true);
+  assert.equal(String(replay.reservation._id), String(first.reservation._id));
+  assert.equal(saveCount, 1, 'a replay must not create another Reservation');
+});
+
 function enableManagedDeposit(t) {
   const oldNodeEnv = process.env.NODE_ENV, oldGate = process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED;
   process.env.NODE_ENV = 'development'; process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = 'true';
@@ -420,7 +440,7 @@ test('Managed v2 routes are customer-only and the schema keeps flow version opti
   assert.ok(rows.includes('POST /managed/:id/deposit'));
   assert.ok(rows.includes('POST /managed/:id/deposit/mock-confirm'));
   assert.equal(Reservation.schema.path('bookingFlowVersion').options.default, undefined);
-  assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2]);
+  assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2, 3]);
   assert.ok(Reservation.schema.path('status').enumValues.includes('DEPOSIT_PAID'));
   assert.ok(ReservationPayment.schema.path('status').enumValues.includes('RECONCILIATION_REQUIRED'));
 });
@@ -499,8 +519,10 @@ test('quote applies half-open selected-Cell availability checks and accepts adja
     assert.deepEqual(filter.$or[1].endDate, { $gt: new Date('2030-01-31T00:00:00.000Z') });
     return new Query(null);
   });
-  const quoted = await service.quote(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)], startDate: '2030-01-31T00:00:00.000Z', term: { value: 1, unit: 'DAY' } }));
+  const quoted = await service.quote(request({ allocatedCapacityM3: undefined, cellIds: [String(cellA)], startDate: '2030-01-31T00:00:00.000Z', term: { value: 1, unit: 'DAY' } }));
+  assert.equal(quoted.allocatedCapacityM3, 0.12, 'quote capacity is derived from the selected Cell');
   assert.equal(quoted.startDate.toISOString(), '2030-01-31T00:00:00.000Z');
+  assert.deepEqual(quoted.cellIds, [String(cellA)], 'V3 quote echoes the exact server-validated Cell ID set');
 });
 
 test('concurrent intersecting multi-Cell selections commit only one complete hold set', async t => {

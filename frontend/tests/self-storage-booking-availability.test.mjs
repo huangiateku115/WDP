@@ -54,8 +54,8 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
   ]);
   assert.match(review, /paymentApi\.createPayosCheckout\(createdReservationId, "DEPOSIT", attempt\.idempotencyKey\)/);
   assert.match(review, /nav\("\/portal\/payments\/" \+ createdReservationId/);
-  assert.match(period, /aria-label=\{`Availability calendar for \$\{visibleMonth\}`\}/);
-  assert.match(period, /Previous month/);
+  assert.match(period, /aria-label=\{`Lịch tình trạng kho tháng \$\{visibleMonth\}`\}/);
+  assert.match(period, /Tháng trước/);
   assert.match(period, /lg:grid-cols/);
   assert.match(period, /rangeState === "CONFLICT"/);
   assert.match(checkout, /Hosted Checkout chính thức của PayOS/);

@@ -8,6 +8,9 @@ export function customerPaymentStatus(payment) {
   if (payment?.status === "FAILED" && payment?.providerSettlementStatus === "NOT_VERIFIED" && payment?.applicationStatus === "NOT_APPLIED") {
     return { label: "Thanh toán không thành công", tone: "text-rose-700" };
   }
+  if (payment?.status === "CANCELLED" && payment?.cancelVerifiedAt && payment?.providerSettlementStatus === "NOT_VERIFIED" && payment?.applicationStatus === "NOT_APPLIED") {
+    return { label: "Đã hủy thanh toán", tone: "text-amber-800" };
+  }
   if (payment?.checkoutStatus === "UNKNOWN" || payment?.checkoutStatus === "CREATING" || payment?.status === "SUCCEEDED") {
     return { label: "Đang xác nhận", tone: "text-amber-800" };
   }

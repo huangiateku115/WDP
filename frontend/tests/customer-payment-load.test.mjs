@@ -67,6 +67,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
       serviceType: item => item?.serviceType, serviceLabel: () => '', liveHold: () => false,
       canCancel: () => false, canSign: () => false, contractAmounts: () => ({}),
       isManagedV2: item => item?.serviceType === 'MANAGED_INVENTORY' && item?.bookingFlowVersion === 2,
+      isManagedV3: item => item?.serviceType === 'MANAGED_INVENTORY' && item?.bookingFlowVersion === 3,
       isLegacyManaged: item => item?.serviceType === 'MANAGED_INVENTORY' && item?.bookingFlowVersion !== 2,
       hasLegacyRentalFlow: () => false, reservationLifecycle: () => ({ label: '' }),
     },
@@ -90,6 +91,15 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
   };
   return { component: compile('../src/components/customer/RentalLifecycleIntegration.jsx', mocks).PaymentIntegration, calls, get checkoutProps() { return checkoutProps; } };
 }
+
+test('Managed V3 reservation route selects the real PayOS checkout component instead of the unsupported-service branch', () => {
+  const managedV3 = { ...reservation, _id: reservationId, serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3, status: 'RESERVED' };
+  const module = lifecycleModule({ routeResource: { data: managedV3, loading: false, error: '', retry: () => {} } });
+  const html = renderToStaticMarkup(module.component());
+  assert.match(html, /payos-checkout/);
+  assert.doesNotMatch(html, /Unsupported service\. Payment is unavailable/);
+  assert.equal(module.checkoutProps.initialReservation.bookingFlowVersion, 3);
+});
 
 function checkoutModule({ contract = draftContract, contractLoading = false, contractError = '', overview = { facility: { name: 'Test Facility' }, unit: { unitCode: 'A-01', size: 'SMALL', volumeM3: 2 } }, historyError = false, historyPayments = [], paymentApi = {}, reservation: checkoutReservation = reservation, loadContract = async () => contract, showQr = false, safeCheckout = false, qrDataUrl = null, onNavigate = () => {}, routerState = null } = {}) {
   const slots = [], pendingEffects = [];
@@ -169,6 +179,7 @@ test('Review creates one Reservation and one stable-key Deposit intent after exp
     react: hooks,
     'react-router-dom': { useNavigate: () => (...args) => { destination = args; }, useLocation: () => ({ state: null }) },
     '@/contexts/ReservationContext': { useReservation: () => ({ rentalDraft: { facility, unit, startDate: payload.startDate, endDate: payload.endDate, term: { value: 1, unit: 'MONTH' } }, updateRentalDraft: value => { clearedDraft = value; } }) },
+    '@/lib/customerReservationDisplay': { reservationDateOnly: value => value, reservationAmount: (value, currency) => `${value} ${currency}` },
     '@/lib/authSession': { useAuthSession: () => ({ accessToken: 'token', user: { id: customerId } }), getAccessToken: () => 'token' },
     '@/api/paymentApi': { default: { createPayosCheckout: async (_id, purpose, key) => { checkoutCalls++; idempotencyKey = key; assert.equal(purpose, 'DEPOSIT'); return { payment: readyCheckout }; } } },
     '@/api/payosPaymentClient': { canOpenPayosCheckout: payment => require('../src/api/payosPaymentClient.js').canOpenPayosCheckout(payment) },
@@ -190,7 +201,7 @@ test('Review creates one Reservation and one stable-key Deposit intent after exp
     './RentalBackendUI': {
       BackendScreen: screen, Card: box, CardContent: box, Button: button, Details: details, Message: message, Link: box,
       useBackend: () => ({ data: reviewData, loading: false, error: '', retry: () => {} }),
-      LoadState: () => null, record, recordId, rentalError: error => error.message,
+      LoadState: () => null, record, recordId, rentalError: error => error.message, addressText: value => value ? Object.values(value).filter(item => typeof item === 'string').join(', ') : undefined,
     },
   };
   const component = compile('../src/components/customer/SelfStorageReservationReview.jsx', mocks).default;
@@ -205,11 +216,11 @@ test('Review creates one Reservation and one stable-key Deposit intent after exp
     return null;
   }
   let tree = render();
-  const checkbox = find(tree, node => node.type === 'input' && node.props['aria-label'] === 'Confirm provided personal data');
+  const checkbox = find(tree, node => node.type === 'input' && node.props['aria-label'] === 'Xác nhận thông tin đặt thuê chính xác');
   assert(checkbox);
   checkbox.props.onCheckedChange(true);
   tree = render();
-  const create = find(tree, node => node.type === 'button' && node.props.children === 'Xác nhận đặt kho và thanh toán');
+  const create = find(tree, node => node.type === 'button' && node.props.children === 'Xác nhận đặt thuê');
   assert(create && !create.props.disabled);
   await create.props.onClick();
   assert.equal(createCalls, 1);
@@ -444,7 +455,7 @@ test('confirmed terminal failure exposes only the explicit safe retry action', a
   });
   const failed = { id: paymentId, reservationId, purpose: 'DEPOSIT', amount: 1500000, currency: 'VND', provider: 'PAYOS',
     status: 'FAILED', applicationStatus: 'NOT_APPLIED', providerSettlementStatus: 'NOT_VERIFIED', checkoutStatus: 'FAILED',
-    reconciliationRequired: false, createdAt: new Date().toISOString() };
+    reconciliationRequired: false, retryAllowed: true, createdAt: new Date().toISOString() };
   const module = checkoutModule({ paymentApi: {
     listPayosPaymentsForReservation: async () => ({ items: [failed], nextCursor: null }),
     getPayosPaymentStatus: async () => failed,
@@ -486,8 +497,8 @@ test('Checkout readiness scans older Backend history pages before allowing a new
   module.render(); await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
   assert.equal(listCalls.length, 2);
-  assert.deepEqual(listCalls[0], { limit: 25 });
-  assert.deepEqual(listCalls[1], { limit: 25, cursor: 'older-page' });
+  assert.deepEqual(listCalls[0], { limit: 25, serviceType: 'SELF_STORAGE' });
+  assert.deepEqual(listCalls[1], { limit: 25, cursor: 'older-page', serviceType: 'SELF_STORAGE' });
   assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
   assert.equal(checkoutPosts, 0);

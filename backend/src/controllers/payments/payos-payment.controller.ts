@@ -28,6 +28,13 @@ export const getSelfStoragePaymentStatus = async (req: Request, res: Response) =
   } catch (error) { return sendError(error, res); }
 };
 
+export const reconcileCustomerPayment = async (req: Request, res: Response) => {
+  try {
+    const data = await payosPaymentService.reconcileCustomerPayment(req.params.paymentId, req.params.id, req.user!._id);
+    return res.json({ success: true, data });
+  } catch (error) { return sendError(error, res); }
+};
+
 export const listSelfStoragePayments = async (req: Request, res: Response) => {
   try {
     const data = await payosPaymentService.listCustomerPayments(req.params.id, req.user!._id, {

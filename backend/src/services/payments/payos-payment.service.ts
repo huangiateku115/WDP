@@ -4,6 +4,8 @@ import { PayOS, Webhook } from '@payos/node';
 import ContractModel from '../../models/contracts/contract.model';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import ReservationModel from '../../models/reservations/reservation.model';
+import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
+import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { ContractStatus } from '../../types/contract.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
@@ -34,6 +36,28 @@ const PAYOS_SDK_ERROR_NAMES = new Set([
 const Reservations: any = ReservationModel;
 const Payments: any = ReservationPaymentModel;
 const Contracts: any = ContractModel;
+
+function paymentReservationFilter(reservation: any, customerId?: unknown) {
+  const common: any = { _id: reservation?._id, serviceType: reservation?.serviceType,
+    ...(customerId === undefined ? {} : { customerId }) };
+  if (reservation?.serviceType === FacilityServiceType.MANAGED_INVENTORY) common.bookingFlowVersion = 3;
+  else if (reservation?.serviceType !== FacilityServiceType.SELF_STORAGE) common.serviceType = '__UNSUPPORTED__';
+  return common;
+}
+function managedV3(reservation: any) {
+  return reservation?.serviceType === FacilityServiceType.MANAGED_INVENTORY && reservation?.bookingFlowVersion === 3;
+}
+function serviceSupported(reservation: any) {
+  return reservation?.serviceType === FacilityServiceType.SELF_STORAGE || managedV3(reservation);
+}
+function hasCurrentManagedSignatures(contract: any) {
+  const version = contract?.currentContentVersion;
+  const content = contract?.contentVersions?.find((entry: any) => entry.version === version);
+  if (!version || !content?.contentHash) return false;
+  const signers = (contract.signatures ?? []).filter((signature: any) => signature.version === version && signature.contentHash === content.contentHash);
+  return signers.some((signature: any) => signature.signerRole === 'CUSTOMER') &&
+    signers.some((signature: any) => ['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(signature.signerRole));
+}
 
 export class PayosPaymentError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) {
@@ -97,8 +121,12 @@ function customerPaymentUrls(payment: any): { returnUrl: string; cancelUrl: stri
     throw new PayosPaymentError(503, 'PAYMENT_RESERVATION_ID_INVALID',
       'Payment intent has an invalid Reservation identity');
   }
-  const destination = new URL(`/portal/payments/${reservationId}`, configuredCustomerOrigin()).toString();
-  return { returnUrl: destination, cancelUrl: destination };
+  const origin = configuredCustomerOrigin();
+  const params = new URLSearchParams({ reservationId, paymentId: id(payment?._id), serviceType: payment?.serviceType });
+  return {
+    returnUrl: new URL(`/portal/payments/return?${params}`, origin).toString(),
+    cancelUrl: new URL(`/portal/payments/return?${params}&cancel=true`, origin).toString(),
+  };
 }
 
 function defaultGateway(): PayosGateway {
@@ -251,7 +279,7 @@ function isConflict(error: any): boolean {
   return error?.code === 11000 || error?.code === 112 || error?.codeName === 'WriteConflict' ||
     error?.name === 'VersionError' || errorHasLabel(error, 'TransientTransactionError');
 }
-function statusDto(payment: any, currentIntentEligible = false) {
+function statusDto(payment: any, currentIntentEligible = false, retryAllowed = false) {
   const canPresentCheckout = currentIntentEligible && payment.provider === PaymentProvider.PAYOS &&
     payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
     payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
@@ -266,6 +294,8 @@ function statusDto(payment: any, currentIntentEligible = false) {
     qrCode: canPresentCheckout && isValidPayosQrPayload(payment.qrCode) ? payment.qrCode : null,
     succeededAt: payment.succeededAt ?? null, reconciliationRequired: payment.applicationStatus === PaymentApplicationStatus.MANUAL_REVIEW ||
       payment.status === PaymentStatus.RECONCILIATION_REQUIRED,
+    cancelVerifiedAt: payment.cancelVerifiedAt ?? null,
+    retryAllowed,
   };
 }
 
@@ -335,17 +365,22 @@ export class PayosPaymentService {
         payment.applicationStatus === PaymentApplicationStatus.MANUAL_REVIEW ||
         payment.providerSettlementStatus === ProviderSettlementStatus.VERIFIED) return statusDto(payment);
     const reservation = await Reservations.findOne({ _id: payment.reservationId, customerId: payment.customerId,
-      serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+      serviceType: payment.serviceType, ...(payment.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).exec();
     return statusDto(payment, await this.currentIntentIssue(payment, reservation) === null);
   }
 
   async createCheckout(reservationIdInput: unknown, purposeInput: unknown, keyInput: unknown, customerId: unknown) {
     assertEnabled(this.enabled);
-    this.assertConfiguration();
     const purpose = assertPurpose(purposeInput);
     const key = paymentKey(assertKey(keyInput));
     const reservationId = id(reservationIdInput);
     if (!Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
+
+    if (purpose === PaymentPurpose.BALANCE) {
+      const zero = await this.settleManagedZeroBalance(reservationId, customerId, key);
+      if (zero) return { ...zero, outcome: 'SETTLED', httpStatus: 200 };
+    }
+    this.assertConfiguration();
 
     const prior = await Payments.findOne({ idempotencyKey: key }).exec();
     if (prior) return this.replayExisting(prior, reservationId, purpose, customerId);
@@ -378,14 +413,54 @@ export class PayosPaymentService {
     return this.createProviderLink(intent.payment);
   }
 
+  private async settleManagedZeroBalance(reservationId: string, customerId: unknown, idempotencyKey: string) {
+    const session = await this.createSession();
+    try {
+      let result: any = null;
+      await session.withTransaction(async () => {
+        const reservation = await Reservations.findOne({ _id: reservationId, customerId,
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
+          status: { $in: [ReservationStatus.DEPOSIT_PAID, ReservationStatus.PAID] } }).session(session).exec();
+        if (!reservation) return;
+        const contract = await Contracts.findOne({ reservationId, customerId }).session(session).exec();
+        if (!contract || contract.status !== ContractStatus.SIGNED || !hasCurrentManagedSignatures(contract)) throw new PayosPaymentError(409, 'BALANCE_NOT_ELIGIBLE', 'Managed V3 Balance requires both current contract signatures');
+        const deposit = reservation.depositPaymentId ? await Payments.findOne({ _id: reservation.depositPaymentId, reservationId,
+          customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+          purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
+          providerSettlementStatus: ProviderSettlementStatus.VERIFIED, applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
+        if (!deposit || deposit.amount !== roundVndAmount(Number(reservation.depositAmount))) throw new PayosPaymentError(409, 'VERIFIED_DEPOSIT_REQUIRED', 'A verified applied Managed V3 Deposit is required before Balance');
+        const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+          depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+        if (roundVndAmount(breakdown.totalDue) !== deposit.amount) return;
+        if (reservation.status === ReservationStatus.PAID && reservation.balanceSettledAt) {
+          if (reservation.balanceSettlementKey !== idempotencyKey) throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Zero-balance settlement must be retried with its original Idempotency-Key');
+          result = { zeroBalance: true, reservation: { _id: reservation._id, serviceType: reservation.serviceType,
+            bookingFlowVersion: reservation.bookingFlowVersion, status: reservation.status, balanceSettledAt: reservation.balanceSettledAt } };
+          return;
+        }
+        const time = this.now();
+        const updated = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId, facilityId: reservation.facilityId,
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3, status: ReservationStatus.DEPOSIT_PAID,
+          $and: [versionFilter(reservation.inventoryVersion)] }, {
+          $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.PAID, balanceSettledAt: time, balanceSettledBy: customerId, balanceSettlementKey: idempotencyKey },
+          $push: { statusHistory: { status: ReservationStatus.PAID, actorId: customerId, reason: 'Managed V3 has zero remaining balance after verified Deposit and current contract signatures', createdAt: time } },
+        }, { new: true, session, runValidators: true }).exec();
+        if (!updated) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed while settling zero balance');
+        result = { zeroBalance: true, reservation: { _id: updated._id, serviceType: updated.serviceType,
+          bookingFlowVersion: updated.bookingFlowVersion, status: updated.status, balanceSettledAt: updated.balanceSettledAt } };
+      }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+      return result;
+    } finally { await session.endSession(); }
+  }
+
   private async replayExisting(payment: any, reservationId: string, purpose: PaymentPurpose, customerId: unknown) {
     if (id(payment.reservationId) !== reservationId || id(payment.customerId) !== id(customerId) ||
-        payment.serviceType !== FacilityServiceType.SELF_STORAGE || payment.provider !== PaymentProvider.PAYOS ||
+        ![FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY].includes(payment.serviceType) || payment.provider !== PaymentProvider.PAYOS ||
         payment.purpose !== purpose) {
       throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Idempotency-Key belongs to a different payment identity');
     }
     const reservation = await Reservations.findOne({ _id: reservationId, customerId,
-      serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+      serviceType: payment.serviceType, ...(payment.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).exec();
     if (!reservation) {
       throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original payment status remains available, but its Reservation is no longer eligible for checkout');
     }
@@ -401,23 +476,29 @@ export class PayosPaymentService {
 
     const now = this.now();
     const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
+    if (!serviceSupported(reservation) || reservation.serviceType !== payment.serviceType) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'Payment service type does not match the reservation');
     let expectedAmount: number;
     if (purpose === PaymentPurpose.DEPOSIT) {
-      if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= now ||
-          !contract || contract.status !== ContractStatus.DRAFT) {
-        throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original Deposit intent is not currently eligible; query its payment status separately');
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 Deposit requires an unexpired RESERVED reservation');
+        expectedAmount = roundVndAmount(Number(reservation.depositAmount));
+      } else {
+        if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= now ||
+            !contract || contract.status !== ContractStatus.DRAFT) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original Deposit intent is not currently eligible; query its status separately');
+        const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+          depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+        expectedAmount = roundVndAmount(breakdown.depositCredit);
       }
-      const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
-        depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
-      expectedAmount = roundVndAmount(breakdown.depositCredit);
     } else {
-      if (reservation.status !== ReservationStatus.CHECKIN_READY || !contract || contract.status !== ContractStatus.SIGNED ||
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.DEPOSIT_PAID || !contract || contract.status !== ContractStatus.SIGNED || !hasCurrentManagedSignatures(contract)) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 Balance requires both signatures on the current contract version');
+      } else if (reservation.status !== ReservationStatus.CHECKIN_READY || !contract || contract.status !== ContractStatus.SIGNED ||
           !contract.signedProofPublicId || !contract.signedProofUrl || !contract.verifiedAt) {
         throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original Balance intent is not currently eligible; query its payment status separately');
       }
       const deposit = reservation.depositPaymentId
         ? await Payments.findOne({ _id: reservation.depositPaymentId, reservationId: reservation._id,
-          customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+          customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: reservation.serviceType,
           purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
           applicationStatus: PaymentApplicationStatus.APPLIED }).exec()
         : null;
@@ -465,19 +546,27 @@ export class PayosPaymentService {
   private async currentIntentIssue(payment: any, reservation: any): Promise<'FACILITY_CHANGED' | 'ECONOMIC_IDENTITY_CHANGED' | 'NOT_ELIGIBLE' | null> {
     if (!reservation || id(reservation.facilityId) !== id(payment.facilityId)) return 'FACILITY_CHANGED';
     const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
+    if (!serviceSupported(reservation) || reservation.serviceType !== payment.serviceType) return 'NOT_ELIGIBLE';
     let expectedAmount: number;
     if (payment.purpose === PaymentPurpose.DEPOSIT) {
-      if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= this.now() ||
-          !contract || contract.status !== ContractStatus.DRAFT) return 'NOT_ELIGIBLE';
-      const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
-        depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
-      expectedAmount = roundVndAmount(breakdown.depositCredit);
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= this.now()) return 'NOT_ELIGIBLE';
+        expectedAmount = roundVndAmount(Number(reservation.depositAmount));
+      } else {
+        if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= this.now() ||
+            !contract || contract.status !== ContractStatus.DRAFT) return 'NOT_ELIGIBLE';
+        const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+          depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+        expectedAmount = roundVndAmount(breakdown.depositCredit);
+      }
     } else if (payment.purpose === PaymentPurpose.BALANCE) {
-      if (reservation.status !== ReservationStatus.CHECKIN_READY || !contract || contract.status !== ContractStatus.SIGNED ||
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.DEPOSIT_PAID || !contract || contract.status !== ContractStatus.SIGNED || !hasCurrentManagedSignatures(contract)) return 'NOT_ELIGIBLE';
+      } else if (reservation.status !== ReservationStatus.CHECKIN_READY || !contract || contract.status !== ContractStatus.SIGNED ||
           !contract.signedProofPublicId || !contract.signedProofUrl || !contract.verifiedAt) return 'NOT_ELIGIBLE';
       const deposit = reservation.depositPaymentId
         ? await Payments.findOne({ _id: reservation.depositPaymentId, reservationId: reservation._id,
-          customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+          customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: reservation.serviceType,
           purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
           applicationStatus: PaymentApplicationStatus.APPLIED }).exec()
         : null;
@@ -501,7 +590,8 @@ export class PayosPaymentService {
         const prior = await Payments.findOne({ idempotencyKey }).session(session).exec();
         if (prior) {
           if (id(prior.reservationId) !== reservationId || id(prior.customerId) !== id(customerId) ||
-              prior.purpose !== purpose || prior.provider !== PaymentProvider.PAYOS || prior.serviceType !== FacilityServiceType.SELF_STORAGE) {
+              prior.purpose !== purpose || prior.provider !== PaymentProvider.PAYOS ||
+              ![FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY].includes(prior.serviceType)) {
             throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Idempotency-Key belongs to a different payment identity');
           }
           outcome = { payment: prior, replayed: true };
@@ -510,30 +600,34 @@ export class PayosPaymentService {
 
         const now = this.now();
         const reservation = await Reservations.findOne({ _id: reservationId, customerId,
-          serviceType: FacilityServiceType.SELF_STORAGE }).session(session).exec();
+          $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).session(session).exec();
         if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
+        if (!serviceSupported(reservation)) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'PayOS supports Self Storage and Managed V3 reservations only');
         const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
-        if (!contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
+        if (!managedV3(reservation) && !contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
 
         let amount: number;
         if (purpose === PaymentPurpose.DEPOSIT) {
-          if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= now) {
-            throw new PayosPaymentError(409, 'DEPOSIT_NOT_ELIGIBLE', 'Deposit requires an unexpired CONTRACTED Self-Storage Reservation');
+          if (managedV3(reservation)) {
+            if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'DEPOSIT_NOT_ELIGIBLE', 'Managed V3 Deposit requires an unexpired RESERVED reservation');
+            amount = roundVndAmount(Number(reservation.depositAmount));
+          } else {
+            if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'DEPOSIT_NOT_ELIGIBLE', 'Deposit requires an unexpired CONTRACTED Self-Storage Reservation');
+            if (contract!.status !== ContractStatus.DRAFT) throw new PayosPaymentError(409, 'CONTRACT_STATE_INVALID', 'Deposit requires the existing DRAFT Contract');
+            const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+              depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+            amount = roundVndAmount(breakdown.depositCredit);
           }
-          if (contract.status !== ContractStatus.DRAFT) throw new PayosPaymentError(409, 'CONTRACT_STATE_INVALID', 'Deposit requires the existing DRAFT Contract');
-          const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
-            depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
-          amount = roundVndAmount(breakdown.depositCredit);
         } else {
-          if (reservation.status !== ReservationStatus.CHECKIN_READY) {
-            throw new PayosPaymentError(409, 'BALANCE_NOT_ELIGIBLE', 'Balance requires CHECKIN_READY Self-Storage Reservation');
-          }
-          if (contract.status !== ContractStatus.SIGNED || !contract.signedProofPublicId || !contract.signedProofUrl || !contract.verifiedAt) {
-            throw new PayosPaymentError(409, 'SIGNED_PROOF_REQUIRED', 'A verified signed-paper Contract is required before Balance');
+          if (managedV3(reservation)) {
+            if (reservation.status !== ReservationStatus.DEPOSIT_PAID || !contract || contract.status !== ContractStatus.SIGNED || !hasCurrentManagedSignatures(contract)) throw new PayosPaymentError(409, 'BALANCE_NOT_ELIGIBLE', 'Managed V3 Balance requires a deposited reservation and both current contract signatures');
+          } else {
+            if (reservation.status !== ReservationStatus.CHECKIN_READY) throw new PayosPaymentError(409, 'BALANCE_NOT_ELIGIBLE', 'Balance requires CHECKIN_READY Self-Storage Reservation');
+            if (contract!.status !== ContractStatus.SIGNED || !contract!.signedProofPublicId || !contract!.signedProofUrl || !contract!.verifiedAt) throw new PayosPaymentError(409, 'SIGNED_PROOF_REQUIRED', 'A verified signed-paper Contract is required before Balance');
           }
           const deposit = reservation.depositPaymentId
             ? await Payments.findOne({ _id: reservation.depositPaymentId, reservationId: reservation._id,
-              customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+              customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: reservation.serviceType,
               purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
               applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec()
             : null;
@@ -548,15 +642,25 @@ export class PayosPaymentService {
         if (!Number.isSafeInteger(amount) || amount <= 0) throw new PayosPaymentError(409, 'INVALID_PAYMENT_AMOUNT', 'PayOS requires a positive whole-VND amount');
 
         const unresolved = await Payments.findOne({ reservationId: reservation._id, purpose,
-          provider: PaymentProvider.PAYOS, status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] } }).session(session).exec();
+          provider: PaymentProvider.PAYOS, $or: [
+            { status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] } },
+            { status: PaymentStatus.CANCELLED, $or: [
+              { providerCaptures: { $elemMatch: {} } },
+              { providerOutcomeEvents: { $elemMatch: {} } },
+              { providerSettlementStatus: ProviderSettlementStatus.VERIFIED },
+              { applicationStatus: { $ne: PaymentApplicationStatus.NOT_APPLIED } },
+          { cancelVerifiedAt: { $exists: false } },
+            ] },
+          ] }).session(session).exec();
         if (unresolved) throw new PayosPaymentError(409, 'PAYMENT_ATTEMPT_UNRESOLVED', 'An earlier payment attempt must be authoritatively reconciled first');
         const priorSuccess = await Payments.findOne({ reservationId: reservation._id, purpose,
           provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED }).session(session).exec();
         if (priorSuccess) throw new PayosPaymentError(409, 'PAYMENT_ALREADY_SETTLED', 'This payment purpose already has a verified settlement');
 
         // Same-reservation requests serialize on the existing lifecycle token. No stock, contract or payment state is changed here.
+        const serviceFilter = { serviceType: reservation.serviceType, ...(managedV3(reservation) ? { bookingFlowVersion: 3 } : {}) };
         const locked = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId: reservation.customerId,
-          serviceType: FacilityServiceType.SELF_STORAGE, status: reservation.status,
+          ...serviceFilter, status: reservation.status,
           ...(purpose === PaymentPurpose.DEPOSIT ? { expiresAt: { $gt: now } } : {}),
           $and: [versionFilter(reservation.inventoryVersion)] }, { $inc: { inventoryVersion: 1 } },
         { new: true, session }).exec();
@@ -564,11 +668,11 @@ export class PayosPaymentService {
 
         // Revalidate after the CAS, using the same transaction snapshot.
         const current = await Reservations.findOne({ _id: reservation._id, customerId: reservation.customerId,
-          facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+          facilityId: reservation.facilityId, ...serviceFilter,
           status: reservation.status, ...(purpose === PaymentPurpose.DEPOSIT ? { expiresAt: { $gt: now } } : {}) }).session(session).exec();
         if (!current) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation eligibility changed; refresh and retry');
         const payment = new ReservationPaymentModel({ reservationId: reservation._id, customerId: reservation.customerId,
-          facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE, purpose, amount, currency: 'VND',
+          facilityId: reservation.facilityId, serviceType: reservation.serviceType, purpose, amount, currency: 'VND',
           idempotencyKey, provider: PaymentProvider.PAYOS, providerReference: String(orderCode), status: PaymentStatus.PENDING,
           checkoutState: 'NOT_CREATED', applicationStatus: PaymentApplicationStatus.NOT_APPLIED, providerCaptures: [] });
         await payment.save({ session });
@@ -695,13 +799,41 @@ export class PayosPaymentService {
       }).exec();
       return;
     }
-    if (link.status === 'FAILED' && link.amountPaid === 0) {
+    if (link.status === 'CANCELLED' && link.amountPaid === 0 &&
+        (link.transactions ?? []).length === 0 && (payment.providerCaptures ?? []).length === 0 &&
+        (payment.providerOutcomeEvents ?? []).length === 0 &&
+        payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
+        payment.applicationStatus === PaymentApplicationStatus.NOT_APPLIED) {
+      const session = await this.createSession();
+      try {
+        await session.withTransaction(async () => {
+          const updated = await Payments.findOneAndUpdate({ _id: payment._id, reservationId: payment.reservationId,
+            customerId: payment.customerId, facilityId: payment.facilityId, serviceType: payment.serviceType,
+            provider: PaymentProvider.PAYOS, purpose: payment.purpose, providerReference: String(orderCode),
+            status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] },
+            providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED },
+            applicationStatus: PaymentApplicationStatus.NOT_APPLIED,
+            providerCaptures: { $size: 0 }, providerOutcomeEvents: { $size: 0 } }, {
+            $set: { status: PaymentStatus.CANCELLED, failedAt: this.now(), cancelVerifiedAt: this.now(), checkoutState: 'CANCELLED',
+              reconciliationReason: 'PayOS authoritatively confirmed cancellation with no funds received' },
+          }, { new: true, session }).exec();
+          if (updated) await new ManagedReservationAuditModel({ facilityId: payment.facilityId,
+            reservationId: payment.reservationId, actorId: payment.customerId,
+            action: ManagedReservationAction.PAYMENT_CANCELLED, fromStatus: payment.status, toStatus: PaymentStatus.CANCELLED,
+            details: { paymentId: payment._id, purpose: payment.purpose, amount: payment.amount,
+              providerReference: String(orderCode), providerStatus: link.status, amountPaid: link.amountPaid },
+          }).save({ session });
+        }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+      } finally { await session.endSession(); }
+      return;
+    }
+    if (link.status === 'FAILED' && link.amountPaid === 0 && (link.transactions ?? []).length === 0) {
       await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING }, {
-        $set: { status: PaymentStatus.FAILED, failedAt: this.now(), checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS authoritatively reports terminal failure with no funds received' },
+        $set: { status: PaymentStatus.FAILED, failedAt: this.now(), checkoutState: 'FAILED', reconciliationReason: 'PayOS authoritatively reports terminal failure with no funds received' },
       }).exec();
       return;
     }
-    // EXPIRED/CANCELLED alone is deliberately not enough to prove that no funds arrived.
+    // Expiry, partial payment, transactions or other outcomes are not cancellation proof.
     await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING }, {
       $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: `PayOS link status ${link.status}; settlement must be reconciled` },
     }).exec();
@@ -711,10 +843,10 @@ export class PayosPaymentService {
     const paymentId = id(paymentIdInput); const reservationId = id(reservationIdInput);
     if (!Types.ObjectId.isValid(paymentId) || !Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
     const payment = await Payments.findOne({ _id: paymentId, reservationId, customerId,
-      serviceType: FacilityServiceType.SELF_STORAGE, provider: PaymentProvider.PAYOS }).exec();
+      serviceType: { $in: [FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY] }, provider: PaymentProvider.PAYOS }).exec();
     if (!payment) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
     const reservation = await Reservations.findOne({ _id: reservationId, customerId,
-      serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+      serviceType: payment.serviceType, ...(payment.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).exec();
     // Payment history remains visible to its owner if Reservation Facility metadata
     // later changes; the immutable payment Facility is not an authorization key.
     if (!reservation) {
@@ -735,25 +867,50 @@ export class PayosPaymentService {
       fresh.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
       fresh.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
       typeof fresh.checkoutUrl === 'string' && fresh.checkoutUrl.length > 0;
-    if (canPresentCheckoutUrl) {
+    const retryTerminal = (fresh.status === PaymentStatus.CANCELLED && !!fresh.cancelVerifiedAt && fresh.checkoutState === 'CANCELLED' ||
+      fresh.status === PaymentStatus.FAILED && fresh.checkoutState === 'FAILED') &&
+      fresh.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED && fresh.applicationStatus === PaymentApplicationStatus.NOT_APPLIED &&
+      (fresh.providerCaptures ?? []).length === 0 && (fresh.providerOutcomeEvents ?? []).length === 0;
+    let retryAllowed = false;
+    if (canPresentCheckoutUrl || retryTerminal) {
       const latestReservation = await Reservations.findOne({ _id: reservationId, customerId,
-        serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+        serviceType: fresh.serviceType, ...(fresh.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).exec();
       const issue = await this.currentIntentIssue(fresh, latestReservation);
-      canPresentCheckoutUrl = !issue;
+      canPresentCheckoutUrl = canPresentCheckoutUrl && !issue;
+      retryAllowed = retryTerminal && !issue;
     }
-    return statusDto(fresh, canPresentCheckoutUrl);
+    return statusDto(fresh, canPresentCheckoutUrl, retryAllowed);
+  }
+
+  async reconcileCustomerPayment(paymentIdInput: unknown, reservationIdInput: unknown, customerId: unknown) {
+    const paymentId = id(paymentIdInput), reservationId = id(reservationIdInput);
+    if (!Types.ObjectId.isValid(paymentId) || !Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    const payment = await Payments.findOne({ _id: paymentId, reservationId, customerId,
+      provider: PaymentProvider.PAYOS, serviceType: { $in: [FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY] } }).exec();
+    if (!payment) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    const reservation = await Reservations.findOne({ _id: reservationId, customerId, serviceType: payment.serviceType,
+      ...(payment.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).exec();
+    if (!reservation) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
+    if (payment.status === PaymentStatus.SUCCEEDED || payment.providerSettlementStatus === ProviderSettlementStatus.VERIFIED ||
+        payment.applicationStatus === PaymentApplicationStatus.APPLIED) return this.getCustomerStatus(paymentId, reservationId, customerId);
+    if (payment.status === PaymentStatus.CANCELLED && payment.cancelVerifiedAt) return this.getCustomerStatus(paymentId, reservationId, customerId);
+    try { await this.reconcileCheckoutState(payment); }
+    catch {
+      throw new PayosPaymentError(503, 'PAYMENT_RECONCILIATION_PENDING', 'Payment status is still being verified; retry shortly');
+    }
+    return this.getCustomerStatus(paymentId, reservationId, customerId);
   }
 
   async listCustomerPayments(reservationIdInput: unknown, customerId: unknown, options: { limit?: unknown; cursor?: unknown } = {}) {
     const reservationId = id(reservationIdInput);
     if (!Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
     const reservation = await Reservations.findOne({ _id: reservationId, customerId,
-      serviceType: FacilityServiceType.SELF_STORAGE }).exec();
+      $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).exec();
     if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
 
     const limit = historyLimit(options.limit);
     const cursor = decodeHistoryCursor(options.cursor);
-    const filter: any = { reservationId, customerId, serviceType: FacilityServiceType.SELF_STORAGE,
+    const filter: any = { reservationId, customerId, serviceType: reservation.serviceType,
       provider: PaymentProvider.PAYOS };
     if (cursor) filter.$or = [
       { createdAt: { $lt: cursor.createdAt } },
@@ -766,13 +923,18 @@ export class PayosPaymentService {
     const items = [];
     for (const payment of page) {
       let checkoutUrl: string | null = null;
-      if (payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
-          payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
-          payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
-          await this.currentIntentIssue(payment, reservation) === null) {
+      const retryTerminal = (payment.status === PaymentStatus.CANCELLED && !!payment.cancelVerifiedAt && payment.checkoutState === 'CANCELLED' ||
+        payment.status === PaymentStatus.FAILED && payment.checkoutState === 'FAILED') &&
+        payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED && payment.applicationStatus === PaymentApplicationStatus.NOT_APPLIED &&
+        (payment.providerCaptures ?? []).length === 0 && (payment.providerOutcomeEvents ?? []).length === 0;
+      const pendingReady = payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
+        payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED && payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW;
+      const intentEligible = pendingReady || retryTerminal ? await this.currentIntentIssue(payment, reservation) === null : false;
+      const retryAllowed = retryTerminal && intentEligible;
+      if (pendingReady && intentEligible) {
         checkoutUrl = payment.checkoutUrl ?? null;
       }
-      items.push({ ...statusDto(payment, checkoutUrl !== null), createdAt: payment.createdAt });
+      items.push({ ...statusDto(payment, checkoutUrl !== null, retryAllowed), createdAt: payment.createdAt });
     }
     return { items, nextCursor: hasMore ? encodeHistoryCursor(page[page.length - 1]) : null };
   }
@@ -819,7 +981,8 @@ export class PayosPaymentService {
         }
 
         const reservation = await Reservations.findOne({ _id: currentPayment.reservationId,
-          customerId: currentPayment.customerId, serviceType: FacilityServiceType.SELF_STORAGE }).session(session).exec();
+          customerId: currentPayment.customerId, serviceType: currentPayment.serviceType,
+          ...(currentPayment.serviceType === FacilityServiceType.MANAGED_INVENTORY ? { bookingFlowVersion: 3 } : {}) }).session(session).exec();
 
         const exactPayment = verified.amount === currentPayment.amount && verified.currency === currentPayment.currency &&
           currentPayment.currency === 'VND' && (!currentPayment.providerPaymentLinkId || currentPayment.providerPaymentLinkId === verified.paymentLinkId);
@@ -844,7 +1007,7 @@ export class PayosPaymentService {
         currentPayment.succeededAt ??= now;
 
         if (competingSuccess || !exactPayment || previouslyCaptured || priorNonSuccessOutcome ||
-            previousStatus === PaymentStatus.FAILED || previousStatus === PaymentStatus.SUCCEEDED) {
+            previousStatus === PaymentStatus.FAILED || previousStatus === PaymentStatus.CANCELLED || previousStatus === PaymentStatus.SUCCEEDED) {
           currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
           currentPayment.reconciliationReason = !exactPayment
             ? 'Verified PayOS receipt does not match expected amount, currency or payment link'
@@ -852,8 +1015,8 @@ export class PayosPaymentService {
               ? 'Another successful payment exists for this Reservation and purpose; verified funds require manual reconciliation'
             : priorNonSuccessOutcome
               ? 'Conflicting signed PayOS outcomes were received for this intent; verified funds require manual reconciliation'
-            : previousStatus === PaymentStatus.FAILED
-              ? 'Verified funds arrived after this attempt had already been reconciled as unsuccessful'
+            : previousStatus === PaymentStatus.FAILED || previousStatus === PaymentStatus.CANCELLED
+              ? 'Verified funds arrived after this attempt had already been reconciled as unsuccessful; manual review required'
               : 'Multiple distinct PayOS captures were received for one payment intent';
           await currentPayment.save({ session });
           result = { reconciled: true, paymentId: currentPayment._id };
@@ -870,29 +1033,34 @@ export class PayosPaymentService {
 
         const time = now;
         if (currentPayment.purpose === PaymentPurpose.DEPOSIT) {
-          if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= time) {
+          const managed = managedV3(reservation);
+          if (managed ? reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= time :
+              reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= time) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Deposit arrived after Reservation eligibility expired or changed';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
-          const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+          const breakdown = managed ? null : calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
             depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
-          const expectedDeposit = roundVndAmount(breakdown.depositCredit);
+          const expectedDeposit = managed ? roundVndAmount(Number(reservation.depositAmount)) : roundVndAmount(breakdown!.depositCredit);
           if (currentPayment.amount !== expectedDeposit || currentPayment.currency !== 'VND' || verified.amount !== expectedDeposit) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Deposit no longer matches the Reservation pricing; funds require manual reconciliation';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
-          const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
-          if (!contract || contract.status !== ContractStatus.DRAFT) {
+          const contract = managed ? null : await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
+          if (!managed && (!contract || contract.status !== ContractStatus.DRAFT)) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Deposit cannot be applied because the existing Contract state changed';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
+          const eligibleStatus = managed ? ReservationStatus.RESERVED : ReservationStatus.CONTRACTED;
           const locked = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId: reservation.customerId,
-            facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
-            status: ReservationStatus.CONTRACTED, expiresAt: { $gt: time }, $and: [versionFilter(reservation.inventoryVersion)] }, {
+            facilityId: reservation.facilityId, serviceType: reservation.serviceType,
+            ...(managed ? { bookingFlowVersion: 3 } : { status: ReservationStatus.CONTRACTED, expiresAt: { $gt: time } }),
+            status: eligibleStatus, $and: [versionFilter(reservation.inventoryVersion)] }, {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.DEPOSIT_PAID, depositPaymentId: currentPayment._id },
+            ...(managed ? { $unset: { expiresAt: 1 } } : {}),
             $push: { statusHistory: { status: ReservationStatus.DEPOSIT_PAID, reason: 'PayOS verified advance-rent Deposit applied', createdAt: time } },
           }, { new: true, session, runValidators: true }).exec();
           if (!locked) {
@@ -901,7 +1069,8 @@ export class PayosPaymentService {
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
         } else {
-          if (reservation.status !== ReservationStatus.CHECKIN_READY || currentPayment.customerId == null) {
+          const managed = managedV3(reservation);
+          if ((managed ? reservation.status !== ReservationStatus.DEPOSIT_PAID : reservation.status !== ReservationStatus.CHECKIN_READY) || currentPayment.customerId == null) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Balance arrived after Reservation eligibility changed';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
@@ -909,10 +1078,10 @@ export class PayosPaymentService {
           const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
           const deposit = reservation.depositPaymentId ? await Payments.findOne({ _id: reservation.depositPaymentId,
             reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
-            serviceType: FacilityServiceType.SELF_STORAGE, purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS,
+            serviceType: reservation.serviceType, purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS,
             status: PaymentStatus.SUCCEEDED, applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
-          if (!contract || contract.status !== ContractStatus.SIGNED || !contract.signedProofPublicId || !contract.signedProofUrl ||
-              !contract.verifiedAt || !deposit) {
+          if (!contract || contract.status !== ContractStatus.SIGNED ||
+              (managed ? !hasCurrentManagedSignatures(contract) : !contract.signedProofPublicId || !contract.signedProofUrl || !contract.verifiedAt) || !deposit) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Balance cannot be applied without current signed proof and an applied PayOS Deposit';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
@@ -926,8 +1095,9 @@ export class PayosPaymentService {
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
           const locked = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId: reservation.customerId,
-            facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
-            status: ReservationStatus.CHECKIN_READY, $and: [versionFilter(reservation.inventoryVersion)] }, {
+            facilityId: reservation.facilityId, serviceType: reservation.serviceType,
+            ...(managed ? { bookingFlowVersion: 3 } : {}),
+            status: managed ? ReservationStatus.DEPOSIT_PAID : ReservationStatus.CHECKIN_READY, $and: [versionFilter(reservation.inventoryVersion)] }, {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.PAID, balancePaymentId: currentPayment._id,
               balanceSettledAt: time },
             $push: { statusHistory: { status: ReservationStatus.PAID, reason: 'PayOS verified remaining rent Balance applied', createdAt: time } },

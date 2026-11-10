@@ -70,7 +70,7 @@ export function assertIdempotentPaymentMatch(existing: PaymentIdentity, retry: P
 /** Duplicate terminal callbacks are safe; contradictory terminal outcomes require reconciliation. */
 export function transitionPaymentStatus(current: PaymentStatus, next: PaymentStatus): { status: PaymentStatus; idempotent: boolean } {
   if (current === next) return { status: current, idempotent: true };
-  if (current !== PaymentStatus.PENDING || ![PaymentStatus.SUCCEEDED, PaymentStatus.FAILED, PaymentStatus.RECONCILIATION_REQUIRED].includes(next)) {
+  if (current !== PaymentStatus.PENDING || ![PaymentStatus.SUCCEEDED, PaymentStatus.FAILED, PaymentStatus.CANCELLED, PaymentStatus.RECONCILIATION_REQUIRED].includes(next)) {
     throw new PaymentAccountingError(409, 'Conflicting or invalid payment status transition');
   }
   return { status: next, idempotent: false };
