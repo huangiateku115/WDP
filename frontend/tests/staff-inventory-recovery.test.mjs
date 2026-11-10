@@ -1,3 +1,4 @@
+import {facilityLabel} from '../src/lib/facilityLabels.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -48,6 +49,7 @@ function harness(page, api, storage = new Map()) {
   };
   const session = { accessToken: 'staff-token', user: { id: uid, role: 'FACILITY_STAFF', assignedFacilityId: fid } };
   const mocks = {
+    '@/lib/facilityLabels': {facilityLabel},
     react: hooks,
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-router-dom': { useSearchParams: () => [params, value => { params = new URLSearchParams(value); }] },
@@ -104,15 +106,15 @@ test('receipt retry stays bound to its request and changing request clears form 
     inspectRepeatedInbound: async (...args) => { posts.push(args); throw { response: { status: 503, data: { message: 'Temporary failure' } } }; },
   });
   try {
-    await h.flush(); h.button('2 BOX').props.onClick(); await h.flush();
-    h.input('Inspection observations', 'textarea').props.onChange({ target: { value: 'Request A note' } });
-    await h.button('Save inspection attempt').props.onClick(); await h.flush();
-    await h.button('Retry saved inspection').props.onClick(); await h.flush();
+    await h.flush(); h.button('2 Thùng').props.onClick(); await h.flush();
+    h.input("Nhận xét kiểm tra", 'textarea').props.onChange({ target: { value: 'Request A note' } });
+    await h.button("Lưu lần kiểm tra").props.onClick(); await h.flush();
+    await h.button("Thử lại thao tác đã lưu kiểm tra").props.onClick(); await h.flush();
     assert.deepEqual(posts[1], posts[0]);
-    h.button('7 BOX').props.onClick(); await h.flush();
-    assert.equal(h.input('Inspection observations', 'textarea').props.value, '');
-    assert.equal(h.button('Retry saved inspection'), undefined);
-    await h.button('Save inspection attempt').props.onClick();
+    h.button('7 Thùng').props.onClick(); await h.flush();
+    assert.equal(h.input("Nhận xét kiểm tra", 'textarea').props.value, '');
+    assert.equal(h.button("Thử lại thao tác đã lưu kiểm tra"), undefined);
+    await h.button("Lưu lần kiểm tra").props.onClick();
     assert.equal(posts[2][0], b);
     assert.equal(posts[2][1].receivedQuantity, 7);
     assert.notEqual(posts[2][1].inspectionKey, posts[0][1].inspectionKey);
@@ -132,8 +134,8 @@ test('outbound retries the original confirmation after GET shows committed state
     stockBalance: async () => response({}), get: async () => response({}), movements: async () => response([]),
   }, storage);
   try {
-    await h.flush(); await h.button('3 BOX').props.onClick(); await h.flush();
-    const retry = h.button('Retry same confirmation');
+    await h.flush(); await h.button('3 Thùng').props.onClick(); await h.flush();
+    const retry = h.button("Thử lại cùng xác nhận");
     assert(retry);
     await Promise.all([retry.props.onClick(), retry.props.onClick()]);
     assert.equal(posts.length, 1);
@@ -150,7 +152,7 @@ test('outbound ignores an older detail response after another request was select
     canonicalOutboundStaffDetail: id => new Promise(done => { resolve[id] = done; }),
   });
   try {
-    await h.flush(); const first = h.button('3 BOX').props.onClick(); const second = h.button('7 BOX').props.onClick();
+    await h.flush(); const first = h.button('3 Thùng').props.onClick(); const second = h.button('7 Thùng').props.onClick();
     resolve[b](response(values[1])); await second; resolve[a](response(values[0])); await first; await h.flush();
     assert(h.text().includes(`Item ${b}`));
     assert(!h.text().includes(`Item ${a}`));

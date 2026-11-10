@@ -45,6 +45,6 @@ test('other resource screens retain automatic focus refresh', () => {
 test('both reservation parent and handover panel protect file selection', () => {
   const parent = readFileSync(new URL('../src/pages/manager/ReservationApiView.jsx', import.meta.url), 'utf8');
   const panel = readFileSync(new URL('../src/components/staff/FacilityHandoverPanel.jsx', import.meta.url), 'utf8');
-  assert.match(parent, /refreshOnFocus:!id/);
-  assert.match(panel, /refreshOnFocus:false/);
+  assert.match(parent, /refreshOnFocus:\s*!id/);
+  assert.match(panel, /refreshOnFocus:\s*false/);
 });
