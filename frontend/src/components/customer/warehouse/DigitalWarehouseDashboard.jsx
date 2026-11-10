@@ -9,6 +9,11 @@ import {
   ArrowLeft,
   ArrowUp,
   Boxes,
+  CalendarRange,
+  CheckCircle2,
+  Grid2X2,
+  ShieldAlert,
+  Wrench,
   Layers,
   Map as MapIcon,
   Maximize2,
@@ -44,8 +49,18 @@ import WarehouseCells, {
   CellInformation,
   WarehouseStatus,
 } from "./CellInformation";
-import { useManagedCellBooking, CellBookingPanel } from "./ManagedCellBooking";
+import { useManagedCellBooking, BookingPeriodFields, CellBookingPanel } from "./ManagedCellBooking";
 import "./warehouse-dashboard.css";
+// All business-state values still come from the existing map/booking hooks.
+// A missing counter stays missing; it is not converted to zero.
+const STAT_APPEARANCE = [
+  { Icon: Layers, tone: "neutral", hint: "Khu vực trong kho" },
+  { Icon: Boxes, tone: "neutral", hint: "Kệ hàng đã tải" },
+  { Icon: Grid2X2, tone: "neutral", hint: "Ô lưu trữ" },
+  { Icon: CheckCircle2, tone: "success", hint: "Số ô còn khả dụng" },
+  { Icon: ShieldAlert, tone: "danger", hint: "Chưa có số liệu tổng hợp" },
+  { Icon: Wrench, tone: "warning", hint: "Chưa có số liệu tổng hợp" },
+];
 
 function ResourceState({ resource, onRetry }) {
   return (
@@ -122,7 +137,7 @@ function RackInformation({ data, facilityId, itemId }) {
         className="wm-inline-link"
         to={`/portal/warehouse-map/${facilityId}/racks/${rack._id}${contextQuery.size ? `?${contextQuery}` : ""}`}
       >
-        Open rack detail
+        Xem chi tiết kệ
       </Link>
     </>
   );
@@ -149,23 +164,17 @@ const ZonePlane = memo(function ZonePlane({
       aria-label={`Zone ${zone.code}`}
     >
       <div className="wm-zone-heading">
-        <h3><button type="button" onClick={()=>onSelectZone(zone._id)} aria-label={`Open zone ${zone.code}`}>{zone.code}</button></h3>
+        <h3><button type="button" onClick={() => onSelectZone(zone._id)} aria-label={`Open zone ${zone.code}`}>{zone.code}</button></h3>
         <span>{zone.name}</span>
       </div>
-      {(x.condensed || y.condensed) && (
-        <p className="wm-muted">
-          Large empty coordinate gaps are condensed; exact X/Y positions remain
-          labeled.
-        </p>
-      )}
       {!racks.length ? (
         <p className="wm-muted">No racks are available in this zone yet.</p>
       ) : (
         <div
           className="wm-rack-grid"
           style={{
-            gridTemplateColumns: `repeat(${x.count}, 148px)`,
-            gridTemplateRows: `repeat(${y.count}, minmax(116px, auto))`,
+            gridTemplateColumns: `repeat(${x.count}, 168px)`,
+            gridTemplateRows: `repeat(${y.count}, minmax(158px, auto))`,
           }}
         >
           {zone.aisles.map((aisle) => (
@@ -199,9 +208,6 @@ const ZonePlane = memo(function ZonePlane({
                   <strong>{rack.rackCode}</strong>
                   <WarehouseStatus status={rack.operationalStatus} />
                   <small>Aisle {aisle.aisleCode}</small>
-                  <small>
-                    {rack.orientation}° · X {rack.mapX}, Y {rack.mapY}
-                  </small>
                 </button>
               ))}
             </div>
@@ -211,7 +217,6 @@ const ZonePlane = memo(function ZonePlane({
     </section>
   );
 });
-
 export default function DigitalWarehouseDashboard(props) {
   const { accessToken } = useAuthSession();
   return (
@@ -232,7 +237,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     zones = useRef(new Map()),
     cache = useRef(new Map()),
     drag = useRef(null),
-    floorScroll = useRef({left:0,top:0}),
+    floorScroll = useRef({ left: 0, top: 0 }),
     pendingZone = useRef(null);
   const [rackId, setRackId] = useState(initialRackId || ""),
     [view, setView] = useState(initialRackId ? "rack-detail" : "floorplan"),
@@ -310,6 +315,8 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       setFullscreen(document.fullscreenElement === root.current);
     const escape = (e) => {
       if (e.key === "Escape") {
+        // Do not override dialogs: the shared Dialog component owns Escape.
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         setCell(null);
         setDrawer(false);
         setExpanded(false);
@@ -324,11 +331,13 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
   }, []);
   useEffect(() => {
     if (!floor.current) return;
-    const measure = () => {if(!floor.current?.offsetWidth)return;
+    const measure = () => {
+      if (!floor.current?.offsetWidth) return;
       setBounds({
         width: floor.current?.offsetWidth || 1,
         height: floor.current?.offsetHeight || 1,
-      });};
+      });
+    };
     const observer = new ResizeObserver(measure);
     observer.observe(floor.current);
     measure();
@@ -344,19 +353,19 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       allRacks.every((r) => Number.isInteger(r[key]) && r[key] >= 0)
         ? allRacks.reduce((n, r) => n + r[key], 0)
         : null;
-    const period = !!booking?.startDate && !!booking?.endDate;
+    const period = Boolean(booking.period.range);
     return [
-      ["Zones", map.data?.zones.length],
-      ["Racks", map.data ? allRacks.length : null],
-      ["Cells", map.data ? sum("cellCount") : null],
+      ["Khu vực", map.data?.zones.length],
+      ["Kệ hàng", map.data ? allRacks.length : null],
+      ["Tổng số ô", map.data ? sum("cellCount") : null],
       [
-        period ? "Available for selected period" : "Available now",
+        period ? "Trống trong kỳ thuê" : "Đang khả dụng",
         map.data ? availableCellCount(allRacks, period) : null,
       ],
-      ["Blocked cells", null],
-      ["Maintenance cells", null],
+      ["Ô bị khóa", null],
+      ["Ô bảo trì", null],
     ];
-  }, [map.data, allRacks, booking?.startDate, booking?.endDate]);
+  }, [map.data, allRacks, booking.rangeKey]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return map.data?.zones || [];
@@ -407,9 +416,9 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     else zones.current.delete(id);
   }, []);
   const selectRack = useCallback((id) => {
-    if(viewport.current?.getClientRects().length)floorScroll.current={left:viewport.current.scrollLeft,top:viewport.current.scrollTop};
+    if (viewport.current?.getClientRects().length) floorScroll.current = { left: viewport.current.scrollLeft, top: viewport.current.scrollTop };
     setView("rack-detail");
-    if(innerWidth<1200)setSidebar(false);
+    if (innerWidth < 1200) setSidebar(false);
     setRackId(id);
     setCell(null);
     setDrawer(false);
@@ -426,14 +435,13 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       });
   const selectZone = (id) => {
     setZoneId(id);
-    if(viewport.current?.getClientRects().length)floorScroll.current={left:viewport.current.scrollLeft,top:viewport.current.scrollTop};
+    if (viewport.current?.getClientRects().length) floorScroll.current = { left: viewport.current.scrollLeft, top: viewport.current.scrollTop };
     setView('rack-detail');
-    if(innerWidth<1200)setSidebar(false);
-    if(!filtered.some(zone=>zone._id===id))setQuery('');
-    setCell(null);setDrawer(false);
-    const racks=map.data?.zones.find(zone=>zone._id===id)?.aisles.flatMap(aisle=>aisle.racks)||[];
-    setRackId(racks.length===1?racks[0]._id:'');
-
+    if (innerWidth < 1200) setSidebar(false);
+    if (!filtered.some(zone => zone._id === id)) setQuery('');
+    setCell(null); setDrawer(false);
+    const racks = map.data?.zones.find(zone => zone._id === id)?.aisles.flatMap(aisle => aisle.racks) || [];
+    setRackId(racks.length === 1 ? racks[0]._id : '');
   };
   useEffect(() => {
     if (pendingZone.current && zones.current.has(pendingZone.current)) {
@@ -441,11 +449,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       pendingZone.current = null;
     }
   }, [filtered]);
-  useEffect(()=>{if(view!=="floorplan")return;const frame=requestAnimationFrame(()=>viewport.current?.scrollTo(floorScroll.current));return()=>cancelAnimationFrame(frame);},[view]);
-  const centralScroll=useRef(null);
-  useEffect(()=>{if(centralScroll.current)centralScroll.current.scrollTop=0;},[view,rackId,zoneId]);
-  const activeZone=map.data?.zones.find(zone=>zone._id===zoneId);
-  const zoneRacks=activeZone?.aisles.flatMap(aisle=>aisle.racks)||[];
+  useEffect(() => { if (view !== "floorplan") return; const frame = requestAnimationFrame(() => viewport.current?.scrollTo(floorScroll.current)); return () => cancelAnimationFrame(frame); }, [view]);
+  const centralScroll = useRef(null);
+  useEffect(() => { if (centralScroll.current) centralScroll.current.scrollTop = 0; }, [view, rackId, zoneId]);
+  const activeZone = map.data?.zones.find(zone => zone._id === zoneId);
+  const zoneRacks = activeZone?.aisles.flatMap(aisle => aisle.racks) || [];
   const refresh = () => {
     if (map.loading || detail.loading) return;
     cache.current.clear();
@@ -499,10 +507,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       );
     }
   }
+  const periodReady = Boolean(booking.period.range && !booking.startError);
   const information = (
     <>
       <div className="wm-section-heading">
-        <h2>{cell ? "Cell details" : "Rack details"}</h2>
+        <h2>{cell ? "Thông tin ô" : "Thông tin kệ"}</h2>
         {cell && (
           <Button
             className="wm-button"
@@ -510,27 +519,27 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             size="sm"
             onClick={() => setCell(null)}
           >
-            Clear cell
+            Bỏ chọn xem ô
           </Button>
         )}
       </div>
       {!rackId ? (
         <div className="wm-empty-inspector">
           <Boxes size={34} />
-          <p>Select a rack or cell on the map to view details.</p>
+          <p>Chọn một kệ hoặc ô trên sơ đồ để xem thông tin.</p>
         </div>
       ) : (
         <>
           {!map.error && <ResourceState resource={detail} />}
           {!map.error &&
-            !detail.loading && detail.data?.rack._id===rackId &&
+            !detail.loading && detail.data?.rack._id === rackId &&
             (cell ? (
               <>
                 <CellInformation
                   cell={cell.cell}
                   level={cell.level}
                   rack={detail.data.rack}
-                  requestedPeriod={!!booking?.startDate && !!booking?.endDate}
+                  requestedPeriod={periodReady}
                 />
                 <InventoryCellPreference
                   controller={inventory}
@@ -556,8 +565,9 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       className={`warehouse-dashboard ${expanded ? "wm-expanded" : ""}`}
     >
       <header className="wm-header">
-        <div>
-          <h1>Digital Warehouse Map</h1>
+        <div className="wm-header-intro">
+          <span className="wm-header-eyebrow">VAULTSPACE / SƠ ĐỒ KHO</span>
+          <h1>Sơ đồ kho trực quan</h1>
           <p className="wm-facility">{facility.data?.name || facilityId}</p>
           {facility.loading && (
             <small role="status">Loading facility context…</small>
@@ -568,7 +578,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               backend.
             </small>
           )}
-
         </div>
         <div className="wm-header-actions">
           <Button asChild variant="outline" className="wm-button">
@@ -581,8 +590,8 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             >
               <ArrowLeft size={15} />
               {initialRackId
-                ? "Back to Warehouse Map"
-                : "Back to Facility Selection"}
+                ? "Về sơ đồ kho"
+                : "Chọn kho khác"}
             </Link>
           </Button>
           <Button
@@ -594,34 +603,43 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             <RefreshCw size={15} />
             Refresh
           </Button>
-
         </div>
       </header>
-      <details className="wm-booking-drawer">
-        <summary>Rental period &amp; Cell selection</summary>
-        <p className="wm-notice">Availability follows the selected UTC rental interval. Cell reservation is separate from physical inventory occupancy.</p>
-      <CellBookingPanel
-        booking={booking}
-        facilityId={facilityId}
-        facilityName={facility.data?.name}
-      />
-      </details>
-      <InventoryMapContext controller={inventory} />
+      {/* Thanh chọn kỳ thuê luôn hiện; không cần mở/đóng dialog để nhập ngày. */}
+      <section className="wm-booking-hero wm-v5-booking-hero" aria-labelledby="wm-booking-hero-title">
+        <div className="wm-v5-booking-intro">
+          <span className="wm-booking-hero-symbol" aria-hidden="true"><CalendarRange size={21} /></span>
+          <div>
+            <span className="wm-booking-hero-eyebrow">THUÊ Ô LƯU TRỮ · 3 BƯỚC</span>
+            <h2 id="wm-booking-hero-title">Chọn ngày → Chọn ô → Đặt thuê</h2>
+          </div>
+        </div>
+        <BookingPeriodFields booking={booking} />
+        <div className="wm-v5-hero-counter" aria-live="polite">
+          <strong>{booking.selection.length}</strong>
+          <small>ô đã chọn</small>
+          {periodReady && <span className="wm-v5-period-valid">Kỳ thuê hợp lệ</span>}
+        </div>
+      </section>
       {fullscreenError && (
         <p role="status" className="wm-notice">
           {fullscreenError}
         </p>
       )}
-      <div className="wm-stats" aria-label="Warehouse statistics">
-        {statistics.map(([label, value], index) => (
-          <div className="wm-stat" key={label}>
-            <span className={`wm-stat-dot wm-stat-dot-${index}`} />
-            <p>{label}</p>
-            <strong>
-              {value == null ? "Not available" : value.toLocaleString()}
-            </strong>
-          </div>
-        ))}
+      <div className="wm-stats" aria-label="Thống kê kho">
+        {statistics.map(([label, value], index) => {
+          const { Icon, tone, hint } = STAT_APPEARANCE[index];
+          return (
+            <div className={`wm-stat wm-stat--${tone}`} key={label}>
+              <span className="wm-stat-icon" aria-hidden="true"><Icon size={19} /></span>
+              <p>{label}</p>
+              <strong className={value == null ? "wm-stat-unknown" : ""}>
+                {value == null ? "—" : value.toLocaleString()}
+              </strong>
+              <small>{value == null ? "Chưa có dữ liệu" : hint}</small>
+            </div>
+          );
+        })}
       </div>
       <div className="wm-mobile-tools">
         <Button
@@ -631,37 +649,48 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           aria-expanded={sidebar}
         >
           <SlidersHorizontal size={15} />
-          Zones & search
+          Khu vực & tìm kiếm
         </Button>
         <Button
           className="wm-button"
           variant="outline"
           onClick={() => setDrawer(true)}
         >
-          View details
+          Xem chi tiết
         </Button>
       </div>
       <div className="wm-dashboard-columns">
         <aside
           className={`wm-zone-sidebar wm-panel ${sidebar ? "wm-sidebar-open" : ""}`}
-          aria-label="Warehouse zones"
+          aria-label="Khu vực kho"
         >
           <h2>
             <Layers size={16} />
-            Warehouse zones
+            Khu vực kho
           </h2>
           <div className="wm-search-wrap">
-            <Search size={16} />
+            <Search size={17} aria-hidden="true" />
             <Input
               className="wm-search"
-              aria-label="Search zones, aisles, racks, cells"
-              placeholder="Search zones, aisles, racks, cells..."
+              aria-label="Tìm khu, dãy, kệ hoặc ô"
+              placeholder="Tìm khu, kệ hoặc ô..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {query && (
+              <button
+                type="button"
+                className="wm-search-clear"
+                aria-label="Xóa từ khóa tìm kiếm"
+                title="Xóa tìm kiếm"
+                onClick={() => setQuery("")}
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
           <p className="wm-muted">
-            Search loaded structure only. Select a rack to load its cells.
+            Chỉ tìm trên dữ liệu đã tải. Chọn một kệ để tải các ô của kệ đó.
           </p>
           <div className="wm-zone-list">
             {(map.data?.zones || []).map((zone, index) => (
@@ -684,7 +713,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             ))}
           </div>
           <div className="wm-legend">
-            <h3>Cell display status</h3>
+            <h3>Trạng thái ô lưu trữ</h3>
             {[
               "AVAILABLE",
               "RESERVED",
@@ -692,16 +721,16 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               "BLOCKED",
               "MAINTENANCE",
             ].map((status) => (
-              <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter===status} onClick={()=>setStatusFilter(current=>current===status?'':status)}>
+              <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>
                 <WarehouseStatus status={status} />
               </button>
             ))}
-            {statusFilter&&<button type="button" className="wm-clear-status-filter" onClick={()=>setStatusFilter('')}>Clear filter</button>}
+            {statusFilter && <button type="button" className="wm-clear-status-filter" onClick={() => setStatusFilter('')}>Xóa bộ lọc</button>}
             <p className="wm-muted">
-              Selected = booking basket. Yours = ownership, not permission to
-              rebook.
+              Đã chọn = ô trong giỏ thuê. Ô của bạn không đồng nghĩa có thể đặt thuê lại.
             </p>
           </div>
+          <div className="wm-inventory-context-slot"><InventoryMapContext controller={inventory} /></div>
         </aside>
         <section
           className="wm-center wm-panel"
@@ -710,165 +739,175 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           <div className="wm-section-heading">
             <h2>
               <MapIcon size={16} />
-              {view==='floorplan'?'Warehouse floorplan':`Rack Structure — ${activeZone?.code||'Rack'}`}
+              {view === 'floorplan' ? 'Sơ đồ kho' : `Cấu trúc kệ — ${activeZone?.code || 'Rack'}`}
             </h2>
-            {view==='floorplan'?<span>Coordinates: X → · Y ↓</span>:<Button className="wm-button" variant="outline" onClick={()=>{setView('floorplan');setDrawer(false);}}>← Back to Floorplan</Button>}
+            {view === 'floorplan' ? <span>Chọn kệ để xem các ô lưu trữ</span> : <Button className="wm-button" variant="outline" onClick={() => { setView('floorplan'); setDrawer(false); }}>← Trở về sơ đồ</Button>}
           </div>
-          <div hidden={view!=="floorplan"} className="wm-floorplan-view">
-          <ResourceState resource={map} />
-          {map.data && !allRacks.length && (
-            <p className="wm-map-empty">
-              No warehouse layout is available for this facility yet.
-            </p>
-          )}
-          {map.data && allRacks.length > 0 && (
-            <>
-              <div
-                className="wm-map-viewport"
-                ref={viewport}
-                role="region"
-                aria-label="Interactive warehouse map"
-                tabIndex={0}
-                onPointerDown={(e) => {
-                  if (
-                    e.pointerType !== "mouse" ||
-                    e.button !== 0 ||
-                    e.target.closest("button,a,input")
-                  )
-                    return;
-                  e.preventDefault();
-                  drag.current = {
-                    x: e.clientX,
-                    y: e.clientY,
-                    left: e.currentTarget.scrollLeft,
-                    top: e.currentTarget.scrollTop,
-                  };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  e.currentTarget.classList.add("is-panning");
-                }}
-                onPointerMove={(e) => {
-                  if (drag.current) {
-                    e.currentTarget.scrollLeft =
-                      drag.current.left + drag.current.x - e.clientX;
-                    e.currentTarget.scrollTop =
-                      drag.current.top + drag.current.y - e.clientY;
-                  }
-                }}
-                onPointerUp={(e) => {
-                  drag.current = null;
-                  e.currentTarget.classList.remove("is-panning");
-                }}
-                onLostPointerCapture={(e) => {
-                  drag.current = null;
-                  e.currentTarget.classList.remove("is-panning");
-                }}
-              >
+          <div hidden={view !== "floorplan"} className="wm-floorplan-view">
+            <ResourceState resource={map} />
+            {map.data && !allRacks.length && (
+              <p className="wm-map-empty">
+                No warehouse layout is available for this facility yet.
+              </p>
+            )}
+            {map.data && allRacks.length > 0 && (
+              <>
                 <div
-                  className="wm-zoom-surface"
-                  style={{
-                    width: bounds.width * zoom,
-                    height: bounds.height * zoom,
+                  className="wm-map-viewport"
+                  ref={viewport}
+                  role="region"
+                  aria-label="Interactive warehouse map"
+                  tabIndex={0}
+                  onPointerDown={(e) => {
+                    if (
+                      e.pointerType !== "mouse" ||
+                      e.button !== 0 ||
+                      e.target.closest("button,a,input")
+                    )
+                      return;
+                    e.preventDefault();
+                    drag.current = {
+                      x: e.clientX,
+                      y: e.clientY,
+                      left: e.currentTarget.scrollLeft,
+                      top: e.currentTarget.scrollTop,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    e.currentTarget.classList.add("is-panning");
+                  }}
+                  onPointerMove={(e) => {
+                    if (drag.current) {
+                      e.currentTarget.scrollLeft =
+                        drag.current.left + drag.current.x - e.clientX;
+                      e.currentTarget.scrollTop =
+                        drag.current.top + drag.current.y - e.clientY;
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    drag.current = null;
+                    e.currentTarget.classList.remove("is-panning");
+                  }}
+                  onLostPointerCapture={(e) => {
+                    drag.current = null;
+                    e.currentTarget.classList.remove("is-panning");
                   }}
                 >
                   <div
-                    ref={floor}
-                    className="wm-floor"
-                    style={{ transform: `scale(${zoom})` }}
+                    className="wm-zoom-surface"
+                    style={{
+                      width: bounds.width * zoom,
+                      height: bounds.height * zoom,
+                    }}
                   >
-                    {filtered.map((zone) => (
-                      <ZonePlane
-                        key={zone._id}
-                        zone={zone}
-                        active={zoneId === zone._id}
-                        rackId={
-                          zone.aisles.some((a) =>
-                            a.racks.some((r) => r._id === rackId),
-                          )
-                            ? rackId
-                            : ""
-                        }
-                        onSelect={selectRack}
-                        registerZone={registerZone}
-                        onSelectZone={selectZone}
-                      />
-                    ))}
-                    {!filtered.length && (
-                      <p className="wm-map-empty">
-                        No loaded structure matches your search.
-                      </p>
-                    )}
+                    <div
+                      ref={floor}
+                      className="wm-floor"
+                      style={{ transform: `scale(${zoom})` }}
+                    >
+                      {filtered.map((zone) => (
+                        <ZonePlane
+                          key={zone._id}
+                          zone={zone}
+                          active={zoneId === zone._id}
+                          rackId={
+                            zone.aisles.some((a) =>
+                              a.racks.some((r) => r._id === rackId),
+                            )
+                              ? rackId
+                              : ""
+                          }
+                          onSelect={selectRack}
+                          registerZone={registerZone}
+                          onSelectZone={selectZone}
+                        />
+                      ))}
+                      {!filtered.length && (
+                        <p className="wm-map-empty">
+                          Không có kệ hoặc ô nào khớp với tìm kiếm.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="wm-map-controls">
-                <Button
-                  className="wm-button"
-                  variant="outline"
-                  size="icon"
-                  aria-label="Zoom out"
-                  disabled={zoom <= 0.6}
-                  onClick={() =>
-                    setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))
-                  }
-                >
-                  <ZoomOut size={17} />
-                </Button>
-                <output aria-label="Map zoom">{Math.round(zoom * 100)}%</output>
-                <Button
-                  className="wm-button"
-                  variant="outline"
-                  size="icon"
-                  aria-label="Zoom in"
-                  disabled={zoom >= 1.8}
-                  onClick={() =>
-                    setZoom((z) => Math.min(1.8, Number((z + 0.2).toFixed(1))))
-                  }
-                >
-                  <ZoomIn size={17} />
-                </Button>
-                <Button
-                  className="wm-button"
-                  variant="outline"
-                  size="sm"
-                  onClick={reset}
-                >
-                  <RotateCcw size={15} />
-                  Reset View
-                </Button>
-                <small>
-                  Grid positions, not meters · Drag blank space to pan · Scroll
-                  on touch
-                </small>
-              </div>
-            </>
-          )}
+                <div className="wm-map-controls">
+                  <Button
+                    className="wm-button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Zoom out"
+                    disabled={zoom <= 0.6}
+                    onClick={() =>
+                      setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))
+                    }
+                  >
+                    <ZoomOut size={17} />
+                  </Button>
+                  <output aria-label="Map zoom">{Math.round(zoom * 100)}%</output>
+                  <Button
+                    className="wm-button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Zoom in"
+                    disabled={zoom >= 1.8}
+                    onClick={() =>
+                      setZoom((z) => Math.min(1.8, Number((z + 0.2).toFixed(1))))
+                    }
+                  >
+                    <ZoomIn size={17} />
+                  </Button>
+                  <Button
+                    className="wm-button"
+                    variant="outline"
+                    size="sm"
+                    onClick={reset}
+                  >
+                    <RotateCcw size={15} />
+                    Reset View
+                  </Button>
+                  <small>
+                    Kéo vùng trống để di chuyển sơ đồ · Dùng nút +/− để thu phóng
+                  </small>
+                </div>
+              </>
+            )}
           </div>
-          {view==='rack-detail' && <div className="wm-drilldown-content" ref={centralScroll}>
-            <ResourceState resource={map}/>
-            {!map.error&&activeZone&&zoneRacks.length!==1&&<div className="wm-rack-picker"><p>{zoneRacks.length?'Choose a Rack in this Zone.':'No racks are available in this zone yet.'}</p>{zoneRacks.map(rack=><Button key={rack._id} type="button" className="wm-button" variant="outline" aria-pressed={rackId===rack._id} onClick={()=>selectRack(rack._id)}>{rack.rackCode}</Button>)}</div>}
-          {rackId && (
-            <div className="wm-selected-rack">
-              <div className="wm-rack-inline-state">
-                {!map.error && <ResourceState resource={detail} />}
+          {view === 'rack-detail' && <div className="wm-drilldown-content" ref={centralScroll}>
+            <ResourceState resource={map} />
+            {!map.error && activeZone && zoneRacks.length !== 1 && <div className="wm-rack-picker"><p>{zoneRacks.length ? 'Choose a Rack in this Zone.' : 'No racks are available in this zone yet.'}</p>{zoneRacks.map(rack => <Button key={rack._id} type="button" className="wm-button" variant="outline" aria-pressed={rackId === rack._id} onClick={() => selectRack(rack._id)}>{rack.rackCode}</Button>)}</div>}
+            {rackId && (
+              <div className="wm-selected-rack wm-cells-v4">
+                <div className="wm-rack-inline-state">
+                  {!map.error && <ResourceState resource={detail} />}
+                </div>
+                {!map.error && !detail.loading && detail.data?.rack._id === rackId && (
+                  <WarehouseCells
+                    key={`${rackId}:${updated?.getTime() || 0}`}
+                    data={detail.data}
+                    selected={cell}
+                    query={query}
+                    statusFilter={statusFilter}
+                    onClearStatusFilter={() => setStatusFilter('')}
+                    booking={booking}
+                    onSelect={(value) => {
+                      setCell(value);
+                      // The desktop inspector is already visible; drawer is for mobile.
+                      if (window.matchMedia("(max-width: 1023px)").matches) {
+                        setDrawer(true);
+                      }
+                    }}
+                  />
+                )}
               </div>
-              {!map.error && !detail.loading && detail.data?.rack._id===rackId && (
-                <WarehouseCells
-                  key={`${rackId}:${updated?.getTime() || 0}`}
-                  data={detail.data}
-                  selected={cell}
-                  query={query}
-                  statusFilter={statusFilter}
-                  onClearStatusFilter={()=>setStatusFilter('')}
-                  booking={booking}
-                  onSelect={(value) => {
-                    setCell(value);
-                    setDrawer(true);
-                  }}
-                />
-              )}
-            </div>
-          )}
+            )}
           </div>}
+          <div className="wm-checkout-dock wm-v5-checkout-dock" role="region" aria-label="Giỏ thuê & xác nhận">
+            <CellBookingPanel
+              booking={booking}
+              facilityId={facilityId}
+              facilityName={facility.data?.name}
+              compact
+            />
+          </div>
         </section>
         <aside
           className="wm-inspector wm-panel"

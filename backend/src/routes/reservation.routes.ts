@@ -32,6 +32,11 @@ router.post('/managed/:id/balance', requireRole([UserRole.CUSTOMER]), ManagedChe
 router.post('/managed/:id/balance/mock-confirm', requireRole([UserRole.CUSTOMER]), ManagedCheckinController.confirmMockBalance);
 router.post('/managed/:id/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.mockPay);
 router.patch('/managed/:id/activate', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.activate);
+router.post('/managed/:id/handover', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedReservationController.confirmHandover);
+router.post('/managed/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);
+router.get('/managed/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.listSelfStoragePayments);
+router.post('/managed/:id/payments/:paymentId/reconcile', requireRole([UserRole.CUSTOMER]), PayosPaymentController.reconcileCustomerPayment);
+router.get('/managed/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]), PayosPaymentController.getSelfStoragePaymentStatus);
 
 // Customer Routes
 router.post('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);

@@ -51,7 +51,7 @@ export default function CustomerUserMenu({ user }) {
         ref={trigger}
         type="button"
         variant="ghost"
-        aria-label="Customer account"
+        aria-label="Tài khoản khách hàng"
         aria-expanded={open}
         aria-controls="customer-user-panel"
         onClick={() => setOpen((v) => !v)}
@@ -75,14 +75,14 @@ export default function CustomerUserMenu({ user }) {
           id="customer-user-panel"
           data-user-panel
           className="absolute right-0 top-full z-50 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[#dce7de] bg-white p-3 shadow-xl"
-          aria-label="Customer account actions"
+          aria-label="Tùy chọn tài khoản khách hàng"
         >
           <Link
             to="/portal/profile"
             onClick={() => setOpen(false)}
             className="mb-3 block rounded-lg px-3 py-2 text-sm font-semibold text-[#176B3A] hover:bg-[#EAF5EE] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F28C28]"
           >
-            My Profile
+            Hồ sơ cá nhân
           </Link>
           <LogoutButton />
         </div>

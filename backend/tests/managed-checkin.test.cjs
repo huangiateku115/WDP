@@ -95,7 +95,7 @@ function fixtures(t, { withItem = true, contract = null, reservationStatus = 'DE
   // Query methods are chainable; keep sort/lean calls observable without a database.
   t.mock.method(Contract, 'findOne', () => new Query(liveContract));
   t.mock.method(Contract, 'findById', () => new Query(liveContract));
-  t.mock.method(Contract.prototype, 'save', async function () { liveContract = this; return this; });
+  t.mock.method(Contract.prototype, 'save', async function () { this._id ||= new mongoose.Types.ObjectId(); liveContract = this; return this; });
   t.mock.method(Payment, 'findOne', filter => new Query(filter.purpose === 'DEPOSIT' ? depositPayment :
     (filter.idempotencyKey ? (balancePayment?.idempotencyKey === filter.idempotencyKey ? balancePayment : null) :
       (filter.status === 'SUCCEEDED' && balancePayment?.status === 'SUCCEEDED' ? balancePayment : null))));
@@ -344,6 +344,43 @@ test('contract creation is idempotent and does not create a second content versi
   const replay = await service.createOrRefreshContract(String(reservationId), staff);
   assert.equal(String(replay._id), String(first._id));
   assert.equal(replay.currentContentVersion, 1);
+});
+
+test('Managed V3 contract snapshots server-owned Cell quote data without any inventory precondition and both parties sign one hash', async t => {
+  transaction(t);
+  const state = fixtures(t, { withItem: false });
+  state.reservation.bookingFlowVersion = 3;
+  state.reservation.status = 'DEPOSIT_PAID';
+  state.reservation.expiresAt = undefined;
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  let contract = await service.createOrRefreshContract(String(reservationId), staff);
+  state.setContract(contract);
+  assert.equal(contract.termsVersion, 'MI-V3-1');
+  const version = contract.contentVersions[0];
+  assert.equal(version.content.schemaVersion, 3);
+  assert.deepEqual(version.content.reservation.cellIds, [String(cellId)]);
+  assert.equal(version.content.reservation.allocatedCapacityM3, state.reservation.allocatedCapacity);
+  assert.equal(version.content.pricing.depositAmount, state.reservation.depositAmount);
+  contract = await service.signV3Contract(String(contract._id), { _id: customerId, role: 'CUSTOMER' }, 'CUSTOMER');
+  state.setContract(contract);
+  assert.equal(contract.status, 'DRAFT');
+  contract = await service.signV3Contract(String(contract._id), staff, 'FACILITY');
+  assert.equal(contract.status, 'SIGNED');
+  assert.equal(contract.signatures.length, 2);
+  assert.equal(new Set(contract.signatures.map(signature => `${signature.version}:${signature.contentHash}`)).size, 1);
+});
+
+test('Managed V3 rejects signing when the quoted pricing snapshot no longer matches the Reservation', async t => {
+  transaction(t);
+  const state = fixtures(t, { withItem: false });
+  state.reservation.bookingFlowVersion = 3;
+  state.reservation.status = 'DEPOSIT_PAID';
+  const staff = { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId };
+  const contract = await service.createOrRefreshContract(String(reservationId), staff);
+  state.setContract(contract);
+  state.reservation.estimatedRent += 1;
+  await assert.rejects(service.signV3Contract(String(contract._id), { _id: customerId, role: 'CUSTOMER' }, 'CUSTOMER'),
+    { status: 409, message: /snapshot no longer matches/ });
 });
 
 test('zero remaining balance is explicitly settled without a zero-value payment record', async t => {

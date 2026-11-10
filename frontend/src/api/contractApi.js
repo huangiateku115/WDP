@@ -9,6 +9,7 @@ const contractApi = {
   mineReal: config=>axiosClient.get('/contracts/me',config),
   // Backend contract.routes/controller confirm PATCH, no request body, owner + DRAFT.
   signReal: id=>axiosClient.patch(`/contracts/${encodeURIComponent(id)}/sign`),
+  signFacilityReal: id=>axiosClient.patch(`/contracts/${encodeURIComponent(id)}/sign/facility`),
   getByReservation: async (reservationId) => {
     if (USE_MOCK) {
       await delay();

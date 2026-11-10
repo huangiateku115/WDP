@@ -19,7 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {managedReservationFinancials,managedQuoteFinancials,managedFinancialRows} from '@/lib/managedRentalPricing';
-import {isManagedV2} from '@/lib/customerReservationService';
+import {isManagedV2,isManagedV3} from '@/lib/customerReservationService';
 export { CustomerScreen, Details, Message, Card, CardContent, Button, Link };
 export const statusLabels = {
   RESERVED: "Chờ duyệt",
@@ -151,11 +151,11 @@ export function useBackend(loader, dependencies = [], publicRead = false) {
 export function LoadState({ resource }) {
   return (
     <>
-      {resource.loading && <p role="status">Loading backend data…</p>}
+      {resource.loading && <p role="status">Đang tải thông tin…</p>}
       <Message error={resource.error} />
       {resource.error && (
         <Button variant="outline" onClick={resource.retry}>
-          Retry
+          Thử lại
         </Button>
       )}
     </>
@@ -184,7 +184,7 @@ export function addressText(value) {
       : undefined;
 }
 export function RentalSummary({ item, localizeManagedV2=false }) {
-  const localized=localizeManagedV2&&isManagedV2(item),date=value=>localized?reservationVietnamTime(value):value;
+  const localized=localizeManagedV2&&(isManagedV2(item)||isManagedV3(item)),date=value=>localized?reservationVietnamTime(value):value;
   const facility =
       typeof item.facilityId === "object" ? item.facilityId : item.facility,
     unit =
@@ -193,8 +193,6 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
         : item.storageUnit;
   const values = [
     ["Service", serviceLabel(item)],
-    ["Reservation ID", recordId(item)],
-    ["Reservation code", item.reservationCode],
     ["Facility", facility?.name],
     ["Address", addressText(facility?.address)],
     ...(serviceType(item) === MANAGED_INVENTORY
@@ -211,7 +209,7 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
         : []),
     ["Start date", date(item.startDate)],
     ["End date", date(item.endDate)],
-    ...(!isManagedV2(item)?[["Estimated rent", item.estimatedRent],["Deposit", item.depositAmount]]:[]),
+    ...(!isManagedV2(item)?[["Estimated rent", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent,item.currency||"VND")],["Deposit", item.depositAmount == null ? item.depositAmount : reservationAmount(item.depositAmount,item.currency||"VND")]]:[]),
     ["Payment deadline", date(item.paymentDeadline || item.expiresAt)],
   ];
   return (

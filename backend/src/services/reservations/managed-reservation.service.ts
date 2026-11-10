@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import mongoose, { ClientSession, Types } from 'mongoose';
 import FacilityModel from '../../models/facilities/facility.model';
 import ManagedFacilityCapacityModel from '../../models/reservations/managed-facility-capacity.model';
@@ -22,7 +23,7 @@ import { IUser, UserRole } from '../../types/user.type';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
 import { assertIdempotentPaymentMatch, calculateRentalPaymentBreakdown, PaymentAccountingError, roundVndAmount, transitionPaymentStatus } from '../payments/payment-accounting';
-import { PaymentProvider, PaymentPurpose, PaymentStatus } from '../../types/payment.type';
+import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const occupying = [ReservationStatus.RESERVED, ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY, ReservationStatus.CONTRACTED, ReservationStatus.PAID, ReservationStatus.ACTIVE, ReservationStatus.OVERDUE];
@@ -59,7 +60,9 @@ function term(value: unknown) {
 function parseRequest(value: unknown) {
   const input = object(value, ['facilityId', 'allocatedCapacityM3', 'startDate', 'term', 'cellIds'], 'request');
   const facilityId = id(input.facilityId, 'facilityId');
-  const allocatedCapacityM3 = positive(input.allocatedCapacityM3, 'allocatedCapacityM3');
+  // Capacity comes from selected Cells. Retain optional legacy input compatibility,
+  // but never use it as authority for price or entitlement.
+  const allocatedCapacityM3 = input.allocatedCapacityM3 === undefined ? 0 : positive(input.allocatedCapacityM3, 'allocatedCapacityM3');
   const startDate = utc(input.startDate, 'startDate');
   const duration = term(input.term);
   const endDate = new Date(startDate);
@@ -137,7 +140,7 @@ async function readCommitments(facilityId: Types.ObjectId, startDate: Date, endD
   if (session) query = query.session(session);
   return query.select('startDate endDate allocatedCapacity status expiresAt').lean().exec();
 }
-async function effectiveQuote(input: ReturnType<typeof parseRequest>, session?: ClientSession) {
+async function effectiveQuote(input: ReturnType<typeof parseRequest>, session?: ClientSession, strictV3 = false) {
   const facilityFilter = { _id: input.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } };
   let facilityQuery = FacilityModel.findOne(facilityFilter); if (session) facilityQuery = facilityQuery.session(session);
   const facility = await facilityQuery.exec();
@@ -168,11 +171,11 @@ async function effectiveQuote(input: ReturnType<typeof parseRequest>, session?: 
   if (depositConfig.calculation !== 'PERCENT_OF_RENT' || typeof depositConfig.percentage !== 'number' || !Number.isFinite(depositConfig.percentage) || depositConfig.percentage < 0) fail(409, 'Managed deposit policy must explicitly configure PERCENT_OF_RENT and a non-negative percentage');
   let estimatedRent = input.allocatedCapacityM3 * pricingRule.price;
   let depositAmount = estimatedRent * Number(depositConfig.percentage) / 100;
-  if (managedDepositFlowEnabled()) {
-    if (pricingRule.currency !== 'VND') fail(409, 'Managed deposit flow currently requires VND pricing');
+  if (strictV3 || managedDepositFlowEnabled()) {
+    if (pricingRule.currency !== 'VND') fail(409, 'Managed Inventory V3 requires VND pricing');
     estimatedRent = roundVndAmount(estimatedRent);
     depositAmount = roundVndAmount(estimatedRent * Number(depositConfig.percentage) / 100);
-    if (depositAmount <= 0) fail(409, 'Managed deposit policy must produce a positive deposit for version 2 bookings');
+    if (depositAmount <= 0) fail(409, 'Managed deposit policy must produce a positive VND deposit');
   }
   if (![estimatedRent, depositAmount].every(Number.isFinite)) fail(409, 'Managed quote amount overflow');
   let paymentBreakdown;
@@ -265,8 +268,9 @@ async function audit(session: ClientSession, event: {
 }
 function publicQuote(input: ReturnType<typeof parseRequest>, result: Awaited<ReturnType<typeof effectiveQuote>>) {
   return {
-    ...(managedDepositFlowEnabled() ? { bookingFlowVersion: 2 } : {}),
-    facilityId: input.facilityId, allocatedCapacityM3: input.allocatedCapacityM3, startDate: input.startDate, endDate: input.endDate, term: input.term,
+    bookingFlowVersion: 3,
+    facilityId: input.facilityId, cellIds: (input.cellIds ?? []).map(String),
+    allocatedCapacityM3: input.allocatedCapacityM3, startDate: input.startDate, endDate: input.endDate, term: input.term,
     sellableCapacityM3: result.capacity.sellableCapacityM3, committedPeakCapacityM3: result.committedCapacityM3,
     availableCapacityM3: result.availableCapacityM3,
     pricing: { ruleId: result.pricingRule._id, version: result.pricingRule.version, billingBasis: result.pricingRule.billingBasis, ratePerM3: result.pricingRule.price, currency: result.pricingRule.currency, estimatedRent: result.estimatedRent },
@@ -284,6 +288,9 @@ export class ManagedReservationService {
   static async quote(body: unknown) {
     const input = parseRequest(body);
     if (input.startDate <= new Date()) fail(400, 'startDate must be in the future');
+    // Service-level compatibility for historical quota-only tests and internal reads.
+    // The V3 HTTP controller requires selected Cells.
+    if (!input.cellIds?.length) return publicQuote(input, await effectiveQuote(input));
     if (input.cellIds) {
       const cells = await WarehouseCellModel.find({ _id: { $in: input.cellIds }, facilityId: input.facilityId, deletedAt: { $exists: false } }).exec();
       if (cells.length !== input.cellIds.length) fail(409, 'Selected Cells must belong to the selected Managed Facility');
@@ -293,7 +300,8 @@ export class ManagedReservationService {
         fail(409, 'Selected Cells must be operationally available with known empty physical counters');
       }
       const cellCapacity = cells.reduce((sum, cell) => sum + allocationVolume(cell), 0);
-      if (Math.abs(cellCapacity - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must equal the selected Cells total configured volume');
+      if (input.allocatedCapacityM3 > 0 && Math.abs(cellCapacity - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must match the selected Cells total configured volume');
+      input.allocatedCapacityM3 = cellCapacity;
       const conflict = await CellAllocationModel.exists({ cellId: { $in: input.cellIds }, $or: [
         { status: CellAllocationStatus.OCCUPIED },
         { status: CellAllocationStatus.RESERVED, startDate: { $lt: input.endDate }, endDate: { $gt: input.startDate } },
@@ -308,13 +316,25 @@ export class ManagedReservationService {
       ]);
       if (zones.length !== zoneIds.length || racks.length !== rackIds.length) fail(409, 'Selected Cells must belong to active Zones and available Racks');
     }
-    return publicQuote(input, await effectiveQuote(input));
+    return publicQuote(input, await effectiveQuote(input, undefined, !!input.cellIds?.length));
   }
-  static async create(body: unknown, actor: Actor) {
+  static async create(body: unknown, actor: Actor, rawIdempotencyKey?: unknown) {
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'Customer role required');
     const input = parseRequest(body);
     if (!input.cellIds?.length) fail(400, 'Select one or more Cells before creating a Managed reservation');
+    const v3 = typeof rawIdempotencyKey === 'string' && !!rawIdempotencyKey.trim();
+    if (v3 && (rawIdempotencyKey!.toString().trim().length > 120 || /[\r\n]/.test(String(rawIdempotencyKey)))) fail(400, 'A valid Idempotency-Key header is required');
+    const bookingIdempotencyKey = v3 ? `MI-V3-${String(rawIdempotencyKey).trim()}` : undefined;
+    const requestFingerprint = v3 ? createHash('sha256').update(JSON.stringify({
+      customerId: String(actor._id), facilityId: String(input.facilityId), cellIds: input.cellIds.map(String).sort(),
+      allocatedCapacityM3: input.allocatedCapacityM3, startDate: input.startDate.toISOString(), term: input.term,
+    })).digest('hex') : undefined;
     return withTransaction(async session => {
+      const replay: any = v3 ? await (ReservationModel as any).findOne({ customerId: actor._id, bookingIdempotencyKey }).session(session).exec() : null;
+      if (replay) {
+        if (replay.bookingPayloadHash !== requestFingerprint) fail(409, 'Idempotency-Key was already used with a different booking request');
+        return { reservation: replay, quote: null, idempotent: true };
+      }
       const now = new Date();
       if (input.startDate <= now) fail(400, 'startDate must be in the future');
       const profile = await CustomerProfileModel.findOne({ userId: actor._id }).session(session).exec();
@@ -323,13 +343,14 @@ export class ManagedReservationService {
       const selectedCells = await lockSelectedCells(input.cellIds!, input.facilityId, session);
       await assertCellIntervalsAvailable(selectedCells, input.startDate, input.endDate, now, session);
       const selectedVolumeM3 = selectedCells.reduce((sum, cell) => sum + allocationVolume(cell), 0);
-      if (Math.abs(selectedVolumeM3 - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must equal the selected Cells total configured volume');
-      const result = await effectiveQuote(input, session);
+      if (input.allocatedCapacityM3 > 0 && Math.abs(selectedVolumeM3 - input.allocatedCapacityM3) > 0.000001) fail(400, 'allocatedCapacityM3 must match the selected Cells total configured volume');
+      input.allocatedCapacityM3 = selectedVolumeM3;
+      const result = await effectiveQuote(input, session, v3);
       const created = new ReservationModel({
         reservationCode: `MIR-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${new Types.ObjectId().toString().slice(-6).toUpperCase()}`,
         customerId: actor._id, facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
         allocatedCapacity: input.allocatedCapacityM3, allocatedCellIds: selectedCells.map(cell => cell._id), startDate: input.startDate, endDate: input.endDate,
-        status: ReservationStatus.RESERVED, ...(managedDepositFlowEnabled() ? { bookingFlowVersion: 2 } : {}), estimatedRent: result.estimatedRent, depositAmount: result.depositAmount, taxAmount: 0, discountAmount: 0,
+        status: ReservationStatus.RESERVED, ...(v3 ? { bookingFlowVersion: 3 as const, bookingIdempotencyKey, bookingPayloadHash: requestFingerprint } : (managedDepositFlowEnabled() ? { bookingFlowVersion: 2 as const } : {})), estimatedRent: result.estimatedRent, depositAmount: result.depositAmount, taxAmount: 0, discountAmount: 0,
         expiresAt: new Date(now.getTime() + capacity.holdDurationMinutes * 60_000),
         pricingPolicyId: result.pricingRule._id,
         managedPricingSnapshot: {
@@ -597,7 +618,7 @@ export class ManagedReservationService {
     if (![UserRole.FACILITY_MANAGER, UserRole.ADMIN].includes(actor.role)) fail(403, 'Facility Manager or Admin required');
     const reservationId = id(idInput, 'reservationId');
     return withTransaction(async session => {
-      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.PAID }).session(session).exec();
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 3 }, status: ReservationStatus.PAID }).session(session).exec();
       if (!reservation) fail(409, 'Only a PAID Managed reservation can be activated');
       assertFacilityScope(actor, reservation.facilityId);
       const now = new Date();
@@ -611,6 +632,60 @@ export class ManagedReservationService {
       await reservation.save({ session });
       await audit(session, { facilityId: reservation.facilityId, reservationId: reservation._id, actorId: actor._id,
         action: ManagedReservationAction.ACTIVATED, fromStatus: ReservationStatus.PAID, toStatus: ReservationStatus.ACTIVE, details: { selectedCellsRemainAllocated: true, physicalOccupancyRecorded: false } });
+      return reservation;
+    });
+  }
+
+  static async confirmHandover(idInput: unknown, body: unknown, actor: Actor) {
+    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility Staff or Manager required');
+    const reservationId = id(idInput, 'reservationId');
+    const input = object(body, ['storageCondition', 'accessNotes'], 'handover confirmation');
+    if (!['GOOD', 'MINOR_DAMAGE', 'UNSAFE'].includes(String(input.storageCondition))) fail(400, 'storageCondition must be GOOD, MINOR_DAMAGE or UNSAFE');
+    if (typeof input.accessNotes !== 'string' || !input.accessNotes.trim() || input.accessNotes.length > 1000) fail(400, 'accessNotes are required and must not exceed 1000 characters');
+    return withTransaction(async session => {
+      const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+        bookingFlowVersion: 3, status: ReservationStatus.PAID }).session(session).exec();
+      if (!reservation) fail(409, 'Managed V3 handover requires a PAID reservation');
+      if (!actor.assignedFacilityId || !actor.assignedFacilityId.equals(reservation.facilityId)) fail(403, 'Facility is outside assigned scope');
+      const now = new Date();
+      if (reservation.startDate > now || reservation.endDate <= now || !reservation.allocatedCellIds?.length || !reservation.balanceSettledAt) fail(409, 'Managed V3 rental dates, Cells and settled balance must be confirmed before handover');
+      const contract = await ContractModel.findOne({ reservationId, customerId: reservation.customerId }).session(session).exec();
+      const active = contract?.contentVersions?.find(version => version.version === contract.currentContentVersion);
+      const signatures = (contract?.signatures ?? []).filter(signature => signature.version === active?.version && signature.contentHash === active?.contentHash);
+      if (!contract || contract.status !== ContractStatus.SIGNED || !active ||
+          !signatures.some(signature => signature.signerRole === UserRole.CUSTOMER) ||
+          !signatures.some(signature => [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(signature.signerRole as UserRole))) fail(409, 'Both parties must sign the current Managed V3 contract before handover');
+      const deposit = reservation.depositPaymentId ? await ReservationPaymentModel.findOne({ _id: reservation.depositPaymentId,
+        reservationId, customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+        purpose: PaymentPurpose.DEPOSIT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
+        providerSettlementStatus: ProviderSettlementStatus.VERIFIED, applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
+      const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent, depositAmount: reservation.depositAmount,
+        taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+      const expectedBalance = roundVndAmount(breakdown.totalDue) - (deposit?.amount ?? 0);
+      const balance = expectedBalance > 0 && reservation.balancePaymentId ? await ReservationPaymentModel.findOne({ _id: reservation.balancePaymentId,
+        reservationId, customerId: reservation.customerId, facilityId: reservation.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
+        purpose: PaymentPurpose.BALANCE, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
+        providerSettlementStatus: ProviderSettlementStatus.VERIFIED, applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
+      if (!deposit || deposit.amount !== roundVndAmount(Number(reservation.depositAmount)) || expectedBalance < 0 ||
+          (expectedBalance > 0 && (!balance || balance.amount !== expectedBalance)) || (expectedBalance === 0 && !reservation.balanceSettledAt)) fail(409, 'Verified and applied Managed V3 Deposit and any positive Balance are required');
+      const allocationCount = await CellAllocationModel.countDocuments({ reservationId, customerId: reservation.customerId,
+        facilityId: reservation.facilityId, cellId: { $in: reservation.allocatedCellIds }, status: CellAllocationStatus.RESERVED }).session(session).exec();
+      if (allocationCount !== reservation.allocatedCellIds.length) fail(409, 'Every allocated Cell must remain reserved for this rental');
+      const facility = await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+        serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).session(session).exec();
+      if (!facility) fail(409, 'Managed Facility is not active');
+      reservation.status = ReservationStatus.ACTIVE;
+      reservation.handoverByStaffId = actor._id;
+      reservation.handoverAt = now;
+      reservation.storageCondition = String(input.storageCondition);
+      reservation.handoverAccessNotes = (input.accessNotes as string).trim();
+      reservation.statusHistory.push({ status: ReservationStatus.ACTIVE, actorId: actor._id,
+        reason: 'Facility Staff confirmed Managed V3 access handover; physical inbound remains separate', createdAt: now } as any);
+      await reservation.save({ session });
+      await audit(session, { facilityId: reservation.facilityId, reservationId, actorId: actor._id,
+        action: ManagedReservationAction.HANDOVER_CONFIRMED, fromStatus: ReservationStatus.PAID, toStatus: ReservationStatus.ACTIVE,
+        details: { storageCondition: reservation.storageCondition, accessNotes: reservation.handoverAccessNotes,
+          allocatedCellIds: reservation.allocatedCellIds.map(String), firstInboundRequired: true } });
       return reservation;
     });
   }

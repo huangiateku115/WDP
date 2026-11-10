@@ -55,6 +55,26 @@ export function payosContractMatchesIdentity(contract, reservationId, customerId
 export function assessPayosEligibility(reservation, contract, now = Date.now(), expectedCustomerId) {
   const reservationId = normalizePayosReferenceId(reservation);
   if (!reservationId) return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_ID" };
+  if (reservation?.serviceType === "MANAGED_INVENTORY" && reservation?.bookingFlowVersion === 3) {
+    const owner = normalizePayosReferenceId(reservation.customerId);
+    if (expectedCustomerId !== undefined && (!owner || owner !== normalizePayosReferenceId(expectedCustomerId))) return { eligible: false, purpose: null, reason: "CONTRACT_CUSTOMER_MISMATCH" };
+    if (reservation.status === "RESERVED") {
+      const expiry = Date.parse(reservation.expiresAt || "");
+      return Number.isFinite(expiry) && expiry > now
+        ? { eligible: true, purpose: "DEPOSIT", reason: "ELIGIBLE" }
+        : { eligible: false, purpose: null, reason: "RESERVATION_HOLD_EXPIRED" };
+    }
+    if (reservation.status === "DEPOSIT_PAID") {
+      if (!payosContractMatchesIdentity(contract, reservation, reservation.customerId)) return { eligible: false, purpose: null, reason: "CONTRACT_RESERVATION_MISMATCH" };
+      const version = contract.currentContentVersion;
+      const active = contract.contentVersions?.find(entry => entry.version === version);
+      const current = (contract.signatures || []).filter(signature => signature.version === version && signature.contentHash === active?.contentHash);
+      if (contract.status !== "SIGNED" || !active || !current.some(signature => signature.signerRole === "CUSTOMER") ||
+          !current.some(signature => ["FACILITY_STAFF", "FACILITY_MANAGER"].includes(signature.signerRole))) return { eligible: false, purpose: null, reason: "CONTRACT_NOT_SIGNED" };
+      return { eligible: true, purpose: "BALANCE", reason: "ELIGIBLE" };
+    }
+    return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_STATUS" };
+  }
   if (reservation?.serviceType !== "SELF_STORAGE") {
     return { eligible: false, purpose: null, reason: "UNSUPPORTED_SERVICE" };
   }
@@ -111,7 +131,7 @@ export function payosEligibilityMessage(reason) {
     INVALID_CONTRACT_ID: "The linked Contract identifier is invalid. Payment is unavailable until the contract is corrected.",
     CONTRACT_RESERVATION_MISMATCH: "The linked Contract does not match this Reservation. Payment is unavailable; contact support.",
     CONTRACT_CUSTOMER_MISMATCH: "Contract ownership could not be verified for this account. Payment is unavailable.",
-    UNSUPPORTED_SERVICE: "PayOS checkout here is available only for Self-Storage Reservations.",
+    UNSUPPORTED_SERVICE: "PayOS checkout here is available only for supported Self-Storage or Managed V3 Reservations.",
     INVALID_RESERVATION_STATUS: "The Reservation is not in a payment-eligible state. Refresh its status before continuing.",
     CONTRACT_NOT_DRAFT: "Deposit checkout requires the linked Contract to remain in DRAFT status.",
     RESERVATION_HOLD_EXPIRED: "The CONTRACTED Reservation payment eligibility window has expired.",
@@ -155,6 +175,9 @@ export function paymentStatusView(payment) {
   if (payment.status === "FAILED") {
     return { key: "FAILED", label: "The payment attempt failed; a new attempt may be considered after this status is confirmed", tone: "danger" };
   }
+  if (payment.status === "CANCELLED" && payment.cancelVerifiedAt && payment.providerSettlementStatus === "NOT_VERIFIED" && payment.applicationStatus === "NOT_APPLIED") {
+    return { key: "CANCELLED", label: "Đã hủy thanh toán", tone: "warning" };
+  }
   if (payment.status === "PENDING" && payment.checkoutStatus === "UNKNOWN") {
     return { key: "UNCERTAIN", label: "Payment outcome is uncertain. Keep this attempt and check its status before retrying.", tone: "warning" };
   }
@@ -168,7 +191,7 @@ export function paymentStatusView(payment) {
 }
 
 export function canStartNewPayosAttempt(payment) {
-  return payment?.status === "FAILED" &&
+  return (payment?.status === "FAILED" || payment?.status === "CANCELLED" && !!payment?.cancelVerifiedAt) && payment?.retryAllowed === true &&
     payment.providerSettlementStatus === "NOT_VERIFIED" &&
     payment.applicationStatus === "NOT_APPLIED" &&
     payment.reconciliationRequired === false;

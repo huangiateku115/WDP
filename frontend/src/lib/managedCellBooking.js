@@ -66,9 +66,29 @@ export function selectedPayload(facilityId,selection,range,term) {
   return {...managedRequest({facilityId,allocatedCapacityM3,startDate:range.startDate,term}),cellIds:ids};
 }
 export function verifiedCellQuote(data,payload,range) {
-  if(!data||String(data.facilityId)!==payload.facilityId||Math.abs(data.allocatedCapacityM3-payload.allocatedCapacityM3)>1e-6||!Number.isFinite(data.allocatedCapacityM3)||data.startDate!==range.startDate||data.endDate!==range.endDate||data.term?.value!==payload.term.value||data.term?.unit!==payload.term.unit||![data.pricing?.ratePerM3,data.pricing?.estimatedRent,data.deposit?.amount,data.deposit?.percentage,data.taxAmount].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)||typeof data.pricing.currency!=='string'||!Number.isFinite(data.pricing.estimatedRent+data.deposit.amount+data.taxAmount))throw Error('Invalid Managed quote. Refresh and request a new quote.');
+  if(!data||![2,3].includes(data.bookingFlowVersion))throw Error('Unsupported Managed quote version.');
+  const expectedCells=payload?.cellIds,quotedCells=data.cellIds;
+  if(!Array.isArray(expectedCells)||!expectedCells.length||new Set(expectedCells.map(x=>String(x).toLowerCase())).size!==expectedCells.length||
+    !Array.isArray(quotedCells)||quotedCells.some(x=>typeof x!=='string'||!id(x))||new Set(quotedCells.map(x=>x.toLowerCase())).size!==quotedCells.length||
+    [...quotedCells].map(x=>x.toLowerCase()).sort().join(',')!==[...expectedCells].map(x=>String(x).toLowerCase()).sort().join(','))throw Error('Managed quote Cell IDs do not match the selected Cells. Refresh and request a new quote.');
+  if(String(data.facilityId).toLowerCase()!==String(payload.facilityId).toLowerCase()||
+    !Number.isFinite(data.allocatedCapacityM3)||data.allocatedCapacityM3<=0||Math.abs(data.allocatedCapacityM3-payload.allocatedCapacityM3)>1e-6||
+    data.startDate!==range.startDate||data.endDate!==range.endDate||data.term?.value!==payload.term.value||data.term?.unit!==payload.term.unit||
+    ![data.pricing?.ratePerM3,data.pricing?.estimatedRent,data.deposit?.amount,data.deposit?.percentage,data.taxAmount].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)||
+    typeof data.pricing?.currency!=='string'||!Number.isFinite(data.pricing.estimatedRent+data.deposit.amount+data.taxAmount))throw Error('Invalid Managed quote. Refresh and request a new quote.');
   if(data.bookingFlowVersion===2)managedQuoteFinancials(data);
-  else if(data.bookingFlowVersion!=null&&data.bookingFlowVersion!==1)throw Error('Unsupported Managed quote version.');
+  if(data.bookingFlowVersion===3){
+    const positiveVnd=v=>Number.isSafeInteger(v)&&v>0,nonNegativeVnd=v=>Number.isSafeInteger(v)&&v>=0,p=data.paymentBreakdown;
+    if(data.pricing?.billingBasis!=='PER_M3'||!id(String(data.pricing?.ruleId??''))||!Number.isSafeInteger(data.pricing?.version)||data.pricing.version<1||data.pricing.currency!=='VND'||
+      !id(String(data.deposit?.policyId??''))||!Number.isSafeInteger(data.deposit?.version)||data.deposit.version<1||data.deposit.calculation!=='PERCENT_OF_RENT'||
+      !positiveVnd(data.pricing.estimatedRent)||!positiveVnd(data.deposit.amount)||!nonNegativeVnd(data.taxAmount)||
+      !p||![p.totalDue,p.depositCredit,p.balanceDue].every(nonNegativeVnd)||p.totalDue!==data.pricing.estimatedRent+data.taxAmount||
+      p.depositCredit!==data.deposit.amount||p.depositCredit>p.totalDue||p.balanceDue!==p.totalDue-p.depositCredit||
+      !Number.isFinite(data.sellableCapacityM3)||data.sellableCapacityM3<=0||!Number.isFinite(data.committedPeakCapacityM3)||data.committedPeakCapacityM3<0||
+      !Number.isFinite(data.availableCapacityM3)||data.availableCapacityM3<0||
+      Math.abs(data.availableCapacityM3-(data.sellableCapacityM3-data.committedPeakCapacityM3))>1e-6||data.availableCapacityM3<data.allocatedCapacityM3)
+      throw Error('Managed V3 quote pricing or availability is missing or inconsistent. Refresh and request a new quote.');
+  }
   return data;
 }
 export function matchesCellReservation(r,payload,range) {

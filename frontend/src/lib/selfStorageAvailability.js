@@ -20,7 +20,7 @@ export function buildAvailabilityDays(month, intervals = [], today = new Date())
   const [year, monthNumber] = month.split('-').map(Number);
   const first = new Date(Date.UTC(year, monthNumber - 1, 1));
   const count = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  const leading = first.getUTCDay();
+  const leading = (first.getUTCDay() + 6) % 7;
   const todayKey = today instanceof Date ? utcToday(today) : String(today);
   const days = Array.from({ length: leading + count }, (_, index) => {
     if (index < leading) return null;

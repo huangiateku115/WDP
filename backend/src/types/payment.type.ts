@@ -11,6 +11,7 @@ export enum PaymentStatus {
   PENDING = 'PENDING',
   SUCCEEDED = 'SUCCEEDED',
   FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
   RECONCILIATION_REQUIRED = 'RECONCILIATION_REQUIRED',
 }
 
@@ -42,7 +43,8 @@ export interface IReservationPayment extends Document {
   idempotencyKey: string;
   provider: PaymentProvider;
   providerReference?: string;
-  checkoutState?: 'NOT_CREATED' | 'CREATING' | 'READY' | 'UNKNOWN' | 'RECONCILIATION_REQUIRED';
+  checkoutState?: 'NOT_CREATED' | 'CREATING' | 'READY' | 'UNKNOWN' | 'FAILED' | 'CANCELLED' | 'RECONCILIATION_REQUIRED';
+  cancelVerifiedAt?: Date;
   checkoutUrl?: string;
   qrCode?: string;
   providerPaymentLinkId?: string;

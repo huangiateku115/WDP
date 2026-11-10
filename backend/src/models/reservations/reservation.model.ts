@@ -18,7 +18,7 @@ const reservationSchema = new Schema<IReservation>({
   /** Optional Customer request identity for safe Self-Storage booking replay. */
   bookingIdempotencyKey: { type: String, immutable: true },
   bookingPayloadHash: { type: String, immutable: true },
-  bookingFlowVersion: { type: Number, enum: [2], immutable: true },
+  bookingFlowVersion: { type: Number, enum: [2, 3], immutable: true },
   storageUnitId: { type: Schema.Types.ObjectId, ref: 'StorageUnit' }, 
   allocatedCellIds: [{ type: Schema.Types.ObjectId, ref: 'WarehouseCell' }],
   allocatedCapacity: { type: Number },
@@ -37,9 +37,11 @@ const reservationSchema = new Schema<IReservation>({
   balanceSettledBy: { type: Schema.Types.ObjectId, ref: 'User' },
   depositPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   balancePaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+  balanceSettlementKey: { type: String, minlength: 1, maxlength: 160, immutable: true },
   handoverByStaffId: { type: Schema.Types.ObjectId, ref: 'User' },
   handoverAt: { type: Date },
   storageCondition: { type: String },  
+  handoverAccessNotes: { type: String, maxlength: 1000 },
   
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },

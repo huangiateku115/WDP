@@ -73,6 +73,7 @@ function compileComponent() {
     '@/api/customerRentalApi': { pricingApi: { list: async () => undefined, resolve: async () => undefined, resolvePolicy: async () => undefined } },
     '@/contexts/ReservationContext': { useReservation: () => ({ rentalDraft: { facility: { _id: facilityId, name: 'Test Facility', serviceTypes: ['SELF_STORAGE'], status: 'ACTIVE' }, unit: { _id: unitId, facilityId, size: 'SMALL', status: 'AVAILABLE', unitCode: 'A-01', volumeM3: 2 }, startDate: initialStart, term: term1 }, updateRentalDraft: value => { bookingDraft = value; } }) },
     '@/lib/booking': { formatMoney: value => String(value) },
+    '@/lib/customerReservationDisplay': { reservationDateOnly: value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value, reservationAmount: (value,currency) => `${value} ${currency}` },
     '@/lib/rentalPeriod': rentalPeriodHelpers,
     '@/components/ui/select': { Select, SelectTrigger: Box, SelectValue: Box, SelectContent: Box, SelectItem },
     '@/components/common/Steps': { default: () => null },
@@ -97,11 +98,11 @@ function compileComponent() {
   return { render, find, state, apiCalls, lastLoads: () => lastLoads, setMonthState: value => { currentMonthState = value; if (value === 'UNIT_UNAVAILABLE') currentRangeState = value; }, setRangeState: value => { currentRangeState = value; }, setIntervals: value => { intervals = value; }, get draft() { return bookingDraft; }, get route() { return navigateTo; }, startDate: initialStart, addDays };
 }
 
-test('November 2026 starts Sunday and the rendered calendar uses seven aligned equal columns', () => {
+test('November 2026 starts Sunday and the rendered calendar aligns Monday-first in seven equal columns', () => {
   const firstOfNovember = new Date('2026-11-01T00:00:00.000Z');
   assert.equal(firstOfNovember.getUTCDay(), 0);
   const novemberDays = buildAvailabilityDays('2026-11', [], '2026-10-01');
-  assert.equal(novemberDays.findIndex(day => day?.date === '2026-11-01') % 7, 0);
+  assert.equal(novemberDays.findIndex(day => day?.date === '2026-11-01') % 7, 6);
   const harness = compileComponent();
   const tree = harness.render();
   const grid = harness.find(tree, node => node.props?.role === 'grid');
@@ -111,12 +112,12 @@ test('November 2026 starts Sunday and the rendered calendar uses seven aligned e
   const layout = harness.find(tree, node => /lg:grid-cols-\[minmax\(0,1\.6fr\)_minmax\(18rem,0\.9fr\)\]/.test(node.props?.className || ''));
   assert(layout, 'the calendar and summary reflow to a single column below the desktop breakpoint');
   const headers = React.Children.toArray(grid.props.children).filter(node => node.props?.role === 'columnheader');
-  assert.deepEqual(headers.map(node => node.props.children), ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+  assert.deepEqual(headers.map(node => node.props.children), ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật']);
   assert(headers.every(node => /min-w-0/.test(node.props.className)));
   const cells = React.Children.toArray(grid.props.children);
   const firstDateCell = cells.findIndex((cell, index) => index >= 7 && harness.find(cell, node => node.type === 'button' && node.props.children?.[0]?.props?.children === 1));
   const monthFirst = new Date(`${monthKey(harness.startDate)}-01T00:00:00.000Z`);
-  assert.equal((firstDateCell - 7) % 7, monthFirst.getUTCDay());
+  assert.equal((firstDateCell - 7) % 7, (monthFirst.getUTCDay() + 6) % 7);
   const firstDate = harness.find(cells[firstDateCell], node => node.type === 'button');
   assert.match(firstDate.props.className, /w-full/);
   assert.match(firstDate.props.className, /h-11/);
@@ -126,8 +127,8 @@ test('clicking an available future day updates the selected move-in date and blu
   const harness = compileComponent();
   let tree = harness.render();
   const selectedDate = harness.addDays(harness.startDate, 1);
-  const labelDate = new Date(`${selectedDate}T12:00:00.000Z`).toLocaleDateString('en', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const available = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.endsWith(': available'));
+  const labelDate = new Date(`${selectedDate}T12:00:00.000Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+  const available = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.endsWith(': còn trống'));
   assert(available);
   assert.match(available.props.className, /bg-emerald-50/, 'empty VERIFIED intervals render future days as available');
   let button = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.startsWith(labelDate));
@@ -136,9 +137,9 @@ test('clicking an available future day updates the selected move-in date and blu
   tree = harness.render();
   button = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.startsWith(labelDate));
   assert.equal(button.props['aria-pressed'], true);
-  assert.match(button.props.className, /bg-blue-600/);
-  assert.match(renderToStaticMarkup(tree), new RegExp(`<dd>${selectedDate}</dd>`), 'the selected date appears in the rental summary');
-  const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Review Reservation');
+  assert.match(button.props.className, /bg-\[#176B45\]/);
+  assert.match(renderToStaticMarkup(tree), new RegExp(`<dd>${selectedDate.split('-').reverse().join('/')}</dd>`), 'the selected date appears in the rental summary as Vietnamese date');
+  const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Tiếp tục kiểm tra đơn thuê');
   assert.equal(review.props.disabled, false, 'verified available range and valid estimate enable review');
 });
 
@@ -149,7 +150,7 @@ test('changing commitment duration recomputes the end date and sends a new full-
   duration.props.onChange({ target: { value: 'MONTH:3' } });
   tree = harness.render();
   const expectedEnd = rentalEndDate(harness.startDate, term3);
-  assert(harness.find(tree, node => node.type === 'dd' && node.props.children === expectedEnd));
+  assert(harness.find(tree, node => node.type === 'dd' && node.props.children === expectedEnd.split('-').reverse().join('/')));
   const loads = harness.lastLoads();
   assert.deepEqual(loads[4].dependencies, [facilityId, unitId, monthKey(harness.startDate), true]);
   assert(loads[5].dependencies.includes(expectedEnd));
@@ -165,14 +166,14 @@ test('booked dates are red and disabled; the exclusive checkout boundary remains
   const bookedStart = harness.addDays(harness.startDate, 3), bookedEnd = harness.addDays(bookedStart, 3);
   harness.setIntervals([{ startDate: `${bookedStart}T00:00:00.000Z`, endDate: `${bookedEnd}T00:00:00.000Z` }]);
   const tree = harness.render();
-  const bookedLabel = new Date(`${bookedStart}T12:00:00.000Z`).toLocaleDateString('en', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const bookedLabel = new Date(`${bookedStart}T12:00:00.000Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const booked = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.startsWith(bookedLabel));
   assert.equal(booked.props.disabled, true);
-  assert.match(booked.props.className, /bg-red-100/);
-  const boundaryDate = new Date(`${bookedEnd}T12:00:00.000Z`).toLocaleDateString('en', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  assert.match(booked.props.className, /bg-red-50/);
+  const boundaryDate = new Date(`${bookedEnd}T12:00:00.000Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const boundary = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.startsWith(boundaryDate));
   assert.equal(boundary.props.disabled, false);
-  assert.match(boundary.props.className, /bg-blue-600/, 'the available checkout boundary may still be blue as part of the selected rental interval');
+  assert.match(boundary.props.className, /bg-\[#176B45\]/, 'the available checkout boundary is included in the selected rental interval');
 });
 
 test('unverified, loading, error and unavailable calendar states never paint dates green or permit selection', () => {
@@ -180,11 +181,11 @@ test('unverified, loading, error and unavailable calendar states never paint dat
     const harness = compileComponent();
     harness.setMonthState(state);
     const tree = harness.render();
-    const date = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.includes('availability unverified') || node.type === 'button' && node.props['aria-label']?.includes('unit unavailable'));
+    const date = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.includes('chưa xác minh tình trạng') || node.type === 'button' && node.props['aria-label']?.includes('kho không khả dụng'));
     assert(date, `${state} should render a neutral date button`);
     assert.equal(date.props.disabled, true, state);
     assert.doesNotMatch(date.props.className, /bg-emerald/);
-    const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Review Reservation');
+    const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Tiếp tục kiểm tra đơn thuê');
     assert.equal(review.props.disabled, true, state);
   }
 });
@@ -193,9 +194,9 @@ test('range conflicts block Review while the verified monthly calendar stays int
   const harness = compileComponent();
   harness.setRangeState('CONFLICT');
   const tree = harness.render();
-  const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Review Reservation');
+  const review = harness.find(tree, node => node.type === 'button' && node.props.children === 'Tiếp tục kiểm tra đơn thuê');
   assert.equal(review.props.disabled, true);
-  const date = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.endsWith(': available'));
+  const date = harness.find(tree, node => node.type === 'button' && node.props['aria-label']?.endsWith(': còn trống'));
   assert.equal(date.props.disabled, false);
 });
 

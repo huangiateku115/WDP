@@ -97,6 +97,10 @@ export const signContract = async (req: Request, res: Response) => {
           const signed = await ManagedCheckinService.signContract(req.params.id, req.user! as any);
           return res.json({ success: true, data: signed });
         }
+        if (linkedReservation.bookingFlowVersion === 3) {
+          const signed = await ManagedCheckinService.signV3Contract(req.params.id, req.user! as any, 'CUSTOMER');
+          return res.json({ success: true, data: signed });
+        }
         const session = await mongoose.startSession();
         try {
           let signed: any = null;
