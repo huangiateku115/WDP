@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/BookingReviewScreen';
+export {BookingReview as default} from '../../../src/screens/LiveRental';

@@ -1,0 +1,962 @@
+
+> SelfStorage-shadcn@1.0.0 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: Customer closure policy rejects writes, carries real version and does not globally block outbound/cleanup
+ok 1 - Customer closure policy rejects writes, carries real version and does not globally block outbound/cleanup
+  ---
+  duration_ms: 1.2061
+  type: 'test'
+  ...
+# Subtest: 409 suggestions bounded, exact shape, no text parsing or selected Unit fallback
+ok 2 - 409 suggestions bounded, exact shape, no text parsing or selected Unit fallback
+  ---
+  duration_ms: 0.9664
+  type: 'test'
+  ...
+# Subtest: Self lifecycle distinguishes current CONTRACTED / deposit / balance / active and retains legacy wording
+ok 3 - Self lifecycle distinguishes current CONTRACTED / deposit / balance / active and retains legacy wording
+  ---
+  duration_ms: 0.2766
+  type: 'test'
+  ...
+# Subtest: Customer support keeps text-only payload and filters internal messages
+ok 4 - Customer support keeps text-only payload and filters internal messages
+  ---
+  duration_ms: 0.6533
+  type: 'test'
+  ...
+# Subtest: Customer signing is contained while Facility view condition remains separate
+ok 5 - Customer signing is contained while Facility view condition remains separate
+  ---
+  duration_ms: 0.497
+  type: 'test'
+  ...
+# Subtest: Backend initiation and confirmation envelopes are independently verified
+ok 6 - Backend initiation and confirmation envelopes are independently verified
+  ---
+  duration_ms: 1.9382
+  type: 'test'
+  ...
+# Subtest: zero balance completion remains payment-free
+ok 7 - zero balance completion remains payment-free
+  ---
+  duration_ms: 0.3614
+  type: 'test'
+  ...
+# Subtest: production or missing opt-in blocks helper and allowlist {"DEV":false,"VITE_ENABLE_MANAGED_BALANCE_MOCK":"true"}
+ok 8 - production or missing opt-in blocks helper and allowlist {"DEV":false,"VITE_ENABLE_MANAGED_BALANCE_MOCK":"true"}
+  ---
+  duration_ms: 136.1932
+  type: 'test'
+  ...
+# Subtest: production or missing opt-in blocks helper and allowlist {"DEV":true}
+ok 9 - production or missing opt-in blocks helper and allowlist {"DEV":true}
+  ---
+  duration_ms: 14.1186
+  type: 'test'
+  ...
+# Subtest: production or missing opt-in blocks helper and allowlist {}
+ok 10 - production or missing opt-in blocks helper and allowlist {}
+  ---
+  duration_ms: 15.7757
+  type: 'test'
+  ...
+# Subtest: confirmation uses exact verified POST, body key and existing client; retry keeps key
+ok 11 - confirmation uses exact verified POST, body key and existing client; retry keeps key
+  ---
+  duration_ms: 17.9278
+  type: 'test'
+  ...
+# Subtest: PENDING requires explicit confirmation; duplicate clicks guarded; GET refresh follows success
+ok 12 - PENDING requires explicit confirmation; duplicate clicks guarded; GET refresh follows success
+  ---
+  duration_ms: 29.3184
+  type: 'test'
+  ...
+# Subtest: 503 retry preserves key and never reinitiates balance
+ok 13 - 503 retry preserves key and never reinitiates balance
+  ---
+  duration_ms: 8.8379
+  type: 'test'
+  ...
+# Subtest: confirmation 400 disables action until successful GET refresh
+ok 14 - confirmation 400 disables action until successful GET refresh
+  ---
+  duration_ms: 7.6524
+  type: 'test'
+  ...
+# Subtest: confirmation 401 disables action until successful GET refresh
+ok 15 - confirmation 401 disables action until successful GET refresh
+  ---
+  duration_ms: 6.7926
+  type: 'test'
+  ...
+# Subtest: confirmation 403 disables action until successful GET refresh
+ok 16 - confirmation 403 disables action until successful GET refresh
+  ---
+  duration_ms: 8.3836
+  type: 'test'
+  ...
+# Subtest: confirmation 404 disables action until successful GET refresh
+ok 17 - confirmation 404 disables action until successful GET refresh
+  ---
+  duration_ms: 9.2286
+  type: 'test'
+  ...
+# Subtest: confirmation 409 disables action until successful GET refresh
+ok 18 - confirmation 409 disables action until successful GET refresh
+  ---
+  duration_ms: 7.8693
+  type: 'test'
+  ...
+# Subtest: production UI hides confirmation even with persisted PENDING
+ok 19 - production UI hides confirmation even with persisted PENDING
+  ---
+  duration_ms: 5.7399
+  type: 'test'
+  ...
+# Subtest: already settled GET prevents confirmation POST
+ok 20 - already settled GET prevents confirmation POST
+  ---
+  duration_ms: 5.2779
+  type: 'test'
+  ...
+# Subtest: stock parsing rejects missing/negative/inconsistent identity, totals, batch or units
+ok 21 - stock parsing rejects missing/negative/inconsistent identity, totals, batch or units
+  ---
+  duration_ms: 2.5153
+  type: 'test'
+  ...
+# Subtest: ledger quantities use on-hand minus holds, never registered quantity
+ok 22 - ledger quantities use on-hand minus holds, never registered quantity
+  ---
+  duration_ms: 0.3215
+  type: 'test'
+  ...
+# Subtest: eligibility checks owner, Cell, ACTIVE rental identity and term
+ok 23 - eligibility checks owner, Cell, ACTIVE rental identity and term
+  ---
+  duration_ms: 0.459
+  type: 'test'
+  ...
+# Subtest: stock display, batch source, available max and quantity limits
+ok 24 - stock display, batch source, available max and quantity limits
+  ---
+  duration_ms: 49.1197
+  type: 'test'
+  ...
+# Subtest: partial create is explicit, double-click safe, details and cancellation refresh stock/history
+ok 25 - partial create is explicit, double-click safe, details and cancellation refresh stock/history
+  ---
+  duration_ms: 16.5088
+  type: 'test'
+  ...
+# Subtest: stock 404 fails closed with no legacy mutation fallback
+ok 26 - stock 404 fails closed with no legacy mutation fallback
+  ---
+  duration_ms: 10.2997
+  type: 'test'
+  ...
+# Subtest: stock 503 fails closed with no legacy mutation fallback
+ok 27 - stock 503 fails closed with no legacy mutation fallback
+  ---
+  duration_ms: 8.9417
+  type: 'test'
+  ...
+# Subtest: cancel 409 preserves conflict explanation and refreshes without overwriting version
+ok 28 - cancel 409 preserves conflict explanation and refreshes without overwriting version
+  ---
+  duration_ms: 14.5406
+  type: 'test'
+  ...
+# Subtest: cancel 428 preserves conflict explanation and refreshes without overwriting version
+ok 29 - cancel 428 preserves conflict explanation and refreshes without overwriting version
+  ---
+  duration_ms: 13.7443
+  type: 'test'
+  ...
+# Subtest: 503 retry retains exact create key and frozen payload, does not create a different mutation
+ok 30 - 503 retry retains exact create key and frozen payload, does not create a different mutation
+  ---
+  duration_ms: 12.6441
+  type: 'test'
+  ...
+# Subtest: feature-disabled create is explicit and never calls legacy
+ok 31 - feature-disabled create is explicit and never calls legacy
+  ---
+  duration_ms: 13.046
+  type: 'test'
+  ...
+# Subtest: 503 cancellation retry keeps the original version and key
+ok 32 - 503 cancellation retry keeps the original version and key
+  ---
+  duration_ms: 9.9352
+  type: 'test'
+  ...
+# Subtest: production blocks new canonical creates but preserves stock/history reads
+ok 33 - production blocks new canonical creates but preserves stock/history reads
+  ---
+  duration_ms: 9.7179
+  type: 'test'
+  ...
+# Subtest: storage failure causes no mutation; malformed stock exposes no positive availability
+ok 34 - storage failure causes no mutation; malformed stock exposes no positive availability
+  ---
+  duration_ms: 14.5304
+  type: 'test'
+  ...
+# Subtest: legacy movement history keeps the existing legacy action; missing ledger is explicit
+ok 35 - legacy movement history keeps the existing legacy action; missing ledger is explicit
+  ---
+  duration_ms: 8.3786
+  type: 'test'
+  ...
+# Subtest: all ten confirmed Customer inventory method/path combinations pass
+ok 36 - all ten confirmed Customer inventory method/path combinations pass
+  ---
+  duration_ms: 6.885
+  type: 'test'
+  ...
+# Subtest: incorrect methods remain blocked on every added path
+ok 37 - incorrect methods remain blocked on every added path
+  ---
+  duration_ms: 2.1973
+  type: 'test'
+  ...
+# Subtest: invalid IDs, suffixes and unconfirmed Staff operations are not permitted
+ok 38 - invalid IDs, suffixes and unconfirmed Staff operations are not permitted
+  ---
+  duration_ms: 0.9531
+  type: 'test'
+  ...
+# Subtest: existing Customer confirmed API entries remain allowed
+ok 39 - existing Customer confirmed API entries remain allowed
+  ---
+  duration_ms: 0.4055
+  type: 'test'
+  ...
+# Subtest: allowlist leaves operation/concurrency headers intact
+ok 40 - allowlist leaves operation/concurrency headers intact
+  ---
+  duration_ms: 1.2023
+  type: 'test'
+  ...
+# Subtest: inventory helpers preserve Idempotency-Key and If-Match for request mutations
+ok 41 - inventory helpers preserve Idempotency-Key and If-Match for request mutations
+  ---
+  duration_ms: 140.472
+  type: 'test'
+  ...
+# Subtest: Item Detail safely renders initial loading
+ok 42 - Item Detail safely renders initial loading
+  ---
+  duration_ms: 13.9164
+  type: 'test'
+  ...
+# Subtest: Item Detail safely renders API failure
+ok 43 - Item Detail safely renders API failure
+  ---
+  duration_ms: 1.3416
+  type: 'test'
+  ...
+# Subtest: Item Detail safely renders missing data
+ok 44 - Item Detail safely renders missing data
+  ---
+  duration_ms: 0.856
+  type: 'test'
+  ...
+# Subtest: loaded Item mounts existing actions with valid data
+ok 45 - loaded Item mounts existing actions with valid data
+  ---
+  duration_ms: 4.4504
+  type: 'test'
+  ...
+# Subtest: canonical outbound ignores missing/invalid Item before any hooks or reads
+ok 46 - canonical outbound ignores missing/invalid Item before any hooks or reads
+  ---
+  duration_ms: 9.5106
+  type: 'test'
+  ...
+# Subtest: canonical feature-disabled 404 stays in error mode without legacy fallback
+ok 47 - canonical feature-disabled 404 stays in error mode without legacy fallback
+  ---
+  duration_ms: 20.5198
+  type: 'test'
+  ...
+# Subtest: canonical feature-disabled 503 stays in error mode without legacy fallback
+ok 48 - canonical feature-disabled 503 stays in error mode without legacy fallback
+  ---
+  duration_ms: 8.05
+  type: 'test'
+  ...
+# Subtest: legacy movement remains readable without fabricated batch section
+ok 49 - legacy movement remains readable without fabricated batch section
+  ---
+  duration_ms: 14.2366
+  type: 'test'
+  ...
+# Subtest: canonical single batch renders its own physical values and optional references
+ok 50 - canonical single batch renders its own physical values and optional references
+  ---
+  duration_ms: 3.5897
+  type: 'test'
+  ...
+# Subtest: multiple batches preserve parent totals and never label first batch units as all movement units
+ok 51 - multiple batches preserve parent totals and never label first batch units as all movement units
+  ---
+  duration_ms: 2.2727
+  type: 'test'
+  ...
+# Subtest: missing optional batch refs are omitted without inventing receipts or evidence
+ok 52 - missing optional batch refs are omitted without inventing receipts or evidence
+  ---
+  duration_ms: 1.4839
+  type: 'test'
+  ...
+# Subtest: batch validation rejects wrong units/actions, quantities, measurements and reference IDs
+ok 53 - batch validation rejects wrong units/actions, quantities, measurements and reference IDs
+  ---
+  duration_ms: 1.2687
+  type: 'test'
+  ...
+# Subtest: RELOCATION displays source/destination read-only and no physical mutation actions
+ok 54 - RELOCATION displays source/destination read-only and no physical mutation actions
+  ---
+  duration_ms: 5.7622
+  type: 'test'
+  ...
+# Subtest: history loading state
+ok 55 - history loading state
+  ---
+  duration_ms: 1.9877
+  type: 'test'
+  ...
+# Subtest: history error state
+ok 56 - history error state
+  ---
+  duration_ms: 1.7461
+  type: 'test'
+  ...
+# Subtest: history empty state
+ok 57 - history empty state
+  ---
+  duration_ms: 1.9356
+  type: 'test'
+  ...
+# Subtest: Payment route renders a real loading state instead of Simulated Payment before Reservation data arrives
+ok 58 - Payment route renders a real loading state instead of Simulated Payment before Reservation data arrives
+  ---
+  duration_ms: 148.3705
+  type: 'test'
+  ...
+# Subtest: Review creates one CONTRACTED Reservation and navigates to its exact 24-character Deposit route
+ok 59 - Review creates one CONTRACTED Reservation and navigates to its exact 24-character Deposit route
+  ---
+  duration_ms: 17.4692
+  type: 'test'
+  ...
+# Subtest: Reservation retrieval failure and missing records fail closed with retry, never the mock-payment screen
+ok 60 - Reservation retrieval failure and missing records fail closed with retry, never the mock-payment screen
+  ---
+  duration_ms: 20.8066
+  type: 'test'
+  ...
+# Subtest: Owned Self-Storage Reservation routes to PayOS and loads its exact owner-scoped contract endpoint
+ok 61 - Owned Self-Storage Reservation routes to PayOS and loads its exact owner-scoped contract endpoint
+  ---
+  duration_ms: 19.6508
+  type: 'test'
+  ...
+# Subtest: New CONTRACTED + DRAFT booking can show Deposit after valid context; rental summary survives contract and overview failures
+ok 62 - New CONTRACTED + DRAFT booking can show Deposit after valid context; rental summary survives contract and overview failures
+  ---
+  duration_ms: 36.2918
+  type: 'test'
+  ...
+# Subtest: PayOS history failure keeps the Reservation visible and disables new checkout; empty history is valid
+ok 63 - PayOS history failure keeps the Reservation visible and disables new checkout; empty history is valid
+  ---
+  duration_ms: 26.1552
+  type: 'test'
+  ...
+# Subtest: Mismatched contract blocks Deposit without hiding the Reservation; Managed Inventory remains separately routed
+ok 64 - Mismatched contract blocks Deposit without hiding the Reservation; Managed Inventory remains separately routed
+  ---
+  duration_ms: 18.7708
+  type: 'test'
+  ...
+# Subtest: receipt quantity and dimensions use exact positive Backend validation and units
+ok 65 - receipt quantity and dimensions use exact positive Backend validation and units
+  ---
+  duration_ms: 3.3609
+  type: 'test'
+  ...
+# Subtest: newly REGISTERED first inbound is excluded; only owned in-term eligible Items pass UI checks
+ok 66 - newly REGISTERED first inbound is excluded; only owned in-term eligible Items pass UI checks
+  ---
+  duration_ms: 0.7593
+  type: 'test'
+  ...
+# Subtest: history uses top-level pagination and rejects malformed data instead of empty fallback
+ok 67 - history uses top-level pagination and rejects malformed data instead of empty fallback
+  ---
+  duration_ms: 1.0714
+  type: 'test'
+  ...
+# Subtest: valid create, duplicate click guard, actual history/detail and no physical mutation
+ok 68 - valid create, duplicate click guard, actual history/detail and no physical mutation
+  ---
+  duration_ms: 162.7223
+  type: 'test'
+  ...
+# Subtest: invalid input displays validation without HTTP mutation
+ok 69 - invalid input displays validation without HTTP mutation
+  ---
+  duration_ms: 10.9952
+  type: 'test'
+  ...
+# Subtest: amend loads current detail version and sends full verified payload
+ok 70 - amend loads current detail version and sends full verified payload
+  ---
+  duration_ms: 11.4141
+  type: 'test'
+  ...
+# Subtest: amend 409 refreshes state and does not overwrite version
+ok 71 - amend 409 refreshes state and does not overwrite version
+  ---
+  duration_ms: 9.9672
+  type: 'test'
+  ...
+# Subtest: amend 428 refreshes state and does not overwrite version
+ok 72 - amend 428 refreshes state and does not overwrite version
+  ---
+  duration_ms: 9.7264
+  type: 'test'
+  ...
+# Subtest: cancel is synchronous double-click safe and uses selected version
+ok 73 - cancel is synchronous double-click safe and uses selected version
+  ---
+  duration_ms: 8.9822
+  type: 'test'
+  ...
+# Subtest: uncertain create persists key/payload across remount and locks new submissions
+ok 74 - uncertain create persists key/payload across remount and locks new submissions
+  ---
+  duration_ms: 17.7875
+  type: 'test'
+  ...
+# Subtest: cancel 503 retry keeps version/key and never becomes a create
+ok 75 - cancel 503 retry keeps version/key and never becomes a create
+  ---
+  duration_ms: 9.3383
+  type: 'test'
+  ...
+# Subtest: disabled create does not fall back and production leaves cancel/read separate
+ok 76 - disabled create does not fall back and production leaves cancel/read separate
+  ---
+  duration_ms: 20.7648
+  type: 'test'
+  ...
+# Subtest: pagination passes page/limit and stale page responses cannot overwrite a newer refresh
+ok 77 - pagination passes page/limit and stale page responses cannot overwrite a newer refresh
+  ---
+  duration_ms: 50.9635
+  type: 'test'
+  ...
+# Subtest: missing/null Item guard never mounts receipt reads
+ok 78 - missing/null Item guard never mounts receipt reads
+  ---
+  duration_ms: 3.7749
+  type: 'test'
+  ...
+# Subtest: uncertain amendment retry keeps request identity, version and frozen payload
+ok 79 - uncertain amendment retry keeps request identity, version and frozen payload
+  ---
+  duration_ms: 9.1618
+  type: 'test'
+  ...
+# Subtest: existing API helpers preserve exact idempotency and quoted If-Match headers
+ok 80 - existing API helpers preserve exact idempotency and quoted If-Match headers
+  ---
+  duration_ms: 4.2103
+  type: 'test'
+  ...
+# Subtest: closure-pending Customer blocks create/amend but keeps read and cancel
+ok 81 - closure-pending Customer blocks create/amend but keeps read and cancel
+  ---
+  duration_ms: 8.7653
+  type: 'test'
+  ...
+# Subtest: fresh closure appearing before submission rejects mutation and preserves entered values
+ok 82 - fresh closure appearing before submission rejects mutation and preserves entered values
+  ---
+  duration_ms: 7.2713
+  type: 'test'
+  ...
+# Subtest: paper contract API remains allowed after shared API merge; unknown mutations remain blocked
+ok 83 - paper contract API remains allowed after shared API merge; unknown mutations remain blocked
+  ---
+  duration_ms: 6.6826
+  type: 'test'
+  ...
+# Subtest: board excludes foreign facilities and closed work; inspector is not an assignee
+ok 84 - board excludes foreign facilities and closed work; inspector is not an assignee
+  ---
+  duration_ms: 35.4607
+  type: 'test'
+  ...
+# Subtest: Staff sees only own assigned tickets, including support explicitly assigned without a facility
+ok 85 - Staff sees only own assigned tickets, including support explicitly assigned without a facility
+  ---
+  duration_ms: 0.4449
+  type: 'test'
+  ...
+# Subtest: date grouping uses Vietnam time; missing dates and aged tickets do not invent SLA breaches
+ok 86 - date grouping uses Vietnam time; missing dates and aged tickets do not invent SLA breaches
+  ---
+  duration_ms: 0.7235
+  type: 'test'
+  ...
+# Subtest: picker accepts the readiness callback used by the registration form
+ok 87 - picker accepts the readiness callback used by the registration form
+  ---
+  duration_ms: 9.6212
+  type: 'test'
+  ...
+# Subtest: existing Item image URLs are attached while only completed uploads join the emitted URL list
+ok 88 - existing Item image URLs are attached while only completed uploads join the emitted URL list
+  ---
+  duration_ms: 3.2249
+  type: 'test'
+  ...
+# Subtest: picker aborts active uploads during unmount and exposes per-upload cancel
+ok 89 - picker aborts active uploads during unmount and exposes per-upload cancel
+  ---
+  duration_ms: 5.4238
+  type: 'test'
+  ...
+# Subtest: session changes during upload move the row out of uploading so it can be retried
+ok 90 - session changes during upload move the row out of uploading so it can be retried
+  ---
+  duration_ms: 2.4662
+  type: 'test'
+  ...
+# Subtest: IMAGE-01 enforces exact type, byte and dimension boundaries
+ok 91 - IMAGE-01 enforces exact type, byte and dimension boundaries
+  ---
+  duration_ms: 1.8376
+  type: 'test'
+  ...
+# Subtest: upload response requires usable metadata and expiry, never attachment
+ok 92 - upload response requires usable metadata and expiry, never attachment
+  ---
+  duration_ms: 2.9629
+  type: 'test'
+  ...
+# Subtest: confirmed API allows the scoped receiving and first inbound routes
+ok 93 - confirmed API allows the scoped receiving and first inbound routes
+  ---
+  duration_ms: 8.078
+  type: 'test'
+  ...
+# Subtest: Staff Receiving Queue uses Facility-scoped backend context and actual evidence/inspection APIs
+ok 94 - Staff Receiving Queue uses Facility-scoped backend context and actual evidence/inspection APIs
+  ---
+  duration_ms: 7.3669
+  type: 'test'
+  ...
+# Subtest: evidence picker supports limits, progress, cancellation, retry, remove and reorder
+ok 95 - evidence picker supports limits, progress, cancellation, retry, remove and reorder
+  ---
+  duration_ms: 2.8779
+  type: 'test'
+  ...
+# Subtest: gallery renders snapshots by attempt and opens original high-resolution evidence
+ok 96 - gallery renders snapshots by attempt and opens original high-resolution evidence
+  ---
+  duration_ms: 1.9461
+  type: 'test'
+  ...
+# Subtest: Customer API exposes repeated receipt lifecycle with operation keys and If-Match versions
+ok 97 - Customer API exposes repeated receipt lifecycle with operation keys and If-Match versions
+  ---
+  duration_ms: 9.2399
+  type: 'test'
+  ...
+# Subtest: Customer repeated receipt screen handles replay, uncertain outcome, safe amendment and session replacement
+ok 98 - Customer repeated receipt screen handles replay, uncertain outcome, safe amendment and session replacement
+  ---
+  duration_ms: 1.6828
+  type: 'test'
+  ...
+# Subtest: Staff repeated receiving page uses the real Facility-scoped API and saves attempts before confirmation
+ok 99 - Staff repeated receiving page uses the real Facility-scoped API and saves attempts before confirmation
+  ---
+  duration_ms: 2.8827
+  type: 'test'
+  ...
+# Subtest: Staff inventory routes render the actual receiving, outbound and relocation pages
+ok 100 - Staff inventory routes render the actual receiving, outbound and relocation pages
+  ---
+  duration_ms: 2.4955
+  type: 'test'
+  ...
+# Subtest: Customer canonical outbound is separate from legacy action and uses authoritative balance plus lifecycle APIs
+ok 101 - Customer canonical outbound is separate from legacy action and uses authoritative balance plus lifecycle APIs
+  ---
+  duration_ms: 2.1804
+  type: 'test'
+  ...
+# Subtest: Staff outbound queue confirms partial handover with version, stable retry key and refreshed reads
+ok 102 - Staff outbound queue confirms partial handover with version, stable retry key and refreshed reads
+  ---
+  duration_ms: 2.4055
+  type: 'test'
+  ...
+# Subtest: Canonical relocation screen loads allocated destinations and calls the existing canonical MOVE endpoint
+ok 103 - Canonical relocation screen loads allocated destinations and calls the existing canonical MOVE endpoint
+  ---
+  duration_ms: 2.6584
+  type: 'test'
+  ...
+# Subtest: Canonical Staff pages retain authenticated role gating and explicit empty, loading, error and retry states
+ok 104 - Canonical Staff pages retain authenticated role gating and explicit empty, loading, error and retry states
+  ---
+  duration_ms: 4.1513
+  type: 'test'
+  ...
+# Subtest: PayOS allowlist permits only the exact Customer create and status paths
+ok 105 - PayOS allowlist permits only the exact Customer create and status paths
+  ---
+  duration_ms: 5.386
+  type: 'test'
+  ...
+# Subtest: Payment history API validates Reservation, bounded pagination and response identity
+ok 106 - Payment history API validates Reservation, bounded pagination and response identity
+  ---
+  duration_ms: 2.4795
+  type: 'test'
+  ...
+# Subtest: PayOS API client posts only purpose with the stable Idempotency-Key and parses 201/200 envelopes
+ok 107 - PayOS API client posts only purpose with the stable Idempotency-Key and parses 201/200 envelopes
+  ---
+  duration_ms: 0.8316
+  type: 'test'
+  ...
+# Subtest: PayOS API rejects invalid IDs, purpose, idempotency keys and malformed payment DTOs
+ok 108 - PayOS API rejects invalid IDs, purpose, idempotency keys and malformed payment DTOs
+  ---
+  duration_ms: 0.4757
+  type: 'test'
+  ...
+# Subtest: Only an eligible pending READY PayOS checkout can be opened; completed URLs stay hidden
+ok 109 - Only an eligible pending READY PayOS checkout can be opened; completed URLs stay hidden
+  ---
+  duration_ms: 0.2853
+  type: 'test'
+  ...
+# Subtest: only a valid provider QR payload on an eligible pending checkout can be shown
+ok 110 - only a valid provider QR payload on an eligible pending checkout can be shown
+  ---
+  duration_ms: 0.1612
+  type: 'test'
+  ...
+# Subtest: provider QR payload is rendered locally as a scannable PNG data URL
+ok 111 - provider QR payload is rendered locally as a scannable PNG data URL
+  ---
+  duration_ms: 51.6176
+  type: 'test'
+  ...
+# Subtest: automatic polling reads only eligible pending attempts and refreshes Reservation only for VERIFIED + APPLIED
+ok 112 - automatic polling reads only eligible pending attempts and refreshes Reservation only for VERIFIED + APPLIED
+  ---
+  duration_ms: 0.5409
+  type: 'test'
+  ...
+# Subtest: PayOS status uses the exact owner-scoped reservation route and rejects mismatched identity
+ok 113 - PayOS status uses the exact owner-scoped reservation route and rejects mismatched identity
+  ---
+  duration_ms: 0.8721
+  type: 'test'
+  ...
+# Subtest: Deposit eligibility accepts an unexpired DRAFT contract without requiring SIGNED
+ok 114 - Deposit eligibility accepts an unexpired DRAFT contract without requiring SIGNED
+  ---
+  duration_ms: 1.7924
+  type: 'test'
+  ...
+# Subtest: Self-Storage cannot sign before Deposit; signing remains available after DEPOSIT_PAID
+ok 115 - Self-Storage cannot sign before Deposit; signing remains available after DEPOSIT_PAID
+  ---
+  duration_ms: 0.281
+  type: 'test'
+  ...
+# Subtest: Balance eligibility requires CHECKIN_READY and verified signed-paper proof
+ok 116 - Balance eligibility requires CHECKIN_READY and verified signed-paper proof
+  ---
+  duration_ms: 0.1398
+  type: 'test'
+  ...
+# Subtest: Payment status never confuses provider success with applied Reservation payment
+ok 117 - Payment status never confuses provider success with applied Reservation payment
+  ---
+  duration_ms: 0.2691
+  type: 'test'
+  ...
+# Subtest: A new attempt is permitted only after authoritative terminal FAILED without verified funds
+ok 118 - A new attempt is permitted only after authoritative terminal FAILED without verified funds
+  ---
+  duration_ms: 0.1922
+  type: 'test'
+  ...
+# Subtest: 409 and uncertain 503/network outcomes never instruct the Customer to create a new payment
+ok 119 - 409 and uncertain 503/network outcomes never instruct the Customer to create a new payment
+  ---
+  duration_ms: 0.2142
+  type: 'test'
+  ...
+# Subtest: Payment attempt tracking is scoped to Customer, Reservation and purpose and survives reload
+ok 120 - Payment attempt tracking is scoped to Customer, Reservation and purpose and survives reload
+  ---
+  duration_ms: 0.5899
+  type: 'test'
+  ...
+# Subtest: Recovered payment history deduplicates only immutable identity matches and blocks unresolved attempts
+ok 121 - Recovered payment history deduplicates only immutable identity matches and blocks unresolved attempts
+  ---
+  duration_ms: 0.3513
+  type: 'test'
+  ...
+# Subtest: Self-Storage always uses PayOS and never has a Customer mock fallback
+ok 122 - Self-Storage always uses PayOS and never has a Customer mock fallback
+  ---
+  duration_ms: 6.7932
+  type: 'test'
+  ...
+# Subtest: monthly availability calendar uses bounded UTC intervals and range-safe matching
+ok 123 - monthly availability calendar uses bounded UTC intervals and range-safe matching
+  ---
+  duration_ms: 5.4124
+  type: 'test'
+  ...
+# Subtest: Self-Storage booking may choose a future date for a HELD/OCCUPIED unit, but rejects maintenance
+ok 124 - Self-Storage booking may choose a future date for a HELD/OCCUPIED unit, but rejects maintenance
+  ---
+  duration_ms: 2.0147
+  type: 'test'
+  ...
+# Subtest: booking creation accepts only a fresh CONTRACTED Self-Storage response without approval identity
+ok 125 - booking creation accepts only a fresh CONTRACTED Self-Storage response without approval identity
+  ---
+  duration_ms: 0.5836
+  type: 'test'
+  ...
+# Subtest: Customer booking routes to PayOS summary and Step 2 exposes accessible monthly availability UI
+ok 126 - Customer booking routes to PayOS summary and Step 2 exposes accessible monthly availability UI
+  ---
+  duration_ms: 11.5033
+  type: 'test'
+  ...
+# Subtest: availability GET is allowlisted with Axios params while invalid IDs, methods and unrelated paths stay blocked
+ok 127 - availability GET is allowlisted with Axios params while invalid IDs, methods and unrelated paths stay blocked
+  ---
+  duration_ms: 103.872
+  type: 'test'
+  ...
+# Subtest: owned RESERVED supports deposit initiation before a contract exists
+ok 128 - owned RESERVED supports deposit initiation before a contract exists
+  ---
+  duration_ms: 3.1448
+  type: 'test'
+  ...
+# Subtest: balance requires Staff paper proof, not only electronic SIGNED
+ok 129 - balance requires Staff paper proof, not only electronic SIGNED
+  ---
+  duration_ms: 0.5978
+  type: 'test'
+  ...
+# Subtest: PAID and ACTIVE have distinct completion messages; no new payment allowed
+ok 130 - PAID and ACTIVE have distinct completion messages; no new payment allowed
+  ---
+  duration_ms: 0.5088
+  type: 'test'
+  ...
+# Subtest: legacy CONTRACTED and old paid reservations keep original flow; Managed excluded
+ok 131 - legacy CONTRACTED and old paid reservations keep original flow; Managed excluded
+  ---
+  duration_ms: 0.3435
+  type: 'test'
+  ...
+# Subtest: DEPOSIT initiation mapping uses Backend breakdown without recalculating amounts
+ok 132 - DEPOSIT initiation mapping uses Backend breakdown without recalculating amounts
+  ---
+  duration_ms: 0.85
+  type: 'test'
+  ...
+# Subtest: BALANCE initiation mapping uses Backend breakdown without recalculating amounts
+ok 133 - BALANCE initiation mapping uses Backend breakdown without recalculating amounts
+  ---
+  duration_ms: 0.2932
+  type: 'test'
+  ...
+# Subtest: confirmation fixture maps SUCCEEDED and reservation payment pointer, not PENDING
+ok 134 - confirmation fixture maps SUCCEEDED and reservation payment pointer, not PENDING
+  ---
+  duration_ms: 0.7718
+  type: 'test'
+  ...
+# Subtest: mock callback remains blocked without verified Backend environment, DEV=true
+ok 135 - mock callback remains blocked without verified Backend environment, DEV=true
+  ---
+  duration_ms: 101.522
+  type: 'test'
+  ...
+# Subtest: mock callback remains blocked without verified Backend environment, DEV=false
+ok 136 - mock callback remains blocked without verified Backend environment, DEV=false
+  ---
+  duration_ms: 5.6767
+  type: 'test'
+  ...
+# Subtest: exact initiation POSTs send empty bodies without invented retry headers
+ok 137 - exact initiation POSTs send empty bodies without invented retry headers
+  ---
+  duration_ms: 6.6809
+  type: 'test'
+  ...
+# Subtest: DEPOSIT component: duplicate initiation clicks guarded, no automatic confirmation
+ok 138 - DEPOSIT component: duplicate initiation clicks guarded, no automatic confirmation
+  ---
+  duration_ms: 22.9837
+  type: 'test'
+  ...
+# Subtest: BALANCE component: duplicate initiation clicks guarded, no automatic confirmation
+ok 139 - BALANCE component: duplicate initiation clicks guarded, no automatic confirmation
+  ---
+  duration_ms: 6.92
+  type: 'test'
+  ...
+# Subtest: initiation error 400 has no callback or legacy fallback
+ok 140 - initiation error 400 has no callback or legacy fallback
+  ---
+  duration_ms: 5.1886
+  type: 'test'
+  ...
+# Subtest: initiation error 401 has no callback or legacy fallback
+ok 141 - initiation error 401 has no callback or legacy fallback
+  ---
+  duration_ms: 4.7728
+  type: 'test'
+  ...
+# Subtest: initiation error 403 has no callback or legacy fallback
+ok 142 - initiation error 403 has no callback or legacy fallback
+  ---
+  duration_ms: 5.1945
+  type: 'test'
+  ...
+# Subtest: initiation error 404 has no callback or legacy fallback
+ok 143 - initiation error 404 has no callback or legacy fallback
+  ---
+  duration_ms: 4.0659
+  type: 'test'
+  ...
+# Subtest: initiation error 409 has no callback or legacy fallback
+ok 144 - initiation error 409 has no callback or legacy fallback
+  ---
+  duration_ms: 4.6825
+  type: 'test'
+  ...
+# Subtest: initiation error 503 has no callback or legacy fallback
+ok 145 - initiation error 503 has no callback or legacy fallback
+  ---
+  duration_ms: 4.0636
+  type: 'test'
+  ...
+# Subtest: production hides mock confirmation after verified quote
+ok 146 - production hides mock confirmation after verified quote
+  ---
+  duration_ms: 5.6079
+  type: 'test'
+  ...
+# Subtest: DEPOSIT callback fixture validates success and refresh under injected test policy
+ok 147 - DEPOSIT callback fixture validates success and refresh under injected test policy
+  ---
+  duration_ms: 5.8448
+  type: 'test'
+  ...
+# Subtest: BALANCE callback fixture validates success and refresh under injected test policy
+ok 148 - BALANCE callback fixture validates success and refresh under injected test policy
+  ---
+  duration_ms: 5.1526
+  type: 'test'
+  ...
+# Subtest: uncertain non-idempotent callback is never retried, including after successful GET
+ok 149 - uncertain non-idempotent callback is never retried, including after successful GET
+  ---
+  duration_ms: 4.67
+  type: 'test'
+  ...
+# Subtest: Vite flags and NODE_ENV cannot unlock Self Storage callbacks or bypass allowlist
+ok 150 - Vite flags and NODE_ENV cannot unlock Self Storage callbacks or bypass allowlist
+  ---
+  duration_ms: 15.5324
+  type: 'test'
+  ...
+# Subtest: invoking disabled UI handlers directly still cannot send either mock-confirm
+ok 151 - invoking disabled UI handlers directly still cannot send either mock-confirm
+  ---
+  duration_ms: 8.7267
+  type: 'test'
+  ...
+# Subtest: November 2026 starts Sunday and the rendered calendar uses seven aligned equal columns
+ok 152 - November 2026 starts Sunday and the rendered calendar uses seven aligned equal columns
+  ---
+  duration_ms: 127.0028
+  type: 'test'
+  ...
+# Subtest: clicking an available future day updates the selected move-in date and blue styling
+ok 153 - clicking an available future day updates the selected move-in date and blue styling
+  ---
+  duration_ms: 29.3828
+  type: 'test'
+  ...
+# Subtest: changing commitment duration recomputes the end date and sends a new full-range validation
+ok 154 - changing commitment duration recomputes the end date and sends a new full-range validation
+  ---
+  duration_ms: 13.2607
+  type: 'test'
+  ...
+# Subtest: booked dates are red and disabled; the exclusive checkout boundary remains selectable
+ok 155 - booked dates are red and disabled; the exclusive checkout boundary remains selectable
+  ---
+  duration_ms: 11.2858
+  type: 'test'
+  ...
+# Subtest: unverified, loading, error and unavailable calendar states never paint dates green or permit selection
+ok 156 - unverified, loading, error and unavailable calendar states never paint dates green or permit selection
+  ---
+  duration_ms: 34.5133
+  type: 'test'
+  ...
+# Subtest: range conflicts block Review while the verified monthly calendar stays interactive
+ok 157 - range conflicts block Review while the verified monthly calendar stays interactive
+  ---
+  duration_ms: 11.0214
+  type: 'test'
+  ...
+# Subtest: availability responses from another Unit or month cannot be reused
+ok 158 - availability responses from another Unit or month cannot be reused
+  ---
+  duration_ms: 0.1533
+  type: 'test'
+  ...
+1..158
+# tests 158
+# suites 0
+# pass 158
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 764.5548

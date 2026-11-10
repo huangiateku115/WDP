@@ -75,11 +75,11 @@ function assertPaymentDto(payment, reservationId, purpose) {
 }
 
 export function isSafePayosCheckoutUrl(value) {
-  if (typeof value !== "string" || !value.trim()) return false;
+  if (typeof value !== "string" || !value || value.trim() !== value) return false;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && url.hostname.toLowerCase() === "pay.payos.vn" &&
-      !url.port && !url.username && !url.password && url.pathname.startsWith("/web/") && !url.hash;
+      !url.port && !url.username && !url.password && url.pathname.startsWith("/web/") && url.pathname.length > "/web/".length && !url.hash;
   } catch {
     return false;
   }

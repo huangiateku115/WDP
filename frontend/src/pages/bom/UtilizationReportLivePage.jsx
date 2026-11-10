@@ -29,7 +29,7 @@ function currentMonthWindow() {
 // capacity come from the warehouse / storage-unit / managed-inventory / capacity APIs.
 // The backend still exposes no cross-facility aggregate or payment ledger, so revenue
 // based utilization and historical time series stay unavailable and are labelled as such.
-export default function UtilizationReportLivePage() {
+export default function UtilizationReportLivePage({ basePath = "/bom" }) {
   const directory = useAsyncData(loadFacilities, []);
   const [facilityId, setFacilityId] = useState("");
   const window = currentMonthWindow();
@@ -50,7 +50,7 @@ export default function UtilizationReportLivePage() {
       title="Utilization report"
       description="Current private-unit occupancy and volume-based physical/allocation utilization from the confirmed warehouse, storage-unit, managed-inventory and capacity APIs."
       notice={LIVE_NOTICE}
-      action={<Button asChild variant="outline"><Link to="/bom/reports">Back to reports</Link></Button>}
+      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>

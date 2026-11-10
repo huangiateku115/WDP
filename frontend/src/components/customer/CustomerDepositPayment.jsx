@@ -1,9 +1,14 @@
 import { reservationAmount } from "@/lib/customerReservationDisplay";
 import { Card, CardContent, Details } from "./RentalBackendUI";
+import DevelopmentDepositPayment from "./DevelopmentDepositPayment";
 
 const unsupported = "Thanh toán trực tuyến cho Managed Inventory hiện chưa được hỗ trợ. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn.";
 
-export default function CustomerDepositPayment({ reservation }) {
+export default function CustomerDepositPayment(props) {
+  const { reservation } = props;
+  if (import.meta.env.DEV === true && import.meta.env.VITE_ENABLE_MANAGED_DEPOSIT_MOCK === 'true') {
+    return <DevelopmentDepositPayment {...props} />;
+  }
   const breakdown = reservation?.managedPricingSnapshot?.amountBreakdown;
   const currency = reservation?.managedPricingSnapshot?.pricingRule?.currency;
   const display = (amount) => typeof amount === "number" && Number.isFinite(amount) && currency

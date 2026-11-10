@@ -1,0 +1,229 @@
+{
+  "revision": "b7f09b48299882075d6c16511f8419fdb040488a",
+  "baselineFileCount": 1214,
+  "rootStats": {
+    "frontend": {
+      "checked": 700,
+      "changed": 16,
+      "missing": 0,
+      "unreadable": 0
+    },
+    "backend": {
+      "checked": 257,
+      "changed": 0,
+      "missing": 0,
+      "unreadable": 0
+    },
+    "BE-REF": {
+      "checked": 257,
+      "changed": 0,
+      "missing": 0,
+      "unreadable": 0
+    }
+  },
+  "modified": [
+    "frontend/customer-mobile/scripts/smoke-inventory.cjs",
+    "frontend/customer-mobile/src/forms/inventory.ts",
+    "frontend/customer-mobile/src/screens/BookingConfirmationScreen.tsx",
+    "frontend/customer-mobile/src/screens/ContractReviewScreen.tsx",
+    "frontend/customer-mobile/src/screens/InventoryFormScreen.tsx",
+    "frontend/customer-mobile/src/screens/PaymentDetailScreen.tsx",
+    "frontend/customer-mobile/src/screens/SupportDetailScreen.tsx",
+    "frontend/customer-mobile/tests/inventory.test.tsx",
+    "frontend/src/components/customer/SelfStorageReservationReview.jsx",
+    "frontend/src/components/customer/inventory/InventoryItemForm.jsx",
+    "frontend/src/components/customer/inventory/ManagedContractReview.jsx",
+    "frontend/src/components/customer/inventory/RepeatedInboundRequests.jsx",
+    "frontend/src/components/customer/inventory/managedInventoryContext.js",
+    "frontend/src/lib/customerReservationService.js",
+    "frontend/tests/customer-payment-load.test.mjs",
+    "frontend/tests/customer-repeated-inbound.test.mjs"
+  ],
+  "added": [
+    "frontend/customer-mobile/src/api/contracts/booking.ts",
+    "frontend/customer-mobile/src/api/contracts/communications.ts",
+    "frontend/customer-mobile/src/api/contracts/core.ts",
+    "frontend/customer-mobile/src/api/contracts/customer.ts",
+    "frontend/customer-mobile/src/api/contracts/documents.ts",
+    "frontend/customer-mobile/src/api/contracts/fixtureAdapter.ts",
+    "frontend/customer-mobile/src/api/contracts/inventory.ts",
+    "frontend/customer-mobile/tests/backend-contracts.test.ts",
+    "frontend/customer-mobile/tests/customer-web-containment.test.ts",
+    "frontend/src/components/customer/inventory/customerInventoryPolicy.js",
+    "frontend/src/components/customer/selfStorageSuggestions.js",
+    "frontend/tests/customer-alignment-policy.test.mjs"
+  ],
+  "missing": [],
+  "unreadable": [],
+  "mobileAxiosGuard": "cfc5016fd0b5cd0e60183f7a73adf1ca30e2de6ff97ebbedfdbfdcb1b500d774",
+  "finalChanges": [
+    {
+      "file": "frontend/customer-mobile/scripts/smoke-inventory.cjs",
+      "before": "8ca1b609a5c70dfe7a75b9de4f438b5225d2eac7d784091d255ecbe4062e8390",
+      "after": "191768c229494d2f322cc3d69205f525cd37218f90a9d2b56c16efc7d7a7fc53",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/forms/inventory.ts",
+      "before": "2bbacebcd7981449efd78350079f79061ed4ec2b8e5f4c7b968a377a1d4f2862",
+      "after": "b2aad48543abe3f097356ab8cb31b5e28f5c3e2ff098a4fa3304c3e2d2ca9089",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/screens/BookingConfirmationScreen.tsx",
+      "before": "4e5d6c73a9e5247c70c1a75ca42728bcf6e385d401c1210f957e5b3530bc0afc",
+      "after": "60bf3e888e5958e98cfbc1e71903c50e3c33e59d109d011ac6aa7ad7d0f37e6c",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/screens/ContractReviewScreen.tsx",
+      "before": "51799549e50e6505c6c8acb1706ceec40685ecf03d388f9c344208950dc6e1e2",
+      "after": "0756435e6e6e7d892118a14c9f13eddf8bc1629230104e25e2ab01d535d2800b",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/screens/InventoryFormScreen.tsx",
+      "before": "6d12c9f446cd2b5c033377b004d63b2055dabffb48edf056e0da8c773ce80302",
+      "after": "4b5a4b8f64b64a16a9b374308dc6044970db78fdbcdc68d0337b2a99acdf925a",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/screens/PaymentDetailScreen.tsx",
+      "before": "9277702002597374ea453861ecb4ec8f6134aebd6327006ed7bce2c953fb6a7d",
+      "after": "95c288d8b942a04436a99fd7615e06e756019b59def73da9835ac771e4fde170",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/src/screens/SupportDetailScreen.tsx",
+      "before": "a4038716ed14a5657e724e69a84337b855fdb41c3ea65f97dbaae661e05127e6",
+      "after": "514fe93395b863abc3d52403980b21dce1d85e7023acbaffb10879a1caffa83c",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/customer-mobile/tests/inventory.test.tsx",
+      "before": "6b822a6b22980c0a384c59417a8d464d19625f0a4a7ce41a3974c7d5ab0e5fce",
+      "after": "2c02894b09c7121abbeeefc7fd262169b7e79620148e8fe77a142090938b1ca4",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/src/components/customer/SelfStorageReservationReview.jsx",
+      "before": "232f2b5a4db0a4803a59511251941af33a6cbe1d99becaeb650d86bc9af7a5ff",
+      "after": "f9836cdae7dbb0e910ac912c1139803032f0089db156bca7790bc7d10a94dad3",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/InventoryItemForm.jsx",
+      "before": "a2e5f00e62de8af5a67ef51507ab7302e390b7236ca02c6fd712df071e39335a",
+      "after": "e1fee4b903c03532009026001d5d7d6d6a1f8469b37c4db2853052fd05c4197a",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/ManagedContractReview.jsx",
+      "before": "129de72c5ade55a95015248b9a9a5cf60517241d2ff9306dc7e22526ba73837b",
+      "after": "bafabc9608411b40a6903b54c62456da462377a32c3d25ddd86f31760150f1de",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/RepeatedInboundRequests.jsx",
+      "before": "230968b169860ce410fee81838d1df63978ee6c4022740bd710a516a4b6cb9b1",
+      "after": "f117744bfecd592199eeda3a0c629e9634b0d14d907cd6a0d9e7a4e1868742f3",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/managedInventoryContext.js",
+      "before": "e65f27da8f137cf6d5fc71cb874921bf53df7ade44c960549fea6c993f065a9b",
+      "after": "151aa6c0e2a891df9a2e1f64b7d9f9500746a7ba7edcec241ace783e151d5a29",
+      "headMatchesTaskStart": true
+    },
+    {
+      "file": "frontend/src/lib/customerReservationService.js",
+      "before": "37f02bac7cf7d15788b7262b152559d2dd548c70f0083f925d449742a644cb03",
+      "after": "f062f2a0c115640aa025277774da0b74d469e69f3dc7bf29a57c591514422af1",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/tests/customer-payment-load.test.mjs",
+      "before": "5be487f103fab6cd155f0533903fb305bde4f492ce89444bc0043acc7c481de2",
+      "after": "8104b7b941eee0e3464f5da1fb700133bf143cb1040d3beeaeda7e1a8576049c",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/tests/customer-repeated-inbound.test.mjs",
+      "before": "e7a1893265cce4ebd02ca4d644daeeb72810f2adc1c165b6caded69a8d5d3285",
+      "after": "405a0cb814502b9c5da1893565ef55eb0b461b261400d96c22d803b073100857",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/booking.ts",
+      "before": null,
+      "after": "9985c45d48270a5b75bd171aa2ea3c71f58acfd0aa4ac8edd19752f40e4e9881",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/communications.ts",
+      "before": null,
+      "after": "458f5bc37fd9ec52bd4cd7083ca3b0c8af95024b81e6e71023ef2a1d67c84f02",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/core.ts",
+      "before": null,
+      "after": "af65baa77885a25ea6c80b2807526fdbd849bad0bb485199ddf15b7bb57fcb87",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/customer.ts",
+      "before": null,
+      "after": "2ea90de7bb2344c8ff198cffabc058e22c91bdf916a256e6f0b5048a61ce25ab",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/documents.ts",
+      "before": null,
+      "after": "9a5a6e2568db42be89810893806184eed77c7130f1d693a9d98d709877240cde",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/fixtureAdapter.ts",
+      "before": null,
+      "after": "8232c7fd454fa2b97419c172e729789466a086cda957dd8cb9d3260cfbe33172",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/src/api/contracts/inventory.ts",
+      "before": null,
+      "after": "7c1a72dbda1bae88d6ab96b19d97454c7861abc20701f9dc1e4c3985e601d307",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/tests/backend-contracts.test.ts",
+      "before": null,
+      "after": "698c30538874cf1cabd4c77719081d70274f7ebd7a5549e8eca2b9768dbae1ef",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/customer-mobile/tests/customer-web-containment.test.ts",
+      "before": null,
+      "after": "f0e4481e964123f2eb4ae01fc09ded79cc5ded261014387c85012c24ef08275d",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/src/components/customer/inventory/customerInventoryPolicy.js",
+      "before": null,
+      "after": "681e222c52d96f1af6f9978a4d52e03afaa5c1f9741592a13e3c82ea87848667",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/src/components/customer/selfStorageSuggestions.js",
+      "before": null,
+      "after": "655064e0a81b0ce4469cf1e3fd52d50df341aa5b92e8e509f53072ae88aa6f74",
+      "headMatchesTaskStart": false
+    },
+    {
+      "file": "frontend/tests/customer-alignment-policy.test.mjs",
+      "before": null,
+      "after": "9cf830fdf5406ef244ba0d8e63f957cf882de68f720ae2216204d23188ed8eed",
+      "headMatchesTaskStart": false
+    }
+  ]
+}

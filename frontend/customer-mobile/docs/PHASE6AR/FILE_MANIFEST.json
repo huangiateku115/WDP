@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-07",
+  "scope": "New documentation/audit metadata only",
+  "createdCount": 28,
+  "required": 10,
+  "sourceModifications": "NONE",
+  "preservationCheck": {
+    "existingSelectedFiles": 1186,
+    "changed": []
+  },
+  "files": [
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/API_CHANGE_MATRIX.csv",
+      "sha256": "306aeeac9b2b6a16996ccefe3c54ebaae48308e9326aaef85cfb6660cb88db04"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/API_OPERATIONS.json",
+      "sha256": "ecdf1bb241c35910ccc83a50c7d3ca61d1c0d565fbbab3f9c758c1da283a3204"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/API_SUMMARY.json",
+      "sha256": "03091b19dc4f507ce6bb19dc90b4bf4d7b93b3367cecdc1df05b04818a5ee5b7"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/BACKEND_CHANGELOG.md",
+      "sha256": "779546179f6b805a125c7b0ab793cc2b3c701ccf2e4bee6d2f5e02633dc13e65"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/BACKEND_CURRENT_BASELINE.md",
+      "sha256": "eb3ad657b38075025e1bfcb66621ad57629b764f9a5ba13212ae563ff7add01a"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/BUSINESS_FLOW_DIFF.md",
+      "sha256": "38fe3602ab094b68e8a2f69bc19559c86534251b48a7bc32605deb9cc006ad82"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/FILE_MANIFEST.json",
+      "sha256": null
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/FINDINGS.json",
+      "sha256": "3606378a9e7a09f0793b623241102cf23a79d0b9ee52b691046165816ab0e2b3"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/FRONTEND_GAP_REGISTER.md",
+      "sha256": "bb69b3396dbadeee5b00e3d2fd3bcb0f402afe85da687ac593ed7b852f5ad9cc"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/FRONTEND_IMPACT_DATA.json",
+      "sha256": "d72b771a0ab2afb953b3dbd21c998ee0390b423ec181141033a1bdab0cd7adc3"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/FRONTEND_REFACTOR_PLAN.md",
+      "sha256": "a23695634703699d89074306656f7bd44e831f3a5a4a906cb3efeeaf79a1e940"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/HISTORICAL_FILE_COMPARISON.json",
+      "sha256": "a3f7b5b0fa1bcf5e9998d39c537932eb0cd89207f8d18b5a2831e45b4fb4fb6a"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/HISTORICAL_FINDING_RESOLUTION.csv",
+      "sha256": "88a78d97779b9be38454f6f410a4ed88d69831c044075f9cefd1100bab4ef9e4"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/HISTORICAL_OPERATIONS.json",
+      "sha256": "cc0ebf4bf4dff0b0f83d5d43e66008a685b0bba7ee10046551cf8d549f883b75"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/IMPACT_SUMMARY.json",
+      "sha256": "96f0d8dfd5d1e4f446a65ad16986fd0ee83badfb52de4756f483a753a1f6f75e"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/MOBILE_FRONTEND_IMPACT.csv",
+      "sha256": "cd894ba17f6613c8deeb8f7c3f3fa96f27cf60b074fffedc65f234dbdba82f37"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/PHASE6AR_REPORT.md",
+      "sha256": "dc439f19ca0740e814bee6e0bdd344f84397873b2a3705fab951d4b35fd2c368"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/PRESERVATION.json",
+      "sha256": "12e23ca7c719f1767ad5a3f74244395ff1cbd5a666b3b7a235d48bcaa3d41961"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/REGISTERED_ROUTES.json",
+      "sha256": "f89dff1c018e3a47cf46017c0dc7a30472c9c5607eac009fdbb2729da0edac11"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/REVISION_METADATA.json",
+      "sha256": "f905732b09b9c4a51109fdf0a397a644c8955bfeff5dddb0f0235ae63d87b0b7"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/SECURITY_AND_FEATURE_GATES.md",
+      "sha256": "8442206b68d7560a4fa013fd9ff60178eda08493c553171ca447fd5dd3c85343"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/SOURCE_BASELINE.json",
+      "sha256": "10b114eab01c41c7373c9cc34085f7cb7eb236d4adb16c4adb36ebcce37f902b"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/SOURCE_EVIDENCE.md",
+      "sha256": "21f017dd4420c4c8114c198219d02245ab6f5eb740d11fbf8bf1dda91efa86cc"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/SYNTAX_RESULT.json",
+      "sha256": "7a473f3db95143e16f283f1385bf1797dfafad25fc79be453aa0a2531212705d"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/VALIDATION.json",
+      "sha256": "07497b8867ebaeb2823b9d9c304fb26ccaafee94be2b0bf72c96d74ebeb25d93"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/WEBSITE_ALLOWLIST_PROBE.json",
+      "sha256": "8eeff432135da06ecf61acd508dcb054a134e9b30bc8ed5996b3ad546b223e9b"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/WEBSITE_API_CALLS.json",
+      "sha256": "d74309efe538bceb40f7ee4d6468128e7845da27f4e7f8929bb602855c2870ec"
+    },
+    {
+      "path": "C:/Users/laptop/Desktop/WDP/frontend/customer-mobile/docs/PHASE6AR/WEBSITE_FRONTEND_IMPACT.csv",
+      "sha256": "60f15f328f558a4b495c4cf3baa2326b3cc834ddb7c5ad6c1487677ff9fcc7e5"
+    }
+  ],
+  "note": "Manifest self-hash intentionally omitted. Generated build/cache outputs not part of application source preservation scope."
+}

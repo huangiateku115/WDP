@@ -1,8 +1,10 @@
-# VaultSpace Customer Mobile · Giai đoạn 1–5B
+# VaultSpace Customer Mobile
 
 Ứng dụng **Expo / React Native iOS–Android**, TypeScript, chỉ dành cho khách hàng. Toàn bộ source nằm trong thư mục này; không chia sẻ dependencies, router, CSS hoặc API client với website ở thư mục cha.
 
 ## Chạy ứng dụng
+
+Customer Mobile dùng Expo SDK 58 và API WDP. Mặc định dùng Render. Đặt EXPO_PUBLIC_API_BASE_URL trong .env nếu cần Backend test riêng. Xem [cấu hình, API và giới hạn hiện tại](docs/REAL_API_INTEGRATION.md).
 
 ```powershell
 cd C:\Users\laptop\Desktop\WDP\frontend\customer-mobile
@@ -10,16 +12,11 @@ npm ci
 npm start
 ```
 
-Dùng Expo Go **tương thích SDK 57** hoặc development client đã build đúng SDK. Không giả định Expo Go mới nhất trên điện thoại hỗ trợ SDK này. Khi có toolchain native phù hợp:
+Dùng Expo Go tương thích SDK 58 hoặc development client đã build với SecureStore. Không dùng tài khoản hoặc mật khẩu trong các tài liệu lịch sử. Khi test giao dịch, chỉ dùng môi trường và kênh PayOS đã được phê duyệt.
 
-```text
-npm run android       # Android SDK + thiết bị/emulator
-npm run ios           # macOS + Xcode + iOS simulator
-```
+## Tài liệu lịch sử
 
-Windows hiện tại chưa có `adb` hoặc iOS simulator trong PATH. Chưa tạo APK/IPA hoặc thử nghiệm trên thiết bị thật. `export:native` tạo Hermes bundles, không phải binary cài đặt.
-
-Email mẫu điền sẵn: `demo@vaultspace.vn`. Dùng chuỗi mẫu ít nhất 8 ký tự, ví dụ `VaultDemo123!`. Đây **không phải xác thực**; không nhập mật khẩu thật. Phiên trải nghiệm chỉ ở bộ nhớ và mất khi app khởi động lại. Đăng ký chỉ kiểm tra form, không tạo tài khoản.
+Các mục phía dưới mô tả các phase giao diện trước khi tích hợp API. Các smoke test cũ sử dụng phiên ngoại tuyến và không còn là hướng dẫn chạy runtime hiện tại.
 
 ## Phạm vi giao diện
 

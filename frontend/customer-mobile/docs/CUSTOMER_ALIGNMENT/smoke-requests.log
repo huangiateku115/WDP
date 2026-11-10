@@ -1,0 +1,1 @@
+{"result":"PASS","target":"supplementary RN Web; NOT native device E2E","widths":[320,375,390,430,768],"checks":"Item Detail/inbound/outbound/detail/amend/cancel previews; partial stock; modal; dirty guard; draft Back restoration; unchanged request status; duplicate prevention; conflict; auth guard; viewport overflow","mutations":0,"backendRequests":0,"pageErrors":[]}

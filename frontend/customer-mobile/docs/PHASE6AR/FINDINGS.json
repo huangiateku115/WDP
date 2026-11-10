@@ -1,0 +1,555 @@
+[
+  {
+    "id": "R01",
+    "priority": "P0",
+    "historicalId": "S-PRINT",
+    "disposition": "STILL_PRESENT",
+    "finding": "Contract print thiếu owner/facility check; Customer print action hiện dùng safe detail, nhưng Staff print helper vẫn gọi endpoint không an toàn.",
+    "file": "backend/src/controllers/contracts/contract.controller.ts",
+    "symbol": "getContractPrintData",
+    "impact": "SECURITY_FIX_REQUIRED;BACKEND_DEPENDENCY",
+    "closure": "Không mở native print endpoint; loại đường gọi Staff cho đến khi server kiểm scope/test A-B.",
+    "evidence": [
+      "backend/src/controllers/contracts/contract.controller.ts:318 [getContractPrintData]"
+    ]
+  },
+  {
+    "id": "R02",
+    "priority": "P0",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "CANNOT_VERIFY",
+    "finding": "Inspection create/list không scope facility; CHECK_OUT complete cập nhật Inspection/Reservation/Unit ngoài transaction, không kiểm facility linkage/status trước cập nhật. Có nguy cơ thao tác xuyên facility từ role được phép; chưa thử live.",
+    "file": "backend/src/controllers/inspections/inspection.controller.ts",
+    "symbol": "createInspection|getInspections|completeInspection",
+    "impact": "SECURITY_FIX_REQUIRED;BACKEND_DEPENDENCY",
+    "closure": "Backend scope/linkage/CAS/transaction trước khi mở checkout; frontend không thể thay authorization server.",
+    "evidence": [
+      "backend/src/controllers/inspections/inspection.controller.ts:35 [createInspection]",
+      "backend/src/controllers/inspections/inspection.controller.ts:48 [getInspections]",
+      "backend/src/controllers/inspections/inspection.controller.ts:66 [completeInspection]"
+    ]
+  },
+  {
+    "id": "R03",
+    "priority": "P1",
+    "historicalId": "S-SIGN-VERSION",
+    "disposition": "STILL_PRESENT",
+    "finding": "Managed sign không nhận reviewed version/hash; ensureVersion trong lúc sign. Hai chữ ký cùng current hash chưa chứng minh review-bound consent.",
+    "file": "backend/src/services/reservations/managed-checkin.service.ts",
+    "symbol": "signContract|ensureVersion",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+    "closure": "Compare-and-sign server contract +409 stale; giữ review read-only đến khi fix.",
+    "evidence": [
+      "backend/src/services/reservations/managed-checkin.service.ts:274 [signContract]",
+      "backend/src/services/reservations/managed-checkin.service.ts:84 [ensureVersion]",
+      "backend/src/services/reservations/managed-checkin.service.ts:217 [ensureVersion]",
+      "backend/src/services/reservations/managed-checkin.service.ts:267 [ensureVersion]",
+      "backend/src/services/reservations/managed-checkin.service.ts:285 [ensureVersion]"
+    ]
+  },
+  {
+    "id": "R04",
+    "priority": "P1",
+    "historicalId": "A-REFRESH",
+    "disposition": "STILL_PRESENT",
+    "finding": "Không có refresh route; logout cần access token hợp lệ, JWKS/issuer không có audience/introspection policy rõ.",
+    "file": "backend/src/routes/auth.routes.ts",
+    "symbol": "router.post",
+    "impact": "BACKEND_DEPENDENCY;ERROR_HANDLING_CHANGE",
+    "closure": "Native re-login-on-expiry hoặc refresh contract mới được duyệt; không gửi Keycloak secret.",
+    "evidence": [
+      "backend/src/routes/auth.routes.ts:8 [router.post]",
+      "backend/src/routes/auth.routes.ts:11 [router.post]",
+      "backend/src/routes/auth.routes.ts:20 [router.post]",
+      "backend/src/routes/auth.routes.ts:21 [router.post]"
+    ]
+  },
+  {
+    "id": "R05",
+    "priority": "P1",
+    "historicalId": "A-AUTH-HARDEN",
+    "disposition": "STILL_PRESENT",
+    "finding": "OTP Math.random; TTL30000 khác comment300; emailVerified true khi tạo user; thiếu audience và reset/login protection đầy đủ.",
+    "file": "backend/src/services/auth/auth.service.ts",
+    "symbol": "forgotPassword|resetPassword",
+    "impact": "SECURITY_FIX_REQUIRED;BACKEND_DEPENDENCY",
+    "closure": "Security review Backend, không frontend bypass; không gọi verified email từ fixture.",
+    "evidence": [
+      "backend/src/services/auth/auth.service.ts:74 [forgotPassword]",
+      "backend/src/services/auth/auth.service.ts:116 [resetPassword]"
+    ]
+  },
+  {
+    "id": "R06",
+    "priority": "P1",
+    "historicalId": "B-SELF-PRICE",
+    "disposition": "STILL_PRESENT",
+    "finding": "PricingRule/policy được chọn theo ID mà không bind facility/service/term; rent ceil(days)/30, deposit nửa/base vẫn có short-term credit lớn hơn total.",
+    "file": "backend/src/services/reservations/reservation.service.ts",
+    "symbol": "calculatePricing",
+    "impact": "BACKEND_DEPENDENCY;VALIDATION_CHANGE",
+    "closure": "Không ghi đè công thức bằng client; test scope/short term server.",
+    "evidence": [
+      "backend/src/services/reservations/reservation.service.ts:194 [calculatePricing]",
+      "backend/src/services/reservations/reservation.service.ts:268 [calculatePricing]"
+    ]
+  },
+  {
+    "id": "R07",
+    "priority": "P1",
+    "historicalId": "S-SELF-PAY",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "Self mock deposit/balance nay chặn production; nhưng deposit chỉ deny production, chưa positive dev/test allow gate, timestamp key/multiwrites cũ còn. New booking CONTRACTED nên RESERVED mock deposit không hợp flow mới.",
+    "file": "backend/src/controllers/reservations/reservation.controller.ts",
+    "symbol": "confirmMockDeposit|confirmMockBalance",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED",
+    "closure": "Giữ khóa mock; dùng PayOS Self family riêng khi deployment/provider được duyệt.",
+    "evidence": [
+      "backend/src/controllers/reservations/reservation.controller.ts:549 [confirmMockDeposit]",
+      "backend/src/controllers/reservations/reservation.controller.ts:715 [confirmMockBalance]"
+    ]
+  },
+  {
+    "id": "R08",
+    "priority": "P1",
+    "historicalId": "S-STAFF-SCOPE",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "Managed signed-paper có facility scope/CAS/transaction và từ chối V2. Self branch signed-paper vẫn thiếu scope/state/transaction tương đương; contract-by-reservation Staff branch thiếu facility scope. Self Customer fallback can sign an owned DRAFT without checking Reservation deposit stage; website canSign guard alone is not a server rule.",
+    "file": "backend/src/controllers/contracts/contract.controller.ts",
+    "symbol": "confirmSignedPaper|getContractByReservationId",
+    "impact": "SECURITY_FIX_REQUIRED;BACKEND_DEPENDENCY",
+    "closure": "Backend Self proof + scoped lookup; UI không dựa client filter làm security.",
+    "evidence": [
+      "backend/src/controllers/contracts/contract.controller.ts:146 [confirmSignedPaper]",
+      "backend/src/controllers/contracts/contract.controller.ts:68 [getContractByReservationId]",
+      "backend/src/controllers/contracts/contract.controller.ts:88 [signContract]"
+    ]
+  },
+  {
+    "id": "R09",
+    "priority": "P1",
+    "historicalId": "B-V2-PROD",
+    "disposition": "STILL_PRESENT",
+    "finding": "Managed V2 vẫn development + MI_MANAGED_DEPOSIT_FLOW_ENABLED; ngoài gate create/quote có thể legacy. PayOS mới chỉ SELF_STORAGE.",
+    "file": "backend/src/services/reservations/managed-reservation.service.ts",
+    "symbol": "managedDepositFlowEnabled",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+    "closure": "Không rollout V2 production hoặc đổi sang legacy ngầm.",
+    "evidence": [
+      "backend/src/services/reservations/managed-reservation.service.ts:29 [managedDepositFlowEnabled]",
+      "backend/src/services/reservations/managed-reservation.service.ts:171 [managedDepositFlowEnabled]",
+      "backend/src/services/reservations/managed-reservation.service.ts:268 [managedDepositFlowEnabled]",
+      "backend/src/services/reservations/managed-reservation.service.ts:332 [managedDepositFlowEnabled]"
+    ]
+  },
+  {
+    "id": "R10",
+    "priority": "P1",
+    "historicalId": "B-MI06",
+    "disposition": "STILL_PRESENT",
+    "finding": "Repeated/canonical creation, confirmations, ledger/canonical relocation gates vẫn opt-in ngoài production. Read/cancel/return cleanup có gate khác.",
+    "file": "backend/src/config/mi06-canonical-outbound-gate.ts",
+    "symbol": "resolveMi06CanonicalOutboundGate",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED;STATE_MACHINE_CHANGE",
+    "closure": "Per-operation capability; không khóa cả read/cleanup, không legacy fallback.",
+    "evidence": [
+      "backend/src/config/mi06-canonical-outbound-gate.ts:2 [resolveMi06CanonicalOutboundGate]"
+    ]
+  },
+  {
+    "id": "R11",
+    "priority": "P1",
+    "historicalId": "B-PROVIDER",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "PayOS thật có SDK checkout/status/history/webhook cho Self; Managed provider/refund/general payment history/native return chưa có. Return/cancel URL cố định web /portal/payments/:id.",
+    "file": "backend/src/services/payments/payos-payment.service.ts",
+    "symbol": "createCheckout|customerPaymentUrls|getCustomerStatus",
+    "impact": "DTO_MAPPING_ONLY;BACKEND_DEPENDENCY;NAVIGATION_CHANGE",
+    "closure": "Self status 3 chiều settlement/status/application; native return policy cần xác nhận; không dùng PayOS Self cho Managed.",
+    "evidence": [
+      "backend/src/services/payments/payos-payment.service.ts:253 [createCheckout]",
+      "backend/src/services/payments/payos-payment.service.ts:78 [customerPaymentUrls]",
+      "backend/src/services/payments/payos-payment.service.ts:496 [customerPaymentUrls]",
+      "backend/src/services/payments/payos-payment.service.ts:581 [getCustomerStatus]"
+    ]
+  },
+  {
+    "id": "R12",
+    "priority": "P1",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "CANNOT_VERIFY",
+    "finding": "Website build/test không resolve qrcode dù package.json khai báo 1.5.4. Đây là dependency installation blocker trong môi trường audit, không kết luận code regression.",
+    "file": "frontend/src/lib/selfStoragePayosQr.js",
+    "symbol": "import",
+    "impact": "TEST_UPDATE_REQUIRED",
+    "closure": "Task riêng khôi phục dependency theo lockfile được duyệt; audit không install/update.",
+    "evidence": [
+      "frontend/src/lib/selfStoragePayosQr.js:1 [import]",
+      "frontend/src/lib/selfStoragePayosQr.js:2 [import]"
+    ]
+  },
+  {
+    "id": "R13",
+    "priority": "P1",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "CANNOT_VERIFY",
+    "finding": "Staff repeated/canonical outbound/relocation helpers có thật nhưng allowlist hiện chặn các method/path Staff này trước HTTP.",
+    "file": "frontend/src/api/confirmedContract.js",
+    "symbol": "assertConfirmedRequest",
+    "impact": "API_ENDPOINT_CHANGE;TEST_UPDATE_REQUIRED",
+    "closure": "Thêm đúng verified route sau review; integration tests chạy helper qua shared interceptor, không stub bỏ qua.",
+    "evidence": [
+      "frontend/src/api/confirmedContract.js:12 [assertConfirmedRequest]"
+    ]
+  },
+  {
+    "id": "R14",
+    "priority": "P1",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "REPLACED_BY_NEW_BEHAVIOR",
+    "finding": "activeClosureRequestId + inventoryVersion fence chặn register/edit/inbound/relocate; outbound/cleanup có thể tiếp tục trong term. Website/mobile chưa biểu diễn closure marker.",
+    "file": "backend/src/services/inventory-items/inventory-item.service.ts",
+    "symbol": "lockReservationForRegistration|lockReservationLifecycle",
+    "impact": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE;TEST_UPDATE_REQUIRED",
+    "closure": "Chặn đúng mutations khi closure pending,409 refresh entity+reservation+stock; không global disable outbound.",
+    "evidence": [
+      "backend/src/services/inventory-items/inventory-item.service.ts:229 [lockReservationForRegistration]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:662 [lockReservationForRegistration]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:252 [lockReservationLifecycle]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:279 [lockReservationLifecycle]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:286 [lockReservationLifecycle]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:290 [lockReservationLifecycle]"
+    ]
+  },
+  {
+    "id": "R15",
+    "priority": "P1",
+    "historicalId": "R-NATIVE",
+    "disposition": "STILL_PRESENT",
+    "finding": "Native app chưa có live auth/API/device E2E; 23 màn hình vẫn offline fixture. Không biến 375 test PASS thành integration PASS.",
+    "file": "frontend/customer-mobile/src/api/client.ts",
+    "symbol": "apiClient",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED;BACKEND_DEPENDENCY",
+    "closure": "Chỉ adapter cutover toàn feature sau auth/owner/session tests, device acceptance.",
+    "evidence": [
+      "frontend/customer-mobile/src/api/client.ts:5 [apiClient]",
+      "frontend/customer-mobile/src/api/client.ts:6 [apiClient]"
+    ]
+  },
+  {
+    "id": "R16",
+    "priority": "P1",
+    "historicalId": "R-DEPENDENCY",
+    "disposition": "CANNOT_VERIFY",
+    "finding": "19 advisories là số liệu lịch sử; chưa scan mới/không biết runtime reachability hiện tại.",
+    "file": "frontend/customer-mobile/docs/PHASE6A_SECURITY_AND_OWNERSHIP.md",
+    "symbol": "dependency",
+    "impact": "TEST_UPDATE_REQUIRED",
+    "closure": "Review lockfile/advisory/dev-vs-native riêng; không force upgrade.",
+    "evidence": [
+      "frontend/customer-mobile/docs/PHASE6A_SECURITY_AND_OWNERSHIP.md:1 [dependency]"
+    ]
+  },
+  {
+    "id": "R17",
+    "priority": "P2",
+    "historicalId": "S-SELF-OVERLAP",
+    "disposition": "FIXED",
+    "finding": "Overlap gồm committed DEPOSIT_PAID/CHECKIN_READY/PAID/ACTIVE/OVERDUE, hold RESERVED/CONTRACTED chưa hết hạn, [start,end).",
+    "file": "backend/src/services/reservations/reservation.service.ts",
+    "symbol": "buildOverlapFilter",
+    "impact": "NO_CHANGE;TEST_UPDATE_REQUIRED",
+    "closure": "FIXED_IN_SOURCE — DEPLOYMENT_UNVERIFIED; giữ adjacency/expiry/concurrency regression.",
+    "evidence": [
+      "backend/src/services/reservations/reservation.service.ts:44 [buildOverlapFilter]",
+      "backend/src/services/reservations/reservation.service.ts:88 [buildOverlapFilter]",
+      "backend/src/services/reservations/reservation.service.ts:113 [buildOverlapFilter]"
+    ]
+  },
+  {
+    "id": "R18",
+    "priority": "P2",
+    "historicalId": "B-UNIT-PERIOD",
+    "disposition": "FIXED",
+    "finding": "Unit list chấp nhận start/end/availableOnly; exact availability endpoint UTC month + optional date-only range,UNKNOWN khi scan quá500.",
+    "file": "backend/src/services/storage-units/storage-unit.service.ts",
+    "symbol": "getUnitAvailability|list",
+    "impact": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+    "closure": "FIXED_IN_SOURCE — DEPLOYMENT_UNVERIFIED; website đã có calendar, native cần real mapping.",
+    "evidence": [
+      "backend/src/services/storage-units/storage-unit.service.ts:61 [getUnitAvailability]",
+      "backend/src/services/storage-units/storage-unit.service.ts:1 [list]"
+    ]
+  },
+  {
+    "id": "R19",
+    "priority": "P2",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "REPLACED_BY_NEW_BEHAVIOR",
+    "finding": "Self create atomically CONTRACTED + DRAFT Contract, VERIFIED profile rechecked transaction; không còn routine approve mới.409 có suggestedUnits top-level.",
+    "file": "backend/src/services/reservations/reservation.service.ts",
+    "symbol": "createReservation|findAvailableAlternatives",
+    "impact": "STATE_MACHINE_CHANGE;UI_CONTENT_CHANGE;ERROR_HANDLING_CHANGE",
+    "closure": "Native confirmation/review/lifecycle cập nhật; website phần lớn đã aligned, bổ sung suggestion handling nếu thiếu.",
+    "evidence": [
+      "backend/src/services/reservations/reservation.service.ts:237 [createReservation]",
+      "backend/src/services/reservations/reservation.service.ts:100 [findAvailableAlternatives]",
+      "backend/src/services/reservations/reservation.service.ts:306 [findAvailableAlternatives]"
+    ]
+  },
+  {
+    "id": "R20",
+    "priority": "P2",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "REPLACED_BY_NEW_BEHAVIOR",
+    "finding": "Closure readiness mới chỉ GET diagnostic snapshot; overall không READY vì financial/disposition policy UNKNOWN; không đóng rental/release Cell.",
+    "file": "backend/src/services/reservations/managed-closure-readiness.service.ts",
+    "symbol": "get|evaluate",
+    "impact": "DTO_MAPPING_ONLY;FEATURE_MUST_REMAIN_DISABLED",
+    "closure": "Nếu thêm display thì null/UNKNOWN riêng, không nút Confirm closure; Staff không được route role này.",
+    "evidence": [
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:60 [get]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:75 [get]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:87 [get]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:149 [get]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:98 [evaluate]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:104 [evaluate]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:327 [evaluate]",
+      "backend/src/services/reservations/managed-closure-readiness.service.ts:348 [evaluate]"
+    ]
+  },
+  {
+    "id": "R21",
+    "priority": "P2",
+    "historicalId": "S-SUPPORT-REF",
+    "disposition": "STILL_PRESENT",
+    "finding": "Support linked RENTAL/ITEM/PAYMENT chưa kiểm owner/existence; ticket/message ownership/internal filtering vẫn có.",
+    "file": "backend/src/services/support-requests/support-request.service.ts",
+    "symbol": "create",
+    "impact": "BACKEND_DEPENDENCY;VALIDATION_CHANGE",
+    "closure": "Text-only/unlinked Customer create đến khi private reference được xác minh.",
+    "evidence": [
+      "backend/src/services/support-requests/support-request.service.ts:65 [create]",
+      "backend/src/services/support-requests/support-request.service.ts:89 [create]",
+      "backend/src/services/support-requests/support-request.service.ts:120 [create]",
+      "backend/src/services/support-requests/support-request.service.ts:193 [create]"
+    ]
+  },
+  {
+    "id": "R22",
+    "priority": "P2",
+    "historicalId": "B-NOTIF-TARGET",
+    "disposition": "STILL_PRESENT",
+    "finding": "Notification REST own list/mark-one; không typed target/bulk count/push/socket routes.",
+    "file": "backend/src/controllers/notifications/notification.controller.ts",
+    "symbol": "getMyNotifications|markAsRead",
+    "impact": "DTO_MAPPING_ONLY;FEATURE_MUST_REMAIN_DISABLED",
+    "closure": "Không parse route từ content, không tạo bulk API.",
+    "evidence": [
+      "backend/src/controllers/notifications/notification.controller.ts:4 [getMyNotifications]",
+      "backend/src/controllers/notifications/notification.controller.ts:13 [markAsRead]"
+    ]
+  },
+  {
+    "id": "R23",
+    "priority": "P2",
+    "historicalId": "M-ITEM-CODE",
+    "disposition": "STILL_PRESENT",
+    "finding": "Mobile inventory form thiếu required itemCode, fixture identifiers/illustrations không khớp ObjectId/images API.",
+    "file": "frontend/customer-mobile/src/forms/inventory.ts",
+    "symbol": "InventoryFormValues|inventoryFormSchema",
+    "impact": "VALIDATION_CHANGE;DTO_MAPPING_ONLY;TEST_UPDATE_REQUIRED",
+    "closure": "Thêm field/builder đúng contract khi phase implementation được duyệt.",
+    "evidence": [
+      "frontend/customer-mobile/src/forms/inventory.ts:7 [InventoryFormValues]",
+      "frontend/customer-mobile/src/forms/inventory.ts:12 [InventoryFormValues]",
+      "frontend/customer-mobile/src/forms/inventory.ts:30 [InventoryFormValues]",
+      "frontend/customer-mobile/src/forms/inventory.ts:14 [inventoryFormSchema]"
+    ]
+  },
+  {
+    "id": "R24",
+    "priority": "P2",
+    "historicalId": "M-DTO-STOCK",
+    "disposition": "STILL_PRESENT",
+    "finding": "onHand/held/batches/actual measurement authoritative, không Item.quantity; thiếu projection không zero. Arithmetic code không đổi so baseline.",
+    "file": "backend/src/services/inventory-items/managed-stock-ledger.service.ts",
+    "symbol": "reconcileManagedItemStock",
+    "impact": "DTO_MAPPING_ONLY;ERROR_HANDLING_CHANGE",
+    "closure": "Giữ unknown, policy/schemaVersion, không movement summation client.",
+    "evidence": [
+      "backend/src/services/inventory-items/managed-stock-ledger.service.ts:261 [reconcileManagedItemStock]"
+    ]
+  },
+  {
+    "id": "R25",
+    "priority": "P2",
+    "historicalId": "M-INBOUND-DTO",
+    "disposition": "STILL_PRESENT",
+    "finding": "Repeated payload declaredUnit*/quantityUnit, canonical outbound chỉ requestedQuantity; key/version rules không thay, closure409 mới.",
+    "file": "backend/src/services/inventory-items/managed-inbound-request.service.ts",
+    "symbol": "create|amend|cancel",
+    "impact": "DTO_MAPPING_ONLY;STATE_MACHINE_CHANGE",
+    "closure": "Builders exact; preserve request keys/versions trên uncertain outcomes, no legacy fallback.",
+    "evidence": [
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:152 [create]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:187 [create]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:219 [create]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:342 [create]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:122 [amend]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:123 [amend]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:413 [amend]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:445 [amend]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:472 [cancel]",
+      "backend/src/services/inventory-items/managed-inbound-request.service.ts:498 [cancel]"
+    ]
+  },
+  {
+    "id": "R26",
+    "priority": "P2",
+    "historicalId": "M-CONTRACT",
+    "disposition": "STILL_PRESENT",
+    "finding": "Partial signature là presentation state, không Backend enum; Self giấy và V2 hai-party là flow khác nhau.",
+    "file": "backend/src/types/contract.type.ts",
+    "symbol": "ContractStatus",
+    "impact": "DTO_MAPPING_ONLY;UI_CONTENT_CHANGE",
+    "closure": "Phân biệt flow adapters; không gửi PARTIALLY_SIGNED.",
+    "evidence": [
+      "backend/src/types/contract.type.ts:3 [ContractStatus]",
+      "backend/src/types/contract.type.ts:15 [ContractStatus]"
+    ]
+  },
+  {
+    "id": "R27",
+    "priority": "P2",
+    "historicalId": "M-MAP-GEO",
+    "disposition": "STILL_PRESENT",
+    "finding": "Rack geometry thật, Zone footprint/units/bounds chưa đủ; periodStatus khác displayStatus và isBookable authority không đổi.",
+    "file": "backend/src/services/warehouse-map/warehouse-map.service.ts",
+    "symbol": "cellBookingDto",
+    "impact": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+    "closure": "Native render đúng nguồn, giữ UNKNOWN fail closed; không redesign map do audit.",
+    "evidence": [
+      "backend/src/services/warehouse-map/warehouse-map.service.ts:229 [cellBookingDto]",
+      "backend/src/services/warehouse-map/warehouse-map.service.ts:691 [cellBookingDto]",
+      "backend/src/services/warehouse-map/warehouse-map.service.ts:767 [cellBookingDto]"
+    ]
+  },
+  {
+    "id": "R28",
+    "priority": "P2",
+    "historicalId": "M-PAGING",
+    "disposition": "STILL_PRESENT",
+    "finding": "listMine nhận parse filters nhưng chưa apply; DTO envelope/paging khác family. Staff queues trả nested data/pagination và page tối đa100; website hiện chỉ lấy trang đầu.",
+    "file": "backend/src/services/inventory-items/inventory-item.service.ts",
+    "symbol": "listMine",
+    "impact": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+    "closure": "Kiểm page limits từng queue; không local filter claim toàn bộ dataset.",
+    "evidence": [
+      "backend/src/services/inventory-items/inventory-item.service.ts:684 [listMine]"
+    ]
+  },
+  {
+    "id": "R29",
+    "priority": "P2",
+    "historicalId": "M-PROFILE",
+    "disposition": "STILL_PRESENT",
+    "finding": "GET Customer profile có thể tạo record; identity lock cũ chưa bao phủ mọi V2 stage; fullName/displayName drift.",
+    "file": "backend/src/controllers/users/customer-profile.controller.ts",
+    "symbol": "getMyProfile|updateMyProfile",
+    "impact": "DTO_MAPPING_ONLY;BACKEND_DEPENDENCY",
+    "closure": "Dùng users/me bootstrap; xác nhận profile semantics.",
+    "evidence": [
+      "backend/src/controllers/users/customer-profile.controller.ts:7 [getMyProfile]",
+      "backend/src/controllers/users/customer-profile.controller.ts:20 [updateMyProfile]"
+    ]
+  },
+  {
+    "id": "R30",
+    "priority": "P2",
+    "historicalId": "M-SELF-DETAIL",
+    "disposition": "STILL_PRESENT",
+    "finding": "Self detail so String(populated customerId) với actor; nghi false403 chưa runtime verified.",
+    "file": "backend/src/controllers/reservations/reservation.controller.ts",
+    "symbol": "getReservationById",
+    "impact": "BACKEND_DEPENDENCY;TEST_UPDATE_REQUIRED",
+    "closure": "Backend fixture test populated owner trước khi sửa; frontend không bypass.",
+    "evidence": [
+      "backend/src/controllers/reservations/reservation.controller.ts:303 [getReservationById]"
+    ]
+  },
+  {
+    "id": "R31",
+    "priority": "P2",
+    "historicalId": "B-CREATE-RETRY",
+    "disposition": "STILL_PRESENT",
+    "finding": "Booking/item/support create không có replay key chung. PayOS có key riêng không giải quyết các create khác.",
+    "file": "backend/src/services/reservations/reservation.service.ts",
+    "symbol": "createReservation",
+    "impact": "ERROR_HANDLING_CHANGE",
+    "closure": "Unknown outcome=>reconcile own GET; không automatic new create.",
+    "evidence": [
+      "backend/src/services/reservations/reservation.service.ts:237 [createReservation]"
+    ]
+  },
+  {
+    "id": "R32",
+    "priority": "P3",
+    "historicalId": "D-SOURCE",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "Có local Git revision và old baseline221file khớp7a5cd84 sau normalize CRLF; deployment/gates chưa biết.",
+    "file": "frontend/customer-mobile/docs/PHASE6AR/REVISION_METADATA.json",
+    "symbol": "head",
+    "impact": "BACKEND_DEPENDENCY",
+    "closure": "Lấy deployment revision/capability/test-env evidence trước cutover.",
+    "evidence": [
+      "frontend/customer-mobile/docs/PHASE6AR/REVISION_METADATA.json:2 [head]"
+    ]
+  },
+  {
+    "id": "R33",
+    "priority": "P2",
+    "historicalId": "NEW_AUDIT_FINDING",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "Self handover và CHECK_IN nay dev/test-only,scope/linkage/CAS/atomic/recovery; production PayOS paid vẫn chưa có activation path mở.",
+    "file": "backend/src/controllers/reservations/reservation.controller.ts",
+    "symbol": "handoverReservation",
+    "impact": "FEATURE_MUST_REMAIN_DISABLED;UI_CONTENT_CHANGE",
+    "closure": "Hiện unavailable rõ; không đổi gate hoặc gọi legacy để activate.",
+    "evidence": [
+      "backend/src/controllers/reservations/reservation.controller.ts:796 [handoverReservation]"
+    ]
+  },
+  {
+    "id": "R34",
+    "priority": "P2",
+    "historicalId": "M-SUPPORT",
+    "disposition": "STILL_PRESENT",
+    "finding": "Support real public conversation/reply có; mobile fixtures/bubbles không API; singular relatedEntity/category/status/validation mapping cần adapter.",
+    "file": "backend/src/services/support-requests/support-request.service.ts",
+    "symbol": "messages|reply",
+    "impact": "DTO_MAPPING_ONLY;VALIDATION_CHANGE",
+    "closure": "Map exact enums/body, internal filter, disable unsupported attachments.",
+    "evidence": [
+      "backend/src/services/support-requests/support-request.service.ts:1 [messages]",
+      "backend/src/services/support-requests/support-request.service.ts:1 [reply]"
+    ]
+  },
+  {
+    "id": "R35",
+    "priority": "P2",
+    "historicalId": "M-INVENTORY-EDIT",
+    "disposition": "PARTIALLY_FIXED",
+    "finding": "REGISTERED unplaced edit + rejected V2 correction giữ eligibility cũ; nay mọi edit nằm transaction và item/reservation CAS kể cả không ảnh.",
+    "file": "backend/src/services/inventory-items/inventory-item.service.ts",
+    "symbol": "update",
+    "impact": "STATE_MACHINE_CHANGE;ERROR_HANDLING_CHANGE",
+    "closure": "409 refresh preserve form, no unconditional retry; fence closure.",
+    "evidence": [
+      "backend/src/services/inventory-items/inventory-item.service.ts:134 [update]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:318 [update]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:734 [update]",
+      "backend/src/services/inventory-items/inventory-item.service.ts:735 [update]"
+    ]
+  }
+]

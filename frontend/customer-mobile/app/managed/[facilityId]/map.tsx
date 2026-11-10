@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/WarehouseMapScreen';
+export {UnavailableScreen as default} from '../../../src/components/liveUI';

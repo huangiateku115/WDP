@@ -1,0 +1,1290 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v1/access/simulate-unlock",
+    "url": "/access/simulate-unlock",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/access/me",
+    "url": "/access/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/admin/login-history/:userId",
+    "url": "/audit/admin/login-history/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/admin/audit-logs/:userId",
+    "url": "/audit/admin/audit-logs/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/bom/login-history/:userId",
+    "url": "/audit/bom/login-history/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/audit/bom/audit-logs/:userId",
+    "url": "/audit/bom/audit-logs/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "url": "/auth/login",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "url": "/auth/logout",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/forgot-password",
+    "url": "/auth/forgot-password",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/reset-password",
+    "url": "/auth/reset-password",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/contracts/me",
+    "url": "/contracts/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/contracts/reservation/:reservationId",
+    "url": "/contracts/reservation/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/contracts/:id/print",
+    "url": "/contracts/6ad345c9d09ee250bd7930d6/print",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/contracts/:id",
+    "url": "/contracts/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/contracts/:id/sign",
+    "url": "/contracts/6ad345c9d09ee250bd7930d6/sign",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/contracts/:id/sign/facility",
+    "url": "/contracts/6ad345c9d09ee250bd7930d6/sign/facility",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/contracts/:id/confirm-signed-paper",
+    "url": "/contracts/6ad345c9d09ee250bd7930d6/confirm-signed-paper",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/customers/me/profile",
+    "url": "/customers/me/profile",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/customers/me/profile",
+    "url": "/customers/me/profile",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/customers",
+    "url": "/customers",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/customers/:id",
+    "url": "/customers/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/customers/:id/verify",
+    "url": "/customers/6ad345c9d09ee250bd7930d6/verify",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/facilities",
+    "url": "/facilities",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/facilities/:id",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/facilities/:id",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/facilities/:id/restore",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/facilities",
+    "url": "/facilities",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/facilities/:id",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/facilities/:id/status",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/health",
+    "url": "/health",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1",
+    "url": "",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inspections",
+    "url": "/inspections",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inspections",
+    "url": "/inspections",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/inspections/:id/complete",
+    "url": "/inspections/6ad345c9d09ee250bd7930d6/complete",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inbound-requests/receiving-queue",
+    "url": "/inbound-requests/receiving-queue",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inbound-requests/:requestId/receiving",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/receiving",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inbound-requests/:requestId/evidence-uploads",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/evidence-uploads",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inbound-requests/:requestId/inspection",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/inspection",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inbound-requests/:requestId/return-completed",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/return-completed",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inbound-requests/:requestId/confirm",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inbound-requests/:requestId",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/inbound-requests/:requestId",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inbound-requests/:requestId/cancel",
+    "url": "/inbound-requests/6ad345c9d09ee250bd7930d6/cancel",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:itemId/inbound-requests",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/inbound-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:itemId/inbound-requests",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/inbound-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:itemId/outbound-requests",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/outbound-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:itemId/outbound-requests",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/outbound-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:itemId/stock-balance",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/stock-balance",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/image-uploads",
+    "url": "/inventory-items/image-uploads",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inventory-items/image-uploads/:uploadId",
+    "url": "/inventory-items/image-uploads/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items",
+    "url": "/inventory-items",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/me",
+    "url": "/inventory-items/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items",
+    "url": "/inventory-items",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:id/placement-preview",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/placement-preview",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/inbound-request",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/inbound-request",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/outbound-request",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/outbound-request",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/confirm-inbound",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/confirm-inbound",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/confirm-outbound",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/confirm-outbound",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:itemId/receiving-inspection/context",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/receiving-inspection/context",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:itemId/receiving-inspection/image-uploads",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/receiving-inspection/image-uploads",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:itemId/receiving-inspection",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/receiving-inspection",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/reject-inbound",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/reject-inbound",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/reject-outbound",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/reject-outbound",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:id/relocate-canonical/context",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/relocate-canonical/context",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/relocate-canonical",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/relocate-canonical",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inventory-items/:id/relocate",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/relocate",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:id/movements",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6/movements",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inventory-items/:id",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/inventory-items/:id",
+    "url": "/inventory-items/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/maintenance-tickets",
+    "url": "/maintenance-tickets",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/maintenance-tickets/:id",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/maintenance-tickets",
+    "url": "/maintenance-tickets",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/maintenance-tickets/:id",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/maintenance-tickets/:id/assign",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6/assign",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/maintenance-tickets/:id/unassign",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6/unassign",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/maintenance-tickets/:id/status",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/maintenance-tickets/:id",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/maintenance-tickets/:id/restore",
+    "url": "/maintenance-tickets/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/outbound-requests/staff-queue",
+    "url": "/outbound-requests/staff-queue",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/outbound-requests/:requestId/staff-detail",
+    "url": "/outbound-requests/6ad345c9d09ee250bd7930d6/staff-detail",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/outbound-requests/:requestId",
+    "url": "/outbound-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/outbound-requests/:requestId/cancel",
+    "url": "/outbound-requests/6ad345c9d09ee250bd7930d6/cancel",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/outbound-requests/:requestId/confirm",
+    "url": "/outbound-requests/6ad345c9d09ee250bd7930d6/confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications/me",
+    "url": "/notifications/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/notifications/:id/read",
+    "url": "/notifications/6ad345c9d09ee250bd7930d6/read",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/payments/payos/webhook",
+    "url": "/payments/payos/webhook",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/pricing-rules/resolve",
+    "url": "/pricing-rules/resolve",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/policies/resolve",
+    "url": "/policies/resolve",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/pricing-rules",
+    "url": "/pricing-rules",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/policies",
+    "url": "/policies",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/pricing-rules/:id",
+    "url": "/pricing-rules/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/policies/:id",
+    "url": "/policies/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/pricing-rules",
+    "url": "/pricing-rules",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/policies",
+    "url": "/policies",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/pricing-rules/:id",
+    "url": "/pricing-rules/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/policies/:id",
+    "url": "/policies/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/pricing-rules/:id/status",
+    "url": "/pricing-rules/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/policies/:id/status",
+    "url": "/policies/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/public/facilities",
+    "url": "/public/facilities",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/public/facilities/:id/storage-options",
+    "url": "/public/facilities/6ad345c9d09ee250bd7930d6/storage-options",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/public/facilities/:id/pricing",
+    "url": "/public/facilities/6ad345c9d09ee250bd7930d6/pricing",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/public/facilities/:id",
+    "url": "/public/facilities/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/estimate",
+    "url": "/reservations/estimate",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/quote",
+    "url": "/reservations/managed/quote",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed",
+    "url": "/reservations/managed",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/managed/capacity/:facilityId",
+    "url": "/reservations/managed/capacity/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/reservations/managed/capacity/:facilityId",
+    "url": "/reservations/managed/capacity/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/managed/:id/closure-readiness",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/closure-readiness",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/managed/:id",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/managed/:id/approve",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/approve",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/managed/:id/reject",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/reject",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/managed/:id/cancel",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/cancel",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/deposit",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/deposit",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/deposit/mock-confirm",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/deposit/mock-confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/contract",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/contract",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/balance",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/balance",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/balance/mock-confirm",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/balance/mock-confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/managed/:id/mock-pay",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/mock-pay",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/managed/:id/activate",
+    "url": "/reservations/managed/6ad345c9d09ee250bd7930d6/activate",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/payments/payos",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/payments/payos",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/:id/payments/payos",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/payments/payos",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/:id/payments/:paymentId",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/payments/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations",
+    "url": "/reservations",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/me",
+    "url": "/reservations/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/:id/cancel",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/cancel",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/deposit",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/deposit",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/deposit/mock-confirm",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/deposit/mock-confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/balance",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/balance",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/balance/mock-confirm",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/balance/mock-confirm",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/handover",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/handover",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/reservations/:id/mock-pay",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/mock-pay",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/:id",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/reservations/facility/:facilityId",
+    "url": "/reservations/facility/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/:id/approve",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/approve",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/reservations/:id/reject",
+    "url": "/reservations/6ad345c9d09ee250bd7930d6/reject",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/facilities/:facilityId/storage-units",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6/storage-units",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/facilities/:facilityId/storage-units",
+    "url": "/facilities/6ad345c9d09ee250bd7930d6/storage-units",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/storage-units/:id/availability",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6/availability",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/storage-units/:id",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/storage-units/:id",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/storage-units/:id/status",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/storage-units/:id",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/storage-units/:id/restore",
+    "url": "/storage-units/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support-requests",
+    "url": "/support-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests",
+    "url": "/support-requests",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support-requests/:id/messages",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/messages",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests/:id/messages",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/messages",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests/:id/assign",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/assign",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests/:id/unassign",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/unassign",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/support-requests/:id/status",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/status",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests/:id/escalate",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/escalate",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/support-requests/:id/restore",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/support-requests/:id",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/support-requests/:id",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/support-requests/:id",
+    "url": "/support-requests/6ad345c9d09ee250bd7930d6",
+    "allowed": false,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users/register",
+    "url": "/users/register",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users/me",
+    "url": "/users/me",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/users/me/profile",
+    "url": "/users/me/profile",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/users/me/password",
+    "url": "/users/me/password",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/:userId/facility-assignment",
+    "url": "/users/6ad345c9d09ee250bd7930d6/facility-assignment",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/users/:userId/facility-assignment",
+    "url": "/users/6ad345c9d09ee250bd7930d6/facility-assignment",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users",
+    "url": "/users",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users",
+    "url": "/users",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/users/:id",
+    "url": "/users/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/:id/role",
+    "url": "/users/6ad345c9d09ee250bd7930d6/role",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/users/:id",
+    "url": "/users/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/:id/reactivate",
+    "url": "/users/6ad345c9d09ee250bd7930d6/reactivate",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/warehouse-map",
+    "url": "/warehouse-map",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/racks/:id/detail-map",
+    "url": "/racks/6ad345c9d09ee250bd7930d6/detail-map",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/warehouse-zones",
+    "url": "/warehouse-zones",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/warehouse-zones",
+    "url": "/warehouse-zones",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/warehouse-zones/:id",
+    "url": "/warehouse-zones/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/warehouse-zones/:id",
+    "url": "/warehouse-zones/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/warehouse-zones/:id",
+    "url": "/warehouse-zones/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/warehouse-zones/:id/restore",
+    "url": "/warehouse-zones/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/racks",
+    "url": "/racks",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/racks",
+    "url": "/racks",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/racks/:id",
+    "url": "/racks/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/racks/:id",
+    "url": "/racks/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/racks/:id",
+    "url": "/racks/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/racks/:id/restore",
+    "url": "/racks/6ad345c9d09ee250bd7930d6/restore",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/rack-cells",
+    "url": "/rack-cells",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/rack-cells/:id",
+    "url": "/rack-cells/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/rack-cells/:id",
+    "url": "/rack-cells/6ad345c9d09ee250bd7930d6",
+    "allowed": true,
+    "scope": "Static allowlist check only; no HTTP/network"
+  }
+]

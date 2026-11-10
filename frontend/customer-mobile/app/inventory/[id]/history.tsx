@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/InventoryHistoryScreen';
+export {Movements as default} from '../../../src/screens/LiveAccount';
