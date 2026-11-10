@@ -2465,6 +2465,60 @@ test("Managed v2 signed-paper route cannot bypass versioned balance settlement",
   );
 });
 
+test("legacy generic mock confirmations refuse Managed V3 before starting a transaction", async t => {
+  const reservation = { _id: new mongoose.Types.ObjectId(), customerId: new mongoose.Types.ObjectId(),
+    serviceType: "MANAGED_INVENTORY", bookingFlowVersion: 3 };
+  t.mock.method(ReservationModel, "findById", async () => reservation);
+  t.mock.method(mongoose, "startSession", async () => { throw new Error("legacy transaction must not run"); });
+  const req = { params: { id: String(reservation._id) }, user: { _id: reservation.customerId, role: "CUSTOMER" } };
+  for (const confirm of [ReservationController.confirmMockDeposit, ReservationController.confirmMockBalance]) {
+    const res = mockResponse();
+    await confirm(req, res);
+    assert.equal(res.statusCode, 409);
+    assert.match(res.body.message, /dedicated PayOS flow/);
+  }
+});
+
+test("Managed V3 signed-paper route cannot bypass digital signatures or enter CHECKIN_READY", async (t) => {
+  const reservation = {
+    _id: new mongoose.Types.ObjectId(),
+    facilityId,
+    serviceType: "MANAGED_INVENTORY",
+    bookingFlowVersion: 3,
+    status: ReservationStatus.DEPOSIT_PAID,
+    activeClosureRequestId: null,
+  };
+  const contract = {
+    _id: new mongoose.Types.ObjectId(),
+    reservationId: reservation._id,
+    status: "SIGNED",
+  };
+  t.mock.method(ContractModel, "findById", async () => contract);
+  t.mock.method(ReservationModel, "findById", async () => reservation);
+  t.mock.method(CloudinaryService, "uploadBuffer", async () => {
+    throw new Error("upload must not happen");
+  });
+  const res = mockResponse();
+  await ContractController.confirmSignedPaper(
+    {
+      params: { id: String(contract._id) },
+      user: {
+        _id: fmId,
+        role: "FACILITY_STAFF",
+        assignedFacilityId: facilityId,
+      },
+      file: { buffer: Buffer.from("test") },
+      body: {},
+    },
+    res,
+  );
+  assert.equal(res.statusCode, 409);
+  assert.match(
+    res.body.message,
+    /Managed V3 contracts require the versioned digital-signature flow/,
+  );
+});
+
 test("Suite 7.5: Khách hàng nộp Balance thành công sau khi có bằng chứng -> Trừ cọc chuẩn xác, đơn sang PAID", async (t) => {
   const reservationData = {
     _id: new mongoose.Types.ObjectId(),

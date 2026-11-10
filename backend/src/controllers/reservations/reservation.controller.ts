@@ -44,7 +44,7 @@ async function confirmManagedLegacyMockBalance(reservationId: string, customerId
     let result: { reservation: any; payment: any } | undefined;
     await session.withTransaction(async () => {
       const reservation = await ReservationModel.findOne({ _id: reservationId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, customerId })
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] }, customerId })
         .session(session).exec();
       if (!reservation) throw new ReservationControllerError(404, 'Managed reservation not found');
 
@@ -80,7 +80,7 @@ async function confirmManagedLegacyMockBalance(reservationId: string, customerId
         : { inventoryVersion: version };
       const lockedReservation = await ReservationModel.findOneAndUpdate({ _id: reservation._id,
         customerId: reservation.customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
-        bookingFlowVersion: { $ne: 2 }, status: ReservationStatus.CHECKIN_READY,
+        bookingFlowVersion: { $nin: [2, 3] }, status: ReservationStatus.CHECKIN_READY,
         activeClosureRequestId: null, $and: [versionFilter] }, {
         $inc: { inventoryVersion: 1 },
         $set: { status: ReservationStatus.PAID, balancePaymentId: payment._id },
@@ -119,7 +119,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
   try {
     await session.withTransaction(async () => {
       const reservation = await ReservationModel.findOne({ _id: reservationId, customerId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 } })
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] } })
         .session(session).exec();
       if (!reservation) throw new ReservationControllerError(404, 'Managed reservation not found');
 
@@ -165,7 +165,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
       });
       const lockedReservation = await ReservationModel.findOneAndUpdate({ _id: reservation._id,
         customerId: reservation.customerId, facilityId: reservation.facilityId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 },
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] },
         status: ReservationStatus.RESERVED, activeClosureRequestId: null, $and: [versionFilter] }, {
         $inc: { inventoryVersion: 1 },
         $set: { status: ReservationStatus.DEPOSIT_PAID, depositPaymentId: payment._id,
@@ -214,7 +214,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
     if (unknownCommit || duplicateOrConflict || stateConflict) {
       try {
         const committedReservation = await ReservationModel.findOne({ _id: reservationId, customerId,
-          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 },
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] },
           status: ReservationStatus.DEPOSIT_PAID }).exec();
         if (committedReservation?.depositPaymentId) {
           const payment = await ReservationPaymentModel.findById(committedReservation.depositPaymentId).exec();
@@ -568,7 +568,10 @@ export const confirmMockDeposit = async (req: Request, res: Response) => {
       if (process.env.NODE_ENV === 'production') {
         return res.status(404).json({ success: false, message: 'Managed mock deposit confirmation is disabled in production.' });
       }
-      if ((reservation as any).bookingFlowVersion === 2) {
+      if (reservation.bookingFlowVersion === 3) {
+        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
+      }
+      if (reservation.bookingFlowVersion === 2) {
         return res.status(409).json({ success: false, message: 'Use the versioned Managed deposit confirmation endpoint.' });
       }
       const simulationEnvironment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
@@ -734,7 +737,10 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
     }
 
     if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
-      if ((reservation as any).bookingFlowVersion === 2) {
+      if (reservation.bookingFlowVersion === 3) {
+        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
+      }
+      if (reservation.bookingFlowVersion === 2) {
         return res.status(409).json({ success: false,
           message: 'Use the versioned Managed balance confirmation endpoint for this reservation.' });
       }
