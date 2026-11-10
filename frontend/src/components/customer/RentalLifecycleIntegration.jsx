@@ -1,5 +1,5 @@
 import LoadState from './CustomerResourceState';
-import { PortalSummaryCards, PortalEmptyState, PortalTextLink } from './CustomerPortalUI';
+import { PortalEmptyState } from './CustomerPortalUI';
 import ContractPrintAction from './ContractPrintAction';
 import ManagedContractReview from './inventory/ManagedContractReview';
 import CustomerBalancePayment from './CustomerBalancePayment';
@@ -36,6 +36,9 @@ import storageApi from "@/api/storageApi";
 import { accessApi } from "@/api/customerRentalApi";
 import { Input } from "@/components/ui/input";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
+import { reservationDateOnly, reservationVietnamTime, reservationAmount } from "@/lib/customerReservationDisplay";
+import { ArrowUpRight, ClipboardList, Clock3, Package, Plus, Warehouse } from "lucide-react";
+import { CustomerScreen } from "@/components/common/CustomerScreen";
 import {
   BackendScreen,
   Card,
@@ -152,20 +155,18 @@ export function RentalsIntegration() {
             ? !serviceType(r)
             : serviceType(r) === service)),
     ) || [];
+  const cards = [
+    ["Đang thuê", resource.data?.filter(r => r.status === 'ACTIVE').length ?? 0, "Đơn đang hoạt động", Warehouse, "green"],
+    ["Cần xử lý", resource.data?.filter(r => ['PAID', 'CHECKIN_READY'].includes(r.status)).length ?? 0, "Đơn cần hoàn tất", Clock3, "orange"],
+    ["Tổng đơn thuê", resource.data?.length ?? 0, "Tất cả đơn thuê", ClipboardList, "blue"],
+  ];
   return (
-    <BackendScreen
-      title="Kho lưu trữ của tôi"
-      description="Quản lý các kho và đơn thuê của bạn."
-      notice="Các thao tác khả dụng tùy theo trạng thái của từng đơn thuê."
-      action={
-        <Button asChild variant="orange">
-          <Link to="/portal/rent">Thuê kho mới</Link>
-        </Button>
-      }
-    >
+    <CustomerScreen title="Kho lưu trữ của tôi" description="Theo dõi đơn thuê và quản lý không gian lưu trữ." eyebrow="KHÔNG GIAN LƯU TRỮ" showNotice={false} action={<Button asChild variant="orange" className="my-storage-rent-cta"><Link to="/portal/rent"><Plus size={17} aria-hidden="true"/>Thuê kho mới</Link></Button>}>
       <LoadState resource={resource} />
-      {resource.data && !resource.error && <PortalSummaryCards items={[{ label: "Đang thuê", value: resource.data.filter(r => r.status === 'ACTIVE').length }, { label: "Cần xử lý", value: resource.data.filter(r => ['PAID', 'CHECKIN_READY'].includes(r.status)).length }, { label: "Tổng đơn thuê", value: resource.data.length }]} />}
-      <div className="portal-filter-bar">
+      {resource.data && !resource.error && <div className="portal-summary-grid my-storage-kpis" aria-label="Tóm tắt đơn thuê">{cards.map(([label,value,subtext,Icon,tone])=><Card key={label} className={`portal-summary-card my-storage-kpi my-storage-kpi-${tone}`}><CardContent><div className="my-storage-kpi-icon"><Icon size={21} aria-hidden="true"/></div><div className="my-storage-kpi-copy"><span>{label}</span><strong>{value}</strong><small>{subtext}</small></div></CardContent></Card>)}</div>}
+      <section className="my-storage-list">
+      <div className="my-storage-list-heading"><div><p className="my-storage-overline">TỔNG QUAN</p><h2>Danh sách đơn thuê</h2></div>{resource.data && !resource.error && <span className="my-storage-count">Đang hiển thị {records.length} đơn thuê</span>}</div>
+      <div className="portal-filter-bar my-storage-filter-bar">
         <label className="block field-label">
           Loại dịch vụ
           <select
@@ -200,6 +201,7 @@ export function RentalsIntegration() {
             ))}
           </select>
         </label>
+        {(filter || service) && <button type="button" className="my-storage-clear" onClick={()=>{setFilter("");setService("");}}>Xóa bộ lọc</button>}
       </div>
       {[
         ["Đang thuê", ["ACTIVE", "OVERDUE"]],
@@ -230,16 +232,11 @@ export function RentalsIntegration() {
         const group = records.filter((r) => statuses.includes(r.status));
         return (
           group.length > 0 && (
-            <section key={title} className="portal-rental-group">
+            <section key={title} className="portal-rental-group my-storage-group">
               <h2 className="mb-4 text-xl font-bold">{title}</h2>
-              <div className="portal-rental-grid space-y-4">
+              <div className="portal-rental-grid my-storage-grid">
                 {group.map((r) => (
-                  <div key={recordId(r)}>
-                    <RentalSummary item={r} localizeManagedV2 />
-                    {validId(recordId(r)) && (
-                    <PortalTextLink to={`/portal/reservations/${recordId(r)}`}>Xem chi tiết</PortalTextLink>
-                    )}
-                  </div>
+                  <MyStorageReservationCard key={recordId(r)} item={r}/>
                 ))}
               </div>
             </section>
@@ -247,10 +244,30 @@ export function RentalsIntegration() {
         );
       })}
       {!resource.loading && !resource.error && !records.length && (
-        <PortalEmptyState title="Không có đơn thuê phù hợp." description="Hãy thử chọn loại dịch vụ hoặc trạng thái khác, hoặc tìm kho mới." />
+        <PortalEmptyState title="Không có đơn thuê phù hợp." description="Hãy thử chọn loại dịch vụ hoặc trạng thái khác, hoặc tìm kho mới." action={<Button asChild variant="orange"><Link to="/portal/rent"><Plus size={16} aria-hidden="true"/>Thuê kho mới</Link></Button>} />
       )}
-    </BackendScreen>
+      </section>
+    </CustomerScreen>
   );
+}
+
+function MyStorageReservationCard({item}) {
+  const type=serviceType(item), managed=type===MANAGED_INVENTORY;
+  const facility=typeof item.facilityId==='object'?item.facilityId:item.facility;
+  const unit=typeof item.storageUnitId==='object'?item.storageUnitId:item.storageUnit;
+  const status=item.status;
+  const displayStatus=managed&&[2,3].includes(item.bookingFlowVersion)?reservationLifecycle(item).label:(type===SELF_STORAGE&&status==='CONTRACTED'?'Đã xác nhận · Chờ thanh toán trước tiền thuê':statusLabels[status]||status||'Chưa cập nhật');
+  const date=value=>{if(typeof value!=='string'||!value)return 'Chưa cập nhật';return /^\d{4}-\d{2}-\d{2}$/.test(value)?reservationDateOnly(value):reservationVietnamTime(value)};
+  const values=managed?[
+    ['Kỳ thuê',`${date(item.startDate)} – ${date(item.endDate)}`],
+    ...(typeof item.allocatedCapacityM3==='number'&&Number.isFinite(item.allocatedCapacityM3)?[['Sức chứa',`${item.allocatedCapacityM3} m³`]]:[]),
+    ...((item.totalRentPayable??item.totalRent??item.estimatedRent)!=null?[['Tổng tiền thuê',reservationAmount(item.totalRentPayable??item.totalRent??item.estimatedRent,item.currency||'VND')]]:[]),
+  ]:[
+    ['Mã kho',unit?.unitCode],['Kích thước',unit?.size],['Thể tích',typeof unit?.volumeM3==='number'?`${unit.volumeM3} m³`:unit?.volumeM3],['Ngày bắt đầu',date(item.startDate)],['Ngày kết thúc',date(item.endDate)],
+    ...(item.estimatedRent!=null?[['Tiền thuê dự kiến',reservationAmount(item.estimatedRent,item.currency||'VND')]]:[]),
+  ];
+  const Icon=managed?Package:Warehouse;
+  return <Card className="my-storage-card"><CardContent><div className="my-storage-card-head"><span className={`my-storage-service-icon ${managed?'is-managed':''}`}><Icon size={20} aria-hidden="true"/></span><div className="my-storage-card-title"><p>{serviceLabel(item)}</p><h3>{facility?.name||'Chưa cập nhật cơ sở'}</h3></div><span className={`my-storage-status ${['ACTIVE'].includes(status)?'is-active':['CANCELLED'].includes(status)?'is-cancelled':['CLOSED','CHECKED_OUT'].includes(status)?'is-closed':'is-pending'}`}>{displayStatus}</span></div><div className="my-storage-card-fields">{values.map(([label,value])=><div className="my-storage-field" key={label}><span>{label}</span><strong>{value===undefined||value===null||value===''?'Chưa cập nhật':value}</strong></div>)}</div><div className="my-storage-card-footer">{validId(recordId(item))?<Link className="my-storage-detail" to={`/portal/reservations/${recordId(item)}`}>Xem chi tiết<ArrowUpRight size={16} aria-hidden="true"/></Link>:<span className="my-storage-no-detail">Chi tiết hiện chưa khả dụng</span>}</div></CardContent></Card>;
 }
 export function ReservationDetailIntegration() {
   const session = useAuthSession();
