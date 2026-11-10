@@ -18,7 +18,16 @@ test('cancel return page reconciles using authenticated API and ignores provider
   assert.match(page,/reconcilePayosPayment\(reservationId, paymentId, serviceType\)/);
   assert.match(page,/params\.get\("cancel"\) === "true"/);
   assert.doesNotMatch(page,/params\.get\("(?:status|code|orderCode|success)"\)/);
-  assert.match(page,/payment\.status === "CANCELLED"/);
+  assert.match(page,/navigate\(`\/portal\/payments\?\$\{query\}`,[\s\S]*replace: true/);
+  assert.match(page,/catch \{[\s\S]*Provider lookup can be temporarily unavailable[\s\S]*finally \{[\s\S]*navigate\(`\/portal\/payments\?/);
+});
+
+test('Payment History reconciles a cancel return and never treats a pending DTO as cancelled',async()=>{
+  const page=await readFile(fileURLToPath(new URL('../src/pages/customer/PaymentHistoryPage.jsx',import.meta.url)),'utf8');
+  assert.match(page,/paymentApi\.reconcilePayosPayment\(reservationId, requestedPaymentId, service\)/);
+  assert.match(page,/cancelReturn && !confirmedCancel/);
+  assert.match(page,/Kiểm tra trạng thái hủy/);
+  assert.match(page,/relevantPayment\.status === "CANCELLED" && relevantPayment\.cancelVerifiedAt/);
 });
 
 test('only a Backend-confirmed cancellation DTO is presented as cancelled',()=>{
