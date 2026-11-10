@@ -48,17 +48,17 @@ function CustomerView({ workspace = "manager", actor }) {
   if (!id)
     return (
       <Screen
-        title="Customers"
+        title="Khách hàng"
         code="P010 / P011"
-        description="Profiles and rental activity for customers of your assigned facility."
+        description="Hồ sơ và hoạt động thuê của khách tại cơ sở được phân công."
       >
-        <Panel title="Customer directory">
-          <Field label="Search customer">
+        <Panel title="Danh bạ khách hàng">
+          <Field label="Tìm khách hàng">
             <Input
-              aria-label="Search customer"
+              aria-label="Tìm khách hàng"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email, phone or customer ID"
+              placeholder="Tên, email, số điện thoại hoặc mã khách"
             />
           </Field>
           <div className="mt-5">
@@ -74,7 +74,7 @@ function CustomerView({ workspace = "manager", actor }) {
               columns={[
                 {
                   key: "name",
-                  label: "Customer",
+                  label: "Khách hàng",
                   render: (r) => (
                     <OpenLink to={`${base}/customers/${r.id}`}>
                       {r.name}
@@ -86,12 +86,12 @@ function CustomerView({ workspace = "manager", actor }) {
                 { key: "phone", label: "Phone" },
                 {
                   key: "verification",
-                  label: "Verification",
+                  label: "Xác minh",
                   render: (r) => <Status value={r.verification} />,
                 },
                 {
                   key: "rentals",
-                  label: "Active rentals",
+                  label: "Đơn thuê đang sử dụng",
                   render: (r) =>
                     data.rentals.filter(
                       (x) => x.customerId === r.id && x.status === "ACTIVE",
@@ -106,7 +106,7 @@ function CustomerView({ workspace = "manager", actor }) {
   const row = data.customers.find((r) => r.id === id);
   if (!row)
     return (
-      <Screen title="Customer" code="P010 / P011">
+      <Screen title="Khách hàng" code="P010 / P011">
         <NotFound to={base + "/customers"} />
       </Screen>
     );
@@ -114,15 +114,15 @@ function CustomerView({ workspace = "manager", actor }) {
     payments = data.payments.filter((r) => r.customerId === id),
     tickets = data.support.filter((r) => r.customerId === id);
   const cols = [
-    { key: "id", label: "Rental" },
+    { key: "id", label: "Đơn thuê" },
     {
       key: "service",
-      label: "Service",
+      label: "Dịch vụ",
       render: (r) => r.service.replaceAll("_", " "),
     },
     {
       key: "resource",
-      label: "Unit / capacity",
+      label: "Kho / dung lượng",
       render: (r) =>
         r.service === "SELF_STORAGE"
           ? unitCode(data, r.unitId)
@@ -131,7 +131,7 @@ function CustomerView({ workspace = "manager", actor }) {
     { key: "period", label: "Period", render: (r) => `${r.start} → ${r.end}` },
     {
       key: "status",
-      label: "Status",
+      label: "Trạng thái",
       render: (r) => <Status value={r.status} />,
     },
   ];
@@ -140,25 +140,25 @@ function CustomerView({ workspace = "manager", actor }) {
       title={row.name}
       code="P010 / P011"
       description={row.id}
-      action={<OpenLink to={base + "/customers"}>All customers</OpenLink>}
+      action={<OpenLink to={base + "/customers"}>Tất cả khách hàng</OpenLink>}
     >
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Customer profile">
+        <Panel title="Hồ sơ khách hàng">
           <Details
             values={[
-              ["Full name", row.name],
+              ["Họ và tên", row.name],
               ["Email", row.email],
               ["Phone", row.phone],
-              ["Address", row.address],
-              ["Verification", <Status value={row.verification} />],
-              ["Customer since", row.created],
-              ["Review notes", row.verificationNote || "Not reviewed"],
+              ["Địa chỉ", row.address],
+              ["Xác minh", <Status value={row.verification} />],
+              ["Ngày tạo khách", row.created],
+              ["Ghi chú kiểm tra", row.verificationNote || "Chưa xem xét"],
             ]}
           />
         </Panel>
         <Panel
-          title="Verification review"
-          subtitle="Demo status review only. Identity documents are not stored here."
+          title="Kiểm tra xác minh"
+          subtitle="Xem trạng thái mô phỏng. Giấy tờ định danh không được lưu tại đây."
         >
           <form
             className="space-y-4"
@@ -167,17 +167,17 @@ function CustomerView({ workspace = "manager", actor }) {
               action.run(() => verifyCustomer(id, verification, note, actor));
             }}
           >
-            <Field label="Verification decision">
+            <Field label="Quyết định xác minh">
               <Select
-                label="Verification decision"
+                label="Quyết định xác minh"
                 value={verification}
                 onChange={setVerification}
                 options={["VERIFIED", "REJECTED"]}
               />
             </Field>
-            <Field label="Review notes">
+            <Field label="Ghi chú kiểm tra">
               <Textarea
-                aria-label="Verification review notes"
+                aria-label="Ghi chú kiểm tra xác minh"
                 required
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -191,43 +191,43 @@ function CustomerView({ workspace = "manager", actor }) {
                 !note.trim()
               }
             >
-              Save verification
+              Lưu xác minh
             </Button>
           </form>
         </Panel>
       </div>
-      <Panel title="Verification history">
+      <Panel title="Lịch sử xác minh">
         <Timeline entries={row.verificationHistory} />
       </Panel>
-      <Panel title="Active rentals">
+      <Panel title="Đơn thuê đang sử dụng">
         <Table
           rows={rentals.filter((r) => r.status === "ACTIVE")}
           columns={cols}
         />
       </Panel>
-      <Panel title="Rental history">
+      <Panel title="Lịch sử thuê">
         <Table rows={rentals} columns={cols} />
       </Panel>
       <Panel
-        title="Payment summary"
+        title="Tổng hợp thanh toán"
         subtitle={`Net collected: ${money(payments.reduce((sum, p) => sum + paymentNet(p), 0))} · Outstanding: ${money(payments.filter((p) => p.status === "PENDING").reduce((s, p) => s + p.amount, 0))}`}
       >
         <Table
           rows={payments}
           columns={[
-            { key: "id", label: "Payment" },
-            { key: "description", label: "Description" },
-            { key: "date", label: "Date" },
+            { key: "id", label: "Thanh toán" },
+            { key: "description", label: "Mô tả" },
+            { key: "date", label: "Ngày" },
             { key: "amount", label: "Amount", render: (r) => money(r.amount) },
             {
               key: "status",
-              label: "Status",
+              label: "Trạng thái",
               render: (r) => <Status value={r.status} />,
             },
           ]}
         />
       </Panel>
-      <Panel title="Support history">
+      <Panel title="Lịch sử hỗ trợ">
         <Table
           rows={tickets}
           columns={[
@@ -242,10 +242,10 @@ function CustomerView({ workspace = "manager", actor }) {
                 ),
             },
             { key: "subject", label: "Subject" },
-            { key: "category", label: "Category" },
+            { key: "category", label: "Nhóm yêu cầu" },
             {
               key: "status",
-              label: "Status",
+              label: "Trạng thái",
               render: (r) => <Status value={r.status} />,
             },
           ]}

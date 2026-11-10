@@ -9,6 +9,8 @@ import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,Chip,Input,StateCard,ui} from '../components/ui';
 import {dateLabel,LiveScreen,ResourceState,UnavailableScreen,useResource} from '../components/liveUI';
 import {WarehouseArt} from '../components/WarehouseArt';
+import {CardHeading,MetricTile,TintedPanel} from '../components/livePresentation';
+import {colors} from '../theme/tokens';
 import {RentalCard,RentalDetail} from './LiveRental';
 import {FacilityDetail} from './LiveCatalog';
 
@@ -27,7 +29,7 @@ export function Login(){
     catch(cause){setError(apiIssue(cause));}
     finally{busy.current=false;setPending(false);}
   }
-  return <LiveScreen title="Đăng nhập VaultSpace"><WarehouseArt height={155}/>
+  return <LiveScreen title="Đăng nhập VaultSpace" eyebrow="TÀI KHOẢN KHÁCH HÀNG" subtitle="Theo dõi và quản lý không gian lưu trữ của bạn."><WarehouseArt height={155}/>
     <Card><Input label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" editable={!pending}/>
       <Input label="Mật khẩu" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" editable={!pending}/>
       <Button label="Đăng nhập" loading={pending} onPress={()=>void submit()}/>
@@ -52,7 +54,7 @@ export function Register(){
     }catch(cause){setError(apiIssue(cause));}
     finally{busy.current=false;setPending(false);}
   }
-  return <LiveScreen title="Tạo tài khoản">
+  return <LiveScreen title="Tạo tài khoản" eyebrow="BẮT ĐẦU VỚI VAULTSPACE">
     {done?<StateCard title="Đã tạo tài khoản" description="Đăng nhập để tiếp tục."/>:<Card>
       <Input label="Họ và tên" value={name} onChangeText={setName} editable={!pending}/>
       <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" editable={!pending}/>
@@ -73,20 +75,27 @@ export function Dashboard(){
   const notices=useResource('notifications:'+owner,signal=>mobileRepo.notifications(owner,signal));
   const contracts=useResource('contracts:'+owner,signal=>mobileRepo.contracts(owner,signal));
   const values=[
-    {label:'Đơn thuê đang hoạt động',value:rentals.data?.filter(r=>r.status==='ACTIVE').length,loading:rentals.loading},
-    {label:'Hợp đồng đã ký',value:contracts.data?.filter(c=>c.status==='SIGNED').length,loading:contracts.loading},
-    {label:'Mã hàng',value:inventory.data?.pagination.total,loading:inventory.loading},
-    {label:'Thông báo chưa đọc',value:notices.data?.unread,loading:notices.loading},
-  ];
-  return <LiveScreen title={'Xin chào, '+(user?.displayName??'khách hàng')} onRefresh={()=>{
+    {icon:'key-outline',label:'Đơn thuê đang hoạt động',value:rentals.data?.filter(r=>r.status==='ACTIVE').length,loading:rentals.loading},
+    {icon:'document-text-outline',label:'Hợp đồng đã ký',value:contracts.data?.filter(c=>c.status==='SIGNED').length,loading:contracts.loading},
+    {icon:'cube-outline',label:'Mã hàng',value:inventory.data?.pagination.total,loading:inventory.loading},
+    {icon:'notifications-outline',label:'Thông báo chưa đọc',value:notices.data?.unread,loading:notices.loading},
+  ] as const;
+  return <LiveScreen eyebrow="VAULTSPACE · KHÔNG GIAN CỦA BẠN" title={'Xin chào, '+(user?.displayName??'khách hàng')}
+    subtitle="Theo dõi đơn thuê, hợp đồng và hàng hóa tại một nơi." onRefresh={()=>{
     rentals.reload();inventory.reload();notices.reload();contracts.reload();
   }} refreshing={rentals.loading||inventory.loading||notices.loading||contracts.loading}>
-    <Card><AppText variant="card">Tổng quan tài khoản</AppText>
-      {values.map(entry=><View key={entry.label} style={ui.between}><AppText>{entry.label}</AppText>
-        <AppText variant="label">{entry.loading?'Đang tải':entry.value??'Chưa khả dụng'}</AppText></View>)}
-      <Button label="Thông báo" variant="outline" onPress={()=>router.push('/notifications')}/>
-      <Button label="Khám phá kho" onPress={()=>router.push('/(tabs)/explore')}/>
+    <TintedPanel tone="inverse">
+      <AppText variant="label" style={{color:colors.inverseText}}>DỊCH VỤ LƯU TRỮ</AppText>
+      <AppText variant="heading" style={{color:colors.white}}>Không gian phù hợp với bạn</AppText>
+      <AppText style={{color:colors.inverseText}}>Tìm kho tự quản và cơ sở kho ký gửi.</AppText>
+      <Button label="Khám phá kho" icon="compass-outline" onPress={()=>router.push('/(tabs)/explore')}/>
+    </TintedPanel>
+    <Card>
+      <CardHeading icon="grid-outline" title="Tổng quan tài khoản"/>
+      <View style={ui.wrap}>{values.map(entry=><MetricTile key={entry.label} {...entry}/>)}</View>
+      <Button label="Thông báo" icon="notifications-outline" variant="outline" onPress={()=>router.push('/notifications')}/>
     </Card>
+    <AppText variant="heading" accessibilityRole="header">Đơn thuê gần đây</AppText>
     <ResourceState {...rentals}/>
     {rentals.data?.length===0&&<StateCard title="Bạn chưa có đơn thuê"/>}
     {rentals.data?.slice(0,3).map(r=><RentalCard key={r._id} r={r}/>)}
@@ -149,19 +158,18 @@ function ProfileForm({owner}:{owner:string}){
     void reloadUser(owner).catch(cause=>setError(apiIssue(cause)));
   }
   const cccd=profile?.identityCard?.trim();
-  return <LiveScreen title="Tài khoản" onRefresh={refresh} refreshing={data.loading}>
-    {user&&<Card><AppText variant="card">Thông tin tài khoản</AppText>
-      <AppText>Họ và tên: {user.displayName}</AppText>
+  return <LiveScreen title="Tài khoản" eyebrow="VAULTSPACE · HỒ SƠ" subtitle="Quản lý thông tin liên hệ và hồ sơ xác minh của bạn." onRefresh={refresh} refreshing={data.loading}>
+    {user&&<Card><CardHeading icon="person-circle-outline" title={user.displayName} subtitle="Thông tin tài khoản"/>
       <AppText>Email: {user.email}</AppText><AppText>Số điện thoại: {user.phone?.trim()||'Chưa cung cấp'}</AppText>
       {!mode&&<Button label="Chỉnh sửa tài khoản" variant="outline" onPress={()=>edit('account')}/>}</Card>}
     <ResourceState {...data}/>
-    {profile&&<Card><AppText variant="card">Hồ sơ khách hàng</AppText>
-      <Chip label={({UNVERIFIED:'Chưa xác minh',PENDING:'Đang xét duyệt',VERIFIED:'Đã xác minh',REJECTED:'Bị từ chối'})[profile.verificationStatus]}/>
+    {profile&&<Card><CardHeading icon="shield-checkmark-outline" title="Hồ sơ khách hàng" subtitle="Thông tin dùng để xác minh danh tính"/>
+      <Chip label={({UNVERIFIED:'Chưa xác minh',PENDING:'Đang xét duyệt',VERIFIED:'Đã xác minh',REJECTED:'Bị từ chối'})[profile.verificationStatus]} tone={profile.verificationStatus==='VERIFIED'?'green':profile.verificationStatus==='REJECTED'?'danger':'orange'}/>
       <AppText>Địa chỉ: {optionalAddress(profile.address)||'Chưa cung cấp'}</AppText>
       <AppText>Mã số thuế: {profile.taxCode?.trim()||'Chưa cung cấp'}</AppText>
       <AppText>CCCD: {cccd?'Đã cung cấp':'Chưa cung cấp'}</AppText>
       {!mode&&<Button label="Chỉnh sửa hồ sơ" variant="outline" onPress={()=>edit('customer')}/>}</Card>}
-    {mode&&<Card><AppText variant="card">{mode==='account'?'Chỉnh sửa tài khoản':'Chỉnh sửa hồ sơ'}</AppText>
+    {mode&&<Card><CardHeading icon="create-outline" title={mode==='account'?'Chỉnh sửa tài khoản':'Chỉnh sửa hồ sơ'}/>
       {mode==='account'?<>
         <Input label="Họ và tên" value={name} onChangeText={setName} maxLength={120} editable={!pending}/>
         <Input label="Số điện thoại" value={phone} onChangeText={setPhone} maxLength={20} keyboardType="phone-pad" editable={!pending}/>
@@ -173,9 +181,9 @@ function ProfileForm({owner}:{owner:string}){
       <Button label="Lưu thay đổi" loading={pending} disabled={mode==='customer'&&!profile} onPress={()=>void save()}/>
       <Button label="Hủy chỉnh sửa" variant="quiet" disabled={pending} onPress={()=>{setMode(undefined);setError('');}}/>
     </Card>}
-    {notice?<AppText accessibilityLiveRegion="polite">{notice}</AppText>:null}
+    {notice?<TintedPanel><AppText accessibilityLiveRegion="polite">{notice}</AppText></TintedPanel>:null}
     {error?<StateCard kind="error" title="Không thể hoàn tất thao tác" description={error}/>:null}
-    <Button label="Đăng xuất" disabled={pending} onPress={()=>void logout().catch(cause=>setError(apiIssue(cause)))}/>
+    <Button label="Đăng xuất" icon="log-out-outline" variant="danger" disabled={pending} onPress={()=>void logout().catch(cause=>setError(apiIssue(cause)))}/>
   </LiveScreen>;
 }
 
@@ -189,43 +197,32 @@ export function Notifications(){
     catch(cause){setError(apiIssue(cause));}
     finally{lock.current=false;setBusy(false);}
   }
-  return <LiveScreen title="Thông báo" onRefresh={data.reload} refreshing={data.loading}>
+  return <LiveScreen title="Thông báo" eyebrow="HỘP THƯ" subtitle="Cập nhật về đơn thuê, thanh toán và hàng hóa." onRefresh={data.reload} refreshing={data.loading}>
     <ResourceState {...data}/>{data.data?.items.length===0&&<StateCard title="Chưa có thông báo"/>}
     {error&&<StateCard kind="error" title="Chưa cập nhật được thông báo" description={error}/>}
-    {data.data?.items.map(item=><Card key={item._id}><AppText variant="card">{item.title}</AppText>
+    {data.data?.items.map(item=><Card key={item._id}><CardHeading icon={item.isRead?"mail-open-outline":"mail-unread-outline"} title={item.title}/>
       <AppText>{item.content}</AppText><AppText variant="caption">{dateLabel(item.createdAt)}</AppText>
       {!item.isRead&&<Button label="Đánh dấu đã đọc" variant="quiet" disabled={busy} onPress={()=>void mark(item._id)}/>}</Card>)}
   </LiveScreen>;
 }
 
-export function Inventory(){
-  const owner=useOwner(),router=useRouter(),[page,setPage]=useState(1);
-  const data=useResource(owner+':'+page,signal=>mobileRepo.inventory(owner,page,signal));
-  const total=data.data?.pagination.totalPages??0;
-  return <LiveScreen title="Hàng hóa của tôi" onRefresh={data.reload} refreshing={data.loading}>
-    <ResourceState {...data}/>{data.data?.items.length===0&&<StateCard title="Chưa có hàng hóa"/>}
-    {data.data?.items.map(item=><Card key={item._id}><AppText variant="card">{item.name}</AppText><AppText>Mã hàng {item.itemCode}</AppText>
-      <AppText>Đăng ký {item.quantity} {item.quantityUnit}</AppText>
-      <Button label="Xem hàng hóa" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id}})}/></Card>)}
-    {total>1&&<View style={ui.between}><Button label="Trang trước" variant="quiet" disabled={page<=1} onPress={()=>setPage(page-1)}/>
-      <AppText>{page}/{total}</AppText><Button label="Trang sau" variant="quiet" disabled={page>=total} onPress={()=>setPage(page+1)}/></View>}
-  </LiveScreen>;
-}
+export {ManagedDashboard as Inventory} from './ManagedDashboard';
 
 function ItemDetail({id}:{id:string}){
   const owner=useOwner(),router=useRouter();
   const item=useResource(owner+':'+id,signal=>mobileRepo.item(id,owner,signal));
   const stock=useResource(owner+':'+id,async signal=>mobileRepo.stock(await mobileRepo.item(id,owner,signal),owner,signal));
-  return <LiveScreen title="Chi tiết hàng hóa" onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
+  return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký và tồn kho của mặt hàng." onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
     <ResourceState {...item}/>
-    {item.data&&<Card><AppText variant="card">{item.data.name}</AppText><AppText>Mã hàng {item.data.itemCode}</AppText>
+    {item.data&&<Card><CardHeading icon="cube-outline" title={item.data.name}/><AppText>Mã hàng {item.data.itemCode}</AppText>
       <AppText>Đăng ký {item.data.quantity} {item.data.quantityUnit}</AppText>
       <AppText>{({REGISTERED:'Đã đăng ký',PENDING_INBOUND:'Chờ nhập kho',RECEIVED_PENDING_ACCEPTANCE:'Đã nhận, chờ xác nhận',IN_STORAGE:'Đang lưu kho',PENDING_OUTBOUND:'Chờ xuất kho',CHECKED_OUT:'Đã xuất kho'})[item.data.status]}</AppText>
       <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
       <AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
     <ResourceState {...stock}/>
-    {stock.data&&<Card><AppText variant="card">Tồn kho</AppText><AppText>Đang lưu {stock.data.onHandQuantity} {stock.data.quantityUnit}</AppText>
+    {stock.data&&<Card><CardHeading icon="layers-outline" title="Tồn kho"/>
+      <AppText variant="caption">{stock.data.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu tồn kho đã đối chiếu từ dữ liệu cũ'}</AppText><AppText>Đang lưu {stock.data.onHandQuantity} {stock.data.quantityUnit}</AppText>
       <AppText>Đang giữ {stock.data.heldQuantity} {stock.data.quantityUnit}</AppText>
       <AppText>Có thể xuất {stock.data.availableQuantity??'Chưa có xác nhận'}</AppText>
       {stock.data.batches.map(batch=><AppText key={batch.batchId}>Lô {batch.batchId} · {batch.quantity} {batch.quantityUnit}</AppText>)}</Card>}
@@ -235,7 +232,7 @@ export function Movements(){
   const {id}=useLocalSearchParams<{id:string}>();
   const owner=useOwner();
   const data=useResource(owner+':'+id,async signal=>mobileRepo.movements(await mobileRepo.item(id,owner,signal),owner,signal));
-  return <LiveScreen title="Lịch sử di chuyển" onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
+  return <LiveScreen title="Lịch sử di chuyển" eyebrow="KHO KÝ GỬI" subtitle="Các lần nhập, xuất và di chuyển đã ghi nhận." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
     {data.data?.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
     {data.data?.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
       <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>

@@ -1,5 +1,5 @@
 // Read model only: dates and assignees come from persisted backend records.
-export const boardTypes = {CHECK_IN:'Check-in', CHECK_OUT:'Checkout', INSPECTION:'Draft inspection', maintenance:'Maintenance', support:'Support'};
+export const boardTypes = {CHECK_IN:"Tiếp nhận khách", CHECK_OUT:"Trả kho", INSPECTION:'Draft inspection', maintenance:"Bảo trì", support:"Hỗ trợ"};
 export const idOf = value => typeof value === 'object' ? value?._id || value?.id : value;
 export function facilityDay(value) {
   if (!value || !Number.isFinite(new Date(value).getTime())) return '';

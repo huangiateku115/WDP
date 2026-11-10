@@ -37,7 +37,7 @@ Restart both services after configuration changes. Mock confirmations default to
 
 Use accounts supplied by the team. Staff and Manager need the correct assigned Facility. Managed V2 requires configured capacity, available Cells, pricing, deposit/category policies and a transaction-capable development database. Self Storage and legacy Managed orders cannot substitute for V2 orders. First inbound requires the rental start time to have arrived.
 
-Cloudinary avatar settings are public upload settings, optional for this rental demo; obtain approved values from the team. Never add API secrets, passwords or database connection strings to this example or README.
+Never add API secrets, passwords or database connection strings to this example or README.
 
 Local `.env` files are ignored by Git. Commit only `.env.example` with safe placeholders. See [Staff/Manager demo guide](docs/StaffManagerDemoVI.md).
 

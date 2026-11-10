@@ -27,7 +27,7 @@ test('Staff Receiving Queue uses Facility-scoped backend context and actual evid
  assert.match(source,/managedIntakeApi\.confirmFirstInbound/);
  assert.match(source,/reservation\.status==='CHECKIN_READY'/);
  assert.match(source,/latest\.data\.data\?\.reservation\?\.status!=='ACTIVE'/);
- assert.match(source,/assigned Facility/);
+ assert.match(source,/cơ sở được phân công/);
  assert.match(source,/ReceivingEvidencePicker/);
  assert.match(source,/ReceivingEvidenceGallery/);
  assert.doesNotMatch(source,/BLOCKED|demo record/);
@@ -35,7 +35,7 @@ test('Staff Receiving Queue uses Facility-scoped backend context and actual evid
 
 test('evidence picker supports limits, progress, cancellation, retry, remove and reorder',async()=>{
  const source=await readFile(picker,'utf8');
- for(const expected of [/MAX_IMAGES=10/,/onUploadProgress/,/AbortController/,/Retry/,/Move up/,/Move down/,/Remove/,/image\/jpeg,image\/png,image\/webp/])assert.match(source,expected);
+ for(const expected of [/MAX_IMAGES=10/,/onUploadProgress/,/AbortController/,/Thử lại/,/Chuyển lên/,/Chuyển xuống/,/Gỡ/,/image\/jpeg,image\/png,image\/webp/])assert.match(source,expected);
 });
 
 test('gallery renders snapshots by attempt and opens original high-resolution evidence',async()=>{
@@ -43,5 +43,5 @@ test('gallery renders snapshots by attempt and opens original high-resolution ev
  assert.match(source,/entry\.attempt/);
  assert.match(source,/entry\.images/);
  assert.match(source,/loading="lazy"/);
- assert.match(source,/Full size receiving evidence/);
+ assert.match(source,/Ảnh bằng chứng kích thước đầy đủ/);
 });

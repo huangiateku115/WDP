@@ -10,7 +10,7 @@ type Availability=Awaited<ReturnType<typeof mobileRepo.monthlyAvailability>>;
 
 export function BookingCalendar({month,setMonth,selected,onSelect,resource}:{
   month:string;setMonth:(month:string)=>void;selected:string;onSelect:(date:string)=>void;
-  resource:ReturnType<typeof useResource<Availability|null>>;
+  resource?:ReturnType<typeof useResource<Availability|null>>;
 }){
   return <View style={{gap:8}}>
     <View style={ui.between}>
@@ -18,13 +18,13 @@ export function BookingCalendar({month,setMonth,selected,onSelect,resource}:{
       <AppText variant="label">{bookingDateLabel(month)}</AppText>
       <Button label="Tháng sau" variant="quiet" onPress={()=>setMonth(shiftMonth(month,1))}/>
     </View>
-    <ResourceState {...resource}/>
-    {resource.data&&resource.data.availabilityState!=='VERIFIED'?<><AppText>Lịch kho chưa khả dụng. Vui lòng tải lại hoặc chọn kho khác.</AppText><Button label="Tải lại lịch" variant="outline" onPress={resource.reload}/></>:null}
+    {resource&&<ResourceState {...resource}/>}
+    {resource?.data&&resource.data.availabilityState!=='VERIFIED'?<><AppText>Lịch kho chưa khả dụng. Vui lòng tải lại hoặc chọn kho khác.</AppText><Button label="Tải lại lịch" variant="outline" onPress={resource.reload}/></>:null}
     <View style={styles.grid}>
       {['T2','T3','T4','T5','T6','T7','CN'].map(label=><View style={styles.slot} key={label}><AppText variant="label">{label}</AppText></View>)}
       {calendarDays(month).map((date,i)=>{
         if(!date)return <View style={styles.slot} key={'empty'+i}/>;
-        const enabled=canStartOn(date,resource.data??undefined);
+        const enabled=resource?canStartOn(date,resource.data??undefined):date>utcToday();
         const active=date===selected;
         return <Pressable key={date} accessibilityRole="button" accessibilityLabel={'Chọn ngày '+bookingDateLabel(date)}
           accessibilityState={{disabled:!enabled,selected:active}} disabled={!enabled} onPress={()=>onSelect(date)}

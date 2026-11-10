@@ -3,7 +3,7 @@ import {apiIssue,MobileInputError} from './client';
 import type {ReservationDto} from './contracts/customer';
 import {assertOwner,objectId} from './contracts/core';
 import {mobileRepo} from './mobileRepository';
-import {checkoutLink,depositDecision} from '../domain/livePayment';
+import {balanceDecision,checkoutLink,depositDecision,type PaymentPurpose} from '../domain/livePayment';
 import {journal,newAttempt} from '../state/attemptJournal';
 
 const requests={
@@ -15,6 +15,10 @@ const requests={
 } as const;
 
 const checkoutMessages:Record<string,string>={
+  BALANCE_NOT_ELIGIBLE:'Đơn thuê chưa đủ điều kiện thanh toán số dư.',
+  SIGNED_PROOF_REQUIRED:'Hợp đồng giấy chưa được xác minh.',
+  VERIFIED_DEPOSIT_REQUIRED:'Tiền cọc chưa được xác minh và áp dụng.',
+  ZERO_BALANCE_REQUIRES_REVIEW:'Không có số dư dương. Vui lòng liên hệ cơ sở.',
   CONTRACT_REQUIRED:'Đơn thuê cần có hợp đồng trước khi thanh toán.',
   CONTRACT_STATE_INVALID:'Hợp đồng hiện tại không còn đủ điều kiện thanh toán tiền cọc.',
   DEPOSIT_NOT_ELIGIBLE:'Đơn thuê đã hết hạn hoặc không còn đủ điều kiện thanh toán tiền cọc.',
@@ -54,41 +58,61 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
   assertOwner(reservation,owner);
   const id=reservation._id;
   if(reservation.serviceType!=='SELF_STORAGE')throw new MobileInputError('PayOS hiện chỉ hỗ trợ kho tự quản.');
-  const [contract,payments,attemptStore]=await Promise.all([
+  const [contract,history,attemptStore,balanceStore]=await Promise.all([
     atStep('contract',()=>mobileRepo.contract(reservation,owner,signal)),
     atStep('history',()=>mobileRepo.payments(reservation,owner,signal)),
     journal('deposit',owner,id),
+    refreshBalance?journal('balance',owner,id):null,
   ]);
-  const attempt=await attemptStore.read();
-  const recent=payments.find(item=>item.purpose==='DEPOSIT');
-  const balance=refreshBalance?payments.find(item=>item.purpose==='BALANCE'):undefined;
-  const readStatus=async(paymentId:string,purpose:'DEPOSIT'|'BALANCE')=>atStep('status',async()=>{
+  const [attempt,balanceAttempt]=await Promise.all([attemptStore.read(),balanceStore?.read()]);
+  const payments=[...history].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
+  const targets=new Map<string,PaymentPurpose>();
+  function addTarget(paymentId:string|undefined,purpose:PaymentPurpose){
+    if(!paymentId)return;
+    if(targets.has(paymentId)&&targets.get(paymentId)!==purpose)throw new MobileInputError('Giao dịch không khớp mục đích thanh toán.');
+    targets.set(paymentId,purpose);
+  }
+  addTarget(payments.find(p=>p.purpose==='DEPOSIT')?.id??attempt?.resourceId,'DEPOSIT');
+  if(refreshBalance){
+    addTarget(payments.find(p=>p.purpose==='BALANCE')?.id??balanceAttempt?.resourceId,'BALANCE');
+    if(reservation.status==='CHECKIN_READY'&&typeof reservation.depositPaymentId==='string'){
+      addTarget(reservation.depositPaymentId,'DEPOSIT');
+    }
+  }
+  const refreshed=await Promise.all(Array.from(targets,([paymentId,purpose])=>atStep('status',async()=>{
     const payment=await mobileRepo.payment(reservation,paymentId,owner,signal);
     if(payment.purpose!==purpose)throw new MobileInputError('Loại thanh toán không khớp.');
     return payment;
-  });
-  const depositId=recent?.id??attempt?.resourceId;
-  const [currentDeposit,currentBalance]=await Promise.all([
-    depositId?readStatus(depositId,'DEPOSIT'):null,
-    balance?readStatus(balance.id,'BALANCE'):null,
-  ]);
-  const verifiedPayments=payments.map(payment=>currentDeposit?.id===payment.id?currentDeposit:currentBalance?.id===payment.id?currentBalance:payment);
-  if(!recent&&currentDeposit)verifiedPayments.unshift(currentDeposit);
-  return {reservation,contract,payments:verifiedPayments,attempt,attemptStore,
-    decision:depositDecision(reservation,contract,verifiedPayments,!!attempt)};
+  })));
+  const byId=new Map(refreshed.map(payment=>[payment.id,payment]));
+  const verifiedPayments:Array<Omit<typeof payments[number],'createdAt'>&{createdAt?:string}>=payments.map(payment=>({
+    ...payment,...byId.get(payment.id),
+  }));
+  for(const payment of refreshed){
+    if(!payments.some(row=>row.id===payment.id))verifiedPayments.push(payment);
+  }
+  return {reservation,contract,payments:verifiedPayments,attempt,attemptStore,balanceStore,balanceAttemptExists:!!balanceAttempt,
+    decision:depositDecision(reservation,contract,verifiedPayments,!!attempt),
+    balanceDecision:balanceDecision(reservation,contract,verifiedPayments,!!balanceAttempt)};
 }
 
 export async function openDeposit(id:string,owner:string,isCurrent:()=>boolean,openUrl:(url:string)=>Promise<unknown>){
-  const context=await paymentContext(id,owner);
+  return openSelfStoragePayment(id,owner,'DEPOSIT',isCurrent,openUrl);
+}
+
+export async function openSelfStoragePayment(id:string,owner:string,purpose:PaymentPurpose,isCurrent:()=>boolean,openUrl:(url:string)=>Promise<unknown>){
+  const context=await paymentContext(id,owner,undefined,purpose==='BALANCE');
+  const decision=purpose==='BALANCE'?context.balanceDecision:context.decision;
+  const store=purpose==='BALANCE'?context.balanceStore:context.attemptStore;
   if(!isCurrent())return;
-  if(context.decision.kind==='READY'){
-    await openUrl(context.decision.url);
-  }else if(context.decision.kind==='CREATE'){
+  if(decision.kind==='READY'){
+    await openUrl(decision.url);
+  }else if(decision.kind==='CREATE'&&store){
     const attempt=newAttempt();
-    if(!await context.attemptStore.claim(attempt)||!isCurrent())return;
-    const payment=await atStep('checkout',()=>mobileRepo.deposit(context.reservation,attempt.key,owner));
-    await context.attemptStore.write({...attempt,resourceId:payment.id});
-    const url=checkoutLink(payment,id);
+    if(!await store.claim(attempt)||!isCurrent())return;
+    const payment=await atStep('checkout',()=>mobileRepo.checkout(context.reservation,attempt.key,owner,purpose));
+    await store.write({...attempt,resourceId:payment.id});
+    const url=checkoutLink(payment,id,purpose);
     if(url&&isCurrent())await openUrl(url);
   }
 }

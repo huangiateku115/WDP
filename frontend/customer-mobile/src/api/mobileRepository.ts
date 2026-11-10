@@ -116,6 +116,19 @@ export const mobileRepo = {
       throw error;
     }
   },
+  async signSelfStorageContract(r:ReservationDto,contract:z.infer<typeof contractDto>,owner:string) {
+    assertOwner(r,owner);
+    assertOwner(contract,owner);
+    if(r.serviceType!=='SELF_STORAGE'||r.status!=='DEPOSIT_PAID'||contract.status!=='DRAFT'||refId(contract.reservationId)!==r._id){
+      throw new MobileInputError('Đơn thuê hoặc hợp đồng chưa đủ điều kiện ký.');
+    }
+    const result=mapContract(await wire('PATCH','/contracts/'+id(contract._id)+'/sign'),owner,r.serviceType).contract;
+    if(result._id!==contract._id||refId(result.reservationId)!==r._id||result.status!=='SIGNED'||
+      typeof result.signedByCustomerAt!=='string'||!Number.isFinite(Date.parse(result.signedByCustomerAt))){
+      throw new MobileInputError('Máy chủ chưa xác nhận được kết quả ký cho hợp đồng này.');
+    }
+    return result;
+  },
   async contracts(owner:string,signal?:AbortSignal) {
     const rows=readData(z.array(contractDto),await wire('GET','/contracts/me',{signal}));
     rows.forEach(row=>assertOwner(row,owner));
@@ -143,12 +156,16 @@ export const mobileRepo = {
     return result;
   },
   async deposit(r:ReservationDto,key:string,owner:string) {
+    return mobileRepo.checkout(r,key,owner,'DEPOSIT');
+  },
+  async checkout(r:ReservationDto,key:string,owner:string,purpose:'DEPOSIT'|'BALANCE') {
     assertOwner(r,owner);
     if(r.serviceType!=='SELF_STORAGE') throw new MobileInputError('Thanh toán PayOS chỉ dành cho kho tự quản.');
-    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose:'DEPOSIT'}});
+    if(purpose==='BALANCE'&&r.status!=='CHECKIN_READY')throw new MobileInputError('Đơn thuê chưa đủ điều kiện thanh toán số dư.');
+    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose}});
     z.object({outcome:z.enum(['CREATED','REPLAYED'])}).parse(response);
     const result=mapSelfPayment(response,r,owner);
-    if(result.purpose!=='DEPOSIT') throw new MobileInputError('Loại giao dịch không khớp.');
+    if(result.purpose!==purpose) throw new MobileInputError('Loại giao dịch không khớp.');
     return result;
   },
   async inventory(owner:string,page=1,signal?:AbortSignal) {

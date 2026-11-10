@@ -1,1 +1,1 @@
-export {UnavailableScreen as default} from '../../../src/components/liveUI';
+export {ManagedRentalDetail as default} from '../../../src/screens/ManagedCatalog';

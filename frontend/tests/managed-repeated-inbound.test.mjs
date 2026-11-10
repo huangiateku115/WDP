@@ -71,10 +71,10 @@ test('Staff outbound queue confirms partial handover with version, stable retry 
   assert.match(page, /actualDeliveredQty/);
   assert.match(page, /handoverConfirmed: true/);
   assert.match(page, /detail\.request\.version/);
-  assert.match(page, /Retry same confirmation/);
+  assert.match(page, /Thử lại cùng xác nhận/);
   assert.match(page, /JSON\.stringify\(\{ key, payload, version: expectedVersion \}\)/);
   assert.match(page, /const expectedVersion = retry/);
-  assert.match(page, /A prior confirmation result may be uncertain/);
+  assert.match(page, /Chưa xác định kết quả xác nhận trước/);
   assert.match(page, /canonicalOutboundStaffQueue/);
   assert.match(page, /stockBalance/);
 });
@@ -88,24 +88,24 @@ test('Canonical relocation screen loads allocated destinations and calls the exi
   assert.match(page, /physicalPackingConfirmed: true/);
   assert.match(page, /Idempotency-Key|operationKey/);
   assert.match(page, /JSON\.stringify\(\{ key, payload \}\)/);
-  assert.match(page, /A prior relocation result may be uncertain/);
+  assert.match(page, /Chưa rõ kết quả di chuyển trước/);
   assert.match(page, /stockBalance/);
   assert.match(page, /warehouseMapApi\.getWarehouseMap/);
   assert.match(page, /repeatedInboundQueue/);
   assert.match(page, /canonicalOutboundStaffQueue/);
-  assert.match(page, /Committed MOVE movement/);
+  assert.match(page, /Biến động di chuyển đã lưu/);
 });
 
 test('Canonical Staff pages retain authenticated role gating and explicit empty, loading, error and retry states', async () => {
   const [outbound, relocation, outlet, facilityGate, workspace] = await Promise.all([
     readFile(staffOutboundPath, 'utf8'), readFile(relocationPath, 'utf8'), readFile(roleOutletPath, 'utf8'), readFile(facilityGatePath, 'utf8'), readFile(workspacePath, 'utf8'),
   ]);
-  assert.match(outbound, /Loading outbound requests/);
-  assert.match(outbound, /No requests match this state/);
+  assert.match(outbound, /Đang tải yêu cầu xuất hàng/);
+  assert.match(outbound, /Không có yêu cầu khớp trạng thái/);
   assert.match(outbound, /role="alert"/);
-  assert.match(outbound, /Refresh queue/);
+  assert.match(outbound, /Tải lại hàng chờ/);
   assert.match(relocation, /role="alert"/);
-  assert.match(relocation, /Load relocation context/);
+  assert.match(relocation, /Tải dữ liệu di chuyển/);
   assert.match(outlet, /FacilitySessionGate role=\{role\}/);
   assert.match(facilityGate, /<Navigate to="\/login"/);
   assert.match(facilityGate, /expected=role==='staff'\?'FACILITY_STAFF'/);

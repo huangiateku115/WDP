@@ -8,7 +8,7 @@ const now=Date.parse('2099-01-01T00:00:00Z');
 const r:ReservationDto={_id:id,reservationCode:'R-TEST',customerId:owner,facilityId:facility,storageUnitId:unit,serviceType:'SELF_STORAGE',
   status:'CONTRACTED',startDate:'2099-01-03T00:00:00Z',endDate:'2099-02-03T00:00:00Z',expiresAt:'2099-01-02T00:00:00Z',
   estimatedRent:2000,depositAmount:1000,depositPaymentId:depositId};
-const draft:z.infer<typeof contractDto>={_id:contractId,reservationId:id,customerId:owner,status:'DRAFT'};
+const draft:z.infer<typeof contractDto>={_id:contractId,reservationId:id,customerId:owner,status:'DRAFT',terms:['Điều khoản kiểm thử']};
 const signed={...draft,status:'SIGNED' as const,signedProofPublicId:'test-proof',signedProofUrl:'https://proof.invalid/fixture',verifiedAt:'2099-01-02T00:00:00Z'};
 const ready:z.infer<typeof paymentDto>={id:depositId,reservationId:id,purpose:'DEPOSIT',provider:'PAYOS',amount:1000,currency:'VND',
   status:'PENDING',providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED',checkoutStatus:'READY',checkoutUrl:'https://pay.payos.vn/web/fixture',
@@ -52,17 +52,21 @@ test('a PayOS redirect hint or an advanced reservation alone cannot settle depos
 test('applied deposit leads to paper signing and proof is required beyond SIGNED',()=>{
   const draftResult=run('DEPOSIT_PAID',{payments:[settled],decision:'APPLIED'});
   expect(step(draftResult,'deposit')?.state).toBe('COMPLETED');
-  expect(draftResult.next).toMatchObject({mode:'WAITING_FOR_STAFF',action:{destination:'CONTRACT',label:'Xem hợp đồng'}});
+  expect(draftResult.next).toMatchObject({mode:'CUSTOMER_ACTION_REQUIRED',action:{destination:'CONTRACT',label:'Ký hợp đồng',intent:'SIGN'}});
+  expect(run('DEPOSIT_PAID',{contract:{...draft,terms:undefined},payments:[settled]}).next?.mode).toBe('BLOCKED');
+  const signedOnly=run('DEPOSIT_PAID',{contract:{...draft,status:'SIGNED',signedByCustomerAt:'2099-01-01T00:00:00Z'},payments:[settled]});
+  expect(signedOnly.next).toMatchObject({mode:'WAITING_FOR_STAFF',action:{label:'Xem hợp đồng'}});
+  expect(step(signedOnly,'contract')?.state).toBe('CURRENT');
   expect(step(run('CHECKIN_READY',{contract:{...draft,status:'SIGNED'},payments:[settled]},),'contract')?.state).toBe('CURRENT');
   expect(step(run('DEPOSIT_PAID',{contract:null,payments:[settled]}),'contract')?.state).toBe('BLOCKED');
 });
 
-test('verified paper and CHECKIN_READY expose only balance guidance; zero balance does not authorize handover',()=>{
+test('verified paper and CHECKIN_READY enable Balance checkout; zero balance does not authorize handover',()=>{
   const due=run('CHECKIN_READY',{contract:signed,payments:[settled]});
   expect(step(due,'contract')?.state).toBe('COMPLETED');
   expect(step(due,'balance')?.state).toBe('CURRENT');
   expect(due.next).toMatchObject({mode:'CUSTOMER_ACTION_REQUIRED'});
-  expect(due.next?.action).toBeUndefined();
+  expect(due.next?.action).toEqual({destination:'PAYMENT',purpose:'BALANCE',label:'Thanh toán qua PayOS'});
   const zero=run('CHECKIN_READY',{contract:signed,payments:[settled]},{estimatedRent:1000});
   expect(step(zero,'balance')?.state).toBe('SKIPPED');
   expect(step(zero,'handover')?.state).toBe('BLOCKED');

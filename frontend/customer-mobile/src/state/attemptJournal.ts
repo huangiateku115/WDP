@@ -10,7 +10,7 @@ const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$
 type Attempt=z.infer<typeof attemptSchema>;
 const claiming=new Set<string>();
 
-export async function journal(scope:'booking'|'deposit',owner:string,identity:string) {
+export async function journal(scope:'booking'|'deposit'|'balance',owner:string,identity:string) {
   const hash=await digestStringAsync(CryptoDigestAlgorithm.SHA256,JSON.stringify([apiBase,objectId.parse(owner),scope,identity]));
   const key='wdp.mobile.attempt.'+hash;
   const store={
