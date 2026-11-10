@@ -25,7 +25,7 @@ export default function StockBalancePage() {
   async function load(event) {
     event.preventDefault();
     if (!validInventoryId(itemId)) {
-      setError('Enter a valid Inventory Item ID.');
+      setError("Nhập mã mặt hàng hợp lệ.");
       return;
     }
     const currentRequest = ++request.current;
@@ -47,12 +47,12 @@ export default function StockBalancePage() {
           !Number.isSafeInteger(balance.onHandQuantity) || !Number.isSafeInteger(balance.heldQuantity) ||
           balance.onHandQuantity < 0 || balance.heldQuantity < 0 || balance.heldQuantity > balance.onHandQuantity ||
           !Array.isArray(balance.batches)) {
-        throw Error('The stock projection could not be verified. Refresh before continuing.');
+        throw Error("Không xác minh được dữ liệu tồn kho. Tải lại trước khi tiếp tục.");
       }
       if (currentRequest === request.current && token === getAccessToken()) setResult({item, balance});
     } catch (failure) {
       if (currentRequest === request.current && token === getAccessToken()) {
-        setError(failure.response?.data?.message || failure.message || 'Stock balance unavailable.');
+        setError(failure.response?.data?.message || failure.message || "Chưa thể xem tồn kho.");
       }
     } finally {
       if (currentRequest === request.current && token === getAccessToken()) setLoading(false);
@@ -60,31 +60,31 @@ export default function StockBalancePage() {
   }
 
   const balance = result?.balance;
-  return <Screen title="Stock balance" description="Current stock, quantity holds and receipt batches from the assigned Facility." notice="Refresh stock after receiving, delivery or relocation to review the latest quantities.">
-    <Panel title="Find an inventory Item">
+  return <Screen title="Tồn kho" description="Tồn hiện tại, lượng đang giữ và lô nhập trong cơ sở được phân công." notice="Tải lại tồn sau nhập, xuất hoặc di chuyển để xem số lượng mới nhất.">
+    <Panel title="Tìm mặt hàng">
       <form className="flex flex-wrap gap-3" onSubmit={load}>
-        <Input aria-label="Inventory Item ID" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
-        <Button disabled={loading}>{loading ? 'Loading…' : 'Load or refresh stock'}</Button>
+        <Input aria-label="Mã mặt hàng" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
+        <Button disabled={loading}>{loading ? "Đang tải…" : "Tải / cập nhật tồn kho"}</Button>
       </form>
     </Panel>
     <Message error={error}/>
     {result && <>
       <Panel title={`${result.item.itemCode} · ${result.item.name}`}>
         <Details values={[
-          ['Item status', result.item.status], ['Current Cell', inventoryId(balance.currentCellId) || 'No placement'],
-          ['Current quantity', balance.onHandQuantity], ['Held quantity', balance.heldQuantity],
-          ['Available quantity', balance.onHandQuantity - balance.heldQuantity],
-          ['Actual weight (kg)', balance.actualTotalWeightKg], ['Actual volume (m³)', balance.actualTotalVolumeM3],
-          ['Projection source', balance.source], ['Projection version', balance.version],
+          ["Trạng thái mặt hàng", result.item.status], ["Ô hiện tại", inventoryId(balance.currentCellId) || "Chưa có vị trí"],
+          ["Số lượng hiện tại", balance.onHandQuantity], ["Số lượng đang giữ", balance.heldQuantity],
+          ["Số lượng khả dụng", balance.onHandQuantity - balance.heldQuantity],
+          ["Khối lượng thực tế (kg)", balance.actualTotalWeightKg], ["Thể tích thực tế (m³)", balance.actualTotalVolumeM3],
+          ["Nguồn tính tồn", balance.source], ["Phiên bản tính tồn", balance.version],
         ]}/>
-        <OpenLink to={`/staff/inventory/items/${inventoryId(result.item)}/history`}>Open movement history</OpenLink>
+        <OpenLink to={`/staff/inventory/items/${inventoryId(result.item)}/history`}>Mở lịch sử nhập xuất</OpenLink>
       </Panel>
-      <Panel title="Receipt batches">
+      <Panel title="Các lô nhập hàng">
         <Table rows={balance.batches.map(batch => ({...batch, id: batch.batchId}))} columns={[
-          {key:'batchId', label:'Batch'}, {key:'quantity', label:'Current quantity'},
-          {key:'heldQuantity', label:'Held quantity'}, {key:'quantityUnit', label:'Unit'},
-          {key:'actualUnitWeightKg', label:'Unit weight (kg)'}, {key:'arithmeticPolicy', label:'Accounting policy'},
-          {key:'receivedAt', label:'Received at', render: batch => new Date(batch.receivedAt).toLocaleString('en-GB')},
+          {key:'batchId', label:"Lô hàng"}, {key:'quantity', label:"Số lượng hiện tại"},
+          {key:'heldQuantity', label:"Số lượng đang giữ"}, {key:'quantityUnit', label:"Kho"},
+          {key:'actualUnitWeightKg', label:"Khối lượng mỗi đơn vị (kg)"}, {key:'arithmeticPolicy', label:"Chính sách hạch toán"},
+          {key:'receivedAt', label:"Thời điểm nhập", render: batch => new Date(batch.receivedAt).toLocaleString('vi-VN')},
         ]}/>
       </Panel>
     </>}
