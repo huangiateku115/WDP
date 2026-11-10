@@ -42,6 +42,7 @@ router.get('/managed/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]),
 router.post('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);
 // Keep this literal route before /:paymentId so "payos" is not treated as an ID.
 router.get('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.listSelfStoragePayments);
+router.post('/:id/payments/:paymentId/reconcile', requireRole([UserRole.CUSTOMER]), PayosPaymentController.reconcileCustomerPayment);
 router.get('/:id/payments/payos/orders/:orderCode', requireRole([UserRole.CUSTOMER]), PayosPaymentController.lookupSelfStoragePayosOrder);
 router.get('/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]), PayosPaymentController.getSelfStoragePaymentStatus);
 router.post('/', requireRole([UserRole.CUSTOMER]), ReservationController.createReservation);

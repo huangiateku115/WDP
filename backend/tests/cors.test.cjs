@@ -23,12 +23,13 @@ test('CORS exact origins and preflight; health regression', async t => {
     assert.equal(response.status, 503); // No DB is connected in these tests.
     response = await fetch(base + '/api/v1/storage-units/id', {
       method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'PATCH',
-        'Access-Control-Request-Headers': 'Authorization,Content-Type,Idempotency-Key' },
+        'Access-Control-Request-Headers': 'Authorization,Content-Type,Idempotency-Key,X-WDP-Payment-Client' },
     });
     assert.equal(response.status, 204);
     assert.match(response.headers.get('access-control-allow-methods'), /PATCH/);
     assert.match(response.headers.get('access-control-allow-headers'), /Authorization/);
     assert.match(response.headers.get('access-control-allow-headers'), /Idempotency-Key/i);
+    assert.match(response.headers.get('access-control-allow-headers'), /X-WDP-Payment-Client/i);
   }
   for (const origin of ['https://untrusted.example.invalid', 'https://frontend.example.invalid.evil.invalid']) {
     response = await fetch(base + '/api/v1/health', { headers: { Origin: origin } });

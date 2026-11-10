@@ -118,14 +118,24 @@ function configuredCustomerOrigin(): URL {
   }
 }
 
-function customerPaymentUrls(payment: any): { returnUrl: string; cancelUrl: string } {
+function customerPaymentUrls(payment: any, channel: 'WEB' | 'MOBILE' = 'WEB'): { returnUrl: string; cancelUrl: string } {
   const reservationId = id(payment?.reservationId);
   if (!/^[a-f\d]{24}$/i.test(reservationId) || !Types.ObjectId.isValid(reservationId)) {
     throw new PayosPaymentError(503, 'PAYMENT_RESERVATION_ID_INVALID',
       'Payment intent has an invalid Reservation identity');
   }
-  const origin = configuredCustomerOrigin();
   const params = new URLSearchParams({ reservationId, paymentId: id(payment?._id), serviceType: payment?.serviceType });
+  if (channel === 'MOBILE') {
+    if (payment?.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      throw new PayosPaymentError(400, 'MOBILE_PAYMENT_UNSUPPORTED', 'Native PayOS return is supported only for Self Storage');
+    }
+    // Fixed to the registered Expo scheme. Never accept a redirect URL from a client.
+    const callback = new URL(`vaultspace-customer://payments/return?${params}`);
+    const cancel = new URL(callback);
+    cancel.searchParams.set('cancel', 'true');
+    return { returnUrl: callback.toString(), cancelUrl: cancel.toString() };
+  }
+  const origin = configuredCustomerOrigin();
   return {
     returnUrl: new URL(`/portal/payments/return?${params}`, origin).toString(),
     cancelUrl: new URL(`/portal/payments/return?${params}&cancel=true`, origin).toString(),
@@ -406,9 +416,9 @@ export class PayosPaymentService {
     return this.gatewayValue;
   }
 
-  private assertConfiguration(): void {
+  private assertConfiguration(channel: 'WEB' | 'MOBILE' = 'WEB'): void {
     void this.gateway;
-    configuredCustomerOrigin();
+    if (channel === 'WEB') configuredCustomerOrigin();
     configuredUrl('PAYOS_WEBHOOK_URL');
   }
 
@@ -421,8 +431,12 @@ export class PayosPaymentService {
     return statusDto(payment, await this.currentIntentIssue(payment, reservation) === null);
   }
 
-  async createCheckout(reservationIdInput: unknown, purposeInput: unknown, keyInput: unknown, customerId: unknown) {
+  async createCheckout(reservationIdInput: unknown, purposeInput: unknown, keyInput: unknown, customerId: unknown, channelInput: unknown = 'WEB') {
     assertEnabled(this.enabled);
+    if (channelInput !== 'WEB' && channelInput !== 'MOBILE') {
+      throw new PayosPaymentError(400, 'INVALID_PAYMENT_RETURN_CHANNEL', 'Payment return channel is invalid');
+    }
+    const channel = channelInput;
     const purpose = assertPurpose(purposeInput);
     const key = paymentKey(assertKey(keyInput));
     const reservationId = id(reservationIdInput);
@@ -432,10 +446,10 @@ export class PayosPaymentService {
       const zero = await this.settleManagedZeroBalance(reservationId, customerId, key);
       if (zero) return { ...zero, outcome: 'SETTLED', httpStatus: 200 };
     }
-    this.assertConfiguration();
+    this.assertConfiguration(channel);
 
     const prior = await Payments.findOne({ idempotencyKey: key }).exec();
-    if (prior) return this.replayExisting(prior, reservationId, purpose, customerId);
+    if (prior) return this.replayExisting(prior, reservationId, purpose, customerId, channel);
 
     let intent: any;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -446,13 +460,13 @@ export class PayosPaymentService {
         if (error instanceof PayosPaymentError) throw error;
         if (error?.code === 11000) {
           const winner = await Payments.findOne({ idempotencyKey: key }).exec();
-          if (winner) return this.replayExisting(winner, reservationId, purpose, customerId);
+          if (winner) return this.replayExisting(winner, reservationId, purpose, customerId, channel);
           if (attempt < 2) continue;
           throw new PayosPaymentError(409, 'PAYMENT_INTENT_CONFLICT', 'A conflicting payment intent already exists');
         }
         if (errorHasLabel(error, 'UnknownTransactionCommitResult')) {
           const committed = await Payments.findOne({ idempotencyKey: key }).exec().catch(() => null);
-          if (committed) return this.replayExisting(committed, reservationId, purpose, customerId);
+          if (committed) return this.replayExisting(committed, reservationId, purpose, customerId, channel);
           throw new PayosPaymentError(503, 'PAYMENT_INTENT_OUTCOME_UNKNOWN', 'Payment intent outcome is uncertain; retry with the same key');
         }
         if (isConflict(error)) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed concurrently; refresh and retry');
@@ -460,9 +474,9 @@ export class PayosPaymentService {
       }
     }
     if (!intent) throw new PayosPaymentError(503, 'PAYMENT_INTENT_OUTCOME_UNKNOWN', 'Payment intent outcome is uncertain; retry with the same key');
-    if (intent.replayed) return this.replayExisting(intent.payment, reservationId, purpose, customerId);
+    if (intent.replayed) return this.replayExisting(intent.payment, reservationId, purpose, customerId, channel);
 
-    return this.createProviderLink(intent.payment);
+    return this.createProviderLink(intent.payment, channel);
   }
 
   private async settleManagedZeroBalance(reservationId: string, customerId: unknown, idempotencyKey: string) {
@@ -505,7 +519,7 @@ export class PayosPaymentService {
     } finally { await session.endSession(); }
   }
 
-  private async replayExisting(payment: any, reservationId: string, purpose: PaymentPurpose, customerId: unknown) {
+  private async replayExisting(payment: any, reservationId: string, purpose: PaymentPurpose, customerId: unknown, channel: 'WEB' | 'MOBILE' = 'WEB') {
     if (id(payment.reservationId) !== reservationId || id(payment.customerId) !== id(customerId) ||
         ![FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY].includes(payment.serviceType) || payment.provider !== PaymentProvider.PAYOS ||
         payment.purpose !== purpose) {
@@ -565,7 +579,7 @@ export class PayosPaymentService {
         payment.amount !== expectedAmount) {
       throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Current payment amount or currency differs from the immutable original intent; query its status separately');
     }
-    if (payment.checkoutState === 'NOT_CREATED') return this.createProviderLink(payment);
+    if (payment.checkoutState === 'NOT_CREATED') return this.createProviderLink(payment, channel);
     if (payment.checkoutState === 'CREATING') {
       const claimAge = payment.updatedAt instanceof Date ? this.now().getTime() - payment.updatedAt.getTime() : 0;
       if (claimAge < 60_000) throw new PayosPaymentError(503, 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN', 'Checkout creation is already in progress; retry the same key shortly');
@@ -735,13 +749,13 @@ export class PayosPaymentService {
     } finally { await session.endSession(); }
   }
 
-  private async createProviderLink(payment: any) {
+  private async createProviderLink(payment: any, channel: 'WEB' | 'MOBILE' = 'WEB') {
     const orderCode = numericOrderCode(payment.providerReference);
     const amount = payment.amount;
     if (!Number.isSafeInteger(amount) || amount <= 0 || payment.currency !== 'VND') {
       throw new PayosPaymentError(409, 'INVALID_PAYMENT_AMOUNT', 'PayOS requires a positive whole-VND amount');
     }
-    const { returnUrl, cancelUrl } = customerPaymentUrls(payment);
+    const { returnUrl, cancelUrl } = customerPaymentUrls(payment, channel);
     const purpose = assertPurpose(payment.purpose);
     const description = 'WDP' + (purpose === PaymentPurpose.DEPOSIT ? 'D' : 'B') + id(payment.reservationId).slice(-5);
     if (!/^WDP[DB][a-f0-9]{5}$/i.test(description)) {

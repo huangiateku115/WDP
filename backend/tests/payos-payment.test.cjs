@@ -41,13 +41,14 @@ function baseReservation(status = ReservationStatus.CONTRACTED) {
     depositAmount: 100_000, taxAmount: 0, discountAmount: 0, statusHistory: [] };
 }
 
-test('PayOS checkout controller returns 201 for creation and 200 for idempotent replay', async t => {
-  t.mock.method(payosPaymentService, 'createCheckout', async (_id, _purpose, _key, _owner) => ({
-    id: 'payment-1', outcome: 'CREATED', httpStatus: 201, checkoutUrl: 'https://pay.example/checkout',
-  }));
+test('PayOS checkout controller forwards the fixed Mobile client channel and returns 201 for creation', async t => {
+  t.mock.method(payosPaymentService, 'createCheckout', async (...args) => {
+    assert.equal(args[4], 'MOBILE');
+    return { id: 'payment-1', outcome: 'CREATED', httpStatus: 201, checkoutUrl: 'https://pay.example/checkout' };
+  });
   const created = response();
   await Controller.createSelfStorageCheckout({ params: { id: 'reservation-1' }, body: { purpose: 'DEPOSIT' },
-    get: name => name === 'Idempotency-Key' ? 'deposit-key' : undefined, user: { _id: 'customer-1' } }, created);
+    get: name => name === 'Idempotency-Key' ? 'deposit-key' : name === 'X-WDP-Payment-Client' ? 'MOBILE' : undefined, user: { _id: 'customer-1' } }, created);
   assert.equal(created.statusCode, 201);
   assert.equal(created.body.outcome, 'CREATED');
 
@@ -77,6 +78,7 @@ test('Customer payment history controller uses the owner-scoped service and resp
 test('Customer payment history route is declared before the generic paymentId route', () => {
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/reservation.routes.ts'), 'utf8');
   assert.ok(routes.indexOf("router.get('/:id/payments/payos'") < routes.indexOf("router.get('/:id/payments/:paymentId'"));
+  assert.match(routes, /router\.post\('\/:id\/payments\/:paymentId\/reconcile'.*reconcileCustomerPayment/);
 });
 
 test('payment history is owner and Self-Storage scoped, bounded, cursor ordered and hides unsafe checkout URLs', async t => {
@@ -247,7 +249,7 @@ test('checkout creates a server-priced intent after Reservation CAS and reuses e
   });
   t.mock.method(ReservationPaymentModel, 'findById', () => query(saved));
   const service = new PayosPaymentService({ enabled: true, gateway: fakeGateway, createSession: async () => fakeSession });
-  const result = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'client-key', reservation.customerId);
+  const result = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'client-key', reservation.customerId, 'MOBILE');
   assert.equal(result.httpStatus, 201);
   assert.equal(result.amount, 100000);
   assert.equal(result.checkoutUrl, 'https://pay.example/link-1');
@@ -255,7 +257,7 @@ test('checkout creates a server-priced intent after Reservation CAS and reuses e
   assert.equal(saved.qrCode, DEPOSIT_QR);
   assert.equal(saved.provider, PaymentProvider.PAYOS);
   assert.equal(saved.providerReference, String(Number(saved.providerReference)));
-  const expectedCustomerRoute = `https://customer.example/portal/payments/return?reservationId=${reservation._id}&paymentId=${saved._id}&serviceType=SELF_STORAGE`;
+  const expectedCustomerRoute = `vaultspace-customer://payments/return?reservationId=${reservation._id}&paymentId=${saved._id}&serviceType=SELF_STORAGE`;
   assert.equal(providerRequest.returnUrl, expectedCustomerRoute);
   assert.equal(providerRequest.cancelUrl, `${expectedCustomerRoute}&cancel=true`);
   assert.match(providerRequest.description, /^WDPD[a-f\d]{5}$/i);

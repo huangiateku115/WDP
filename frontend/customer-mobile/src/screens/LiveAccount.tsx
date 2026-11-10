@@ -2,6 +2,7 @@ import {useRef,useState} from 'react';
 import {useLocalSearchParams,useRouter} from 'expo-router';
 import {View} from 'react-native';
 import {apiIssue,wire,MobileInputError} from '../api/client';
+import {restoreNativePaymentReturnPath} from '../api/paymentReturnLink';
 import {mobileRepo} from '../api/mobileRepository';
 import {buildRegistration,mapCurrentUser} from '../api/contracts/customer';
 import {accountUpdate,optionalAddress,profileUpdate} from '../api/contracts/profile';
@@ -17,7 +18,7 @@ import {FacilityDetail} from './LiveCatalog';
 const useOwner=()=>useLiveSession(s=>s.user?._id??'');
 
 export function Login(){
-  const router=useRouter(),login=useLiveSession(s=>s.login),restore=useLiveSession(s=>s.restore);
+  const router=useRouter(),{returnTo}=useLocalSearchParams<{returnTo?:string|string[]}>(),login=useLiveSession(s=>s.login),restore=useLiveSession(s=>s.restore);
   const restoreFailed=useLiveSession(s=>s.restoreFailed);
   const [email,setEmail]=useState(''),[password,setPassword]=useState('');
   const [pending,setPending]=useState(false),[error,setError]=useState('');
@@ -25,7 +26,7 @@ export function Login(){
   async function submit(){
     if(busy.current)return;
     busy.current=true;setPending(true);setError('');
-    try{await login({email,password});setPassword('');}
+    try{await login({email,password});setPassword('');const target=restoreNativePaymentReturnPath(Array.isArray(returnTo)?returnTo[0]:returnTo);if(target)router.replace(target);}
     catch(cause){setError(apiIssue(cause));}
     finally{busy.current=false;setPending(false);}
   }
