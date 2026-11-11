@@ -19,6 +19,7 @@ const selection = [{
   rack: { _id: '507f1f77bcf86cd7994390e2', facilityId, operationalStatus: 'AVAILABLE' },
 }];
 const payload = selectedPayload(facilityId, selection, range, term);
+const acceptedPayload = { ...payload, termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.0' };
 
 function quote(overrides = {}) {
   return {
@@ -40,7 +41,7 @@ test('Backend V3 quote envelope and schema are accepted and can proceed to booki
     totalRentPayable: 120, advanceDepositRequired: 24, balanceAfterDeposit: 96, currency: 'VND',
   });
   const quoteBody = managedQuoteRequest(payload);
-  const createBody = managedCreateRequest(payload);
+  const createBody = managedCreateRequest(acceptedPayload);
   assert.deepEqual(quoteBody.cellIds, [cellId]);
   assert.deepEqual(createBody.cellIds, [cellId]);
   assert.equal(Object.hasOwn(quoteBody, 'allocatedCapacityM3'), false);
@@ -85,10 +86,10 @@ test('confirmation handler calls the real Managed create API with its stable ide
   const componentSource = readFileSync(new URL('../src/components/customer/warehouse/ManagedCellBooking.jsx', import.meta.url), 'utf8');
   assert.match(componentSource, /setQuote\(\{ key: rkey, data \}\)/, 'state retains the exact verified Backend quote object');
   assert.match(componentSource, /quote\?\.key === requestKey \? quote\.data : null/, 'only a quote for the current selection is confirmable');
-  assert.match(componentSource, /setQuote\(null\); setConfirmed\(false\); \}, \[requestKey\]/, 'Cell, period, or dimensions changing invalidates confirmation');
-  assert.match(componentSource, /disabled=\{!b\.payload \|\| !b\.review \|\| !b\.confirmed/);
+  assert.match(componentSource, /setQuote\(null\); setConfirmed\(false\); setTermsAccepted\(false\); \}, \[requestKey, terms\.data\?\.versionId\]/, 'Cell, period, dimensions or Terms version changing invalidates confirmation');
+  assert.match(componentSource, /disabled=\{!b\.payload \|\| !b\.review \|\| !b\.confirmed \|\| !b\.termsAccepted/);
   assert.match(componentSource, /onClick=\{b\.create\}/);
-  assert.match(componentSource, /managedApi\.create\(latest, \{ headers: \{ 'Idempotency-Key': idempotencyKey \} \}\)/);
+  assert.match(componentSource, /managedApi\.create\(\{ \.\.\.latest, termsAccepted: true, termsVersionId: terms\.data\.versionId \}, \{ headers: \{ 'Idempotency-Key': idempotencyKey \} \}\)/);
   assert.match(componentSource, /nav\(`\/portal\/payments\/\$\{result\.reservation\._id\}`/);
 
   const source = readFileSync(new URL('../src/api/managedReservationApi.js', import.meta.url), 'utf8');
@@ -102,9 +103,9 @@ test('confirmation handler calls the real Managed create API with its stable ide
   }, module, module.exports);
   const api = module.exports.default;
   const key = 'stable-booking-retry-key-0001';
-  await api.create(payload, { headers: { 'Idempotency-Key': key } });
+  await api.create(acceptedPayload, { headers: { 'Idempotency-Key': key } });
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], '/reservations/managed');
-  assert.deepEqual(calls[0][1], { facilityId, startDate: range.startDate, term, cellIds: [cellId] });
+  assert.deepEqual(calls[0][1], { facilityId, startDate: range.startDate, term, cellIds: [cellId], termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.0' });
   assert.equal(calls[0][2].headers['Idempotency-Key'], key);
 });

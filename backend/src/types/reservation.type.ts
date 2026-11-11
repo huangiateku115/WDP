@@ -29,6 +29,14 @@ export interface IReservation extends Document {
   facilityId: Types.ObjectId;
   
   serviceType: FacilityServiceType;
+  termsAcceptance?: {
+    documentCode: string;
+    version: string;
+    versionId: string;
+    serviceType: FacilityServiceType;
+    contentHash: string;
+    acceptedAt: Date;
+  };
   /** Optional immutable key/hash used to replay Customer Self-Storage creation safely. */
   bookingIdempotencyKey?: string;
   bookingPayloadHash?: string;

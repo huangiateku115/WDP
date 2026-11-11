@@ -98,21 +98,21 @@ test('public pricing returns only current sanitized rules and supports managed-o
   t.mock.method(Facility, 'findOne', () => query({ serviceTypes: ['MANAGED_INVENTORY'] }));
   t.mock.method(Pricing, 'find', seen => {
     filter = seen;
-    const effective = { _id: expectedRuleId, serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, createdBy: 'private', __v: 4 };
-    const futureRule = { ...effective, effectiveFrom: future };
+    const effective = { _id: expectedRuleId, serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20, currency: 'USD', effectiveFrom: now, isActive: true, version: 9, priceRevisions: [
+      { version: 8, price: 15, currency: 'USD', effectiveFrom: new Date(now.getTime() - 60_000), effectiveTo: now },
+      { version: 9, price: 20, currency: 'USD', effectiveFrom: now },
+    ], createdBy: 'private', __v: 4 };
+    const futureRule = { ...effective, price: 30, effectiveFrom: future, version: 10, priceRevisions: [{ version: 10, price: 30, currency: 'USD', effectiveFrom: future }] };
     const inactiveRule = { ...effective, isActive: false };
-    const expiredRule = { ...effective, effectiveTo: new Date(Date.now() - 60_000) };
-    // Simulate MongoDB applying the actual effective filter at its captured instant.
-    const effectiveFilter = seen.$and[1];
-    const at = effectiveFilter.effectiveFrom.$lte;
-    return query([effective, futureRule, inactiveRule, expiredRule].filter(rule =>
-      rule.isActive && rule.effectiveFrom <= at && (!rule.effectiveTo || rule.effectiveTo > at)));
+    const expiredAt = new Date(Date.now() - 60_000);
+    const expiredRule = { ...effective, price: 15, effectiveFrom: new Date(expiredAt.getTime() - 60_000), effectiveTo: expiredAt,
+      version: 8, priceRevisions: [{ version: 8, price: 15, currency: 'USD', effectiveFrom: new Date(expiredAt.getTime() - 60_000), effectiveTo: expiredAt }] };
+    // The reader fetches active scoped documents and resolves embedded revisions in memory.
+    return query([effective, futureRule, inactiveRule, expiredRule].filter(rule => rule.isActive));
   });
   const result = await service.pricing(facilityId);
   assert.deepEqual(filter.facilityId, new mongoose.Types.ObjectId(facilityId));
-  assert.equal(filter.$and[1].isActive, true);
-  assert.ok(filter.$and[1].effectiveFrom.$lte instanceof Date);
-  assert.ok(Array.isArray(filter.$and[1].$or));
+  assert.equal(filter.isActive, true);
   assert.ok(filter.$and[0].$or.some(scope => scope.billingBasis === 'PER_M3'));
   assert.deepEqual(result, { managedInventory: [{
     _id: expectedRuleId, serviceType: 'MANAGED_INVENTORY', billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' }, price: 20,

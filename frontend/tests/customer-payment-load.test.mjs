@@ -180,6 +180,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
       useLocation: () => ({ state: null }),
       useNavigate: () => () => {},
     },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/reservationApi": {
       default: {
         detailForCustomer: async (...args) => {
@@ -366,6 +367,7 @@ function checkoutModule({
     },
     "@/lib/booking": { formatMoney: (value) => String(value) },
     "@/lib/selfStoragePayos": { ...require("../src/lib/selfStoragePayos.js") },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/payosPaymentClient": {
       canOpenPayosCheckout: (payment) =>
         safeCheckout &&
@@ -479,6 +481,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
     unit,
     profile: { verificationStatus: "VERIFIED" },
     price: { currency: "VND" },
+    terms: { documentCode: "VS-POLICY-002", version: "2.0", versionId: "VS-POLICY-002@2.0" },
     payload,
     estimate: {
       estimatedRent: 3000000,
@@ -560,6 +563,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
       readOrCreateSelfStorageBookingAttempt,
       writeSelfStorageBookingAttempt,
     },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/reservationApi": {
       default: {
         estimateReal: async () => response(reviewData.estimate),
@@ -567,6 +571,8 @@ test("Review submits one Reservation and hands off a saved booking without calli
           createCalls++;
           bookingKey = config?.headers?.["Idempotency-Key"];
           assert.equal(request.facilityId, facilityId);
+          assert.equal(request.termsAccepted, true);
+          assert.equal(request.termsVersionId, reviewData.terms.versionId);
           return { ...response({
             _id: reservationId,
             status: "CONTRACTED",
@@ -585,8 +591,12 @@ test("Review submits one Reservation and hands off a saved booking without calli
       pricingApi: { resolve: async () => response(reviewData.price) },
       customerProfileApi: { get: async () => response(reviewData.profile) },
     },
+    "@/api/termsApi": { termsApi: { current: async () => response(reviewData.terms) } },
     "@/components/ui/checkbox": {
       Checkbox: (props) => element("input", { type: "checkbox", ...props }),
+    },
+    "@/components/customer/terms/TermsModal": {
+      default: ({ open, onClose }) => open ? element("div", { "data-testid": "terms-modal" }, element("button", { onClick: onClose }, "Đóng Terms")) : null,
     },
     "@/components/common/Steps": { default: () => null },
     "./RentalBackendUI": {
@@ -606,6 +616,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
       LoadState: () => null,
       record,
       recordId,
+      addressText: () => "Test address",
       rentalError: (error) => error.message,
     },
   };
@@ -638,16 +649,41 @@ test("Review submits one Reservation and hands off a saved booking without calli
     tree,
     (node) =>
       node.type === "input" &&
-      node.props["aria-label"] === "Confirm provided personal data",
+      node.props["aria-label"] === "Xác nhận thông tin đặt thuê chính xác",
   );
   assert(checkbox);
   checkbox.props.onCheckedChange(true);
+  tree = render();
+  const uncheckedTerms = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert(uncheckedTerms);
+  assert.equal(uncheckedTerms.props.checked, false);
+  const blockedCreate = find(tree, node => node.type === "button" && node.props.children === "Xác nhận đặt thuê");
+  assert(blockedCreate?.props.disabled, "unchecked Terms must disable reservation submit");
+  await blockedCreate.props.onClick();
+  assert.equal(createCalls, 0, "direct handler invocation must also reject unchecked Terms");
+  const viewTerms = find(tree, node => node.type === "button" && node.props.children === "Xem điều khoản & chính sách");
+  assert(viewTerms);
+  viewTerms.props.onClick();
+  tree = render();
+  assert(find(tree, node => node.props?.["data-testid"] === "terms-modal"));
+  const termsCheckbox = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert(termsCheckbox);
+  assert.equal(termsCheckbox.props.checked, false, "viewing Terms must not accept them");
+  const closeTerms = find(tree, node => node.type === "button" && node.props.children === "Đóng Terms");
+  assert(closeTerms);
+  closeTerms.props.onClick();
+  tree = render();
+  const afterCloseTerms = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert.equal(afterCloseTerms.props.checked, false, "closing Terms must not accept them");
+  const stillConfirmed = find(tree, node => node.type === "input" && node.props["aria-label"] === "Xác nhận thông tin đặt thuê chính xác");
+  assert.equal(stillConfirmed.props.checked, true, "opening Terms must preserve the booking review state");
+  termsCheckbox.props.onCheckedChange(true);
   tree = render();
   const create = find(
     tree,
     (node) =>
       node.type === "button" &&
-      node.props.children === "Xác nhận đặt kho và thanh toán",
+      node.props.children === "Xác nhận đặt thuê",
   );
   assert(create && !create.props.disabled);
   await Promise.all([create.props.onClick(), create.props.onClick()]);

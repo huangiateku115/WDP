@@ -13,6 +13,7 @@ import FacilitiesPage from "@/pages/public/FacilitiesPage";
 import HowItWorksPage from "@/pages/public/HowItWorksPage";
 import PricingPage from "@/pages/public/PricingPage";
 import SupportPublicPage from "@/pages/public/SupportPublicPage";
+import TermsPage from "@/pages/public/TermsPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
@@ -56,6 +57,7 @@ export default function AppRoutes() {
         <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/support" element={<SupportPublicPage />} />
+        <Route path="/terms" element={<TermsPage />} />
       </Route>
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
@@ -72,6 +74,7 @@ export default function AppRoutes() {
         <Route path="warehouse-map" element={<WarehouseFacilitySelectionPage />} />
         <Route path="inventory" element={<MyInventoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="terms" element={<TermsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="rentals/:id/extend" element={<RentalExtensionPage />} />
         <Route path="rentals/:id/access" element={<RentalAccessPage />} />

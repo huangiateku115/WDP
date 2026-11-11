@@ -27,6 +27,14 @@ export interface PricingRule extends EffectiveRecord {
   term: { value: number; unit: TermUnit };
   price: number;
   currency: string;
+  priceRevisions?: PricingRevision[];
+}
+export interface PricingRevision {
+  version: number;
+  price: number;
+  currency: string;
+  effectiveFrom: Date;
+  effectiveTo?: Date;
 }
 export interface Policy extends EffectiveRecord {
   serviceType?: FacilityServiceType;
