@@ -291,25 +291,41 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
     // Upload file ảnh lên Cloudinary folder wdp/signed-contracts
     const uploadResult = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts');
 
+    const now = new Date();
     contract.signedProofUrl = uploadResult.secureUrl;
     contract.signedProofPublicId = uploadResult.publicId;
-    contract.signedProofUploadedAt = new Date();
+    contract.signedProofUploadedAt = now;
     contract.verifiedByStaff = req.user!._id;
-    contract.verifiedAt = new Date();
+    contract.verifiedAt = now;
     if (req.body.paperContractNumber) {
       contract.paperContractNumber = req.body.paperContractNumber;
     }
     contract.status = ContractStatus.SIGNED;
     await contract.save();
 
-    // Cập nhật trạng thái đơn đặt chỗ sang CHECKIN_READY để mở quyền thanh toán Balance
-    reservation.status = ReservationStatus.CHECKIN_READY;
-    reservation.statusHistory.push({
-      status: ReservationStatus.CHECKIN_READY,
-      actorId: req.user!._id,
-      reason: 'Staff confirmed signed paper contract with proof image',
-      createdAt: new Date(),
-    });
+    // Đồng bộ bằng chứng hợp đồng giấy vào Reservation
+    reservation.paperContractProofUrl = uploadResult.secureUrl;
+    reservation.paperContractVerifiedBy = req.user!._id;
+    reservation.paperContractVerifiedAt = now;
+
+    if (reservation.status === ReservationStatus.PAID) {
+      // Trong luồng thanh toán 100%, đơn giữ nguyên trạng thái PAID để sẵn sàng bàn giao
+      reservation.statusHistory.push({
+        status: ReservationStatus.PAID,
+        actorId: req.user!._id,
+        reason: 'Staff confirmed signed paper contract with proof image',
+        createdAt: now,
+      });
+    } else {
+      // Luồng cũ: đơn chuyển sang CHECKIN_READY để mở quyền thanh toán Balance
+      reservation.status = ReservationStatus.CHECKIN_READY;
+      reservation.statusHistory.push({
+        status: ReservationStatus.CHECKIN_READY,
+        actorId: req.user!._id,
+        reason: 'Staff confirmed signed paper contract with proof image',
+        createdAt: now,
+      });
+    }
     await reservation.save();
 
     return res.json({

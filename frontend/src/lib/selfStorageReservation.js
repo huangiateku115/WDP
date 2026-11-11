@@ -45,11 +45,24 @@ export function writeSelfStorageBookingAttempt(storage,attempt) {
   catch { throw Error('The browser could not safely preserve this booking attempt.'); }
 }
 
+export function clearSelfStorageBookingAttempt(storage,customerId,payload) {
+  if(!storage) return;
+  try {
+    const storageKey=selfStorageBookingAttemptStorageKey(customerId,payload);
+    storage.removeItem(storageKey);
+  } catch {}
+}
+
 export function selfStorageRequest(draft,now=Date.now()) {
   const {facility,unit,term,startDate,endDate}=draft,rule=draft.quote?.price;
   if(!validId(id(facility))||!facility.serviceTypes?.includes('SELF_STORAGE')||(facility.status!=null&&facility.status!=='ACTIVE')||!validId(id(unit))||id(unit.facilityId)!==id(facility)||['INACTIVE','MAINTENANCE'].includes(unit.status)||!['SMALL','MEDIUM','LARGE'].includes(unit.size))throw Error('Select an available Self Storage unit at an eligible facility.');
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate||'')||rentalEndDate(startDate,term)!==endDate||!endDate||Date.parse(`${startDate}T00:00:00Z`)<=now)throw Error('Choose a valid future rental period.');
-  if(!validId(id(rule))||!matchingRentalTerms([rule],{facilityId:id(facility),serviceType:'SELF_STORAGE',unitSize:unit.size,at:`${startDate}T00:00:00Z`}).terms.some(t=>t.value===term.value&&t.unit===term.unit))throw Error('An effective matching Self Storage Pricing Rule is required.');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate||'')||rentalEndDate(startDate,term)!==endDate||!endDate||startDate < todayStr)throw Error('Choose a valid rental period starting from today or later.');
+  if(!validId(id(rule)))throw Error('An effective matching Self Storage Pricing Rule is required.');
+  const terms = matchingRentalTerms([rule],{facilityId:id(facility),serviceType:'SELF_STORAGE',unitSize:unit.size,at:`${startDate}T00:00:00Z`}).terms;
+  const matchesExact = terms.some(t=>t.value===term.value&&t.unit===term.unit);
+  const matchesBaseMonthly = term?.unit==='MONTH'&&term.value>=1&&terms.some(t=>t.value===1&&t.unit==='MONTH');
+  if(!matchesExact&&!matchesBaseMonthly)throw Error('An effective matching Self Storage Pricing Rule is required.');
   return {facilityId:id(facility),storageUnitId:id(unit),startDate:`${startDate}T00:00:00.000Z`,endDate:`${endDate}T00:00:00.000Z`,pricingPolicyId:id(rule)};
 }
 export function selfStorageCreateReservationPayload(payload) {

@@ -361,6 +361,47 @@ test('deleted Storage Unit is hidden, restore requires a valid parent and code s
   assert.equal(Model.schema.indexes().some(([keys, options]) => keys.facilityId === 1 && keys.unitCode === 1 && options.unique), true);
 });
 
+test('customer querying units filters out units with pending or active reservations', async t => {
+  mockParent(t);
+  const busyUnitId = new mongoose.Types.ObjectId();
+  t.mock.method(Reservation, 'find', () => ({
+    select() { return this; },
+    lean() { return this; },
+    exec: async () => [{ storageUnitId: busyUnitId }],
+  }));
+  let seenFilter;
+  t.mock.method(Model, 'find', filter => {
+    seenFilter = filter;
+    return {
+      sort() { return this; },
+      skip() { return this; },
+      limit() { return this; },
+      lean() { return this; },
+      exec: async () => [{ _id: new mongoose.Types.ObjectId(), unitCode: 'B-01' }],
+    };
+  });
+  t.mock.method(Model, 'countDocuments', () => ({ exec: async () => 1 }));
+
+  const res = await service.getStorageUnits(facilityId, {}, customer);
+  assert.equal(seenFilter.facilityId.toString(), facilityId);
+  assert.equal(seenFilter.status, 'AVAILABLE');
+  assert.deepEqual(seenFilter._id, { $nin: [busyUnitId] });
+  assert.equal(res.data.length, 1);
+});
+
+test('customer cannot view detail of busy storage unit (returns 409)', async t => {
+  mockParent(t);
+  const busyDoc = document({ _id: id });
+  t.mock.method(Model, 'findOne', () => query(busyDoc));
+  t.mock.method(Reservation, 'find', () => ({
+    limit() { return this; },
+    lean() { return this; },
+    exec: async () => [{ _id: new mongoose.Types.ObjectId(), storageUnitId: busyDoc._id, status: 'PAID' }],
+  }));
+
+  await assert.rejects(() => service.getStorageUnitById(id, customer), { status: 409 });
+});
+
 test('HTTP routes apply real role middleware and service scope; restore/delete are management-only', async t => {
   const auth = require('../dist/middlewares/auth/requireAuth');
   t.mock.method(auth, 'requireAuth', (req, res, next) => {

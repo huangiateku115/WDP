@@ -63,6 +63,10 @@ export class ReservationService {
     if (existing.bookingPayloadHash !== payloadHash) {
       throw new ReservationError(409, 'This booking request key was already used with different reservation details.');
     }
+    // Nếu đơn cũ đã bị CANCELLED, không coi là Replay hợp lệ để cho phép tạo đơn mới
+    if (existing.status === ReservationStatus.CANCELLED) {
+      return null;
+    }
     return existing;
   }
 
@@ -320,15 +324,17 @@ export class ReservationService {
       throw new ReservationError(403, 'Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt.');
     }
 
-    const startDate = new Date(data.startDate);
+    const now = new Date();
+    const startDate = data.startDate ? new Date(data.startDate) : new Date(now);
     const endDate = new Date(data.endDate);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new ReservationError(400, 'Ngày bắt đầu hoặc ngày kết thúc không hợp lệ.');
     }
 
-    if (startDate <= new Date()) {
-      throw new ReservationError(400, 'Ngày bắt đầu thuê phải nằm trong tương lai.');
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (startDate < todayStart) {
+      throw new ReservationError(400, 'Ngày bắt đầu thuê không được nằm trong quá khứ.');
     }
 
     if (endDate <= startDate) {
@@ -446,6 +452,7 @@ export class ReservationService {
           estimatedRent,
           depositAmount,
           
+          signingDeadline: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 days SLA to inspect and sign
           expiresAt, // Đồng hồ đếm ngược 24h
           
           statusHistory: [{

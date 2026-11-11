@@ -56,6 +56,7 @@ export function calculateRentalPaymentBreakdown(input: {
 export function paymentAmountForPurpose(breakdown: RentalPaymentBreakdown, purpose: PaymentPurpose): number {
   if (purpose === PaymentPurpose.DEPOSIT) return breakdown.depositCredit;
   if (purpose === PaymentPurpose.BALANCE) return breakdown.balanceDue;
+  if (purpose === PaymentPurpose.FULL_RENT) return breakdown.totalDue;
   throw new PaymentAccountingError(400, 'Unsupported payment purpose');
 }
 

@@ -58,12 +58,37 @@ export interface IReservation extends Document {
   balanceSettledBy?: Types.ObjectId;
   depositPaymentId?: Types.ObjectId;
   balancePaymentId?: Types.ObjectId;
+  fullPaymentId?: Types.ObjectId;
   /** Idempotency identity for a Backend-confirmed zero-balance V3 settlement. */
   balanceSettlementKey?: string;
   handoverByStaffId?: Types.ObjectId;
   handoverAt?: Date;
   storageCondition?: string;
   handoverAccessNotes?: string;
+  
+  /** Deadline for customer to arrive at facility, inspect unit and sign paper contract (default 3 days). */
+  signingDeadline?: Date;
+  paperContractProofUrl?: string;
+  paperContractVerifiedBy?: Types.ObjectId;
+  paperContractVerifiedAt?: Date;
+  accessPinCode?: string;
+  cancellationReason?: string;
+  refundPenaltyPercent?: number;
+  actualCheckoutDate?: Date;
+  checkoutRequest?: {
+    requestedAt: Date;
+    note?: string;
+    status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  };
+  checkoutInspectionId?: Types.ObjectId;
+  renewals?: Array<{
+    renewalDate: Date;
+    durationMonths: number;
+    amount: number;
+    paymentId?: Types.ObjectId;
+    oldEndDate: Date;
+    newEndDate: Date;
+  }>;
   
   startDate: Date;
   endDate: Date;

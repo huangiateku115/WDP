@@ -17,7 +17,19 @@ export function SelfPaymentNavigation({ contract, reservation }) {
   }
 
   if (reservation.status === "PAID") {
-    return <p className="mt-4 text-sm font-semibold text-brand">Payment recorded by the Backend. Facility handover remains separate.</p>;
+    const deadline = reservation.signingDeadline ? new Date(reservation.signingDeadline).toLocaleString("vi-VN") : null;
+    return (
+      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+        <p className="text-sm font-semibold text-emerald-800">
+          ✅ Đã thanh toán tiền thuê. Đơn đang chờ ký hợp đồng giấy tại cơ sở.
+        </p>
+        {deadline && (
+          <p className="text-xs text-emerald-700">
+            ⏰ Hạn chót đến cơ sở xem kho và ký hợp đồng: <strong>{deadline}</strong> (SLA 3 ngày). Quá thời hạn này, hệ thống sẽ tự động hủy đơn và khấu trừ 10% phí giữ kho.
+          </p>
+        )}
+      </div>
+    );
   }
 
   if (reservation.status === "DEPOSIT_PAID") {

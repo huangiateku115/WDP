@@ -38,6 +38,18 @@ router.get('/managed/:id/payments/payos', requireRole([UserRole.CUSTOMER]), Payo
 router.post('/managed/:id/payments/:paymentId/reconcile', requireRole([UserRole.CUSTOMER]), PayosPaymentController.reconcileCustomerPayment);
 router.get('/managed/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]), PayosPaymentController.getSelfStoragePaymentStatus);
 
+import { checkSigningSla } from '../jobs/signing-sla-checker.job';
+
+// Signing SLA check endpoint (triggerable by Manager/Admin or cron runner)
+router.post('/signing-sla/trigger', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), async (req, res) => {
+  try {
+    const result = await checkSigningSla();
+    return res.json({ success: true, message: `Quét SLA hoàn tất. Đã hủy ${result.processedCount} đơn quá hạn.`, data: result });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Customer Routes
 router.post('/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);
 // Keep this literal route before /:paymentId so "payos" is not treated as an ID.
@@ -47,7 +59,7 @@ router.get('/:id/payments/payos/orders/:orderCode', requireRole([UserRole.CUSTOM
 router.get('/:id/payments/:paymentId', requireRole([UserRole.CUSTOMER]), PayosPaymentController.getSelfStoragePaymentStatus);
 router.post('/', requireRole([UserRole.CUSTOMER]), ReservationController.createReservation);
 router.get('/me', requireRole([UserRole.CUSTOMER]), ReservationController.getMyReservations);
-router.patch('/:id/cancel', requireRole([UserRole.CUSTOMER]), ReservationController.cancelReservation);
+router.patch('/:id/cancel', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.cancelReservation);
 
 // Thanh toán Cọc (Deposit)
 router.post('/:id/deposit', requireRole([UserRole.CUSTOMER]), ReservationController.initiateDeposit);
@@ -60,14 +72,23 @@ router.post('/:id/balance/mock-confirm', requireRole([UserRole.CUSTOMER]), Reser
 // Staff Bàn giao & Kích hoạt kho (Handover)
 router.post('/:id/handover', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.handoverReservation);
 
-// Mock Payment API (Legacy fallback)
+// Mock Payment API (100% full payment simulation for local testing)
 router.post('/:id/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.mockPayReservation);
+router.post('/:id/mock-pay-full', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.mockPayReservation);
+
+// Phase 5: Checkout & Renew Routes
+const staffAndFmRoles = [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM];
+router.get('/checkout-queue', requireRole(staffAndFmRoles), ReservationController.getCheckoutQueue);
+router.post('/:id/checkout-request', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.requestCheckout);
+router.post('/:id/complete-checkout', requireRole(staffAndFmRoles), ReservationController.completeCheckout);
+router.post('/:id/reject-checkout', requireRole(staffAndFmRoles), ReservationController.rejectCheckout);
+router.post('/:id/renew-quote', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewQuote);
+router.post('/:id/renew', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewReservation);
 
 // View Reservation Detail (Customer xem đơn của mình, Staff/Admin/BOM xem toàn bộ)
 router.get('/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ReservationController.getReservationById);
 
 // Facility Staff & Manager Routes
-const staffAndFmRoles = [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM];
 router.get('/facility/:facilityId', requireRole(staffAndFmRoles), ReservationController.getReservationsByFacility);
 router.patch('/:id/approve', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.approveReservation);
 router.patch('/:id/reject', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.rejectReservation);

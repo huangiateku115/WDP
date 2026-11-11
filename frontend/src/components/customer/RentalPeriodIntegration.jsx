@@ -36,9 +36,11 @@ function RentalPeriodForm() {
   const facility = rentalDraft.facility;
   const unitSize = unit?.size;
   const serviceType = "SELF_STORAGE";
-  const [start, setStart] = useState(rentalDraft.startDate || "");
-  const [selected, setSelected] = useState(rentalDraft.term ? termKey(rentalDraft.term) : Number.isSafeInteger(rentalDraft.months) && rentalDraft.months > 0 ? termKey({ value: rentalDraft.months, unit: "MONTH" }) : "");
-  const [visibleMonth, setVisibleMonth] = useState(monthKey(rentalDraft.startDate || utcToday()));
+  const todayStr = utcToday();
+  const [start, setStart] = useState(rentalDraft.startDate || todayStr);
+  const defaultTermKey = "MONTH:1";
+  const [selected, setSelected] = useState(rentalDraft.term ? termKey(rentalDraft.term) : Number.isSafeInteger(rentalDraft.months) && rentalDraft.months > 0 ? termKey({ value: rentalDraft.months, unit: "MONTH" }) : defaultTermKey);
+  const [visibleMonth, setVisibleMonth] = useState(monthKey(rentalDraft.startDate || todayStr));
   const scopeValid = validId(facilityId) && validId(unitId) && recordId(unit?.facilityId) === facilityId &&
     !["INACTIVE", "MAINTENANCE"].includes(unit?.status) && ["SMALL", "MEDIUM", "LARGE"].includes(unitSize) &&
     Array.isArray(facility?.serviceTypes) && facility.serviceTypes.includes(serviceType);
@@ -60,17 +62,31 @@ function RentalPeriodForm() {
 
   const at = start ? `${start}T00:00:00Z` : null;
   let availableTerms = { terms: [], reason: "" }, mappingError = "";
-  if (rules.data) {
-    try { availableTerms = matchingRentalTerms(rules.data, { facilityId, unitSize, serviceType, at }); }
-    catch { mappingError = "Chưa thể xác định thời hạn thuê cho kho này. Vui lòng thử lại."; }
+  if (rules.data && rules.data.length > 0) {
+    try {
+      const matched = matchingRentalTerms(rules.data, { facilityId, unitSize, serviceType, at });
+      availableTerms = matched;
+      if (!matched.terms || matched.terms.length === 0) {
+        mappingError = matched.reason || "Cơ sở này chưa cấu hình bảng giá cho thời hạn thuê của loại kho đã chọn.";
+      }
+    } catch (err) {
+      mappingError = err.message || "Lỗi khi xử lý cấu hình bảng giá.";
+    }
+  } else if (!rules.loading && !rules.error) {
+    availableTerms = { terms: [], reason: "Chưa có quy định giá cho cơ sở này." };
+    mappingError = "Chưa có quy định giá cho cơ sở này.";
   }
-  const selectedTerm = availableTerms.terms.find((term) => termKey(term) === selected);
+  const selectedTerm = availableTerms.terms.find((term) => termKey(term) === selected) || availableTerms.terms[0] || null;
   useEffect(() => {
-    if (!rules.loading && !rules.error && (!selectedTerm || mappingError)) setSelected("");
-  }, [rules.loading, rules.error, selectedTerm?.value, selectedTerm?.unit, mappingError]);
+    if (!rules.loading && !rules.error && availableTerms.terms.length > 0) {
+      if (!selected || !availableTerms.terms.some((term) => termKey(term) === selected)) {
+        setSelected(termKey(availableTerms.terms[0]));
+      }
+    }
+  }, [rules.loading, rules.error, selected, availableTerms.terms]);
 
-  const end = rentalEndDate(start, selectedTerm);
-  const periodValid = scopeValid && !!selectedTerm && !!end && end > start && start > utcToday() && Date.parse(at) > Date.now() && !mappingError;
+  const end = selectedTerm ? rentalEndDate(start, selectedTerm) : "";
+  const periodValid = scopeValid && !!selectedTerm && !!end && end > start && start >= utcToday() && !mappingError;
   const price = useBackend(async (config) => {
     if (!periodValid) return null;
     let result;
@@ -80,8 +96,7 @@ function RentalPeriodForm() {
       if (error.response?.status === 404 && error.response?.data?.message === "No effective rule") throw Error("Chưa có mức giá áp dụng cho ngày bắt đầu và thời hạn đã chọn. Vui lòng chọn ngày hoặc thời hạn khác.");
       throw error;
     }
-    const checked = matchingRentalTerms([result], { facilityId, serviceType, unitSize, at });
-    if (!checked.terms.some((term) => termKey(term) === selected) || !validId(recordId(result))) throw Error("Mức giá chưa khớp với thời hạn hoặc ngày bắt đầu. Vui lòng tải lại thông tin.");
+    if (!validId(recordId(result))) throw Error("Mức giá chưa khớp hoặc không hợp lệ. Vui lòng tải lại thông tin.");
     return result;
   }, [facilityId, unitId, start, selected, periodValid]);
   const estimate = useBackend((config) => periodValid && price.data
@@ -125,17 +140,32 @@ function RentalPeriodForm() {
 
   const calendar = days.map((entry) => {
     if (!entry) return { blank: true, element: null };
-    const selectedDay = entry.date === start;
     const today = entry.date === utcToday();
     const inRange = rangeContainsDay(start, end, entry.date);
-    const futureStart = Date.parse(`${entry.date}T00:00:00.000Z`) > Date.now();
-    const disabled = !futureStart || entry.booked || calendarState !== "VERIFIED";
-    const status = !futureStart ? "đã qua hoặc không khả dụng" : calendarState === "UNIT_UNAVAILABLE" ? "kho không khả dụng" : calendarState !== "VERIFIED" ? "chưa xác minh tình trạng" : entry.booked ? "đã được đặt" : inRange ? "khoảng thuê đang chọn" : "còn trống";
-    const stateStyle = !futureStart || calendarState === "UNIT_UNAVAILABLE" ? "border-slate-200 bg-slate-100 text-slate-400" : calendarState !== "VERIFIED" ? "border-slate-200 bg-slate-50 text-slate-500" : entry.booked ? "border-red-200 bg-red-50 text-red-800" : selectedDay || inRange ? "border-[#176B45] bg-[#176B45] text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100";
+    const inPast = entry.date < utcToday();
+    const status = inPast ? "đã qua" : inRange ? "khoảng thuê chiếm dụng" : entry.booked ? "đã được đặt" : "còn trống";
+    const stateStyle = inPast
+      ? "border-slate-200 bg-slate-100 text-slate-400"
+      : inRange
+      ? "border-[#176B45] bg-[#176B45] text-white shadow-sm font-bold"
+      : entry.booked
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-slate-200 bg-slate-50 text-slate-600";
     const labelDate = new Date(`${entry.date}T12:00:00.000Z`).toLocaleDateString("vi-VN", { timeZone: "UTC", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
-    return { date: entry.date, element: <button key={entry.date} type="button" disabled={disabled} onClick={() => selectDate(entry.date)} aria-pressed={selectedDay} aria-label={`${labelDate}: ${today?'hôm nay, ':''}${status}`} title={`${labelDate}: ${status}`} className={`h-11 w-full min-w-0 rounded-lg border text-center text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#176B45] disabled:cursor-not-allowed ${today?'ring-2 ring-amber-500 ring-offset-1':''} ${stateStyle}`}>
-      <span>{entry.day}</span><span className="sr-only">, {today?'hôm nay, ':''}{status}</span>
-    </button> };
+    return {
+      date: entry.date,
+      element: (
+        <div
+          key={entry.date}
+          aria-label={`${labelDate}: ${today ? "hôm nay, " : ""}${status}`}
+          title={`${labelDate}: ${status} (Lịch trực quan - cố định theo kỳ hạn)`}
+          className={`h-11 w-full min-w-0 rounded-lg border text-center text-sm font-semibold flex items-center justify-center cursor-default select-none transition-colors ${today ? "ring-2 ring-amber-500 ring-offset-1" : ""} ${stateStyle}`}
+        >
+          <span>{entry.day}</span>
+          <span className="sr-only">, {today ? "hôm nay, " : ""}{status}</span>
+        </div>
+      ),
+    };
   });
 
   return <BackendScreen title="Chọn thời gian thuê" description="Chọn ngày bắt đầu và thời hạn thuê. Lịch sẽ xác nhận tình trạng kho trước khi bạn tiếp tục." eyebrow="BƯỚC 2 / 4 · THỜI GIAN THUÊ" notice="Ngày thuê và tình trạng kho được kiểm tra theo thông tin hiện có.">
@@ -150,6 +180,22 @@ function RentalPeriodForm() {
         <p className="mt-2 text-sm" role="status">{calendarState === "LOADING" ? "Đang tải lịch đặt kho..." : calendarState === "ERROR" || calendarState === "UNKNOWN" ? "Không thể xác minh lịch kho. Vui lòng thử lại." : calendarState === "UNIT_UNAVAILABLE" ? "Kho này hiện không khả dụng." : "Lịch đặt kho đã được cập nhật"}</p>
         {(calendarState === "UNKNOWN" || calendarState === "ERROR") && <div className="mt-2 flex flex-wrap items-center gap-3"><Message error="Lịch kho chưa được xác minh. Ngày chưa xác minh không thể chọn." /><Button variant="outline" onClick={monthlyAvailability.retry}>Thử tải lại lịch</Button></div>}
         {unavailableUnit && <Message error="Kho này hiện không khả dụng cho lượt đặt mới." />}
+        <div className="mt-4 mb-2 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-sky-50/80 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#176B45]">Khoảng thời gian chiếm kho dự kiến</p>
+              <p className="mt-1 text-base font-semibold text-slate-900">
+                Kho sẽ được giữ trong <span className="text-[#176B45] font-bold text-lg">{estimate.data?.durationDays || (selectedTerm ? selectedTerm.value * 30 : "—")} ngày</span>
+              </p>
+              <p className="text-sm text-slate-600">
+                Từ hôm nay <strong className="text-slate-800">{displayDate(start)}</strong> đến hết ngày <strong className="text-slate-800">{displayDate(end)}</strong>
+              </p>
+            </div>
+            <span className="inline-flex items-center rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-[#176B45]">
+              Lịch cố định từ hôm nay (Chế độ xem)
+            </span>
+          </div>
+        </div>
         <div className="mt-5 grid min-w-0 grid-cols-7 gap-1.5 sm:gap-2" role="grid" aria-label={`Lịch tình trạng kho tháng ${visibleMonth}`}>
           {weekDays.map((day) => <div key={day} role="columnheader" className="min-w-0 py-2 text-center text-xs font-semibold text-slate-500">{day}</div>)}
           {calendar.map((cell, index) => <div key={cell?.date || `blank-${index}`} role="gridcell" aria-hidden={cell?.blank || undefined} className="flex min-w-0 items-center justify-center">{cell?.element || null}</div>)}
@@ -163,7 +209,7 @@ function RentalPeriodForm() {
           <span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded border-2 border-amber-500" />Hôm nay</span>
         </div>
         <div className="mt-5"><label htmlFor="rental-commitment" className="field-label">Thời hạn thuê</label><Select value={selectedTerm ? selected : ""} onValueChange={setSelected} disabled={!scopeValid || rules.loading || !!rules.error || !!mappingError || !availableTerms.terms.length}>
-          <SelectTrigger id="rental-commitment" aria-label="Chọn thời hạn thuê"><SelectValue placeholder={rules.loading ? "Đang tải thời hạn thuê…" : "Chọn thời hạn thuê"} /></SelectTrigger>
+          <SelectTrigger id="rental-commitment" aria-label="Chọn thời hạn thuê"><SelectValue placeholder={rules.loading ? "Đang tải thời hạn thuê…" : !availableTerms.terms.length ? "Không có thời hạn thuê" : "Chọn thời hạn thuê"} /></SelectTrigger>
           <SelectContent>{availableTerms.terms.map((term) => <SelectItem key={termKey(term)} value={termKey(term)}>{localizedTerm(term)}</SelectItem>)}</SelectContent>
         </Select></div>
         <LoadState resource={rules} /><Message error={mappingError} />
@@ -172,10 +218,10 @@ function RentalPeriodForm() {
       </CardContent></Card>
       <aside className="space-y-5 lg:sticky lg:top-28 lg:self-start">
         <Card className="border-[#d4e2d8] shadow-sm"><CardContent><div className="flex items-center gap-3"><Warehouse className="text-[#176B45]" size={19}/><h2 className="text-lg font-bold">Tóm tắt kho đã chọn</h2></div><div className="mt-4"><Details values={[["Cơ sở", facility?.name], ["Mã kho", unit?.unitCode], ["Diện tích", unitSize?({SMALL:'Nhỏ',MEDIUM:'Vừa',LARGE:'Lớn'})[unitSize]||unitSize:unitSize], ["Thể tích", typeof unit?.volumeM3 === "number" ? `${unit.volumeM3} m³` : "Chưa có thông tin"], ["Ngày bắt đầu", start ? displayDate(start) : "Chưa chọn ngày"], ["Ngày kết thúc", end ? displayDate(end) : "Chưa chọn thời hạn"], ["Thời hạn thuê", localizedTerm(selectedTerm)], ["Tình trạng khoảng thuê", rangeAvailable ? "Đã xác nhận còn trống" : rangeState === "CONFLICT" ? "Trùng với lượt đặt khác" : "Chưa xác minh"]]} /></div></CardContent></Card>
-        <Card className="border-[#c9dfd0] bg-white shadow-md"><CardContent><div className="flex items-center gap-3"><ReceiptText className="text-[#176B45]" size={19}/><h2 className="text-lg font-bold">Chi phí dự kiến</h2></div><p className="mt-1 text-sm text-slate-600">Vui lòng kiểm tra trước khi tiếp tục.</p><LoadState resource={price} /><LoadState resource={estimate} /><LoadState resource={policy} />{estimate.data && <div className="mt-4"><Details values={[["Tiền thuê dự kiến", money(estimate.data.estimatedRent,price.data?.currency)], ["Khoản trả trước dự kiến", money(estimate.data.depositAmount,price.data?.currency)], ["Thời hạn", `${estimate.data.durationDays} ngày`]]} /></div>}</CardContent></Card>
+        <Card className="border-[#c9dfd0] bg-white shadow-md"><CardContent><div className="flex items-center gap-3"><ReceiptText className="text-[#176B45]" size={19}/><h2 className="text-lg font-bold">Chi phí dự kiến</h2></div><p className="mt-1 text-sm text-slate-600">Vui lòng kiểm tra trước khi tiếp tục.</p><LoadState resource={price} /><LoadState resource={estimate} /><LoadState resource={policy} />{estimate.data && <div className="mt-4"><Details values={[["Tổng tiền thanh toán", money(estimate.data.estimatedRent,price.data?.currency)], ["Thời hạn", `${estimate.data.durationDays} ngày`]]} /></div>}</CardContent></Card>
         <Message error={price.error || estimate.error || policy.error} />
         {rangeState === "CONFLICT" && <Link to="/portal/rent" className="block">Chọn kho khác</Link>}
-        <Button className="w-full" disabled={!rangeAvailable || !verifiedRange || !verifiedMonth || !price.data || price.loading || !!price.error || !estimate.data || estimate.loading || !!estimate.error} onClick={review}>Tiếp tục kiểm tra đơn thuê</Button>
+        <Button className="w-full" disabled={!rangeAvailable || !verifiedRange || !verifiedMonth || !price.data || price.loading || !!price.error || !estimate.data || estimate.loading || !!estimate.error || !selectedTerm} onClick={review}>Tiếp tục kiểm tra đơn thuê</Button>
       </aside>
     </div>
   </BackendScreen>;

@@ -8,4 +8,7 @@ export default {
   return client.post(`/contracts/${encodeURIComponent(contractId)}/confirm-signed-paper`, body, {headers:{'Content-Type':'multipart/form-data'}});
  },
  handover: reservationId => client.post(`/reservations/${encodeURIComponent(reservationId)}/handover`, {}),
+ reject: (reservationId, reason) => client.patch(`/reservations/${encodeURIComponent(reservationId)}/cancel`, { reason }),
+ completeCheckout: (reservationId, condition = 'GOOD', note = '') => client.post(`/reservations/${encodeURIComponent(reservationId)}/complete-checkout`, { condition, note }),
+ rejectCheckout: (reservationId, reason) => client.post(`/reservations/${encodeURIComponent(reservationId)}/reject-checkout`, { reason }),
 };

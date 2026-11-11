@@ -2850,6 +2850,7 @@ test("Suite 7.6: Staff thực hiện Handover sau khi đã thanh toán Balance (
         reservationData.status = update.$set.status;
         reservationData.handoverByStaffId = update.$set.handoverByStaffId;
         reservationData.handoverAt = update.$set.handoverAt;
+        if (update.$set.accessPinCode) reservationData.accessPinCode = update.$set.accessPinCode;
         reservationData.statusHistory.push(update.$push.statusHistory);
         return reservationData;
       },
@@ -2896,7 +2897,7 @@ test("Suite 7.6: Staff thực hiện Handover sau khi đã thanh toán Balance (
     "reservation",
     "storageUnit-status",
   ]);
-  assert.equal(res.body.data.pinCode, "1234");
+  assert.match(res.body.data.pinCode, /^\d{6}$/);
 });
 
 test("handover is idempotent after a committed activation and does not write twice", async (t) => {

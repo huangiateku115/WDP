@@ -407,31 +407,93 @@ export const rejectReservation = async (req: Request, res: Response) => {
 
 export const cancelReservation = async (req: Request, res: Response) => {
   try {
-    // Chỉ cho phép Khách hàng hủy nếu chưa đến bước PAID (Theo Safeguard đã chốt)
-    const reservation = await ReservationModel.findOneAndUpdate(
-      { 
-        _id: req.params.id, 
-        customerId: req.user!._id,
-        serviceType: FacilityServiceType.SELF_STORAGE,
-        status: { $in: [ReservationStatus.RESERVED, ReservationStatus.CONTRACTED] } 
-      } as any,
-      { 
-        status: ReservationStatus.CANCELLED,
+    const isStaffOrAdmin = [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN].includes(req.user?.role as any);
+    
+    const existing = await ReservationModel.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (!isStaffOrAdmin && existing.customerId.toString() !== req.user!._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
+    }
+    if (existing.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho đơn dịch vụ Self-Storage.' });
+    }
+    if (existing.status === ReservationStatus.ACTIVE || existing.paperContractProofUrl) {
+      return res.status(400).json({ success: false, message: 'Không thể hủy đơn sau khi đã ký hợp đồng và nhận bàn giao kho.' });
+    }
+    if (existing.status === ReservationStatus.CANCELLED) {
+      return res.status(409).json({ success: false, message: 'Đơn này đã bị hủy trước đó.' });
+    }
+    if (![ReservationStatus.RESERVED, ReservationStatus.CONTRACTED, ReservationStatus.PAID].includes(existing.status)) {
+      return res.status(400).json({ success: false, message: `Không thể hủy đơn ở trạng thái ${existing.status}.` });
+    }
+
+    // Nếu đơn đã thanh toán (PAID), khách hàng không được tự hủy; chỉ Staff/Admin tại cơ sở mới có quyền từ chối nhận kho
+    if (existing.status === ReservationStatus.PAID && !isStaffOrAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Khách hàng không thể tự hủy đơn đã thanh toán. Vui lòng liên hệ nhân viên tại cơ sở để xử lý từ chối nhận kho.' 
+      });
+    }
+
+    const reason = req.body?.reason?.trim();
+    // Khi Staff hoặc Admin từ chối/hủy đơn, lý do là bắt buộc
+    if (isStaffOrAdmin && !reason) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Vui lòng cung cấp lý do từ chối nhận kho.' 
+      });
+    }
+
+    const finalReason = reason || (existing.status === ReservationStatus.PAID ? 'Khách hàng không ưng ý kho thực tế' : 'Customer cancelled before payment');
+    const now = new Date();
+
+    const reservation = await ReservationModel.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: finalReason,
+          refundPenaltyPercent: 0, // Hoàn 100% ngoài hệ thống khi hủy trước khi ký giấy
+          updatedAt: now
+        },
+        $unset: {
+          bookingIdempotencyKey: 1 // Giải phóng key để không chiếm dụng unique index nếu khách đặt lại
+        },
         $push: {
           statusHistory: {
             status: ReservationStatus.CANCELLED,
             actorId: req.user!._id,
-            reason: 'Customer auto cancelled'
+            reason: finalReason,
+            createdAt: now
           }
         }
       },
       { new: true }
     );
-    
-    if (!reservation) {
-      return res.status(403).json({ success: false, message: 'Không thể hủy. Đơn đã đi vào hiệu lực thanh toán hoặc bạn không có quyền.' });
+
+    // Giải phóng StorageUnit về AVAILABLE
+    if (existing.storageUnitId) {
+      await StorageUnitModel.findByIdAndUpdate(existing.storageUnitId, {
+        $set: { status: StorageUnitStatus.AVAILABLE }
+      });
     }
-    return res.json({ success: true, data: reservation });
+
+    // Cập nhật Contract sang TERMINATED
+    await ContractModel.findOneAndUpdate(
+      { reservationId: existing._id },
+      { $set: { status: ContractStatus.TERMINATED, updatedAt: now } }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Hủy đơn thành công. Ô kho đã được giải phóng.',
+      data: reservation,
+      refundNotice: existing.status === ReservationStatus.PAID
+        ? 'Quản lý cơ sở sẽ làm thủ tục hoàn trả 100% số tiền qua chuyển khoản ngân hàng ngoài hệ thống.'
+        : undefined
+    });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -449,16 +511,18 @@ export const mockPayReservation = async (req: Request, res: Response) => {
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       return res.status(404).json({ success: false, message: 'Mock payment is disabled in this environment.' });
     }
+    const signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const reservation = await ReservationModel.findOneAndUpdate(
       { _id: req.params.id, customerId: req.user!._id, serviceType: FacilityServiceType.SELF_STORAGE, status: ReservationStatus.CONTRACTED } as any,
       { 
         status: ReservationStatus.PAID,
+        signingDeadline,
         $unset: { expiresAt: 1 }, // Xóa bỏ đồng hồ đếm ngược
         $push: {
           statusHistory: {
             status: ReservationStatus.PAID,
             actorId: req.user!._id,
-            reason: 'Mock Payment Webhook successful'
+            reason: 'Mock Payment 100% full rent successful'
           }
         }
       },
@@ -474,7 +538,30 @@ export const mockPayReservation = async (req: Request, res: Response) => {
       }
       return res.status(409).json({ success: false, message: 'Chưa thể thanh toán. Khách phải được duyệt Hợp đồng (CONTRACTED) trước.' });
     }
-    return res.json({ success: true, data: reservation });
+
+    // Record mock payment in reservationpayments for financial audit tracking
+    const payment = await ReservationPaymentModel.create({
+      reservationId: reservation._id,
+      customerId: reservation.customerId,
+      facilityId: reservation.facilityId,
+      serviceType: reservation.serviceType,
+      purpose: PaymentPurpose.FULL_RENT,
+      amount: reservation.estimatedRent,
+      currency: 'VND',
+      idempotencyKey: `mock-full-${reservation._id}-${Date.now()}`,
+      provider: PaymentProvider.MOCK,
+      providerReference: `MOCK-PAYOS-FULL-${reservation._id}`,
+      status: PaymentStatus.SUCCEEDED,
+      succeededAt: new Date(),
+      checkoutState: 'READY'
+    }).catch(() => null);
+
+    if (payment) {
+      reservation.fullPaymentId = payment._id;
+      await reservation.save();
+    }
+
+    return res.json({ success: true, data: reservation, payment });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -840,7 +927,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           replayUnit.status === StorageUnitStatus.OCCUPIED) {
         return res.json({ success: true,
           message: 'Bàn giao kho đã được hoàn tất trước đó.',
-          data: { reservation, pinCode: '1234' } });
+          data: { reservation, pinCode: reservation.accessPinCode || '1234' } });
       }
     }
     if (reservation.status !== ReservationStatus.PAID) {
@@ -877,6 +964,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
         if (!lockedUnit) throw new ReservationControllerError(409, 'StorageUnit changed before handover.');
 
         const handoverAt = new Date();
+        const accessPinCode = reservation.accessPinCode || Math.floor(100000 + Math.random() * 900000).toString();
         activatedReservation = await reservationWriter.findOneAndUpdate({
           _id: reservation._id,
           facilityId: reservation.facilityId,
@@ -885,7 +973,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           status: ReservationStatus.PAID,
           ...versionCas(reservation.__v, '__v'),
         }, {
-          $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id, handoverAt },
+          $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id, handoverAt, accessPinCode },
           $inc: { __v: 1 },
           $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
             reason: 'Staff confirmed physical handover. Rental is activated.', createdAt: handoverAt } },
@@ -939,8 +1027,373 @@ export const handoverReservation = async (req: Request, res: Response) => {
       message: 'Bàn giao kho thành công. Đơn hàng đã chuyển sang trạng thái ACTIVE.',
       data: {
         reservation: activatedReservation,
-        pinCode: '1234', // Mã PIN mô phỏng được giữ nguyên theo yêu cầu
+        pinCode: activatedReservation.accessPinCode || '1234',
       }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Khách hàng gửi yêu cầu trả kho (Checkout Request)
+ */
+export const requestCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ hỗ trợ trả kho cho đơn thuê Self-Storage.' });
+    }
+    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền yêu cầu trả kho cho đơn này.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE && reservation.status !== ReservationStatus.OVERDUE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể yêu cầu trả kho khi đơn đang ACTIVE hoặc OVERDUE.' });
+    }
+    const now = new Date();
+    reservation.checkoutRequest = {
+      requestedAt: now,
+      note: typeof note === 'string' ? note.slice(0, 500) : '',
+      status: 'PENDING',
+    };
+    reservation.statusHistory.push({
+      status: reservation.status,
+      actorId: req.user!._id,
+      reason: 'Khách hàng gửi yêu cầu trả kho',
+      createdAt: now,
+    });
+    await reservation.save();
+    return res.json({
+      success: true,
+      message: 'Đã gửi yêu cầu trả kho thành công. Nhân viên cơ sở sẽ kiểm tra và nghiệm thu kho.',
+      data: reservation,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff tra cứu danh sách đơn chờ trả kho tại cơ sở (Checkout Queue)
+ */
+export const getCheckoutQueue = async (req: Request, res: Response) => {
+  try {
+    const filter: any = {
+      serviceType: FacilityServiceType.SELF_STORAGE,
+      $or: [
+        { 'checkoutRequest.status': 'PENDING' },
+        { status: ReservationStatus.OVERDUE },
+      ],
+    };
+    if (req.user?.assignedFacilityId) {
+      filter.facilityId = req.user.assignedFacilityId;
+    } else if (req.query.facilityId) {
+      filter.facilityId = req.query.facilityId;
+    }
+    const items = await ReservationModel.find(filter)
+      .populate('customerId', 'fullName email phone')
+      .populate('storageUnitId', 'unitCode size volumeM3')
+      .populate('facilityId', 'name address')
+      .sort({ updatedAt: -1 });
+    return res.json({ success: true, data: items });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff duyệt và hoàn tất nghiệm thu trả kho (Complete Checkout)
+ * - Đúng hạn: Contract -> EXPIRED, Kho -> AVAILABLE
+ * - Sớm hạn: Contract -> TERMINATED (không hoàn tiền), Kho -> AVAILABLE
+ * - Kho bẩn / hư hại: Kho -> MAINTENANCE
+ * - Thu hồi mã PIN (simulateUnlock từ chối)
+ */
+export const completeCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { condition, note, damageFee } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE && reservation.status !== ReservationStatus.OVERDUE) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chỉ có thể nghiệm thu trả kho cho đơn đang ACTIVE hoặc OVERDUE.',
+      });
+    }
+    if (!reservation.storageUnitId) {
+      return res.status(409).json({ success: false, message: 'Đơn thuê không có kho liên kết.' });
+    }
+    if (reservation.checkoutRequest?.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        message: 'Đơn thuê chưa có yêu cầu trả kho từ khách hàng (hoặc đã được xử lý xong).',
+      });
+    }
+
+    const now = new Date();
+    const endDateMs = new Date(reservation.endDate).getTime();
+    // Trả sớm hơn 24 giờ trước endDate được tính là sớm hạn
+    const isEarly = now.getTime() < endDateMs - (24 * 60 * 60 * 1000);
+    const contractStatus = isEarly ? ContractStatus.TERMINATED : ContractStatus.EXPIRED;
+
+    // Kho bẩn / hỏng -> MAINTENANCE, sạch đẹp -> AVAILABLE
+    const isDamaged = condition === 'DAMAGED' || condition === 'NEEDS_CLEANING' || (typeof damageFee === 'number' && damageFee > 0);
+    const nextUnitStatus = isDamaged ? StorageUnitStatus.MAINTENANCE : StorageUnitStatus.AVAILABLE;
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // 1. Cập nhật StorageUnit
+        const storageUnitWriter: any = StorageUnitModel;
+        await storageUnitWriter.findByIdAndUpdate(
+          reservation.storageUnitId,
+          {
+            $set: { status: nextUnitStatus },
+            $inc: { bookingVersion: 1 },
+          },
+          { session }
+        ).exec();
+
+        // 2. Cập nhật Reservation
+        const reservationWriter: any = ReservationModel;
+        const checkoutUpdate: any = {
+          status: ReservationStatus.CHECKED_OUT,
+          actualCheckoutDate: now,
+          'checkoutRequest.status': 'COMPLETED',
+        };
+        const staffNoteSuffix = typeof note === 'string' && note.trim() ? ` Ghi chú kiểm tra: ${note.trim()}` : '';
+        await reservationWriter.findByIdAndUpdate(
+          reservation._id,
+          {
+            $set: checkoutUpdate,
+            $push: {
+              statusHistory: {
+                status: ReservationStatus.CHECKED_OUT,
+                actorId: req.user!._id,
+                reason: isEarly
+                  ? `Staff duyệt nghiệm thu trả kho sớm hạn (không hoàn tiền). Kho -> ${nextUnitStatus}.${staffNoteSuffix}`
+                  : `Staff duyệt nghiệm thu trả kho đúng hạn. Kho -> ${nextUnitStatus}.${staffNoteSuffix}`,
+                createdAt: now,
+              },
+            },
+          },
+          { session }
+        ).exec();
+
+        // 3. Cập nhật Contract
+        const contractWriter: any = ContractModel;
+        await contractWriter.findOneAndUpdate(
+          { reservationId: reservation._id },
+          { $set: { status: contractStatus } },
+          { session }
+        ).exec();
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    const updated = await ReservationModel.findById(id)
+      .populate('customerId', 'fullName email phone')
+      .populate('storageUnitId', 'unitCode size volumeM3')
+      .exec();
+
+    return res.json({
+      success: true,
+      message: isEarly
+        ? 'Nghiệm thu trả kho sớm thành công. Hợp đồng chấm dứt trước hạn, không hoàn lại tiền thừa.'
+        : 'Nghiệm thu trả kho đúng hạn thành công. Kho đã giải phóng cho khách mới.',
+      data: {
+        reservation: updated,
+        contractStatus,
+        unitStatus: nextUnitStatus,
+        isEarly,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff từ chối yêu cầu trả kho khi kho chưa sạch hoặc còn đồ
+ */
+export const rejectCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({ success: false, message: 'Bắt buộc cung cấp lý do từ chối trả kho.' });
+    }
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho Self-Storage.' });
+    }
+    if (!reservation.checkoutRequest || reservation.checkoutRequest.status !== 'PENDING') {
+      return res.status(400).json({ success: false, message: 'Không có yêu cầu trả kho chờ xử lý.' });
+    }
+
+    reservation.checkoutRequest.status = 'CANCELLED';
+    reservation.statusHistory.push({
+      status: reservation.status,
+      actorId: req.user!._id,
+      reason: `Staff từ chối yêu cầu trả kho: ${reason.trim()}`,
+      createdAt: new Date(),
+    });
+    await reservation.save();
+
+    return res.json({
+      success: true,
+      message: 'Đã từ chối yêu cầu trả kho. Khách hàng cần xử lý trước khi gửi lại yêu cầu.',
+      data: reservation,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.2: Báo giá gia hạn hợp đồng (Renew Quote)
+ */
+export const renewQuote = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
+    }
+
+    let monthlyPrice = 0;
+    if (reservation.pricingPolicyId) {
+      const PricingRuleModel = mongoose.model('PricingRule');
+      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
+      if (rule && typeof rule.price === 'number') {
+        monthlyPrice = rule.price;
+      }
+    }
+    if (!monthlyPrice) {
+      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
+      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
+    }
+
+    const totalAmount = monthlyPrice * durationMonths;
+    const oldEndDate = new Date(reservation.endDate);
+    const newEndDate = new Date(oldEndDate);
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
+
+    return res.json({
+      success: true,
+      data: {
+        reservationId: reservation._id,
+        durationMonths,
+        monthlyPrice,
+        totalAmount,
+        currency: 'VND',
+        oldEndDate,
+        newEndDate,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.2: Khách hàng xác nhận và thanh toán gia hạn (Renew Reservation)
+ */
+export const renewReservation = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
+    }
+    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
+    }
+
+    let monthlyPrice = 0;
+    if (reservation.pricingPolicyId) {
+      const PricingRuleModel = mongoose.model('PricingRule');
+      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
+      if (rule && typeof rule.price === 'number') {
+        monthlyPrice = rule.price;
+      }
+    }
+    if (!monthlyPrice) {
+      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
+      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
+    }
+
+    const totalAmount = monthlyPrice * durationMonths;
+    const oldEndDate = new Date(reservation.endDate);
+    const newEndDate = new Date(oldEndDate);
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
+
+    if (!Array.isArray(reservation.renewals)) {
+      reservation.renewals = [];
+    }
+    reservation.renewals.push({
+      renewalDate: new Date(),
+      durationMonths,
+      amount: totalAmount,
+      oldEndDate,
+      newEndDate,
+    });
+    reservation.endDate = newEndDate;
+    reservation.statusHistory.push({
+      status: ReservationStatus.ACTIVE,
+      actorId: req.user!._id,
+      reason: `Gia hạn hợp đồng thêm ${durationMonths} tháng thành công (Hạn mới: ${newEndDate.toLocaleDateString('vi-VN')})`,
+      createdAt: new Date(),
+    });
+    await reservation.save();
+
+    await ContractModel.findOneAndUpdate(
+      { reservationId: reservation._id },
+      {
+        $set: {
+          'pricingSnapshot.endDate': newEndDate,
+        },
+      }
+    ).exec();
+
+    return res.json({
+      success: true,
+      message: `Gia hạn thành công thêm ${durationMonths} tháng. Thời hạn mới: ${newEndDate.toLocaleDateString('vi-VN')}.`,
+      data: {
+        reservation,
+        durationMonths,
+        amount: totalAmount,
+        oldEndDate,
+        newEndDate,
+      },
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
