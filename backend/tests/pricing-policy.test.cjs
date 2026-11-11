@@ -15,7 +15,9 @@ const Policy = require('../dist/models/pricing-policy/policy.model').default;
 const Scope = require('../dist/models/pricing-policy/rule-scope.model').default;
 const Facility = require('../dist/models/facilities/facility.model').default;
 const { pricingService, policyService } = require('../dist/services/pricing-policy/rule.service');
+const { pricingRevisionsFor, pricingRevisionAt } = require('../dist/services/pricing-policy/pricing-revision');
 const validation = require('../dist/services/pricing-policy/rule.validation');
+const { ReservationService } = require('../dist/services/reservations/reservation.service');
 const facilityId = '507f1f77bcf86cd799439011';
 const admin = { role: 'ADMIN', _id: new mongoose.Types.ObjectId() };
 const from = '2090-01-01T00:00:00Z', end = '2091-01-01T00:00:00Z';
@@ -24,9 +26,21 @@ const price = (extra = {}) => ({ facilityId, serviceType: 'SELF_STORAGE', unitSi
 const policy = (extra = {}) => ({ facilityId, type: 'DEPOSIT', config: { note: 'Unfinalized example only' }, effectiveFrom: from, ...extra });
 const status = n => e => e.status === n;
 function equal(a, b) { return String(a) === String(b); }
+function pricingScopeId() { return JSON.stringify(['pricing', facilityId, 'SELF_STORAGE', undefined, 'SMALL', 2, 'MONTH']); }
+test('legacy rules resolve from top-level fields while malformed revision history fails closed', () => {
+  const legacy = { version: 4, price: 150000, currency: 'VND', effectiveFrom: new Date('2025-01-01T00:00:00.000Z') };
+  assert.equal(pricingRevisionAt(legacy, new Date('2025-06-01T00:00:00.000Z')).price, 150000);
+  assert.throws(() => pricingRevisionsFor({ ...legacy, priceRevisions: [] }), /revision history is malformed/);
+  assert.throws(() => pricingRevisionsFor({ ...legacy, priceRevisions: {} }), /revision history is malformed/);
+  assert.throws(() => pricingRevisionsFor({ ...legacy, priceRevisions: [
+    { version: 3, price: 100000, currency: 'VND', effectiveFrom: new Date('2025-01-01T00:00:00.000Z'), effectiveTo: new Date('2025-03-01T00:00:00.000Z') },
+    { version: 4, price: 150000, currency: 'VND', effectiveFrom: new Date('2025-04-01T00:00:00.000Z') },
+  ] }), /not strictly ordered and contiguous/);
+});
 function match(doc, filter) {
   return Object.entries(filter).every(([key, expected]) => {
     if (key === '$or') return expected.some(f => match(doc, f));
+    if (key === '$and') return expected.every(f => match(doc, f));
     const actual = key.split('.').reduce((o, k) => o?.[k], doc);
     if (expected && typeof expected === 'object' && !(expected instanceof Date) && !(expected instanceof mongoose.Types.ObjectId)) {
       return Object.entries(expected).every(([op, v]) => {
@@ -101,6 +115,109 @@ test('pricing creates typed SELF_STORAGE and per-m3 MANAGED_INVENTORY rules with
   assert.ok(Policy.schema.indexes().some(([k]) => k.type && k.effectiveFrom));
   assert.equal(Scope.schema.path('_id').instance, 'String');
 });
+test('an already-effective Pricing Rule keeps its ID and resolves old and new prices from one document', async t => {
+  const state = store(t);
+  const now = Date.now(), day = 24 * 60 * 60 * 1000;
+  const oldStart = new Date(now - day).toISOString();
+  const newStart = new Date(now + 2 * day).toISOString();
+  const beforeNewPrice = new Date(now + day).toISOString();
+  const original = new Price({ ...price({ price: 500000, currency: 'VND', effectiveFrom: oldStart }), isActive: true, version: 1 });
+  state.rows.get(Price).push(original);
+  state.seq.set(pricingScopeId(), 1);
+  const id = String(original._id);
+  const updated = await pricingService.update(id, { price: 600000, currency: 'VND', effectiveFrom: newStart }, admin);
+  assert.equal(String(updated._id), id);
+  assert.equal(state.rows.get(Price).length, 1, 'edit must not create another PricingRule document');
+  assert.equal(updated.priceRevisions.length, 2);
+  assert.equal(updated.priceRevisions[0].effectiveTo.toISOString(), newStart);
+  assert.equal((await pricingService.resolve({ facilityId, serviceType: 'SELF_STORAGE', unitSize: 'SMALL', termValue: '2', termUnit: 'MONTH', at: beforeNewPrice }, admin)).price, 500000);
+  assert.equal((await pricingService.resolve({ facilityId, serviceType: 'SELF_STORAGE', unitSize: 'SMALL', termValue: '2', termUnit: 'MONTH', at: newStart }, admin)).price, 600000);
+  assert.equal((await pricingService.currentPublicPricing(facilityId, new Date(beforeNewPrice)))[0].price, 500000);
+  assert.equal((await pricingService.currentPublicPricing(facilityId, new Date(newStart)))[0].price, 600000);
+  const beforeEstimate = await ReservationService.calculatePricing(id, new Date(beforeNewPrice), new Date(new Date(beforeNewPrice).getTime() + 2 * day));
+  const afterEstimate = await ReservationService.calculatePricing(id, new Date(newStart), new Date(new Date(newStart).getTime() + 2 * day));
+  assert.equal(beforeEstimate.basePrice, 500000);
+  assert.equal(afterEstimate.basePrice, 600000);
+  await assert.rejects(pricingService.create(price({ effectiveFrom: new Date(now + day).toISOString(), price: 400000 }), admin), status(409),
+    'new rules must check every interval held inside an existing document');
+  assert.equal(state.rows.get(Price).length, 1);
+});
+test('editing an active rule requires a future start and rejects stale concurrent edits', async t => {
+  const state = store(t);
+  const now = Date.now(), day = 24 * 60 * 60 * 1000;
+  const original = new Price({ ...price({ currency: 'VND', effectiveFrom: new Date(now - day).toISOString() }), isActive: true, version: 1 });
+  state.rows.get(Price).push(original);
+  state.seq.set(pricingScopeId(), 1);
+  const id = String(original._id);
+  await assert.rejects(pricingService.update(id, { price: 600000, currency: 'VND' }, admin), status(400));
+  await assert.rejects(pricingService.update(id, { price: 600000, effectiveFrom: 'not-a-date' }, admin), status(400));
+  await assert.rejects(pricingService.update(id, { price: 600000, effectiveFrom: new Date(now - day).toISOString() }, admin), status(409));
+  const edits = await Promise.allSettled([
+    pricingService.update(id, { price: 600000, currency: 'VND', effectiveFrom: new Date(now + 3 * day).toISOString() }, admin),
+    pricingService.update(id, { price: 700000, currency: 'VND', effectiveFrom: new Date(now + 4 * day).toISOString() }, admin),
+  ]);
+  assert.equal(edits.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(edits.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);
+  assert.equal(state.rows.get(Price).length, 1);
+});
+test('sequential edits move the scheduled boundary without a gap or duplicate Pricing Rule', async t => {
+  const state = store(t);
+  const now = Date.now(), day = 24 * 60 * 60 * 1000;
+  const original = new Price({ ...price({ price: 500000, currency: 'VND', effectiveFrom: new Date(now - day).toISOString() }), isActive: true, version: 1 });
+  state.rows.get(Price).push(original);
+  state.seq.set(pricingScopeId(), 1);
+  const id = String(original._id);
+  const firstStart = new Date(now + 2 * day).toISOString();
+  const secondStart = new Date(now + 4 * day).toISOString();
+  await pricingService.update(id, { price: 600000, currency: 'VND', effectiveFrom: firstStart }, admin);
+  const revised = await pricingService.update(id, { price: 700000, currency: 'VND', effectiveFrom: secondStart }, admin);
+  assert.equal(String(revised._id), id);
+  assert.equal(state.rows.get(Price).length, 1);
+  assert.equal(revised.priceRevisions.length, 2);
+  assert.equal(revised.priceRevisions[0].effectiveTo.toISOString(), secondStart);
+  assert.equal((await pricingService.resolve({ facilityId, serviceType: 'SELF_STORAGE', unitSize: 'SMALL', termValue: '2', termUnit: 'MONTH', at: firstStart }, admin)).price, 500000);
+  assert.equal((await pricingService.resolve({ facilityId, serviceType: 'SELF_STORAGE', unitSize: 'SMALL', termValue: '2', termUnit: 'MONTH', at: secondStart }, admin)).price, 700000);
+});
+test('a future edit cannot reuse another revision start or extend into an overlapping rule', async t => {
+  const state = store(t);
+  const now = Date.now(), day = 24 * 60 * 60 * 1000;
+  const firstStart = new Date(now + day), secondStart = new Date(now + 3 * day);
+  const original = new Price({ ...price({ price: 500000, currency: 'VND', effectiveFrom: secondStart.toISOString() }), isActive: true, version: 2,
+    priceRevisions: [
+      { version: 1, price: 400000, currency: 'VND', effectiveFrom: firstStart, effectiveTo: secondStart },
+      { version: 2, price: 500000, currency: 'VND', effectiveFrom: secondStart },
+    ] });
+  state.rows.get(Price).push(original);
+  state.seq.set(pricingScopeId(), 2);
+  await assert.rejects(pricingService.update(String(original._id), { price: 600000, effectiveFrom: firstStart.toISOString() }, admin), status(409));
+  state.rows.get(Price).splice(0, 1);
+
+  const currentStart = new Date(now - day), oldEnd = new Date(now + 10 * day), collisionEnd = new Date(now + 20 * day);
+  const boundedCurrent = new Price({ ...price({ price: 300000, currency: 'VND', effectiveFrom: currentStart.toISOString(), effectiveTo: oldEnd.toISOString() }), isActive: true, version: 1 });
+  const adjacentRule = new Price({ ...price({ price: 800000, currency: 'VND', effectiveFrom: oldEnd.toISOString(), effectiveTo: collisionEnd.toISOString() }), isActive: true, version: 3 });
+  state.rows.get(Price).push(boundedCurrent, adjacentRule);
+  const proposedStart = new Date(now + 3 * day);
+  await assert.rejects(pricingService.update(String(boundedCurrent._id), {
+    price: 700000, effectiveFrom: proposedStart.toISOString(), effectiveTo: collisionEnd.toISOString(),
+  }, admin), status(409));
+  const unchanged = state.rows.get(Price).find(row => equal(row._id, boundedCurrent._id));
+  assert.equal(unchanged.priceRevisions, undefined, 'failed overlapping update must roll back without partial history');
+});
+test('a future Pricing Rule edits in place using only mutable fields', async t => {
+  const state = store(t);
+  const day = 24 * 60 * 60 * 1000;
+  const oldStart = new Date(Date.now() + day).toISOString();
+  const newStart = new Date(Date.now() + 3 * day).toISOString();
+  const original = new Price({ ...price({ price: 500000, currency: 'VND', effectiveFrom: oldStart }), isActive: true, version: 1 });
+  state.rows.get(Price).push(original);
+  state.seq.set(pricingScopeId(), 1);
+  const id = String(original._id);
+  const updated = await pricingService.update(id, { price: 600000, currency: 'VND', effectiveFrom: newStart }, admin);
+  assert.equal(String(updated._id), id);
+  assert.equal(state.rows.get(Price).length, 1);
+  assert.equal(updated.price, 600000);
+  assert.equal(updated.effectiveFrom.toISOString(), newStart);
+});
 test('pricing rejects invalid scope, amounts, term, dates and immutable fields', async t => {
   store(t);
   for (const extra of [
@@ -117,21 +234,21 @@ test('pricing rejects invalid scope, amounts, term, dates and immutable fields',
 test('Managed DEPOSIT policy requires the explicit percentage-of-rent schema', async t => {
   store(t);
   for (const config of [{ amount: 500 }, { calculation: 'FIXED', amount: 500 }, { calculation: 'PERCENT_OF_RENT', percentage: -1 }, { calculation: 'PERCENT_OF_RENT', percentage: Infinity }]) {
-    await assert.rejects(policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config }), admin), status(400));
+    assert.throws(() => validation.body('policy', policy({ serviceType: 'MANAGED_INVENTORY', config })), status(400));
   }
-  const accepted = await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 20 } }), admin);
+  const accepted = validation.body('policy', policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 20 } }));
   assert.equal(accepted.config.percentage, 20);
 });
-test('pricing and policies require existing ACTIVE supporting facilities', async t => {
+test('Pricing Rule writes require an existing ACTIVE supporting facility', async t => {
   const s = store(t);
-  for (const service of [pricingService, policyService]) {
-    const input = service === pricingService ? price() : policy({ serviceType: 'SELF_STORAGE' });
+  for (const service of [pricingService]) {
+    const input = price();
     s.facility = null; await assert.rejects(service.create(input, admin), status(404));
     s.facility = { status: 'INACTIVE', serviceTypes: ['SELF_STORAGE'] }; await assert.rejects(service.create(input, admin), status(409));
     s.facility = { status: 'ACTIVE', serviceTypes: ['MANAGED_INVENTORY'] }; await assert.rejects(service.create(input, admin), status(409));
   }
 });
-for (const [name, service, model, make] of [['pricing', pricingService, Price, price], ['policy', policyService, Policy, policy]]) {
+for (const [name, service, model, make] of [['pricing', pricingService, Price, price]]) {
   test(name + ': interval overlap, adjacency, inactive versions and status activation', async t => {
     store(t);
     const first = await service.create(make({ effectiveTo: end }), admin);
@@ -160,7 +277,7 @@ for (const [name, service, model, make] of [['pricing', pricingService, Price, p
     s.rows.get(model).push(model.hydrate({ ...b.toObject(), _id: new mongoose.Types.ObjectId() }));
     await assert.rejects(service.resolve({ ...query, at: end }, admin), status(409));
   });
-  test(name + ': future edits, immutable scope, prospective closure and historical safety', async t => {
+  test(name + ': future edits, immutable scope and active revisions require a future effectiveFrom', async t => {
     const s = store(t);
     const a = await service.create(make(), admin), id = String(a._id);
     const change = name === 'pricing' ? { price: 250 } : { config: { note: 'revised draft' } };
@@ -170,15 +287,11 @@ for (const [name, service, model, make] of [['pricing', pricingService, Price, p
       await assert.rejects(service.update(id, input, admin), status(400));
     await assert.rejects(service.update(id, { effectiveFrom: '2000-01-01T00:00:00Z' }, admin), status(409));
     s.rows.get(model)[0].effectiveFrom = new Date('2000-01-01T00:00:00Z');
-    await assert.rejects(service.update(id, change, admin), status(409));
+    await assert.rejects(service.update(id, change, admin), name === 'pricing' ? status(400) : status(409));
     await assert.rejects(service.update(id, { isActive: false }, admin, true), status(409));
-    await assert.rejects(service.update(id, { effectiveTo: '2001-01-01T00:00:00Z' }, admin), status(409));
-    const snapshot = JSON.stringify(s.rows.get(model)[0].toObject());
-    await service.update(id, { effectiveTo: end }, admin);
-    assert.equal(JSON.parse(snapshot).effectiveTo, undefined, 'a copied snapshot stays unchanged');
-    await assert.rejects(service.update(id, { effectiveTo: '2092-01-01T00:00:00Z' }, admin), status(409));
-    s.rows.get(model)[0].effectiveTo = new Date('2001-01-01T00:00:00Z');
-    await assert.rejects(service.update(id, { effectiveTo: end }, admin), status(409));
+    await assert.rejects(service.update(id, { effectiveTo: '2001-01-01T00:00:00Z' }, admin), status(400));
+    await assert.rejects(service.update(id, { effectiveTo: end }, admin), status(400));
+    await assert.rejects(service.update(id, { effectiveTo: end, effectiveFrom: '2000-01-01T00:00:00Z' }, admin), status(409));
   });
   test(name + ': concurrent overlapping creates serialize; failed writes roll back', async t => {
     const s = store(t);
@@ -210,57 +323,52 @@ for (const [name, service, model, make] of [['pricing', pricingService, Price, p
 test('policy config defensive validation and isolated service scopes', async t => {
   store(t);
   for (const type of ['DEPOSIT', 'CANCELLATION', 'REFUND', 'OVERDUE', 'DISCOUNT', 'WAIVER', 'SHELF_CONSTRAINT'])
-    await policyService.create(policy({ type, config: { nested: [{ note: 'Uninterpreted', enabled: true, value: null }] } }), admin);
-  await policyService.create(policy({ serviceType: 'SELF_STORAGE' }), admin);
-  await policyService.create(policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 0 } }), admin);
+    assert.equal(validation.body('policy', policy({ type, config: { nested: [{ note: 'Uninterpreted', enabled: true, value: null }] } })).type, type);
+  validation.body('policy', policy({ serviceType: 'SELF_STORAGE' }));
+  validation.body('policy', policy({ serviceType: 'MANAGED_INVENTORY', config: { calculation: 'PERCENT_OF_RENT', percentage: 0 } }));
   for (const config of [null, [], 'x', 3, { x: NaN }, { x: Infinity }, { x: () => {} }, { nested: { $where: 'x' } },
     JSON.parse('{"__proto__":{"polluted":true}}'), { nested: { constructor: {} } }, { 'a.b': 1 },
     { x: 'a'.repeat(17000) }, { x: Array(2001).fill(1) }, { x: new Date() }]) {
-    await assert.rejects(policyService.create(policy({ config }), admin), status(400));
+    assert.throws(() => validation.body('policy', policy({ config })), status(400));
   }
   let deep = {}; for (let i = 0; i < 10; i++) deep = { child: deep };
   assert.throws(() => validation.config(deep), status(400));
   const cycle = {}; cycle.x = cycle; assert.throws(() => validation.config(cycle), status(400));
-  await assert.rejects(policyService.create(policy({ type: 'UNKNOWN' }), admin), status(400));
+  assert.throws(() => validation.body('policy', policy({ type: 'UNKNOWN' })), status(400));
   assert.equal({}.polluted, undefined);
 });
-test('HTTP pricing/policy routes use real role middleware; resolve precedes ID; no DELETE', async t => {
+
+test('Business Policy is read-only through direct service calls for Admin and BOM', async t => {
   store(t);
-  const auth = require('../dist/middlewares/auth/requireAuth');
-  t.mock.method(auth, 'requireAuth', (req, res, next) => {
-    const role = req.headers['x-test-role'];
-    if (!role) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    req.user = { ...admin, role }; next();
-  });
-  const server = require('../dist/app').default.listen(0, '127.0.0.1');
-  await new Promise(r => server.once('listening', r));
-  t.after(() => new Promise(r => { server.close(r); server.closeAllConnections(); }));
-  const base = 'http://127.0.0.1:' + server.address().port + '/api/v1';
-  const request = (method, path, role, body) => fetch(base + path, { method,
-    headers: { 'Content-Type': 'application/json', ...(role ? { 'x-test-role': role } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}) });
-  for (const [path, make, query] of [
-    ['/pricing-rules', price, `facilityId=${facilityId}&serviceType=SELF_STORAGE&unitSize=SMALL&termValue=2&termUnit=MONTH`],
-    ['/policies', policy, `facilityId=${facilityId}&type=DEPOSIT`],
-  ]) {
-    for (const [method, url] of [['GET',path],['GET',path+'/resolve'],['GET',path+'/'+facilityId],['POST',path],['PATCH',path+'/'+facilityId],['PATCH',path+'/'+facilityId+'/status']])
-      assert.equal((await request(method,url)).status,401);
-    for (const role of ['CUSTOMER','FACILITY_STAFF','FACILITY_MANAGER']) {
-      for (const [method,url,body] of [['POST',path,make()],['PATCH',path+'/'+facilityId,{price:1}],['PATCH',path+'/'+facilityId+'/status',{isActive:false}]])
-        assert.equal((await request(method,url,role,body)).status,403);
-    }
-    const created = await request('POST',path,'BOM',make()); assert.equal(created.status,201);
-    const id = (await created.json()).data._id;
-    assert.equal((await request('GET',path,'CUSTOMER')).status,200);
-    assert.equal((await request('GET',path+'/'+id,'CUSTOMER')).status,200);
-    assert.equal((await request('GET',path+'/resolve?'+query+'&at='+from,'CUSTOMER')).status,200);
-    assert.equal((await request('GET',path+'/resolve?'+query+'&at=2089-01-01T00:00:00Z','CUSTOMER')).status,404);
-    assert.equal((await request('PATCH',path+'/'+id,'ADMIN',{effectiveTo:end})).status,200);
-    assert.equal((await request('PATCH',path+'/'+id+'/status','ADMIN',{isActive:false})).status,200);
-    assert.equal((await request('DELETE',path+'/'+id,'ADMIN')).status,404);
+  for (const actor of [admin, { ...admin, role: 'BOM' }]) {
+    await assert.rejects(policyService.create(policy(), actor), status(403));
+    await assert.rejects(policyService.update(facilityId, { config: { note: 'changed' } }, actor), status(403));
+    await assert.rejects(policyService.update(facilityId, { isActive: false }, actor, true), status(403));
   }
 });
-test('CATEGORY policy requires the approved strict allow/block schema and Managed Inventory scope', async t => {
+test('route table preserves Pricing Rule writes and exposes Policy read routes only', async t => {
+  const state = store(t);
+  const router = require('../dist/routes/pricing-policy.routes').default;
+  const pricingLayer = router.stack.find(layer => /pricing-rules/.test(layer.regexp.toString()));
+  const policyLayer = router.stack.find(layer => /policies/.test(layer.regexp.toString()));
+  const routeMethods = layer => layer.handle.stack.filter(row => row.route).map(row => ({ path: row.route.path, methods: row.route.methods }));
+  const pricingRoutes = routeMethods(pricingLayer);
+  const policyRoutes = routeMethods(policyLayer);
+  assert.ok(pricingRoutes.some(r => r.path === '/' && r.methods.post));
+  assert.ok(pricingRoutes.some(r => r.path === '/:id' && r.methods.patch));
+  assert.ok(pricingRoutes.some(r => r.path === '/:id/status' && r.methods.patch));
+  assert.ok(policyRoutes.some(r => r.path === '/resolve' && r.methods.get));
+  assert.ok(policyRoutes.some(r => r.path === '/' && r.methods.get));
+  assert.ok(policyRoutes.some(r => r.path === '/:id' && r.methods.get));
+  assert.equal(policyRoutes.some(r => r.methods.post || r.methods.patch), false);
+
+  const historical = new Policy({ ...policy(), isActive: true, version: 1 });
+  state.rows.get(Policy).push(historical);
+  assert.equal(String((await policyService.get(String(historical._id), admin))._id), String(historical._id));
+  assert.equal((await policyService.list({ facilityId, type: 'DEPOSIT' }, admin)).data.length, 1);
+  assert.equal(String((await policyService.resolve({ facilityId, type: 'DEPOSIT', at: from }, admin))._id), String(historical._id));
+});
+test('CATEGORY policy readers keep the approved strict allow/block schema and Managed Inventory scope', async t => {
   store(t);
   for (const input of [
     { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: ['DOCUMENTS'] } },
@@ -269,12 +377,11 @@ test('CATEGORY policy requires the approved strict allow/block schema and Manage
     { serviceType: 'MANAGED_INVENTORY', config: { allowedCategories: ['DOCUMENTS'], blockedCategories: ['HAZARDOUS'], extra: true } },
     { serviceType: 'SELF_STORAGE', config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } },
     { config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } },
-  ]) await assert.rejects(policyService.create(policy({ type: 'CATEGORY', ...input }), admin), status(400));
-  const accepted = await policyService.create(policy({ type: 'CATEGORY', serviceType: 'MANAGED_INVENTORY', config: {
+  ]) assert.throws(() => validation.body('policy', policy({ type: 'CATEGORY', ...input })), status(400));
+  const accepted = validation.body('policy', policy({ type: 'CATEGORY', serviceType: 'MANAGED_INVENTORY', config: {
     allowedCategories: [' documents ', 'FURNITURE'], blockedCategories: ['HAZARDOUS'],
-  } }), admin);
+  } }));
   assert.deepEqual(accepted.config, { allowedCategories: ['DOCUMENTS', 'FURNITURE'], blockedCategories: ['HAZARDOUS'] });
-  await assert.rejects(policyService.update(String(accepted._id), { config: { allowedCategories: ['DOCUMENTS'] } }, admin), status(400));
-  const updated = await policyService.update(String(accepted._id), { config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } }, admin);
-  assert.deepEqual(updated.config, { allowedCategories: ['DOCUMENTS'], blockedCategories: [] });
+  const updated = validation.body('policy', { config: { allowedCategories: ['DOCUMENTS'], blockedCategories: [] } }, true);
+  assert.deepEqual(validation.validateCategoryPolicyConfig(updated.config), { allowedCategories: ['DOCUMENTS'], blockedCategories: [] });
 });

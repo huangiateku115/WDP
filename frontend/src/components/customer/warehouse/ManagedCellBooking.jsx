@@ -11,6 +11,7 @@ import reservationApi from '@/api/reservationApi';
 import warehouseMapApi from '@/api/warehouseMapApi';
 
 import { customerProfileApi } from '@/api/customerRentalApi';
+import { termsApi } from '@/api/termsApi';
 
 import { minimumBookingStartDate, bookingStartDateError, readBookingPeriod, selectedPayload, cellBookingReason, cellVolume, volumeText, verifiedCellQuote, matchesCellReservation } from '@/lib/managedCellBooking';
 
@@ -23,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 
 import { Dialog } from '@/components/ui/dialog';
+import TermsModal from '@/components/customer/terms/TermsModal';
 
 import { useBackend, record, rows, LoadState, Message, Link, ManagedFinancialSummary, rentalError as bookingError } from '../RentalBackendUI';
 
@@ -150,7 +152,7 @@ export function useManagedCellBooking(facilityId) {
 
   const owner = `${session.accessToken}:${facilityId}`;
 
-  const [selection, setSelection] = useState(() => { if (basketOwner !== owner) { basketOwner = owner; basketRows = []; basketAttempt = null; } return basketRows.map(row => ({ ...row, availabilityKey: '' })); }), [revision, setRevision] = useState(0), [open, setOpen] = useState(false), [quote, setQuote] = useState(null), [confirmed, setConfirmed] = useState(false), [pending, setPending] = useState(''), [error, setError] = useState(''), [uncertain, setUncertain] = useState(() => basketAttempt), [checking, setChecking] = useState(false);
+  const [selection, setSelection] = useState(() => { if (basketOwner !== owner) { basketOwner = owner; basketRows = []; basketAttempt = null; } return basketRows.map(row => ({ ...row, availabilityKey: '' })); }), [revision, setRevision] = useState(0), [open, setOpen] = useState(false), [quote, setQuote] = useState(null), [confirmed, setConfirmed] = useState(false), [termsAccepted, setTermsAccepted] = useState(false), [termsOpen, setTermsOpen] = useState(false), [pending, setPending] = useState(''), [error, setError] = useState(''), [uncertain, setUncertain] = useState(() => basketAttempt), [checking, setChecking] = useState(false);
 
   useEffect(() => { basketOwner = owner; basketRows = selection; }, [selection, owner]);
 
@@ -161,6 +163,7 @@ export function useManagedCellBooking(facilityId) {
   useEffect(() => { alive.current = true; return () => { alive.current = false; if (getAccessToken() !== session.accessToken) { basketOwner = ''; basketRows = []; basketAttempt = null; } }; }, []);
 
   const profile = useBackend(config => open ? customerProfileApi.get(config).then(record) : Promise.resolve(null), [open]);
+  const terms = useBackend(config => termsApi.current('MANAGED_INVENTORY', config).then(record), [], true);
 
   const racksKey = JSON.stringify([...new Set(selection.map(x => x.rack._id))].sort());
 
@@ -194,7 +197,7 @@ export function useManagedCellBooking(facilityId) {
 
   const requestKey = `${scope}:${selectionKey}`; const requestRef = useRef(requestKey); requestRef.current = requestKey;
 
-  useEffect(() => { setQuote(null); setConfirmed(false); }, [requestKey]);
+  useEffect(() => { setQuote(null); setConfirmed(false); setTermsAccepted(false); }, [requestKey, terms.data?.versionId]);
 
   let payload = null; try { if (!checking && selection.every(x => x.availabilityKey === rangeKey && !x.reason)) payload = selectedPayload(facilityId, selection, period.range, period.term); } catch {/* Invalid selection stays readable but cannot be bought. */ }
 
@@ -230,7 +233,7 @@ export function useManagedCellBooking(facilityId) {
   }
 
   async function create() {
-    if (busy.current || !payload || !review || !confirmed || profile.data?.verificationStatus !== 'VERIFIED' || uncertain) return; busy.current = true; setPending('create'); setError(''); const key = scope, rkey = requestKey; let sent = false, attempt;
+    if (busy.current || !payload || !review || !confirmed || !termsAccepted || !terms.data?.versionId || profile.data?.verificationStatus !== 'VERIFIED' || uncertain) return; busy.current = true; setPending('create'); setError(''); const key = scope, rkey = requestKey; let sent = false, attempt;
 
     try {
 
@@ -253,7 +256,7 @@ export function useManagedCellBooking(facilityId) {
       const idempotencyKey = managedBookingIdempotencyKey(latest, owner);
       sent = true;
 
-      const result = managedCreation(await managedApi.create(latest, { headers: { 'Idempotency-Key': idempotencyKey } })); if (!validScope(key)) return;
+      const result = managedCreation(await managedApi.create({ ...latest, termsAccepted: true, termsVersionId: terms.data.versionId }, { headers: { 'Idempotency-Key': idempotencyKey } })); if (!validScope(key)) return;
 
       if (!matchesCellReservation(result.reservation, latest, period.range)) throw Error('The returned reservation did not match the selected Cells and period.');
 
@@ -271,7 +274,7 @@ export function useManagedCellBooking(facilityId) {
     } finally { busy.current = false; if (validScope(key)) setPending(''); }
   }
 
-  return { period, minimumStart: minimumBookingStartDate(clock), startError: bookingStartDateError(period.start, clock), rangeKey, selection, payload, profile, open, setOpen, review, confirmed, setConfirmed, pending, error, uncertain, checking, changePeriod, toggle, clear, resolveQuote, create, reconcile, refresh: () => setRevision(v => v + 1), locked: !!pending || !!uncertain };
+  return { period, minimumStart: minimumBookingStartDate(clock), startError: bookingStartDateError(period.start, clock), rangeKey, selection, payload, profile, terms, termsAccepted, setTermsAccepted, termsOpen, setTermsOpen, open, setOpen, review, confirmed, setConfirmed, pending, error, uncertain, checking, changePeriod, toggle, clear, resolveQuote, create, reconcile, refresh: () => setRevision(v => v + 1), locked: !!pending || !!uncertain };
 
 }
 
@@ -424,6 +427,7 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
               />
               <span>Tôi đã kiểm tra các ô đã chọn, thời gian thuê và các khoản phí dự kiến.</span>
             </label>
+            {b.terms.data && <div className="space-y-2 text-sm"><label className="flex cursor-pointer items-start gap-3"><Checkbox aria-label={`Chấp nhận điều khoản phiên bản ${b.terms.data.version}`} checked={b.termsAccepted} disabled={b.locked} onCheckedChange={value => b.setTermsAccepted(value === true)} /><span>Tôi đã đọc và đồng ý với Điều khoản &amp; Chính sách phiên bản {b.terms.data.version}.</span></label><button type="button" className="ml-8 font-medium text-emerald-800 underline underline-offset-2" onClick={() => b.setTermsOpen(true)}>Xem điều khoản &amp; chính sách</button></div>}
           </>
         )}
         <Message error={b.error} />
@@ -431,7 +435,7 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
           <Button variant="outline" disabled={Boolean(b.pending)} onClick={close}>Quay lại chọn ô</Button>
           <Button
             variant="orange"
-            disabled={!b.payload || !b.review || !b.confirmed || b.profile.data?.verificationStatus !== "VERIFIED" || b.locked}
+            disabled={!b.payload || !b.review || !b.confirmed || !b.termsAccepted || !b.terms.data?.versionId || b.profile.data?.verificationStatus !== "VERIFIED" || b.locked}
             onClick={b.create}
           >
             {b.pending === "create" ? "Đang tạo đơn…" : "Xác nhận đặt thuê"}
@@ -443,6 +447,7 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
           </Button>
         )}
       </div>
+      <TermsModal open={b.termsOpen} onClose={() => b.setTermsOpen(false)} serviceType="MANAGED_INVENTORY" initialTerms={b.terms.data} />
     </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button, money,
+  Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
@@ -12,19 +12,14 @@ import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
   bomFutureDate, responseData,
-  pricingFromDto, pricingLabel, pricingBody,
-  policyFromDto, policyBody,
+  pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
+  policyFromDto,
 } from "@/lib/bomMappers";
 
 const blankPricing = () => ({
   facilityId: "", service: "SELF_STORAGE", unitSize: "SMALL", billingMonths: 1,
   rate: "", currency: BOM_CURRENCY, effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
 });
-const blankPolicy = () => ({
-  facilityId: "", service: "", type: "DEPOSIT", description: "", rule: "",
-  effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
-});
-
 const CONFIGS = {
   pricing: {
     api: bomPricingApi, root: "/bom/pricing", title: "Pricing rules", code: "P051",
@@ -33,7 +28,7 @@ const CONFIGS = {
   policy: {
     api: bomPolicyApi, root: "/bom/policies", title: "Business policies", code: "P052",
     policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
-    fromDto: policyFromDto, body: policyBody, blank: blankPolicy, hasService: false,
+    fromDto: policyFromDto,
   },
 };
 
@@ -60,6 +55,7 @@ const loadRecords = (config, signal) =>
 export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
   const config = configFor(kind, basePath);
   if (!config) return <BomUnavailable />;
+  if (kind === "policy" && ["new", "edit"].includes(mode)) return <BomUnavailable />;
   if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
   if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;
   if (mode === "detail") return <RecordDetail kind={kind} config={config} />;
@@ -155,11 +151,12 @@ function RecordDetail({ kind, config }) {
     >
       <AsyncBoundary state={state} render={(record) => {
         const nextStatus = record.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+        const futurePricing = kind === "pricing" && record.effectiveFrom && new Date(record.effectiveFrom) > new Date();
         return (
           <>
             <Panel
-              title="Current rule"
-              action={<Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Edit</Link></Button>}
+              title={kind === "pricing" ? futurePricing ? "Scheduled Pricing Rule" : "Effective Pricing Rule" : "Current rule"}
+              action={kind === "pricing" ? <Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Edit</Link></Button> : undefined}
             >
               <Details values={kind === "pricing" ? [
                 ["Scope", pricingLabel(record)],
@@ -182,11 +179,12 @@ function RecordDetail({ kind, config }) {
                 ["Status", <Status value={record.status} />],
                 ["Version", record.revision],
               ]} />
-              <div className="mt-5">
+              {futurePricing && <p className="mt-4 text-sm text-slate-600">This price is scheduled for {record.effectiveFrom}; the current effective price remains in force until then.</p>}
+              {kind === "pricing" && <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
                   {nextStatus === "ACTIVE" ? "Activate" : "Deactivate"}
                 </Button>
-              </div>
+              </div>}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
               <Panel title="Future quote illustration" subtitle="Illustrative only. Does not create or modify any contract, invoice or payment.">
@@ -251,7 +249,7 @@ function RecordForm({ kind, config, mode }) {
     setError("");
     setPending(true);
     try {
-      const body = config.body(form);
+      const body = isEdit ? pricingUpdateBody(form) : config.body(form);
       if (isEdit) await config.api.update(id, body);
       else await config.api.create(body);
       nav(config.root);
@@ -267,7 +265,9 @@ function RecordForm({ kind, config, mode }) {
   return (
     <Screen
       title={`${isEdit ? "Edit" : "Create"} ${kind}`}
-      description="Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."
+      description={isEdit
+        ? "Set the future date when this price starts. The current effective price remains unchanged before that date."
+        : "Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."}
       notice={LIVE_NOTICE}
     >
       <AsyncBoundary
@@ -275,36 +275,30 @@ function RecordForm({ kind, config, mode }) {
         render={([, facilities = []]) => (
           <Panel title="Rule form">
             <form className="bom-form" onSubmit={submit}>
-              <Field label="Facility scope">
+              {!isEdit && <Field label="Facility scope">
                 <Select
                   label="Facility scope"
                   value={form.facilityId}
                   onChange={(v) => change("facilityId", v)}
                   options={[["", "Select a facility"], ...facilities.map((f) => [f.id, f.name])]}
                 />
-              </Field>
-              {kind === "policy" && (
-                <Field label="Policy type">
-                  <Select label="Policy type" value={form.type} onChange={(v) => change("type", v)}
-                    options={BOM_POLICY_TYPES.map(({ key, label }) => [key, label])} />
-                </Field>
-              )}
-              {config.hasService && (
+              </Field>}
+              {!isEdit && config.hasService && (
                 <Field label="Service model">
                   <Select label="Service model" value={form.service} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES} />
                 </Field>
               )}
-              {kind === "pricing" && form.service === "SELF_STORAGE" && (
+              {!isEdit && kind === "pricing" && form.service === "SELF_STORAGE" && (
                 <Field label="Private unit size">
                   <Select label="Private unit size" value={form.unitSize} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
                 </Field>
               )}
               {kind === "pricing" && (
                 <>
-                  <Field label="Billing duration (months)">
+                  {!isEdit && <Field label="Billing duration (months)">
                     <Select label="Billing duration (months)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
                       options={BOM_TERM_MONTHS.map((m) => [m, `${m} month(s)`])} />
-                  </Field>
+                  </Field>}
                   <Field label={form.service === "MANAGED_INVENTORY" ? "Rate per m³ per billing period (VND)" : "Price per billing period (VND)"}>
                     <Input aria-label="Rate" type="number" min="0" step="any" required value={form.rate} onChange={(e) => change("rate", e.target.value)} />
                   </Field>
@@ -313,33 +307,19 @@ function RecordForm({ kind, config, mode }) {
                   </Field>
                 </>
               )}
-              {kind === "policy" && (
-                <>
-                  <div className="bom-wide">
-                    <Field label="Policy description">
-                      <Textarea aria-label="Policy description" required value={form.description} onChange={(e) => change("description", e.target.value)} />
-                    </Field>
-                  </div>
-                  <div className="bom-wide">
-                    <Field label="Policy rule">
-                      <Textarea aria-label="Policy rule" required value={form.rule} onChange={(e) => change("rule", e.target.value)} />
-                    </Field>
-                  </div>
-                </>
-              )}
               <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
                 <Input aria-label="Effective from" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
               <Field label="Effective end (optional)">
                 <Input aria-label="Effective end" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
               </Field>
-              <Field label="Status">
+              {!isEdit && <Field label="Status">
                 <Select label="Status" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
-              </Field>
+              </Field>}
               <div className="bom-wide">
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
-                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save rule" : "Create rule"}</Button>
+                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save future price" : "Create rule"}</Button>
                   <Button type="button" variant="outline" onClick={() => nav(config.root)}>Cancel</Button>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import mongoose, { ClientSession, Model, Types } from 'mongoose';
+import mongoose, { ClientSession, HydratedDocument, Model, Types } from 'mongoose';
 import PricingModel from '../../models/pricing-policy/pricing-rule.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
 import ScopeModel from '../../models/pricing-policy/rule-scope.model';
@@ -8,6 +8,7 @@ import { Policy, PricingBasis, PricingRule } from '../../types/pricing-policy.ty
 import { IUser, UserRole } from '../../types/user.type';
 import * as validation from './rule.validation';
 import { Kind, RuleError } from './rule.validation';
+import { intervalsOverlap, pricingRevisionAt, pricingRevisionsFor, projectPricingRevision } from './pricing-revision';
 
 type Actor = Pick<IUser, 'role' | '_id'> | undefined;
 type Rule = PricingRule | Policy;
@@ -58,6 +59,17 @@ export class RuleService {
   }
   private async overlap(record: Rule, session: ClientSession, exclude?: Types.ObjectId) {
     if (!record.isActive) return;
+    if (this.kind === 'pricing') {
+      const candidates = await this.model.find({ ...keyFilter(this.kind, record), isActive: true,
+        ...(exclude ? { _id: { $ne: exclude } } : {}) }).session(session).exec();
+      const proposed = pricingRevisionsFor(record as PricingRule);
+      for (const candidate of candidates as PricingRule[]) {
+        for (const left of pricingRevisionsFor(candidate)) {
+          if (proposed.some(right => intervalsOverlap(left, right))) throw new RuleError(409, 'Effective period overlaps an active rule');
+        }
+      }
+      return;
+    }
     const filter = {
       ...keyFilter(this.kind, record), isActive: true,
       ...(exclude ? { _id: { $ne: exclude } } : {}),
@@ -83,6 +95,7 @@ export class RuleService {
   }
   async create(input: unknown, actor: Actor) {
     authorize(actor, true);
+    if (this.kind === 'policy') throw new RuleError(403, 'Business policies are system-controlled and read-only');
     const data = validation.body(this.kind, input);
     return safe(() => this.transaction(keyFilter(this.kind, data), async (session, version) => {
       // Evaluate inside the retried transaction; never insert a backdated version.
@@ -118,7 +131,19 @@ export class RuleService {
     authorize(actor);
     const { key, at } = validation.resolver(this.kind, input);
     return safe(async () => {
-      const results = await this.model.find({ ...keyFilter(this.kind, key), ...RuleService.effectiveFilter(at) }).limit(2).lean().exec();
+      const filter = this.kind === 'pricing'
+        ? { ...keyFilter(this.kind, key), isActive: true }
+        : { ...keyFilter(this.kind, key), ...RuleService.effectiveFilter(at) };
+      const results = await this.model.find(filter).lean().exec();
+      if (this.kind === 'pricing') {
+        const effective = (results as PricingRule[]).flatMap(record => {
+          const revision = pricingRevisionAt(record, at);
+          return revision ? [projectPricingRevision(record, revision)] : [];
+        });
+        if (!effective.length) throw new RuleError(404, 'No effective rule');
+        if (effective.length !== 1) throw new RuleError(409, 'Ambiguous effective rules');
+        return effective[0];
+      }
       if (!results.length) throw new RuleError(404, 'No effective rule');
       if (results.length !== 1) throw new RuleError(409, 'Ambiguous effective rules');
       return results[0];
@@ -130,16 +155,17 @@ export class RuleService {
   async currentPublicPricing(facilityId: string, at = new Date()) {
     if (this.kind !== 'pricing') throw new RuleError(500, 'Pricing resolver unavailable');
     return safe(async () => {
-      const records = await this.model.find({ facilityId: new Types.ObjectId(facilityId), $and: [
+      const records = await this.model.find({ facilityId: new Types.ObjectId(facilityId), isActive: true, $and: [
         { $or: [
           { serviceType: FacilityServiceType.SELF_STORAGE },
           { serviceType: FacilityServiceType.MANAGED_INVENTORY, billingBasis: PricingBasis.PER_M3 },
         ] },
-        RuleService.effectiveFilter(at),
       ] }).lean().exec();
       const keys = new Set<string>();
-      return records.map(record => {
+      return (records as PricingRule[]).flatMap(record => {
         const rule = record as PricingRule;
+        const revision = pricingRevisionAt(rule, at);
+        if (!revision) return [];
         const key = JSON.stringify([rule.serviceType, rule.unitSize ?? null, rule.term.value, rule.term.unit]);
         if (keys.has(key)) throw new RuleError(409, 'Ambiguous effective pricing rules');
         keys.add(key);
@@ -149,16 +175,71 @@ export class RuleService {
           ...(rule.billingBasis ? { billingBasis: rule.billingBasis } : {}),
           ...(rule.unitSize ? { unitSize: rule.unitSize } : {}),
           term: { value: rule.term.value, unit: rule.term.unit },
-          price: rule.price,
-          currency: rule.currency,
-          effectiveFrom: rule.effectiveFrom,
-          ...(rule.effectiveTo ? { effectiveTo: rule.effectiveTo } : {}),
+          price: revision.price,
+          currency: revision.currency,
+          effectiveFrom: revision.effectiveFrom,
+          ...(revision.effectiveTo ? { effectiveTo: revision.effectiveTo } : {}),
         };
       });
     });
   }
+  private applyPricingUpdate(document: HydratedDocument<PricingRule>, changes: Record<string, unknown>, version: number, now: Date) {
+    const timeline = pricingRevisionsFor(document);
+    const requestedStart = changes.effectiveFrom as Date | undefined;
+    const nextPrice = (changes.price as number | undefined) ?? document.price;
+    const nextCurrency = (changes.currency as string | undefined) ?? document.currency;
+    if (document.effectiveFrom > now) {
+      const nextStart = requestedStart ?? document.effectiveFrom;
+      if (nextStart <= now) throw new RuleError(409, 'Cannot backdate a future Pricing Rule');
+      const effectiveTo = (changes.effectiveTo as Date | undefined) ?? document.effectiveTo;
+      if (effectiveTo && effectiveTo <= nextStart) throw new RuleError(400, 'effectiveTo must be later than effectiveFrom');
+      if (Array.isArray(document.priceRevisions) && document.priceRevisions.length) {
+        const history = timeline.map(revision => ({ ...revision }));
+        const latestIndex = history.length - 1;
+        const latest = history[latestIndex];
+        if (!latest) throw new RuleError(409, 'Latest Pricing Rule revision is unavailable');
+        if (latest.effectiveFrom.getTime() !== document.effectiveFrom.getTime()) throw new RuleError(409, 'Latest Pricing Rule revision is inconsistent');
+        if (latestIndex > 0) {
+          const previous = history[latestIndex - 1];
+          if (!previous) throw new RuleError(409, 'Previous Pricing Rule revision is unavailable');
+          if (nextStart <= previous.effectiveFrom) throw new RuleError(409, 'New effectiveFrom overlaps an earlier Pricing Rule revision');
+          previous.effectiveTo = nextStart;
+        }
+        history[latestIndex] = { version, price: nextPrice, currency: nextCurrency, effectiveFrom: nextStart, ...(effectiveTo ? { effectiveTo } : {}) };
+        document.set({ priceRevisions: history, price: nextPrice, currency: nextCurrency,
+          effectiveFrom: nextStart, effectiveTo, version });
+        return;
+      }
+      document.set({ ...changes, price: nextPrice, currency: nextCurrency,
+        effectiveFrom: nextStart, effectiveTo, version });
+      return;
+    }
+
+    const current = pricingRevisionAt(document, now);
+    if (!current) throw new RuleError(409, 'An expired or inactive Pricing Rule revision is immutable');
+    if (!requestedStart) throw new RuleError(400, 'effectiveFrom is required when revising a Pricing Rule that is already effective');
+    if (requestedStart <= now) throw new RuleError(409, 'A new Pricing Rule price must start in the future');
+    const currentIndex = timeline.findIndex(revision => revision.effectiveFrom.getTime() === current.effectiveFrom.getTime() && revision.version === current.version);
+    if (currentIndex < 0) throw new RuleError(409, 'Current Pricing Rule revision is unavailable');
+    const currentRevision = timeline[currentIndex];
+    if (!currentRevision) throw new RuleError(409, 'Current Pricing Rule revision is unavailable');
+    const effectiveTo = (changes.effectiveTo as Date | undefined) ?? currentRevision.effectiveTo;
+    if (currentRevision.effectiveTo && requestedStart >= currentRevision.effectiveTo) {
+      throw new RuleError(409, 'New price must begin before the current Pricing Rule period ends');
+    }
+    if (effectiveTo && effectiveTo <= requestedStart) throw new RuleError(400, 'effectiveTo must be later than the new effectiveFrom');
+    const revisionPrice = (changes.price as number | undefined) ?? currentRevision.price;
+    const revisionCurrency = (changes.currency as string | undefined) ?? currentRevision.currency;
+    const history = timeline.map((revision, index) => index === currentIndex
+      ? { ...revision, effectiveTo: requestedStart }
+      : revision);
+    history.push({ version, price: revisionPrice, currency: revisionCurrency, effectiveFrom: requestedStart, ...(effectiveTo ? { effectiveTo } : {}) });
+    document.set({ priceRevisions: history, price: revisionPrice, currency: revisionCurrency,
+      effectiveFrom: requestedStart, effectiveTo, version });
+  }
   async update(resourceId: unknown, input: unknown, actor: Actor, statusOnly = false) {
     authorize(actor, true);
+    if (this.kind === 'policy') throw new RuleError(403, 'Business policies are system-controlled and read-only');
     const _id = validation.id(resourceId);
     const changes = statusOnly
       ? { isActive: validation.boolean(validation.object(input, ['isActive']).isActive) }
@@ -166,11 +247,22 @@ export class RuleService {
     return safe(async () => {
       const initial = await this.model.findById(_id).exec();
       if (!initial) throw new RuleError(404, 'Rule not found');
+      if (!Number.isSafeInteger(initial.version)) throw new RuleError(409, 'Pricing Rule version is unavailable; reload and retry');
       // Scope fields are immutable, so the initial read only identifies the lock.
       return this.transaction(keyFilter(this.kind, initial), async (session, version) => {
         const document = await this.model.findById(_id).session(session).exec();
         if (!document) throw new RuleError(404, 'Rule not found');
+        if (document.version !== initial.version) throw new RuleError(409, 'Pricing Rule changed concurrently; reload and retry');
         const now = new Date();
+        if (this.kind === 'pricing' && !statusOnly) {
+          await this.parent(document, session);
+          const pricing = document as unknown as HydratedDocument<PricingRule>;
+          this.applyPricingUpdate(pricing, changes, version, now);
+          validation.range(pricing);
+          await this.overlap(pricing, session, pricing._id);
+          await pricing.save({ session });
+          return pricing;
+        }
         if (document.effectiveFrom <= now) {
           // Only prospective closure is allowed. Expired history and prior cutoffs cannot be rewritten.
           if (statusOnly || Object.keys(changes).length !== 1 || !('effectiveTo' in changes) ||

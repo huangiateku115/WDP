@@ -74,7 +74,8 @@ function mockQuote(t, options = {}) {
     assert.equal(filter.billingBasis, 'PER_M3');
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
     assert.equal(filter['term.value'], 1);
-    return new Query(options.prices ?? [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 100, currency: 'VND', version: 3, billingBasis: 'PER_M3' }]);
+    return new Query(options.prices ?? [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 100, currency: 'VND', version: 3,
+      effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' } }]);
   });
   t.mock.method(Policy, 'find', filter => {
     assert.equal(filter.type, 'DEPOSIT');
@@ -141,6 +142,18 @@ test('quote uses explicit per-m3 rate, percentage deposit and calendar term; nev
   assert.equal(result.deposit.amount, 30);
   assert.equal(result.availableCapacityM3, 10);
   assert.equal(Object.hasOwn(result, 'storageUnitId'), false);
+});
+
+test('Managed V3 quote selects the price revision effective on the requested start date', async t => {
+  mockQuote(t, { prices: [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 200, currency: 'VND', version: 4,
+    effectiveFrom: new Date('2030-01-01T00:00:00.000Z'), isActive: true, billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' },
+    priceRevisions: [
+      { version: 3, price: 100, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), effectiveTo: new Date('2030-01-01T00:00:00.000Z') },
+      { version: 4, price: 200, currency: 'VND', effectiveFrom: new Date('2030-01-01T00:00:00.000Z') },
+    ] }], deposits: [{ _id: oid('507f1f77bcf86cd7994390b1'), config: { calculation: 'PERCENT_OF_RENT', percentage: 20 }, version: 2 }] });
+  const result = await service.quote(request());
+  assert.equal(result.pricing.ratePerM3, 200);
+  assert.equal(result.pricing.estimatedRent, 300);
 });
 
 test('availability uses peak concurrent intervals rather than every overlapping row sum', async t => {

@@ -242,7 +242,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
 
 export const createReservation = async (req: Request, res: Response) => {
   try {
-    const { facilityId, storageUnitId, startDate, endDate, pricingPolicyId } = req.body;
+    const { facilityId, storageUnitId, startDate, endDate, pricingPolicyId, termsAccepted, termsVersionId } = req.body;
     
     if (!facilityId || !storageUnitId || !startDate || !endDate || !pricingPolicyId) {
       return res.status(400).json({ 
@@ -260,7 +260,9 @@ export const createReservation = async (req: Request, res: Response) => {
       storageUnitId,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
-      pricingPolicyId
+      pricingPolicyId,
+      termsAccepted,
+      termsVersionId,
     };
     if (idempotencyKey) {
       const result = await ReservationService.createReservationWithOutcome({ ...input, idempotencyKey });

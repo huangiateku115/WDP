@@ -23,7 +23,9 @@ import { IUser, UserRole } from '../../types/user.type';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/warehouse-map.type';
 import { assertIdempotentPaymentMatch, calculateRentalPaymentBreakdown, PaymentAccountingError, roundVndAmount, transitionPaymentStatus } from '../payments/payment-accounting';
+import { pricingRevisionAt, projectPricingRevision } from '../pricing-policy/pricing-revision';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
+import { captureTermsAcceptance } from '../terms/terms.catalog';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const occupying = [ReservationStatus.RESERVED, ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY, ReservationStatus.CONTRACTED, ReservationStatus.PAID, ReservationStatus.ACTIVE, ReservationStatus.OVERDUE];
@@ -58,7 +60,7 @@ function term(value: unknown) {
   return { value: Number(input.value), unit: input.unit as TermUnit };
 }
 function parseRequest(value: unknown) {
-  const input = object(value, ['facilityId', 'allocatedCapacityM3', 'startDate', 'term', 'cellIds'], 'request');
+  const input = object(value, ['facilityId', 'allocatedCapacityM3', 'startDate', 'term', 'cellIds', 'termsAccepted', 'termsVersionId'], 'request');
   const facilityId = id(input.facilityId, 'facilityId');
   // Capacity comes from selected Cells. Retain optional legacy input compatibility,
   // but never use it as authority for price or entitlement.
@@ -83,7 +85,9 @@ function parseRequest(value: unknown) {
     cellIds = input.cellIds.map((value, index) => id(value, `cellIds[${index}]`));
     if (new Set(cellIds.map(String)).size !== cellIds.length) fail(400, 'cellIds must be unique');
   }
-  return { facilityId, allocatedCapacityM3, startDate, endDate, term: duration, cellIds };
+  if (input.termsAccepted !== undefined && typeof input.termsAccepted !== 'boolean') fail(400, 'termsAccepted must be a boolean');
+  if (input.termsVersionId !== undefined && (typeof input.termsVersionId !== 'string' || input.termsVersionId.length > 120)) fail(400, 'Invalid termsVersionId');
+  return { facilityId, allocatedCapacityM3, startDate, endDate, term: duration, cellIds, termsAccepted: input.termsAccepted, termsVersionId: input.termsVersionId as string | undefined };
 }
 function requireManagement(actor: Actor) {
   if (![UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Facility management role required');
@@ -155,10 +159,14 @@ async function effectiveQuote(input: ReturnType<typeof parseRequest>, session?: 
 
   const interval = { effectiveFrom: { $lte: input.startDate }, $or: [{ effectiveTo: { $exists: false } }, { effectiveTo: { $gt: input.startDate } }] };
   let pricingQuery = PricingModel.find({ facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, billingBasis: PricingBasis.PER_M3,
-    'term.value': input.term.value, 'term.unit': input.term.unit, isActive: true, ...interval }).limit(2);
+    'term.value': input.term.value, 'term.unit': input.term.unit, isActive: true });
   let depositQuery = PolicyModel.find({ facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, type: PolicyType.DEPOSIT, isActive: true, ...interval }).limit(2);
   if (session) { pricingQuery = pricingQuery.session(session); depositQuery = depositQuery.session(session); }
-  const [prices, deposits] = await Promise.all([pricingQuery.exec(), depositQuery.exec()]);
+  const [priceCandidates, deposits] = await Promise.all([pricingQuery.exec(), depositQuery.exec()]);
+  const prices = priceCandidates.flatMap(candidate => {
+    const revision = pricingRevisionAt(candidate, input.startDate);
+    return revision ? [projectPricingRevision(candidate, revision)] : [];
+  });
   const pricingRule = prices[0], depositPolicy = deposits[0];
   if (prices.length !== 1 || !pricingRule) fail(409, prices.length ? 'Managed pricing is ambiguous' : 'Effective per-m3 Managed pricing is not configured');
   if (deposits.length !== 1 || !depositPolicy) fail(409, deposits.length ? 'Managed deposit policy is ambiguous' : 'Effective Managed deposit policy is not configured');
@@ -362,12 +370,20 @@ export class ManagedReservationService {
     const requestFingerprint = v3 ? createHash('sha256').update(JSON.stringify({
       customerId: String(actor._id), facilityId: String(input.facilityId), cellIds: input.cellIds.map(String).sort(),
       allocatedCapacityM3: input.allocatedCapacityM3, startDate: input.startDate.toISOString(), term: input.term,
+      termsVersionId: input.termsVersionId,
     })).digest('hex') : undefined;
     return withTransaction(async session => {
       const replay: any = v3 ? await (ReservationModel as any).findOne({ customerId: actor._id, bookingIdempotencyKey }).session(session).exec() : null;
       if (replay) {
         if (replay.bookingPayloadHash !== requestFingerprint) fail(409, 'Idempotency-Key was already used with a different booking request');
         return { reservation: replay, quote: null, idempotent: true };
+      }
+      let termsAcceptance;
+      try { termsAcceptance = captureTermsAcceptance(FacilityServiceType.MANAGED_INVENTORY, input.termsVersionId, input.termsAccepted); }
+      catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        fail(message === 'TERMS_VERSION_STALE' ? 409 : message === 'NO_EFFECTIVE_TERMS' ? 503 : 400,
+          message === 'TERMS_VERSION_STALE' ? 'Terms have changed. Review and accept the current version before continuing' : message === 'NO_EFFECTIVE_TERMS' ? 'No effective Terms are configured for this service' : 'Customer acceptance of the current Terms is required');
       }
       const now = new Date();
       if (input.startDate <= now) fail(400, 'startDate must be in the future');
@@ -385,6 +401,7 @@ export class ManagedReservationService {
         customerId: actor._id, facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
         allocatedCapacity: input.allocatedCapacityM3, allocatedCellIds: selectedCells.map(cell => cell._id), startDate: input.startDate, endDate: input.endDate,
         status: ReservationStatus.RESERVED, ...(v3 ? { bookingFlowVersion: 3 as const, bookingIdempotencyKey, bookingPayloadHash: requestFingerprint } : (managedDepositFlowEnabled() ? { bookingFlowVersion: 2 as const } : {})), estimatedRent: result.estimatedRent, depositAmount: result.depositAmount, taxAmount: 0, discountAmount: 0,
+        termsAcceptance,
         expiresAt: new Date(now.getTime() + capacity.holdDurationMinutes * 60_000),
         pricingPolicyId: result.pricingRule._id,
         managedPricingSnapshot: {

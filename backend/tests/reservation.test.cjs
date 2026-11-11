@@ -176,7 +176,7 @@ const fmId = new mongoose.Types.ObjectId();
 
 test("Suite 1.1: calculatePricing tính chuẩn xác cho kỳ thuê 30 ngày (1 tháng)", async (t) => {
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   const startDate = new Date("2026-11-01T00:00:00.000Z");
@@ -195,7 +195,7 @@ test("Suite 1.1: calculatePricing tính chuẩn xác cho kỳ thuê 30 ngày (1 
 
 test("Suite 1.2: calculatePricing tính chuẩn cho kỳ thuê 15 ngày (< 30 ngày cọc 50%)", async (t) => {
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   const startDate = new Date("2026-11-01T00:00:00.000Z");
@@ -213,7 +213,7 @@ test("Suite 1.2: calculatePricing tính chuẩn cho kỳ thuê 15 ngày (< 30 ng
 
 test("Suite 1.3: calculatePricing tính chuẩn cho kỳ thuê 45 ngày (1.5 tháng)", async (t) => {
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   const startDate = new Date("2026-11-01T00:00:00.000Z");
@@ -246,7 +246,7 @@ test("Suite 1.4: calculatePricing chặn ngày không hợp lệ (endDate <= sta
 
 test("Suite 1.5: Controller estimateRent trả về cấu trúc response thực tế (không mock cứng)", async (t) => {
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   const req = {
@@ -328,7 +328,7 @@ test("Suite 3.1: createReservation bỏ qua số tiền Client gửi lên, tự 
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -404,7 +404,7 @@ test("Suite 3.1: createReservation bỏ qua số tiền Client gửi lên, tự 
 
 test("createReservation aborts the unit transaction if automatic DRAFT Contract creation fails", async (t) => {
   t.mock.method(CustomerProfileModel, "findOne", () => ({ exec: async () => ({ verificationStatus: "VERIFIED" }) }));
-  t.mock.method(PricingRuleModel, "findById", () => ({ exec: async () => ({ price: 1500000 }) }));
+  t.mock.method(PricingRuleModel, "findById", () => ({ exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }) }));
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({ exec: async () => ({ _id: storageUnitId, size: "SMALL", status: "AVAILABLE" }) }));
   t.mock.method(ReservationModel, "exists", () => ({ session: () => ({ exec: async () => null }) }));
   let reservationWasSaved = false;
@@ -439,6 +439,7 @@ test("Self-Storage Reservation controller returns 201 for a new booking and 200 
       facilityId: facilityId.toString(), storageUnitId: storageUnitId.toString(),
       startDate: new Date(Date.now() + 86400000).toISOString(),
       endDate: new Date(Date.now() + 86400000 * 31).toISOString(), pricingPolicyId: pricingPolicyId.toString(),
+      termsAccepted: true, termsVersionId: "VS-POLICY-002@2.1",
     },
   };
   const first = mockResponse();
@@ -453,6 +454,8 @@ test("Self-Storage Reservation controller returns 201 for a new booking and 200 
   assert.equal(calls[0].idempotencyKey, key);
   assert.equal(calls[1].idempotencyKey, key);
   assert.equal(calls[0].customerId, calls[1].customerId);
+  assert.equal(calls[0].termsAccepted, true);
+  assert.equal(calls[0].termsVersionId, "VS-POLICY-002@2.1");
 });
 
 test("Reservation schema declares a customer-scoped partial unique booking idempotency index", () => {
@@ -474,7 +477,7 @@ test("Suite 4.1: Chặn đặt trùng kho nếu đã có đơn khác chiếm d�
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -524,7 +527,7 @@ test("Suite 4.2: Customer B đặt cùng kho A-01 sau thời gian thuê của Cu
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -611,7 +614,7 @@ test("Suite 4.3: Khi trùng lịch thuê, trả về HTTP 409 kèm message chi t
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -743,7 +746,7 @@ test("Suite 4.5: Customer B đặt cùng kho A-01 TRƯỚC kỳ thuê của Cust
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -808,7 +811,7 @@ test("Suite 4.6: Khi trùng lịch và toàn bộ các kho khác trong cơ sở 
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
@@ -886,7 +889,7 @@ test("Suite 4.7: Đơn RESERVED đã quá hạn (expiresAt <= now) không chặn
   }));
 
   t.mock.method(PricingRuleModel, "findById", () => ({
-    exec: async () => ({ price: 1500000 }),
+    exec: async () => ({ price: 1500000, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, version: 1 }),
   }));
 
   t.mock.method(StorageUnitModel, "findOneAndUpdate", () => ({
