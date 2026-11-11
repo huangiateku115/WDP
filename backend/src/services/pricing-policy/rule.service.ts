@@ -118,7 +118,11 @@ export class RuleService {
     authorize(actor);
     const { key, at } = validation.resolver(this.kind, input);
     return safe(async () => {
-      const results = await this.model.find({ ...keyFilter(this.kind, key), ...RuleService.effectiveFilter(at) }).limit(2).lean().exec();
+      let results = await this.model.find({ ...keyFilter(this.kind, key), ...RuleService.effectiveFilter(at) }).limit(2).lean().exec();
+      if (!results.length && this.kind === 'pricing' && (key as any).term?.value > 1 && (key as any).term?.unit === 'MONTH') {
+        const baseKey = { ...key, term: { ...(key as any).term, value: 1 } };
+        results = await this.model.find({ ...keyFilter(this.kind, baseKey), ...RuleService.effectiveFilter(at) }).limit(2).lean().exec();
+      }
       if (!results.length) throw new RuleError(404, 'No effective rule');
       if (results.length !== 1) throw new RuleError(409, 'Ambiguous effective rules');
       return results[0];

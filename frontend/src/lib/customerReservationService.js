@@ -20,7 +20,13 @@ export function reservationLifecycle(reservation){
 }
 export const serviceLabel=reservation=>serviceType(reservation)===SELF_STORAGE?'Self Storage':serviceType(reservation)===MANAGED_INVENTORY?'Managed Inventory':'Unsupported / unknown service';
 export const liveHold=(reservation,now=Date.now())=>Number.isFinite(Date.parse(reservation?.expiresAt))&&Date.parse(reservation.expiresAt)>now;
-export const canCancel=reservation=>(isManagedV2(reservation)?reservation.status==='RESERVED':hasLegacyRentalFlow(reservation)&&['RESERVED','CONTRACTED'].includes(reservation.status));
+export const canCancel=reservation=>{
+  if (isManagedV2(reservation)) return reservation?.status==='RESERVED';
+  if (serviceType(reservation)===SELF_STORAGE) {
+    return false; // Customer không thể tự hủy đơn Self-Storage; nhân viên tại cơ sở sẽ xử lý xác nhận hoặc từ chối khi khách không ưng kho
+  }
+  return hasLegacyRentalFlow(reservation)&&['RESERVED','CONTRACTED'].includes(reservation?.status);
+};
 export const canSign=(contract,reservation,now=Date.now())=>contract?.status==='DRAFT'&&hasLegacyRentalFlow(reservation)&&(serviceType(reservation)===SELF_STORAGE?reservation.status==='DEPOSIT_PAID':reservation.status==='CONTRACTED'&&liveHold(reservation,now));
 export function contractAmounts(contract,reservation) {
   if(serviceType(reservation)===MANAGED_INVENTORY)return contract?.pricingSnapshot?.amountBreakdown||{};

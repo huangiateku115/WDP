@@ -146,6 +146,10 @@ const reservationApi = {
     saveOne(updated);
     return { data: updated };
   },
+
+  requestCheckout: (id, note) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/checkout-request`, { note }),
+  renewQuote: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew-quote`, { durationMonths }),
+  renewReservation: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew`, { durationMonths }),
 };
 
 export default reservationApi;

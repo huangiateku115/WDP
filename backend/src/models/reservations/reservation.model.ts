@@ -37,11 +37,36 @@ const reservationSchema = new Schema<IReservation>({
   balanceSettledBy: { type: Schema.Types.ObjectId, ref: 'User' },
   depositPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   balancePaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+  fullPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   balanceSettlementKey: { type: String, minlength: 1, maxlength: 160, immutable: true },
   handoverByStaffId: { type: Schema.Types.ObjectId, ref: 'User' },
   handoverAt: { type: Date },
   storageCondition: { type: String },  
   handoverAccessNotes: { type: String, maxlength: 1000 },
+  
+  /** Deadline for customer to arrive at facility, inspect unit and sign paper contract (default 3 days). */
+  signingDeadline: { type: Date },
+  paperContractProofUrl: { type: String },
+  paperContractVerifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  paperContractVerifiedAt: { type: Date },
+  accessPinCode: { type: String },
+  cancellationReason: { type: String },
+  refundPenaltyPercent: { type: Number, default: 0 },
+  actualCheckoutDate: { type: Date },
+  checkoutRequest: {
+    requestedAt: { type: Date },
+    note: { type: String, maxlength: 500 },
+    status: { type: String, enum: ['PENDING', 'COMPLETED', 'CANCELLED'] },
+  },
+  checkoutInspectionId: { type: Schema.Types.ObjectId, ref: 'Inspection' },
+  renewals: [{
+    renewalDate: { type: Date, default: Date.now },
+    durationMonths: { type: Number, required: true },
+    amount: { type: Number, required: true },
+    paymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+    oldEndDate: { type: Date, required: true },
+    newEndDate: { type: Date, required: true }
+  }],
   
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },

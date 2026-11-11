@@ -209,8 +209,10 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
         : []),
     ["Start date", date(item.startDate)],
     ["End date", date(item.endDate)],
-    ...(!isManagedV2(item)?[["Estimated rent", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent,item.currency||"VND")],["Deposit", item.depositAmount == null ? item.depositAmount : reservationAmount(item.depositAmount,item.currency||"VND")]]:[]),
+    ...(item.actualCheckoutDate || item.status === 'CHECKED_OUT' ? [["Ngày trả kho", item.actualCheckoutDate ? new Date(item.actualCheckoutDate).toLocaleString('vi-VN') : 'Đã trả kho']] : []),
+    ...(!isManagedV2(item) ? (serviceType(item) === SELF_STORAGE ? [["Tổng tiền thanh toán", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent, item.currency || "VND")]] : [["Estimated rent", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent, item.currency || "VND")], ["Deposit", item.depositAmount == null ? item.depositAmount : reservationAmount(item.depositAmount, item.currency || "VND")]]) : []),
     ["Payment deadline", date(item.paymentDeadline || item.expiresAt)],
+    ...(item.status === 'CANCELLED' && (item.cancellationReason || item.rejectReason) ? [["Lý do hủy/từ chối", item.cancellationReason || item.rejectReason]] : []),
   ];
   return (
     <Card>

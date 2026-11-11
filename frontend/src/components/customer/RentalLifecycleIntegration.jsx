@@ -35,6 +35,7 @@ import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { accessApi } from "@/api/customerRentalApi";
 import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
 import { reservationDateOnly, reservationVietnamTime, reservationAmount } from "@/lib/customerReservationDisplay";
 import { ArrowUpRight, ClipboardList, Clock3, Package, Plus, Warehouse } from "lucide-react";
@@ -264,7 +265,7 @@ function MyStorageReservationCard({item}) {
     ...((item.totalRentPayable??item.totalRent??item.estimatedRent)!=null?[['Tổng tiền thuê',reservationAmount(item.totalRentPayable??item.totalRent??item.estimatedRent,item.currency||'VND')]]:[]),
   ]:[
     ['Mã kho',unit?.unitCode],['Kích thước',unit?.size],['Thể tích',typeof unit?.volumeM3==='number'?`${unit.volumeM3} m³`:unit?.volumeM3],['Ngày bắt đầu',date(item.startDate)],['Ngày kết thúc',date(item.endDate)],
-    ...(item.estimatedRent!=null?[['Tiền thuê dự kiến',reservationAmount(item.estimatedRent,item.currency||'VND')]]:[]),
+    ...(item.estimatedRent!=null?[['Tổng tiền thanh toán',reservationAmount(item.estimatedRent,item.currency||'VND')]]:[]),
   ];
   const Icon=managed?Package:Warehouse;
   return <Card className="my-storage-card"><CardContent><div className="my-storage-card-head"><span className={`my-storage-service-icon ${managed?'is-managed':''}`}><Icon size={20} aria-hidden="true"/></span><div className="my-storage-card-title"><p>{serviceLabel(item)}</p><h3>{facility?.name||'Chưa cập nhật cơ sở'}</h3></div><span className={`my-storage-status ${['ACTIVE'].includes(status)?'is-active':['CANCELLED'].includes(status)?'is-cancelled':['CLOSED','CHECKED_OUT'].includes(status)?'is-closed':'is-pending'}`}>{displayStatus}</span></div><div className="my-storage-card-fields">{values.map(([label,value])=><div className="my-storage-field" key={label}><span>{label}</span><strong>{value===undefined||value===null||value===''?'Chưa cập nhật':value}</strong></div>)}</div><div className="my-storage-card-footer">{validId(recordId(item))?<Link className="my-storage-detail" to={`/portal/reservations/${recordId(item)}`}>Xem chi tiết<ArrowUpRight size={16} aria-hidden="true"/></Link>:<span className="my-storage-no-detail">Chi tiết hiện chưa khả dụng</span>}</div></CardContent></Card>;
@@ -286,6 +287,47 @@ export function ReservationDetailIntegration() {
   const paymentContract = paymentContracts.data?.find(c => recordId(c.reservationId) === id);
   const allocated = resource.data?.allocatedCapacity, used = resource.data?.usedCapacityM3;
   const capacityKnown = [allocated, used].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutNote, setCheckoutNote] = useState("");
+  const [showRenew, setShowRenew] = useState(false);
+  const [renewMonths, setRenewMonths] = useState(1);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState(null);
+
+  const handleRequestCheckout = async (e) => {
+    e.preventDefault();
+    if (actionPending) return;
+    setActionPending(true);
+    setActionFeedback(null);
+    try {
+      await reservationApi.requestCheckout(id, checkoutNote);
+      setShowCheckout(false);
+      setCheckoutNote("");
+      setActionFeedback({ success: "Đã gửi yêu cầu trả kho thành công! Nhân viên cơ sở sẽ kiểm tra và nghiệm thu kho." });
+      resource.retry();
+    } catch (err) {
+      setActionFeedback({ error: err.response?.data?.message || err.message || "Lỗi khi gửi yêu cầu trả kho." });
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const handleRenew = async (e) => {
+    e.preventDefault();
+    if (actionPending) return;
+    setActionPending(true);
+    setActionFeedback(null);
+    try {
+      const res = await reservationApi.renewReservation(id, renewMonths);
+      setShowRenew(false);
+      setActionFeedback({ success: res.data?.message || "Gia hạn hợp đồng thành công!" });
+      resource.retry();
+    } catch (err) {
+      setActionFeedback({ error: err.response?.data?.message || err.message || "Lỗi khi gia hạn hợp đồng." });
+    } finally {
+      setActionPending(false);
+    }
+  };
   return (
     <BackendScreen
       title="Reservation details"
@@ -369,13 +411,87 @@ export function ReservationDetailIntegration() {
             {isLegacyManaged(resource.data) && <p className="text-sm text-slate-700">Thanh toán trực tuyến cho Managed Inventory hiện chưa được hỗ trợ. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn.</p>}
             {serviceType(resource.data) === SELF_STORAGE &&
               resource.data.status === "ACTIVE" && (
-                <Button asChild>
-                  <Link to={`/portal/rentals/${id}/access`}>
-                    Simulated unit access
-                  </Link>
-                </Button>
+                <>
+                  <Button asChild>
+                    <Link to={`/portal/rentals/${id}/access`}>
+                      Simulated unit access
+                    </Link>
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowRenew(true)}>
+                    Gia hạn thuê kho
+                  </Button>
+                  {resource.data.checkoutRequest?.status === "PENDING" ? (
+                    <div className="w-full rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                      🕒 <strong>Đã gửi yêu cầu trả kho</strong> ({new Date(resource.data.checkoutRequest.requestedAt).toLocaleDateString('vi-VN')}). Nhân viên cơ sở sẽ kiểm tra và nghiệm thu kho.
+                    </div>
+                  ) : (
+                    <Button variant="outline" onClick={() => setShowCheckout(true)}>
+                      Yêu cầu trả kho (Checkout)
+                    </Button>
+                  )}
+                </>
               )}
+            {actionFeedback && <div className="w-full mt-3"><Message {...actionFeedback} /></div>}
           </div>
+          {showCheckout && (
+            <Dialog title="Yêu cầu trả kho (Checkout)" onClose={() => setShowCheckout(false)}>
+              <form onSubmit={handleRequestCheckout} className="space-y-4">
+                <p className="text-sm text-slate-600">
+                  Vui lòng đảm bảo bạn đã dọn sạch toàn bộ tài sản trong kho. Sau khi gửi yêu cầu, nhân viên cơ sở sẽ đến kiểm tra thực tế và hoàn tất thủ tục trả kho.
+                </p>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  ⚠️ <strong>Lưu ý:</strong> Nếu trả kho trước ngày hết hạn hợp đồng, khoản tiền thuê còn lại sẽ không được hoàn trả theo quy định.
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Ghi chú (không bắt buộc)</label>
+                  <textarea
+                    rows={2}
+                    className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm"
+                    placeholder="Ví dụ: Tôi đã dọn xong đồ, nhờ nhân viên kiểm tra..."
+                    value={checkoutNote}
+                    onChange={(e) => setCheckoutNote(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setShowCheckout(false)}>Hủy</Button>
+                  <Button type="submit" disabled={actionPending}>{actionPending ? "Đang gửi…" : "Xác nhận gửi yêu cầu"}</Button>
+                </div>
+              </form>
+            </Dialog>
+          )}
+          {showRenew && (
+            <Dialog title="Gia hạn hợp đồng thuê kho" onClose={() => setShowRenew(false)}>
+              <form onSubmit={handleRenew} className="space-y-4">
+                <p className="text-sm text-slate-600">
+                  Chọn số tháng bạn muốn gia hạn tiếp theo. Hợp đồng hiện tại và mã PIN mở cửa của bạn sẽ được giữ nguyên.
+                </p>
+                <div>
+                  <label className="text-sm font-medium">Thời gian gia hạn</label>
+                  <select
+                    className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm"
+                    value={renewMonths}
+                    onChange={(e) => setRenewMonths(Number(e.target.value))}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map((m) => (
+                      <option key={m} value={m}>{m} tháng</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  <p>Hạn hợp đồng hiện tại: <strong>{new Date(resource.data.endDate).toLocaleDateString('vi-VN')}</strong></p>
+                  <p className="mt-1">Hạn hợp đồng mới sau gia hạn: <strong>{(() => {
+                    const d = new Date(resource.data.endDate);
+                    d.setUTCMonth(d.getUTCMonth() + renewMonths);
+                    return d.toLocaleDateString('vi-VN');
+                  })()}</strong></p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setShowRenew(false)}>Hủy</Button>
+                  <Button type="submit" disabled={actionPending}>{actionPending ? "Đang xử lý…" : "Xác nhận gia hạn"}</Button>
+                </div>
+              </form>
+            </Dialog>
+          )}
         </>
       )}
     </BackendScreen>
@@ -458,7 +574,7 @@ export function ContractDetailIntegration() {
                 ["Contract number", contract.contractCode],
                 ["Signed at", contract.signedByCustomerAt],
                 ["Service", serviceLabel(reservation)],
-                ...(!isManagedV2(reservation) ? [["Estimated rent", amounts.estimatedRent], ["Deposit", amounts.depositAmount], ["Total due", amounts.totalDue]] : []),
+                ...(!isManagedV2(reservation) ? (serviceType(reservation) === SELF_STORAGE ? [["Tổng tiền thanh toán", amounts.estimatedRent]] : [["Estimated rent", amounts.estimatedRent], ["Deposit", amounts.depositAmount], ["Total due", amounts.totalDue]]) : []),
                 [
                   "Currency",
                   serviceType(reservation) === MANAGED_INVENTORY
@@ -652,6 +768,7 @@ function AccessForm({ id }) {
     [id],
   ),
     [pin, setPin] = useState(""),
+    [revealedPin, setRevealedPin] = useState(false),
     [pending, setPending] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
@@ -729,6 +846,19 @@ function AccessForm({ id }) {
           code.
         </p>
       )}
+      {resource.data?.status === "ACTIVE" && resource.data?.accessPinCode && (
+        <div className="mb-4 p-4 bg-sky-50 border border-sky-200 rounded-lg flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-sky-800 uppercase tracking-wider">Mã PIN điện tử (Digital Access PIN)</p>
+            <p className="font-mono text-2xl font-bold tracking-widest text-sky-950 mt-1">
+              {revealedPin ? resource.data.accessPinCode : "••••••"}
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setRevealedPin((v) => !v)}>
+            {revealedPin ? "Ẩn mã PIN" : "Xem mã PIN"}
+          </Button>
+        </div>
+      )}
       <form onSubmit={unlock} className="space-y-4">
         <label className="block">
           <span className="field-label">PIN code</span>
@@ -736,6 +866,8 @@ function AccessForm({ id }) {
             aria-label="PIN code"
             type="password"
             autoComplete="off"
+            maxLength={6}
+            placeholder="Nhập mã PIN 6 số"
             value={pin}
             disabled={!allowed || pending}
             onChange={(e) => setPin(e.target.value)}

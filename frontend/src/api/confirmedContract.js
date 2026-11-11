@@ -244,6 +244,12 @@ export function assertConfirmedRequest(config) {
       /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover|reservations\/managed\/[a-f\d]{24}\/handover)$/i.test(
         path,
       ));
+  const selfStorageCheckoutAndRenew =
+    (method === "GET" && /^reservations\/checkout-queue(?:\?[^#]*)?$/i.test(path)) ||
+    (method === "POST" &&
+      /^reservations\/[^/]+\/(checkout-request|complete-checkout|reject-checkout|renew|renew-quote)(?:\?[^#]*)?$/i.test(
+        path,
+      ));
   // Verified Staff MI-06 routes. Server authentication, Facility scope and gates remain authoritative.
   const staffInventoryOperations =
     (method === "GET" &&
@@ -257,6 +263,7 @@ export function assertConfirmedRequest(config) {
         /^outbound-requests\/[a-f\d]{24}\/confirm$/i.test(path) ||
         /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
   const allowed =
+    selfStorageCheckoutAndRenew ||
     staffInventoryOperations ||
     customerInventoryRequests ||
     facilityHandover ||

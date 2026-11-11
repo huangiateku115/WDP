@@ -9,6 +9,7 @@ import {
   sameEstimate,
   readOrCreateSelfStorageBookingAttempt,
   writeSelfStorageBookingAttempt,
+  clearSelfStorageBookingAttempt,
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
 import { isValidObjectId } from "@/lib/selfStoragePayos";
@@ -133,14 +134,29 @@ function Review({ draft, session }) {
           "This browser cannot safely preserve the booking request. Allow session storage and try again.",
         );
       }
-      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+      let bookingAttempt = readOrCreateSelfStorageBookingAttempt(
         bookingStorage,
         customerId,
         context.payload,
       );
       if (bookingAttempt.reservationId) {
-        nav("/portal/payments/" + bookingAttempt.reservationId);
-        return;
+        try {
+          const detailRes = await reservationApi.detailForCustomer(bookingAttempt.reservationId);
+          const existingRes = detailRes.data?.data;
+          if (existingRes && existingRes.status === 'CONTRACTED') {
+            nav("/portal/payments/" + bookingAttempt.reservationId);
+            return;
+          }
+        } catch {
+          // Bỏ qua lỗi nếu không tải được đơn cũ
+        }
+        // Đơn cũ đã bị CANCELLED, PAID hoặc không còn là CONTRACTED -> Xóa cache và khởi tạo phiên đặt mới
+        clearSelfStorageBookingAttempt(bookingStorage, customerId, context.payload);
+        bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+          bookingStorage,
+          customerId,
+          context.payload,
+        );
       }
       const fresh = await reviewContext(draft);
       if (getAccessToken() !== token) return;
@@ -251,7 +267,7 @@ function Review({ draft, session }) {
         <Card className="border-[#d4e2d8] shadow-sm"><CardContent><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CalendarDays size={20} /></span><div><h2 className="text-lg font-bold">Thời gian thuê</h2><p className="text-sm text-[#607568]">Thời hạn đã được kiểm tra ở bước trước</p></div></div><Link className="text-sm font-semibold text-[#176B45] underline-offset-4 hover:underline" to="/portal/rent/period">Thay đổi thời gian</Link></div><div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center"><div className="rounded-xl border border-[#d4e2d8] p-4"><p className="text-xs text-[#607568]">Ngày bắt đầu</p><p className="mt-1 text-lg font-bold text-[#17382A]">{displayDate(context.payload.startDate)}</p></div><div className="hidden h-px w-12 bg-[#176B45] sm:block" aria-hidden="true" /><div className="rounded-xl border border-[#d4e2d8] p-4"><p className="text-xs text-[#607568]">Ngày kết thúc</p><p className="mt-1 text-lg font-bold text-[#17382A]">{displayDate(context.payload.endDate)}</p></div></div><p className="mt-4 rounded-lg bg-[#f7faf7] p-3 text-sm text-[#607568]">Thời hạn thuê: <b className="text-[#17382A]">{termLabel}</b></p></CardContent></Card>
         {!verified && <Message error="Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt." />}
       </div>
-      <aside className="space-y-4 lg:sticky lg:top-28"><Card className="border-[#c9dfd0] shadow-md"><CardContent><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CheckCircle2 size={20} /></span><div><h2 className="text-lg font-bold">Tóm tắt chi phí</h2><span className="text-xs font-semibold text-[#607568]">Số tiền dự kiến</span></div></div><div className="mt-5 space-y-4"><div className="flex items-start justify-between gap-4 border-b border-[#e4ece6] pb-4"><span className="text-sm text-[#607568]">Tiền thuê dự kiến</span><b className="text-right text-base text-[#17382A]">{displayMoney(context.estimate.estimatedRent, context.price.currency)}</b></div><div className="flex items-start justify-between gap-4"><span className="text-sm text-[#607568]">Khoản trả trước dự kiến</span><b className="text-right text-base text-[#17382A]">{displayMoney(context.estimate.depositAmount, context.price.currency)}</b></div></div><p className="mt-5 text-xs leading-5 text-[#607568]">Khoản thanh toán chính thức sẽ được hiển thị trước khi bạn thanh toán.</p></CardContent></Card>
+      <aside className="space-y-4 lg:sticky lg:top-28"><Card className="border-[#c9dfd0] shadow-md"><CardContent><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CheckCircle2 size={20} /></span><div><h2 className="text-lg font-bold">Tóm tắt chi phí</h2><span className="text-xs font-semibold text-[#607568]">Số tiền thanh toán</span></div></div><div className="mt-5 space-y-4"><div className="flex items-start justify-between gap-4"><span className="text-sm text-[#607568]">Tổng tiền thanh toán</span><b className="text-right text-base text-[#17382A]">{displayMoney(context.estimate.estimatedRent, context.price.currency)}</b></div></div><p className="mt-5 text-xs leading-5 text-[#607568]">Khoản thanh toán chính thức sẽ được hiển thị trước khi bạn thanh toán.</p></CardContent></Card>
         <Message error={error} />
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#d4e2d8] bg-white p-4 text-sm leading-6 text-[#17382A]"><Checkbox aria-label="Xác nhận thông tin đặt thuê chính xác" checked={confirmed} disabled={pending || uncertain} onCheckedChange={v => setConfirmed(v === true)} /><span>Tôi xác nhận thông tin cá nhân đã cung cấp và thông tin đơn thuê ở trên là chính xác.</span></label>
         <Button className="w-full" disabled={!confirmed || !verified || !context || resource.loading || !!resource.error || pending || uncertain} onClick={create}>{pending ? 'Đang xác nhận đơn thuê…' : 'Xác nhận đặt thuê'}</Button>

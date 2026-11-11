@@ -5,6 +5,8 @@ import { FacilityServiceType } from './facility.type';
 export enum PaymentPurpose {
   DEPOSIT = 'DEPOSIT',
   BALANCE = 'BALANCE',
+  FULL_RENT = 'FULL_RENT',
+  RENEWAL = 'RENEWAL',
 }
 
 export enum PaymentStatus {
