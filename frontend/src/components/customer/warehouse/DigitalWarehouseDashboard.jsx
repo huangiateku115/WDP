@@ -21,10 +21,9 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
   X,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -233,22 +232,19 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
   const inventory = useInventoryMapPreference(facilityId);
   const root = useRef(null),
     viewport = useRef(null),
-    floor = useRef(null),
     zones = useRef(new Map()),
     cache = useRef(new Map()),
     drag = useRef(null),
-    floorScroll = useRef({ left: 0, top: 0 }),
     pendingZone = useRef(null);
   const [rackId, setRackId] = useState(initialRackId || ""),
     [view, setView] = useState(initialRackId ? "rack-detail" : "floorplan"),
     [cell, setCell] = useState(null),
     [zoneId, setZoneId] = useState(""),
     [query, setQuery] = useState(""),
-    [statusFilter, setStatusFilter] = useState(""),
-    [zoom, setZoom] = useState(1),
-    [bounds, setBounds] = useState({ width: 1, height: 1 });
+    [statusFilter, setStatusFilter] = useState("");
   const [sidebar, setSidebar] = useState(false),
     [drawer, setDrawer] = useState(false),
+    [bookingExpanded, setBookingExpanded] = useState(() => !Boolean(booking.period.range && !booking.startError)),
     [expanded, setExpanded] = useState(false),
     [fullscreen, setFullscreen] = useState(false),
     [fullscreenError, setFullscreenError] = useState(""),
@@ -329,20 +325,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       document.removeEventListener("keydown", escape);
     };
   }, []);
-  useEffect(() => {
-    if (!floor.current) return;
-    const measure = () => {
-      if (!floor.current?.offsetWidth) return;
-      setBounds({
-        width: floor.current?.offsetWidth || 1,
-        height: floor.current?.offsetHeight || 1,
-      });
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(floor.current);
-    measure();
-    return () => observer.disconnect();
-  }, [map.data, query]);
   const allRacks = useMemo(
     () =>
       map.data?.zones.flatMap((z) => z.aisles.flatMap((a) => a.racks)) || [],
@@ -416,7 +398,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     else zones.current.delete(id);
   }, []);
   const selectRack = useCallback((id) => {
-    if (viewport.current?.getClientRects().length) floorScroll.current = { left: viewport.current.scrollLeft, top: viewport.current.scrollTop };
     setView("rack-detail");
     if (innerWidth < 1200) setSidebar(false);
     setRackId(id);
@@ -435,7 +416,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       });
   const selectZone = (id) => {
     setZoneId(id);
-    if (viewport.current?.getClientRects().length) floorScroll.current = { left: viewport.current.scrollLeft, top: viewport.current.scrollTop };
     setView('rack-detail');
     if (innerWidth < 1200) setSidebar(false);
     if (!filtered.some(zone => zone._id === id)) setQuery('');
@@ -449,7 +429,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       pendingZone.current = null;
     }
   }, [filtered]);
-  useEffect(() => { if (view !== "floorplan") return; const frame = requestAnimationFrame(() => viewport.current?.scrollTo(floorScroll.current)); return () => cancelAnimationFrame(frame); }, [view]);
   const centralScroll = useRef(null);
   useEffect(() => { if (centralScroll.current) centralScroll.current.scrollTop = 0; }, [view, rackId, zoneId]);
   const activeZone = map.data?.zones.find(zone => zone._id === zoneId);
@@ -476,13 +455,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       window.removeEventListener("focus", invalidate);
     };
   }, [booking.rangeKey, rackId]);
-  const reset = () => {
-    setZoom(1);
-    if (viewport.current) {
-      viewport.current.scrollLeft = 0;
-      viewport.current.scrollTop = 0;
-    }
-  };
   async function toggleFullscreen() {
     setFullscreenError("");
     if (fullscreen) {
@@ -508,6 +480,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     }
   }
   const periodReady = Boolean(booking.period.range && !booking.startError);
+  useEffect(() => { if (!periodReady) setBookingExpanded(true); }, [periodReady]);
   const information = (
     <>
       <div className="wm-section-heading">
@@ -523,12 +496,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           </Button>
         )}
       </div>
-      {!rackId ? (
-        <div className="wm-empty-inspector">
-          <Boxes size={34} />
-          <p>Chọn một kệ hoặc ô trên sơ đồ để xem thông tin.</p>
-        </div>
-      ) : (
+      {!rackId ? null : (
         <>
           {!map.error && <ResourceState resource={detail} />}
           {!map.error &&
@@ -605,8 +573,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           </Button>
         </div>
       </header>
-      {/* Thanh chọn kỳ thuê luôn hiện; không cần mở/đóng dialog để nhập ngày. */}
-      <section className="wm-booking-hero wm-v5-booking-hero" aria-labelledby="wm-booking-hero-title">
+      <section className={`wm-booking-hero wm-v5-booking-hero ${bookingExpanded ? "is-expanded" : "is-collapsed"}`} aria-labelledby="wm-booking-hero-title">
         <div className="wm-v5-booking-intro">
           <span className="wm-booking-hero-symbol" aria-hidden="true"><CalendarRange size={21} /></span>
           <div>
@@ -614,11 +581,21 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             <h2 id="wm-booking-hero-title">Chọn ngày → Chọn ô → Đặt thuê</h2>
           </div>
         </div>
-        <BookingPeriodFields booking={booking} />
-        <div className="wm-v5-hero-counter" aria-live="polite">
-          <strong>{booking.selection.length}</strong>
-          <small>ô đã chọn</small>
-          {periodReady && <span className="wm-v5-period-valid">Kỳ thuê hợp lệ</span>}
+        <button type="button" className="wm-booking-toggle" aria-expanded={bookingExpanded} aria-controls="wm-booking-period-fields" onClick={() => setBookingExpanded(value => !value)}>
+          {bookingExpanded ? <><ChevronUp size={16} aria-hidden="true"/>Thu gọn</> : <><ChevronDown size={16} aria-hidden="true"/>Mở</>}
+        </button>
+        {!bookingExpanded && <div className="wm-booking-summary" aria-live="polite">
+          <span>{periodReady ? `${booking.period.range.startDate} → ${booking.period.range.endDate}` : "Kỳ thuê chưa hợp lệ — mở để kiểm tra ngày và thời hạn."}</span>
+          <strong>{booking.selection.length} ô đã chọn</strong>
+          {booking.startError && <span role="alert">{booking.startError}</span>}
+        </div>}
+        <div id="wm-booking-period-fields" className="wm-booking-period-content" hidden={!bookingExpanded}>
+          <BookingPeriodFields booking={booking} />
+          <div className="wm-v5-hero-counter" aria-live="polite">
+            <strong>{booking.selection.length}</strong>
+            <small>ô đã chọn</small>
+            {periodReady && <span className="wm-v5-period-valid">Kỳ thuê hợp lệ</span>}
+          </div>
         </div>
       </section>
       {fullscreenError && (
@@ -642,7 +619,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
         })}
       </div>
       <div className="wm-mobile-tools">
-        <Button
+        {(cell || rackId) && <Button
           className="wm-button"
           variant="outline"
           onClick={() => setSidebar((v) => !v)}
@@ -650,7 +627,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
         >
           <SlidersHorizontal size={15} />
           Khu vực & tìm kiếm
-        </Button>
+        </Button>}
         <Button
           className="wm-button"
           variant="outline"
@@ -794,15 +771,9 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                 >
                   <div
                     className="wm-zoom-surface"
-                    style={{
-                      width: bounds.width * zoom,
-                      height: bounds.height * zoom,
-                    }}
                   >
                     <div
-                      ref={floor}
                       className="wm-floor"
-                      style={{ transform: `scale(${zoom})` }}
                     >
                       {filtered.map((zone) => (
                         <ZonePlane
@@ -829,45 +800,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                     </div>
                   </div>
                 </div>
-                <div className="wm-map-controls">
-                  <Button
-                    className="wm-button"
-                    variant="outline"
-                    size="icon"
-                    aria-label="Zoom out"
-                    disabled={zoom <= 0.6}
-                    onClick={() =>
-                      setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))
-                    }
-                  >
-                    <ZoomOut size={17} />
-                  </Button>
-                  <output aria-label="Map zoom">{Math.round(zoom * 100)}%</output>
-                  <Button
-                    className="wm-button"
-                    variant="outline"
-                    size="icon"
-                    aria-label="Zoom in"
-                    disabled={zoom >= 1.8}
-                    onClick={() =>
-                      setZoom((z) => Math.min(1.8, Number((z + 0.2).toFixed(1))))
-                    }
-                  >
-                    <ZoomIn size={17} />
-                  </Button>
-                  <Button
-                    className="wm-button"
-                    variant="outline"
-                    size="sm"
-                    onClick={reset}
-                  >
-                    <RotateCcw size={15} />
-                    Reset View
-                  </Button>
-                  <small>
-                    Kéo vùng trống để di chuyển sơ đồ · Dùng nút +/− để thu phóng
-                  </small>
-                </div>
               </>
             )}
           </div>
@@ -880,22 +812,27 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                   {!map.error && <ResourceState resource={detail} />}
                 </div>
                 {!map.error && !detail.loading && detail.data?.rack._id === rackId && (
-                  <WarehouseCells
-                    key={`${rackId}:${updated?.getTime() || 0}`}
-                    data={detail.data}
-                    selected={cell}
-                    query={query}
-                    statusFilter={statusFilter}
-                    onClearStatusFilter={() => setStatusFilter('')}
-                    booking={booking}
-                    onSelect={(value) => {
-                      setCell(value);
-                      // The desktop inspector is already visible; drawer is for mobile.
-                      if (window.matchMedia("(max-width: 1023px)").matches) {
-                        setDrawer(true);
-                      }
-                    }}
-                  />
+                  <>
+                    <details className="wm-context-details">
+                      <summary>Chi tiết kệ · {detail.data.rack.rackCode}</summary>
+                      <RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId}/>
+                    </details>
+                    <WarehouseCells
+                      key={`${rackId}:${updated?.getTime() || 0}`}
+                      data={detail.data}
+                      selected={cell}
+                      query={query}
+                      statusFilter={statusFilter}
+                      onClearStatusFilter={() => setStatusFilter('')}
+                      booking={booking}
+                      onSelect={setCell}
+                    />
+                    {cell && <details className="wm-context-details wm-cell-context-details">
+                      <summary>Chi tiết ô · {cell.cell.code || `C${cell.cell.cellNumber}`}</summary>
+                      <CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack}/>
+                      <InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack}/>
+                    </details>}
+                  </>
                 )}
               </div>
             )}
@@ -909,13 +846,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             />
           </div>
         </section>
-        <aside
-          className="wm-inspector wm-panel"
-          aria-label="Selected rack or cell details"
-          aria-live="polite"
-        >
-          {information}
-        </aside>
       </div>
       {drawer &&
         createPortal(

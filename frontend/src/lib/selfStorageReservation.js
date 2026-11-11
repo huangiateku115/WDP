@@ -65,6 +65,20 @@ export function selfStorageRequest(draft,now=Date.now()) {
   if(!matchesExact&&!matchesBaseMonthly)throw Error('An effective matching Self Storage Pricing Rule is required.');
   return {facilityId:id(facility),storageUnitId:id(unit),startDate:`${startDate}T00:00:00.000Z`,endDate:`${endDate}T00:00:00.000Z`,pricingPolicyId:id(rule)};
 }
+export function selfStorageCreateReservationPayload(payload) {
+  if (!payload || typeof payload !== 'object') throw Error('A Self Storage reservation payload is required.');
+  return {
+    facilityId: payload.facilityId,
+    storageUnitId: payload.storageUnitId,
+    startDate: payload.startDate,
+    endDate: payload.endDate,
+    pricingPolicyId: payload.pricingPolicyId,
+    estimatedRent: payload.estimatedRent,
+    depositAmount: payload.depositAmount,
+    termsAccepted: payload.termsAccepted,
+    termsVersionId: payload.termsVersionId,
+  };
+}
 export function selfStorageEstimate(response) {
   const data=response?.data?.success===true?response.data.data:null;
   if(!data||!['estimatedRent','depositAmount','taxAmount','basePrice'].every(key=>typeof data[key]==='number'&&Number.isFinite(data[key])&&data[key]>=0)||!Number.isSafeInteger(data.durationDays)||data.durationDays<=0)throw Error('Backend returned an invalid Self Storage estimate. No financial amounts will be inferred.');

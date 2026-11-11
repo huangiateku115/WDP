@@ -153,6 +153,8 @@ test('persisted attempts are scoped and only one concurrent submit can claim a k
   expect(await (await journal('deposit',other,rentalId)).read()).toBeNull();
   await second.write({...attempt,resourceId:paymentId});
   expect((await (await journal('deposit',owner,rentalId)).read())?.resourceId).toBe(paymentId);
+  await second.clear();
+  expect(await second.read()).toBeNull();
 });
 
 test('PayOS uses one authenticated Deposit POST and protects checkout identity and UNKNOWN',async()=>{
@@ -160,6 +162,7 @@ test('PayOS uses one authenticated Deposit POST and protects checkout identity a
   const adapter=fixture(c=>{
     expect(c.headers.get('Idempotency-Key')).toBe('fixture-deposit-key');
     expect(c.headers.get('Authorization')).toBe('Bearer fixture-access');
+    expect(c.headers.get('X-WDP-Payment-Client')).toBe('MOBILE');
     expect(JSON.parse(c.data)).toEqual({purpose:'DEPOSIT'});
     return httpError(c,503,'PAYOS_CHECKOUT_OUTCOME_UNKNOWN');
   });
@@ -171,9 +174,30 @@ test('PayOS uses one authenticated Deposit POST and protects checkout identity a
   expect(depositDecision(reservation,contract,[{...payment,checkoutStatus:'UNKNOWN'}],false).kind).toBe('REVIEW');
   expect(depositDecision(reservation,null,[],false).kind).toBe('INELIGIBLE');
   expect(depositDecision(reservation,contract,[payment],true).kind).toBe('READY');
+  expect(depositDecision(reservation,contract,[{...payment,status:'CANCELLED',checkoutStatus:'CANCELLED',checkoutUrl:null,
+    cancelVerifiedAt:'2099-01-02T00:00:00.000Z',retryAllowed:true}],false).kind).toBe('CREATE');
+  expect(depositDecision(reservation,contract,[{...payment,status:'CANCELLED',checkoutStatus:'CANCELLED',checkoutUrl:null,
+    cancelVerifiedAt:null,retryAllowed:true}],false).kind).toBe('REVIEW');
   expect(checkoutLink({...payment,checkoutUrl:'https://pay.payos.vn.evil.invalid/web/test'},rentalId)).toBeNull();
   expect(checkoutLink({...payment,reservationId:other},rentalId)).toBeNull();
   expect(depositDecision(reservation,contract,[{...payment,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'}],true).kind).toBe('APPLIED');
+});
+
+test('Mobile cancellation return reconciles through the owner-bound Backend endpoint',async()=>{
+  configureApiSession('fixture-access');
+  const cancelled={...payment,status:'CANCELLED',checkoutStatus:'CANCELLED',checkoutUrl:null,
+    cancelVerifiedAt:'2099-01-02T00:00:00.000Z',retryAllowed:true};
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('post');
+    expect(c.url).toBe('/reservations/'+rentalId+'/payments/'+paymentId+'/reconcile');
+    expect(c.headers.get('Authorization')).toBe('Bearer fixture-access');
+    expect(JSON.parse(c.data)).toEqual({});
+    return envelope(cancelled);
+  });
+  await expect(mobileRepo.reconcilePayment(reservation,paymentId,owner)).resolves.toMatchObject({
+    status:'CANCELLED',cancelVerifiedAt:cancelled.cancelVerifiedAt,retryAllowed:true,
+  });
+  expect(adapter).toHaveBeenCalledTimes(1);
 });
 
 test('Inventory reads owned projections and never substitutes available quantity or another owner',async()=>{

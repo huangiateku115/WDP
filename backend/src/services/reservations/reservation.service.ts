@@ -7,10 +7,12 @@ import ContractModel from '../../models/contracts/contract.model';
 import { ContractStatus } from '../../types/contract.type';
 import PricingRuleModel from '../../models/pricing-policy/pricing-rule.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
+import { pricingRevisionAt } from '../pricing-policy/pricing-revision';
 import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
+import { captureTermsAcceptance } from '../terms/terms.catalog';
 
 export interface SuggestedStorageUnit {
   _id: Types.ObjectId | string;
@@ -38,7 +40,7 @@ export class ReservationError extends Error {
 
 export class ReservationService {
   private static bookingPayloadHash(data: {
-    customerId: string; facilityId: string; storageUnitId: string; startDate: Date; endDate: Date; pricingPolicyId: string;
+    customerId: string; facilityId: string; storageUnitId: string; startDate: Date; endDate: Date; pricingPolicyId: string; termsVersionId?: string;
   }): string {
     const canonical = {
       customerId: String(data.customerId).toLowerCase(),
@@ -48,6 +50,7 @@ export class ReservationService {
       endDate: new Date(data.endDate).toISOString(),
       pricingPolicyId: String(data.pricingPolicyId).toLowerCase(),
       serviceType: FacilityServiceType.SELF_STORAGE,
+      termsVersionId: data.termsVersionId,
     };
     return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
   }
@@ -244,7 +247,9 @@ export class ReservationService {
     let basePrice = 0;
     const pricingRule = await PricingRuleModel.findById(pricingPolicyId).exec();
     if (pricingRule) {
-      basePrice = pricingRule.price;
+      const revision = pricingRule.isActive ? pricingRevisionAt(pricingRule, start) : undefined;
+      if (!revision) throw new ReservationError(409, 'Pricing Rule is not effective for the requested rental start date.');
+      basePrice = revision.price;
     } else {
       const policy = await PolicyModel.findById(pricingPolicyId).exec();
       if (policy && typeof policy.config?.price === 'number') {
@@ -272,6 +277,8 @@ export class ReservationService {
     startDate: Date;
     endDate: Date;
     pricingPolicyId: string;
+    termsAccepted?: boolean;
+    termsVersionId?: string;
   }): Promise<IReservation> {
     const result = await this.createReservationWithOutcome(data);
     return result.reservation;
@@ -284,6 +291,8 @@ export class ReservationService {
     startDate: Date;
     endDate: Date;
     pricingPolicyId: string;
+    termsAccepted?: boolean;
+    termsVersionId?: string;
     idempotencyKey?: string;
   }): Promise<{ reservation: IReservation; replayed: boolean }> {
 
@@ -294,12 +303,19 @@ export class ReservationService {
     let payloadHash: string | undefined;
     if (idempotencyKey) {
       try {
-        payloadHash = this.bookingPayloadHash(data);
+      payloadHash = this.bookingPayloadHash(data);
       } catch {
         throw new ReservationError(400, 'Reservation dates are invalid.');
       }
       const replay = await this.findBookingReplay(data.customerId, idempotencyKey, payloadHash);
       if (replay) return { reservation: replay, replayed: true };
+    }
+    let termsAcceptance;
+    try { termsAcceptance = captureTermsAcceptance(FacilityServiceType.SELF_STORAGE, data.termsVersionId, data.termsAccepted); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      throw new ReservationError(message === 'TERMS_VERSION_STALE' ? 409 : message === 'NO_EFFECTIVE_TERMS' ? 503 : 400,
+        message === 'TERMS_VERSION_STALE' ? 'Terms have changed. Review and accept the current version before continuing.' : message === 'NO_EFFECTIVE_TERMS' ? 'No effective Terms are configured for this service.' : 'Customer acceptance of the current Terms is required.');
     }
     
     // 1. Kiểm tra Gate Verification (Bắt buộc KH phải VERIFIED)
@@ -423,6 +439,7 @@ export class ReservationService {
           customerId: data.customerId,
           facilityId: data.facilityId,
           serviceType: FacilityServiceType.SELF_STORAGE,
+          termsAcceptance,
           ...(idempotencyKey && payloadHash ? { bookingIdempotencyKey: idempotencyKey, bookingPayloadHash: payloadHash } : {}),
           storageUnitId: unit._id,
           

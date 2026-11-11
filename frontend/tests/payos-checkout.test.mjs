@@ -1346,7 +1346,9 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
     checkout,
     /startDepositAfterBooking === true && !returnQueryPresent/,
   );
-  assert.match(review, /Xác nhận đặt kho và thanh toán/);
+  assert.match(review, /Xác nhận đặt thuê/);
+  assert.match(review, /termsAccepted: true/);
+  assert.match(review, /termsVersionId: fresh\.terms\.versionId/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);
   assert.match(checkout, /returnQueryPresent/);

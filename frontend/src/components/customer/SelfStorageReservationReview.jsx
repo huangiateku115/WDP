@@ -17,6 +17,8 @@ import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { selfStorageAlternatives } from "./selfStorageSuggestions";
 import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
+import { termsApi } from "@/api/termsApi";
+import TermsModal from "@/components/customer/terms/TermsModal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { reservationDateOnly, reservationAmount } from "@/lib/customerReservationDisplay";
 import { CalendarDays, CheckCircle2, ClipboardCheck, Warehouse, ArrowLeft } from "lucide-react";
@@ -41,7 +43,7 @@ import {
 
 async function reviewContext(draft, config) {
   const request = selfStorageRequest(draft);
-  const [facility, unit, profile, price] = await Promise.all([
+  const [facility, unit, profile, price, terms] = await Promise.all([
     facilityApi.publicDetail(request.facilityId, config).then(record),
     storageApi.unitDetail(request.storageUnitId, config).then(record),
     customerProfileApi.get(config).then(record),
@@ -58,6 +60,7 @@ async function reviewContext(draft, config) {
         config,
       )
       .then(record),
+    termsApi.current('SELF_STORAGE', config).then(record),
   ]);
   if (
     recordId(facility) !== request.facilityId ||
@@ -75,7 +78,7 @@ async function reviewContext(draft, config) {
   const estimate = selfStorageEstimate(
     await reservationApi.estimateReal(payload, config),
   );
-  return { facility, unit, profile, price, payload, estimate };
+  return { facility, unit, profile, price, payload, estimate, terms };
 }
 export default function SelfStorageReservationReview() {
   const { rentalDraft } = useReservation(),
@@ -93,6 +96,8 @@ function Review({ draft, session }) {
     { updateRentalDraft } = useReservation();
   const resource = useBackend((config) => reviewContext(draft, config));
   const [confirmed, setConfirmed] = useState(false),
+    [termsAccepted, setTermsAccepted] = useState(false),
+    [termsOpen, setTermsOpen] = useState(false),
     [pending, setPending] = useState(false),
     [uncertain, setUncertain] = useState(false),
     [error, setError] = useState(""),
@@ -102,6 +107,7 @@ function Review({ draft, session }) {
     context = resource.data;
   useEffect(() => {
     setConfirmed(false);
+    setTermsAccepted(false);
   }, [context]);
   const verified = context?.profile.verificationStatus === "VERIFIED";
   async function create() {
@@ -109,8 +115,10 @@ function Review({ draft, session }) {
       busy.current ||
       attempted.current ||
       !confirmed ||
+      !termsAccepted ||
       !verified ||
       !context ||
+      !context.terms?.versionId ||
       resource.loading ||
       resource.error
     )
@@ -169,14 +177,21 @@ function Review({ draft, session }) {
         !sameEstimate(fresh.estimate, context.estimate)
       ) {
         setConfirmed(false);
+        setTermsAccepted(false);
         resource.retry();
         throw Error(
           "The Backend price or selected unit changed. Review the refreshed estimate and confirm again.",
         );
       }
+      if (fresh.terms.versionId !== context.terms.versionId) {
+        setConfirmed(false);
+        setTermsAccepted(false);
+        resource.retry();
+        throw Error('Điều khoản đã được cập nhật. Vui lòng xem và xác nhận lại phiên bản mới trước khi đặt thuê.');
+      }
       attempted.current = true;
       sent = true;
-      const response = await reservationApi.createReal(fresh.payload, {
+      const response = await reservationApi.createReal({ ...fresh.payload, termsAccepted, termsVersionId: fresh.terms.versionId }, {
         headers: { "Idempotency-Key": bookingAttempt.idempotencyKey },
       });
       const created = selfStorageCreation(response, fresh.payload);
@@ -270,7 +285,9 @@ function Review({ draft, session }) {
       <aside className="space-y-4 lg:sticky lg:top-28"><Card className="border-[#c9dfd0] shadow-md"><CardContent><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CheckCircle2 size={20} /></span><div><h2 className="text-lg font-bold">Tóm tắt chi phí</h2><span className="text-xs font-semibold text-[#607568]">Số tiền thanh toán</span></div></div><div className="mt-5 space-y-4"><div className="flex items-start justify-between gap-4"><span className="text-sm text-[#607568]">Tổng tiền thanh toán</span><b className="text-right text-base text-[#17382A]">{displayMoney(context.estimate.estimatedRent, context.price.currency)}</b></div></div><p className="mt-5 text-xs leading-5 text-[#607568]">Khoản thanh toán chính thức sẽ được hiển thị trước khi bạn thanh toán.</p></CardContent></Card>
         <Message error={error} />
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#d4e2d8] bg-white p-4 text-sm leading-6 text-[#17382A]"><Checkbox aria-label="Xác nhận thông tin đặt thuê chính xác" checked={confirmed} disabled={pending || uncertain} onCheckedChange={v => setConfirmed(v === true)} /><span>Tôi xác nhận thông tin cá nhân đã cung cấp và thông tin đơn thuê ở trên là chính xác.</span></label>
-        <Button className="w-full" disabled={!confirmed || !verified || !context || resource.loading || !!resource.error || pending || uncertain} onClick={create}>{pending ? 'Đang xác nhận đơn thuê…' : 'Xác nhận đặt thuê'}</Button>
+        {context.terms && <div className="rounded-xl border border-[#d4e2d8] bg-white p-4 text-sm leading-6 text-[#17382A]"><div className="flex items-start gap-3"><Checkbox aria-label={`Chấp nhận điều khoản phiên bản ${context.terms.version}`} checked={termsAccepted} disabled={pending || uncertain} onCheckedChange={v => setTermsAccepted(v === true)} /><span>Tôi đã đọc và đồng ý với Điều khoản & Chính sách phiên bản {context.terms.version}.</span></div><button type="button" className="ml-8 mt-1 font-medium text-[#176B45] underline underline-offset-2" onClick={() => setTermsOpen(true)}>Xem điều khoản &amp; chính sách</button></div>}
+        <TermsModal open={termsOpen} onClose={() => setTermsOpen(false)} serviceType="SELF_STORAGE" initialTerms={context?.terms} />
+        <Button className="w-full" disabled={!confirmed || !termsAccepted || !verified || !context || resource.loading || !!resource.error || pending || uncertain} onClick={create}>{pending ? 'Đang xác nhận đơn thuê…' : 'Xác nhận đặt thuê'}</Button>
         {uncertain && <div className="space-y-2"><Button className="w-full" variant="outline" disabled={pending} onClick={retryUncertainCreation}>Thử lại bằng yêu cầu đã lưu</Button><Button className="w-full" variant="outline" asChild><Link to="/portal">Kiểm tra Kho của tôi</Link></Button></div>}
         <Button className="w-full" variant="outline" asChild><Link to="/portal/rent/period"><ArrowLeft size={16} />Quay lại</Link></Button>
       </aside>

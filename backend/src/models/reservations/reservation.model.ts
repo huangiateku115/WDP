@@ -9,12 +9,23 @@ const statusHistorySchema = new Schema({
   createdAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const termsAcceptanceSchema = new Schema({
+  documentCode: { type: String, required: true, immutable: true },
+  version: { type: String, required: true, immutable: true },
+  versionId: { type: String, required: true, immutable: true },
+  serviceType: { type: String, enum: Object.values(FacilityServiceType), required: true, immutable: true },
+  contentHash: { type: String, required: true, match: /^[a-f0-9]{64}$/, immutable: true },
+  acceptedAt: { type: Date, required: true, immutable: true },
+}, { _id: false, strict: 'throw' });
+
 const reservationSchema = new Schema<IReservation>({
   reservationCode: { type: String, unique: true, required: true }, 
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true },
   
   serviceType: { type: String, enum: Object.values(FacilityServiceType), required: true },
+  /** Absent on historical reservations; set only on a new booking after Customer acceptance. */
+  termsAcceptance: { type: termsAcceptanceSchema, immutable: true },
   /** Optional Customer request identity for safe Self-Storage booking replay. */
   bookingIdempotencyKey: { type: String, immutable: true },
   bookingPayloadHash: { type: String, immutable: true },

@@ -51,7 +51,7 @@ export function managedRequest({facilityId,allocatedCapacityM3,startDate,term,ce
   return {facilityId,allocatedCapacityM3,startDate,term:{value:term.value,unit:term.unit},...(cellIds===undefined?{}:{cellIds:cellIds.map(v=>v.toLowerCase())})};
 }
 export function managedQuoteRequest(payload){const result=managedRequest(payload);if(!result.cellIds?.length)throw Error('Select specific Warehouse Cells before requesting a Managed quote.');const {allocatedCapacityM3,...serverQuoted}=result;return serverQuoted;}
-export function managedCreateRequest(payload){const result=managedRequest(payload);if(!result.cellIds?.length)throw Error('Select specific Warehouse Cells before creating a Managed reservation.');const {allocatedCapacityM3,...serverPriced}=result;return serverPriced;}
+export function managedCreateRequest(payload){const result=managedRequest(payload);if(!result.cellIds?.length)throw Error('Select specific Warehouse Cells before creating a Managed reservation.');if(payload?.termsAccepted!==true||typeof payload?.termsVersionId!=='string'||!payload.termsVersionId.trim())throw Error('Accept the current Managed Inventory Terms before creating a reservation.');const {allocatedCapacityM3,...serverPriced}=result;return {...serverPriced,termsAccepted:true,termsVersionId:payload.termsVersionId};}
 export function managedCreation(response) {
   const data=response?.data?.success===true?response.data.data:null,r=data?.reservation;
   if(!r||!/^([a-f\d]{24})$/i.test(r._id||'')||r.serviceType!==MANAGED_INVENTORY||r.status!=='RESERVED'||!data.quote||typeof data.quote!=='object')throw Error('Backend did not confirm a Managed reservation. Check My Storage before attempting another booking.');

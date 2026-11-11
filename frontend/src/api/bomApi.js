@@ -2,7 +2,7 @@ import axiosClient from "./axiosClient";
 
 // Live BOM business API clients.
 // Endpoints are confirmed by the backend Postman collection (WDP-Backend.postman_collection.json).
-// Facility/Pricing/Policy writes require the ADMIN or BOM role on the backend.
+// Facility and Pricing Rule writes retain the backend ADMIN/BOM permissions. Policy APIs are read-only.
 
 const encode = (id) => encodeURIComponent(id);
 
@@ -28,9 +28,6 @@ export const bomPricingApi = {
 export const bomPolicyApi = {
   list: (params, config) => axiosClient.get("/policies", { ...config, params }),
   get: (id) => axiosClient.get(`/policies/${encode(id)}`),
-  create: (body) => axiosClient.post("/policies", body),
-  update: (id, body) => axiosClient.patch(`/policies/${encode(id)}`, body),
-  setActive: (id, isActive) => axiosClient.patch(`/policies/${encode(id)}/status`, { isActive }),
   resolve: (params) => axiosClient.get("/policies/resolve", { params }),
 };
 

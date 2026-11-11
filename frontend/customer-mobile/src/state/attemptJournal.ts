@@ -23,6 +23,10 @@ export async function journal(scope:'booking'|'deposit'|'balance',owner:string,i
       if(Platform.OS==='web') globalThis.localStorage.setItem(key,raw);
       else await SecureStore.setItemAsync(key,raw);
     },
+    async clear() {
+      if(Platform.OS==='web')globalThis.localStorage.removeItem(key);
+      else await SecureStore.deleteItemAsync(key);
+    },
     async claim(value:Attempt){
       if(claiming.has(key))return false;
       claiming.add(key);

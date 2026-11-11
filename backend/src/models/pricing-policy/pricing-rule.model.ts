@@ -15,6 +15,13 @@ const schema = new Schema<PricingRule>({
   }, { _id: false }), required: true, immutable: true },
   price: { type: Number, required: true, min: Number.MIN_VALUE, validate: Number.isFinite },
   currency: { type: String, required: true, match: /^[A-Z]{3}$/ },
+  priceRevisions: { type: [new Schema({
+    version: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+    price: { type: Number, required: true, min: Number.MIN_VALUE, validate: Number.isFinite },
+    currency: { type: String, required: true, match: /^[A-Z]{3}$/ },
+    effectiveFrom: { type: Date, required: true },
+    effectiveTo: { type: Date },
+  }, { _id: false })], default: undefined },
 }, { timestamps: true, optimisticConcurrency: true });
 schema.index({ facilityId: 1, serviceType: 1, billingBasis: 1, unitSize: 1, 'term.value': 1, 'term.unit': 1, isActive: 1, effectiveFrom: 1, effectiveTo: 1 });
 export default model<PricingRule>('PricingRule', schema);
