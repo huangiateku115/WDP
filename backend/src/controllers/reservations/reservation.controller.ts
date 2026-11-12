@@ -10,7 +10,7 @@ import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
-import { PaymentPurpose, PaymentStatus, PaymentProvider, PaymentApplicationStatus, ProviderSettlementStatus } from '../../types/payment.type';
+import { PaymentPurpose, PaymentStatus, PaymentProvider, PaymentApplicationStatus, ProviderSettlementStatus, IReservationPayment } from '../../types/payment.type';
 import { UserRole } from '../../types/user.type';
 import { createHash } from 'node:crypto';
 import { calculateRentalPaymentBreakdown } from '../../services/payments/payment-accounting';
@@ -284,13 +284,41 @@ export const createReservation = async (req: Request, res: Response) => {
   }
 };
 
+function isUnpaidUpfrontSelfStorage(r: any): boolean {
+  return r.serviceType === FacilityServiceType.SELF_STORAGE && r.rentalPaymentFlow === 'FULL_UPFRONT_V1' &&
+    [ReservationStatus.RESERVED, ReservationStatus.CONTRACTED].includes(r.status) &&
+    !r.paperContractProofUrl && !r.fullPaymentId && !r.depositPaymentId && !r.balancePaymentId;
+}
+
+const blockingCancellationPayment: mongoose.QueryFilter<IReservationPayment> = {
+  $nor: [{
+    applicationStatus: PaymentApplicationStatus.NOT_APPLIED,
+    providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED },
+    'providerCaptures.0': { $exists: false },
+    $or: [
+      { status: PaymentStatus.CANCELLED, checkoutState: 'CANCELLED', cancelVerifiedAt: { $exists: true, $ne: null } },
+      { status: PaymentStatus.FAILED, checkoutState: 'FAILED' }
+    ]
+  }]
+};
+
 export const getMyReservations = async (req: Request, res: Response) => {
   try {
     const reservations = await ReservationModel.find({ customerId: req.user!._id })
       .populate('facilityId', 'name address')
       .populate('storageUnitId', 'unitCode size volumeM3')
       .sort({ createdAt: -1 });
-    return res.json({ success: true, data: reservations });
+    const candidates = reservations.filter(isUnpaidUpfrontSelfStorage);
+    if (!candidates.length) return res.json({ success: true, data: reservations });
+    const blocked = await ReservationPaymentModel.distinct('reservationId', {
+      reservationId: { $in: candidates.map(item => item._id) }, ...blockingCancellationPayment
+    });
+    const blockedIds = new Set(blocked.map(String));
+    return res.json({ success: true, data: reservations.map(item =>
+      isUnpaidUpfrontSelfStorage(item) ? {
+        ...item.toObject(), customerCancellationEligible: !blockedIds.has(String(item._id))
+      } : item
+    ) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -451,6 +479,48 @@ export const cancelReservation = async (req: Request, res: Response) => {
     const finalReason = reason || (existing.status === ReservationStatus.PAID ? 'Khách hàng không ưng ý kho thực tế' : 'Customer cancelled before payment');
     const now = new Date();
 
+    if (existing.rentalPaymentFlow === 'FULL_UPFRONT_V1' && existing.status !== ReservationStatus.PAID) {
+      const session = await mongoose.startSession();
+      try {
+        const cancelled = await session.withTransaction(async () => {
+          const current = await ReservationModel.findById(existing._id).session(session).exec();
+          if (!current || !isUnpaidUpfrontSelfStorage(current) ||
+              (!isStaffOrAdmin && String(current.customerId) !== String(req.user!._id))) {
+            throw new ReservationControllerError(409, 'Trạng thái đơn thuê đã thay đổi. Hãy kiểm tra lại.');
+          }
+          if (await ReservationPaymentModel.exists({
+            reservationId: current._id, ...blockingCancellationPayment
+          }).session(session).exec()) {
+            throw new ReservationControllerError(409, 'Giao dịch thanh toán chưa kết thúc hoặc cần đối soát.');
+          }
+
+          // The Reservation write serializes with PayOS intent creation and settlement.
+          current.status = ReservationStatus.CANCELLED;
+          const cancellationReason = reason || 'Khách hàng hủy đơn trước khi thanh toán';
+          current.cancellationReason = cancellationReason;
+          current.refundPenaltyPercent = 0;
+          current.set('bookingIdempotencyKey', undefined);
+          current.statusHistory.push({
+            status: ReservationStatus.CANCELLED, actorId: req.user!._id,
+            reason: cancellationReason, createdAt: now
+          });
+          await current.save({ session });
+
+          // The Reservation holds the interval. Lock the Unit against concurrent
+          // bookings while preserving its physical status.
+          if (current.storageUnitId) await StorageUnitModel.updateOne(
+            { _id: current.storageUnitId }, { $inc: { bookingVersion: 1 } }, { session }
+          );
+          await ContractModel.updateOne({ reservationId: current._id },
+            { $set: { status: ContractStatus.TERMINATED, updatedAt: now } }, { session });
+          return current;
+        });
+        return res.json({ success: true, message: 'Đã hủy đơn thuê.', data: cancelled });
+      } finally {
+        await session.endSession();
+      }
+    }
+
     const reservation = await ReservationModel.findByIdAndUpdate(
       existing._id,
       {
@@ -497,6 +567,9 @@ export const cancelReservation = async (req: Request, res: Response) => {
         : undefined
     });
   } catch (error: any) {
+    if (error instanceof ReservationControllerError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 };

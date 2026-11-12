@@ -58,8 +58,13 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
   const payments = page?.items || [];
   const relevantPayment = requestedPaymentId ? payments.find((payment) => payment.id === requestedPaymentId) : payments[0];
 
+  const selfStorageUpfront = service === "SELF_STORAGE" && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1";
+
+  const cancellationInFlight = useRef(false);
+
   async function verifyCancellation() {
-    if (!requestedPaymentId || reconcileBusy) return;
+    if (!requestedPaymentId || cancellationInFlight.current) return;
+    cancellationInFlight.current = true;
     const token = getAccessToken();
     setReconcileBusy(true);
     setReconcileError("");
@@ -69,12 +74,13 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
     } catch {
       if (getAccessToken() === token) setReconcileError("Chưa xác minh được trạng thái hủy. Bạn có thể thử kiểm tra lại sau.");
     } finally {
+      cancellationInFlight.current = false;
       if (getAccessToken() === token) setReconcileBusy(false);
     }
   }
 
   useEffect(() => {
-    if (!cancelReturn || !requestedPaymentId || !relevantPayment) return;
+    if (selfStorageUpfront || !cancelReturn || !requestedPaymentId || !relevantPayment) return;
     if (relevantPayment.status === "SUCCEEDED" || relevantPayment.providerSettlementStatus === "VERIFIED" || relevantPayment.applicationStatus === "APPLIED") return;
     if (relevantPayment.status === "CANCELLED" && relevantPayment.cancelVerifiedAt) return;
     const key = `${session.accessToken}:${reservationId}:${requestedPaymentId}`;
@@ -83,7 +89,7 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
     void verifyCancellation();
   }, [cancelReturn, relevantPayment?.id, relevantPayment?.status, relevantPayment?.cancelVerifiedAt,
     relevantPayment?.providerSettlementStatus, relevantPayment?.applicationStatus, requestedPaymentId,
-    reservationId, session.accessToken]);
+    reservationId, session.accessToken, selfStorageUpfront]);
 
   useEffect(() => {
     if (!requestedPaymentId || relevantPayment || !page?.nextCursor || loadingMore || autoPageCount.current >= 10) return;
@@ -93,7 +99,7 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
   const applied = relevantPayment?.providerSettlementStatus === "VERIFIED" && relevantPayment?.applicationStatus === "APPLIED";
   const confirmedCancel = cancelReturn && relevantPayment?.status === "CANCELLED" && !!relevantPayment?.cancelVerifiedAt;
   const awaitingCancelCheck = cancelReturn && !confirmedCancel && !applied;
-  const retryStageValid = relevantPayment?.purpose === "FULL_RENT"
+  const retryStageValid = selfStorageUpfront && relevantPayment?.purpose !== "FULL_RENT" ? false : relevantPayment?.purpose === "FULL_RENT"
     ? reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && (service === MANAGED_INVENTORY
       ? reservation.status === "RESERVED" && Date.parse(reservation.expiresAt || "") > Date.now()
       : reservation.status === "CONTRACTED" && Date.parse(reservation.expiresAt || "") > Date.now())
@@ -104,6 +110,8 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
   return (
     <>
       {applied && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status" aria-live="polite">{reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && reservation.status === "PAID" ? "Đã thanh toán — Chờ ký hợp đồng và bàn giao. Quyền sử dụng kho chưa được kích hoạt." : "Thanh toán đã được xác minh và ghi nhận thành công."}</div>}
+      {applied && reservation.serviceType === "SELF_STORAGE" && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
+        <Button asChild variant="outline"><Link to={`/portal/contracts/${reservationId}`}>Xem tiến độ hợp đồng</Link></Button>}
       {confirmedCancel && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status" aria-live="polite">Đã hủy thanh toán. Reservation không bị hủy.</div>}
       {awaitingCancelCheck && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="status" aria-live="polite">Đang xác minh trạng thái hủy với Backend. Chưa xác nhận hủy.</div>}
       {cancelReturn && awaitingCancelCheck && <div className="mt-3"><Message error={reconcileError}/><Button variant="outline" disabled={reconcileBusy} onClick={() => void verifyCancellation()}>{reconcileBusy ? "Đang kiểm tra…" : "Kiểm tra trạng thái hủy"}</Button></div>}
@@ -125,7 +133,7 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
               <p className="text-lg font-bold text-slate-900">{formatPayosVnd(payment.amount)} ₫</p>
               </div>
               <p className={`mt-3 text-sm font-medium ${status.tone}`} role="status">{status.label}</p>
-              {payment.retryAllowed && retryStageValid && <Link className="mt-3 inline-flex text-sm font-medium text-brand underline" to={`/portal/payments/${reservationId}`}>Thử thanh toán lại</Link>}
+              {(!selfStorageUpfront || payment.id === relevantPayment?.id) && payment.retryAllowed && retryStageValid && <Link className="mt-3 inline-flex text-sm font-medium text-brand underline" to={`/portal/payments/${reservationId}`}>Thử thanh toán lại</Link>}
             </article>;
           })}
         </div>}

@@ -108,6 +108,7 @@ export class PayosPaymentError extends Error {
 export interface PayosGateway {
   create(data: { orderCode: number; amount: number; description: string; cancelUrl: string; returnUrl: string }): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; checkoutUrl: string; qrCode?: string; status: string;
+    bin?: string; accountNumber?: string; accountName?: string; description?: string; expiredAt?: number;
   }>;
   get(orderCode: number, options?: { requireSignature: true }): Promise<{ id?: string; orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
   verify(webhook: Webhook): Promise<{
@@ -377,9 +378,16 @@ function statusDto(payment: any, currentIntentEligible = false, retryAllowed = f
   const canPresentCheckout = currentIntentEligible && payment.provider === PaymentProvider.PAYOS &&
     payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
     isSafePayosCheckoutUrl(payment.checkoutUrl) && payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
-    payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED;
+    payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
+    (!payment.checkoutExpiresAt || payment.checkoutExpiresAt > new Date());
   const orderCode = parseOrderCode(payment.providerReference);
+  const transferDetails = payment.transferDetails;
   return {
+    ...(canPresentCheckout && transferDetails ? { transferDetails: {
+      bin: transferDetails.bin, accountNumber: transferDetails.accountNumber,
+      accountName: transferDetails.accountName, description: transferDetails.description,
+    } } : {}),
+    ...(payment.checkoutExpiresAt instanceof Date ? { expiresAt: payment.checkoutExpiresAt.toISOString() } : {}),
     ...(canPresentCheckout && orderCode !== null &&
       typeof payment.providerPaymentLinkId === 'string' && payment.providerPaymentLinkId.trim()
       ? { orderCode, paymentLinkId: payment.providerPaymentLinkId } : {}),
@@ -884,6 +892,20 @@ export class PayosPaymentService {
       const checkoutFields: Record<string, unknown> = { checkoutState: 'READY', checkoutUrl: response.checkoutUrl,
         providerPaymentLinkId: response.paymentLinkId, providerCurrency: response.currency };
       if (isValidPayosQrPayload(response.qrCode)) checkoutFields.qrCode = response.qrCode;
+      if (payment.serviceType === FacilityServiceType.SELF_STORAGE && purpose === PaymentPurpose.FULL_RENT) {
+        if (typeof response.bin === 'string' && /^\d{6}$/.test(response.bin) &&
+            typeof response.accountNumber === 'string' && /^\d{4,34}$/.test(response.accountNumber) &&
+            typeof response.accountName === 'string' && response.accountName.trim() &&
+            response.accountName.length <= 120 && !/[\x00-\x1f\x7f]/.test(response.accountName) &&
+            response.description === description) {
+          checkoutFields.transferDetails = { bin: response.bin, accountNumber: response.accountNumber,
+            accountName: response.accountName.trim(), description: response.description };
+        }
+        const expiresAt = response.expiredAt;
+        if (typeof expiresAt === 'number' && Number.isSafeInteger(expiresAt) && expiresAt > 0 && expiresAt <= 253402300799) {
+          checkoutFields.checkoutExpiresAt = new Date(expiresAt * 1000);
+        }
+      }
       stage = 'PERSIST_CHECKOUT_LINK';
       const persisted = await Payments.updateOne(identityFilter, {
         $set: checkoutFields,
@@ -893,7 +915,9 @@ export class PayosPaymentService {
       const refreshed = await Payments.findById(payment._id).exec();
       if (refreshed?.checkoutState !== 'READY' || refreshed.checkoutUrl !== response.checkoutUrl ||
           refreshed.providerPaymentLinkId !== response.paymentLinkId ||
-          (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode)) {
+          (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode) ||
+          (checkoutFields.transferDetails && Object.entries(checkoutFields.transferDetails).some(([key, value]) => refreshed.transferDetails?.[key] !== value)) ||
+          (checkoutFields.checkoutExpiresAt instanceof Date && refreshed.checkoutExpiresAt?.getTime() !== checkoutFields.checkoutExpiresAt.getTime())) {
         throw new Error('Persisted PayOS checkout identity could not be verified');
       }
       persistenceConfirmed = true;
@@ -920,6 +944,7 @@ export class PayosPaymentService {
 
   private async reconcileCheckoutState(payment: any) {
     const orderCode = numericOrderCode(payment.providerReference);
+    const selfStorageFullRent = payment.serviceType === FacilityServiceType.SELF_STORAGE && payment.purpose === PaymentPurpose.FULL_RENT;
     let link: Awaited<ReturnType<PayosGateway['get']>>;
     try {
       link = await this.gateway.get(orderCode);
@@ -927,7 +952,10 @@ export class PayosPaymentService {
       logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_FAILED', 'LOOKUP_BY_ORIGINAL_ORDER_CODE', null, false, null);
       throw new Error('PayOS lookup failed for the original payment order code');
     }
-    if (!link || link.orderCode !== orderCode || link.amount !== payment.amount ||
+    const providerCurrency = (link as { currency?: string } | null)?.currency;
+    if (!link || (selfStorageFullRent && (payment.currency !== 'VND' ||
+        (providerCurrency !== undefined && providerCurrency !== payment.currency) ||
+        (payment.checkoutUrl && !payment.providerPaymentLinkId))) || link.orderCode !== orderCode || link.amount !== payment.amount ||
         !Number.isSafeInteger(link.amountPaid) || link.amountPaid < 0 || !PAYOS_PAYMENT_LINK_STATUSES.has(link.status) ||
         typeof link.id !== 'string' || !link.id.trim() ||
         (payment.providerPaymentLinkId && link.id !== payment.providerPaymentLinkId)) {
@@ -935,6 +963,14 @@ export class PayosPaymentService {
         $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS lookup identity mismatch' },
       }).exec();
       logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_IDENTITY_MISMATCH', 'VALIDATE_LOOKUP_RESPONSE', null, true, false);
+      return;
+    }
+    if (selfStorageFullRent && ['PENDING', 'PROCESSING'].includes(link.status) &&
+        (link.amountPaid !== 0 || (link.transactions ?? []).length > 0)) {
+      await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING,
+        providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED }, applicationStatus: PaymentApplicationStatus.NOT_APPLIED }, {
+        $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS reports funds awaiting verified settlement' },
+      }).exec();
       return;
     }
     if (link.status === 'PENDING' && payment.checkoutUrl) {
@@ -958,6 +994,8 @@ export class PayosPaymentService {
           const updated = await Payments.findOneAndUpdate({ _id: payment._id, reservationId: payment.reservationId,
             customerId: payment.customerId, facilityId: payment.facilityId, serviceType: payment.serviceType,
             provider: PaymentProvider.PAYOS, purpose: payment.purpose, providerReference: String(orderCode),
+            ...(selfStorageFullRent ? { amount: payment.amount, currency: payment.currency,
+              ...(payment.providerPaymentLinkId ? { providerPaymentLinkId: link.id } : {}) } : {}),
             status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] },
             providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED },
             applicationStatus: PaymentApplicationStatus.NOT_APPLIED,

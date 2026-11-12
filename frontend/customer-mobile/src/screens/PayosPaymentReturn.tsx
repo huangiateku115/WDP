@@ -15,7 +15,8 @@ export default function PayosPaymentReturn(){
   const cancel=params.cancel==='true';
   const returnPath=nativePaymentReturnPath(reservationId,paymentId,params.serviceType,cancel);
   const owner=useLiveSession(s=>s.user?._id??''),restoring=useLiveSession(s=>s.restoring);
-  const [payment,setPayment]=useState<Awaited<ReturnType<typeof mobileRepo.reconcilePayment>>|null>(null);
+  const [result,setResult]=useState<{key:string; payment:Awaited<ReturnType<typeof mobileRepo.reconcilePayment>>}|null>(null);
+  const payment = result?.key === owner+':'+returnPath ? result.payment : null;
   const [error,setError]=useState(''),[pending,setPending]=useState(false);
   const requestKey=useRef(''),busy=useRef(false);
 
@@ -30,7 +31,7 @@ export default function PayosPaymentReturn(){
       const reservation=await mobileRepo.rental(reservationId,owner);
       if(useLiveSession.getState().user?._id!==owner)return;
       const result=await mobileRepo.reconcilePayment(reservation,paymentId,owner);
-      if(useLiveSession.getState().user?._id===owner)setPayment(result);
+      if(useLiveSession.getState().user?._id===owner)setResult({key,payment:result});
     }catch(cause){
       if(useLiveSession.getState().user?._id===owner)setError(apiIssue(cause));
     }finally{busy.current=false;setPending(false);}
@@ -42,20 +43,22 @@ export default function PayosPaymentReturn(){
     void verify();
   },[owner,restoring,returnPath]);
 
-  const confirmedCancel=payment?.status==='CANCELLED'&&!!payment.cancelVerifiedAt&&
+  const confirmedCancel=payment?.status==='CANCELLED'&&payment.checkoutStatus==='CANCELLED'&&!!payment.cancelVerifiedAt&&!payment.reconciliationRequired&&
     payment.providerSettlementStatus==='NOT_VERIFIED'&&payment.applicationStatus==='NOT_APPLIED';
   const applied=payment?.status==='SUCCEEDED'&&payment.providerSettlementStatus==='VERIFIED'&&
     payment.applicationStatus==='APPLIED'&&!payment.reconciliationRequired;
-  const detail=returnPath?`/rentals/${encodeURIComponent(reservationId)}/payment?paymentId=${encodeURIComponent(paymentId)}${cancel?'&cancel=true':''}`:'/rentals';
+  const detail = returnPath
+    ? {pathname:'/rentals/[id]/payment' as const,params:{id:reservationId}}
+    : '/rentals' as const;
 
   return <LiveScreen title="Kết quả thanh toán PayOS">
     {!returnPath?<StateCard kind="error" title="Liên kết thanh toán không hợp lệ" description="Không thể xác minh thông tin giao dịch được mở trong ứng dụng."/>:
       <Card>
-        <AppText accessibilityRole="status">{pending?'Đang xác minh giao dịch với máy chủ…':confirmedCancel?'Đã hủy thanh toán':applied?'Thanh toán đã được xác minh và ghi nhận.':cancel?'Chưa xác minh được trạng thái hủy. Thông tin từ đường dẫn không xác nhận giao dịch.':'Chưa xác minh được kết quả thanh toán. Hãy kiểm tra lại trạng thái.'}</AppText>
-        {payment&&<AppText>{payment.purpose==='DEPOSIT'?'Tiền đặt cọc':'Tiền thuê còn lại'} · {money(payment.amount)}</AppText>}
+        <AppText accessibilityLiveRegion="polite">{pending?'Đang xác minh giao dịch với máy chủ…':confirmedCancel?'Đã hủy thanh toán':applied?'Thanh toán đã được xác minh và ghi nhận.':cancel?'Chưa xác minh được trạng thái hủy. Thông tin từ đường dẫn không xác nhận giao dịch.':'Chưa xác minh được kết quả thanh toán. Hãy kiểm tra lại trạng thái.'}</AppText>
+        {payment&&<AppText>{payment.purpose==='FULL_RENT'?'100% tiền thuê':payment.purpose==='DEPOSIT'?'Tiền đặt cọc':'Tiền thuê còn lại'} · {money(payment.amount)}</AppText>}
         {error&&<StateCard kind="error" title="Chưa thể kiểm tra giao dịch" description={error}/>}
         {!confirmedCancel&&!applied&&<Button label={pending?'Đang kiểm tra…':'Kiểm tra lại trạng thái'} disabled={pending} onPress={()=>{requestKey.current='';void verify();}}/>}
-        <Button label="Mở chi tiết thanh toán" variant="outline" onPress={()=>router.replace(detail)}/>
+        <Button label={applied && payment?.purpose==='FULL_RENT' ? 'Xem hợp đồng' : 'Mở chi tiết thanh toán'} variant="outline" onPress={()=>applied && payment?.purpose==='FULL_RENT' ? router.replace({pathname:'/rentals/[id]/contract',params:{id:reservationId}}) : router.replace(detail)}/>
       </Card>}
   </LiveScreen>;
 }
