@@ -1,6 +1,6 @@
 import {facilityLabel} from '@/lib/facilityLabels';
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { inventoryApi } from '@/api/inventoryApi';
 import { useAuthSession, getAccessToken } from '@/lib/authSession';
 import { inventoryId, inventoryRecord, validInventoryId } from '@/lib/inventoryRegistration';
@@ -9,6 +9,7 @@ import { MovementMeasurements } from '@/pages/customer/InventoryHistoryPage';
 import { Screen, Panel, Input, Button, Message, Select, OpenLink } from '@/components/manager/ManagerUI';
 
 export default function MovementHistoryPage() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const { user, accessToken } = useAuthSession();
@@ -37,6 +38,8 @@ export default function MovementHistoryPage() {
         if (inventoryId(item) !== requestedId || inventoryId(item.facilityId) !== inventoryId(user?.assignedFacilityId)) {
           throw Error('This Item is outside your assigned Facility.');
         }
+        if (controller.signal.aborted || version !== request.current || accessToken !== getAccessToken()) return;
+        if (item.inventorySchemaVersion === 3) { navigate(`/${workspace}/managed?itemId=${requestedId}`, {replace:true}); return; }
         const response = await inventoryApi.movements(requestedId, { signal: controller.signal });
         const movements = inventoryMovements(response, item);
         if (!controller.signal.aborted && version === request.current && accessToken === getAccessToken()) {
@@ -52,7 +55,7 @@ export default function MovementHistoryPage() {
     }
     load();
     return () => controller.abort();
-  }, [requestedId, accessToken, user?.assignedFacilityId, params.get('refresh')]);
+  }, [requestedId, accessToken, user?.assignedFacilityId, params.get('refresh'), navigate, workspace]);
 
   function find(event) {
     event.preventDefault();
@@ -62,6 +65,7 @@ export default function MovementHistoryPage() {
   const cell = value => inventoryId(value) || 'Outside / no Cell';
   const rows = result?.movements.filter(movement => !type || movement.type === type) || [];
   return <Screen title="Lịch sử biến động mặt hàng" notice="Biến động hàng đã hoàn tất trên máy chủ trong cơ sở được phân công.">
+    <OpenLink to={`/${workspace}/managed`}>Về Hàng hóa và tồn kho</OpenLink>
     <Panel title="Tìm mặt hàng">
       <form onSubmit={find} className="flex flex-wrap gap-3">
         <Input aria-label="Mã mặt hàng" value={input} onChange={event => setInput(event.target.value.trim())} disabled={!!id} />

@@ -31,10 +31,36 @@ const AllocationModel: any = AllocationModelRaw, ReservationModel: any = Reserva
 type Actor = { _id: Types.ObjectId; role: UserRole; assignedFacilityId?: Types.ObjectId | null };
 export class ManagedInventoryV3Error extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
 const fail = (status: number, code: string, message: string): never => { throw new ManagedInventoryV3Error(status, code, message); };
-const oid = (value: unknown, field: string) => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(422, 'INVALID_INPUT', `${field} không hợp lệ.`); return new Types.ObjectId(value as string); };
+const oid = (value: unknown, field: string) => {
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(422, 'INVALID_INPUT', `${field} không hợp lệ.`);
+  return new Types.ObjectId(value as string);
+};
 const plain = (value: any, fields: string[], label: string) => { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !fields.includes(k))) fail(422, 'INVALID_INPUT', `${label} không hợp lệ.`); return value; };
 const finitePositive = (n: any) => typeof n === 'number' && Number.isFinite(n) && n > 0;
 const round = (n: number, places: number) => Math.round((n + Number.EPSILON) * 10 ** places) / 10 ** places;
+function canonicalA2PlacementTotals(placements: any[], quantity: number, unitWeightKg: number, unitVolumeM3: number) {
+  if (!Array.isArray(placements) || !Number.isSafeInteger(quantity) || quantity < 1 || !finitePositive(unitWeightKg) || !finitePositive(unitVolumeM3)) {
+    fail(422, 'INVALID_PLACEMENT_TOTALS', 'Số lượng và số liệu placement không hợp lệ.');
+  }
+  const lines = [...placements].sort((a, b) => String(a.cellId).localeCompare(String(b.cellId)));
+  if (!lines.length || lines.some(line => !Number.isSafeInteger(line.quantity) || line.quantity < 1) ||
+      new Set(lines.map(line => String(line.cellId))).size !== lines.length || lines.reduce((sum, line) => sum + line.quantity, 0) !== quantity) {
+    fail(422, 'INVALID_PLACEMENT_TOTALS', 'Tổng số lượng placement phải khớp chính xác số lượng nhập và mỗi Cell chỉ được khai báo một lần.');
+  }
+  const totalWeightKg = round(unitWeightKg * quantity, 3), totalVolumeM3 = round(unitVolumeM3 * quantity, 6);
+  let weightUsed = 0, volumeUsed = 0;
+  const amounts = new Map<string, { weightKg: number; volumeM3: number }>();
+  lines.forEach((line, index) => {
+    const last = index === lines.length - 1;
+    const weightKg = last ? round(totalWeightKg - weightUsed, 3) : round(unitWeightKg * line.quantity, 3);
+    const volumeM3 = last ? round(totalVolumeM3 - volumeUsed, 6) : round(unitVolumeM3 * line.quantity, 6);
+    if (!finitePositive(weightKg) || !finitePositive(volumeM3)) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Không thể phân bổ chính xác số liệu vật lý đã làm tròn.');
+    amounts.set(String(line.cellId), { weightKg, volumeM3 }); weightUsed += weightKg; volumeUsed += volumeM3;
+  });
+  if (weightUsed !== totalWeightKg || volumeUsed !== totalVolumeM3) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Tổng số liệu placement không bảo toàn tổng vật lý sau làm tròn.');
+  return { amounts, totalWeightKg, totalVolumeM3 };
+}
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof Types.ObjectId)
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
@@ -86,6 +112,40 @@ async function readCertifiedCells(facilityId: Types.ObjectId, cellIds: Types.Obj
   }
   return { cells, byCell };
 }
+async function validateA1Pose({ item, reservation, actor, unit, certified, cellIds, pose, now, dbSession }: any): Promise<any> {
+  if (!pose || typeof pose !== 'object' || Array.isArray(pose) || Object.keys(pose).some((field: string) => !['xStartM', 'yStartM', 'rotationDeg'].includes(field)) ||
+      !Number.isFinite(pose.xStartM) || !Number.isFinite(pose.yStartM) || ![0, 90].includes(pose.rotationDeg)) {
+    fail(422, 'A1_POSE_REQUIRED', 'Cần vị trí X/Y và góc xoay 0° hoặc 90° của PhysicalUnit.');
+  }
+  if (cellIds.length !== 1) fail(503, 'A1_LOAD_SHARING_UNCERTIFIED', 'A1 trải nhiều Cell đang bị khóa vì Facility chưa có chứng nhận load-sharing đáng tin cậy.');
+  const cell: any = certified.cells[0], certifiedCell = certified.byCell.get(String(cell._id));
+  if (!cell || !certifiedCell) fail(503, 'CERTIFIED_TOPOLOGY_UNAVAILABLE', 'Không có geometry được chứng nhận cho Cell.');
+  const geometry: any = certifiedCell.geometry, certificate = certifiedCell.certification;
+  const levelCells: any[] = await CellModel.find({ rackId: cell.rackId, levelNumber: cell.levelNumber, deletedAt: { $exists: false } })
+    .session(dbSession ?? null).select('usedWeightKg').lean().exec();
+  const levelUsed = levelCells.reduce((sum, row) => sum + Number(row.usedWeightKg), 0);
+  const rack: any = await RackModel.findOne({ _id: cell.rackId, facilityId: item.facilityId, deletedAt: { $exists: false }, operationalStatus: 'AVAILABLE' })
+    .session(dbSession ?? null).lean().exec();
+  if (!rack) fail(409, 'RACK_UNAVAILABLE', 'Rack không khả dụng.');
+  try {
+    const verified = validateA1Footprint({
+      scope: { skuId: String(item._id), reservationId: String(reservation._id), customerId: String(actor._id), facilityId: String(item.facilityId) },
+      physicalUnit: { skuId: String(unit.skuId), reservationId: String(unit.reservationId), customerId: String(unit.customerId), facilityId: String(unit.facilityId),
+        weightKg: unit.weightKg, dimensionsM: unit.dimensionsM, volumeM3: unit.volumeM3, pose },
+      cells: [{ cellId: String(cell._id), facilityId: String(item.facilityId), rackId: String(cell.rackId), levelNumber: cell.levelNumber, supportSurfaceId: certificate.supportSurfaceId,
+        xStartM: geometry.xStartM, xEndM: geometry.xEndM, yStartM: geometry.yStartM, yEndM: geometry.yEndM, usableHeightM: geometry.usableHeightM,
+        certified: true, certificationState: certificate.certificationState, certificationRevision: certificate.revision, certifiedAt: certificate.certifiedAt, expiresAt: certificate.expiresAt,
+        certifiedBy: String(certificate.certifiedBy), provenance: certificate.provenance, transformRevision: certificate.revision, worldTransform: certificate.worldTransform,
+        obstacles: geometry.obstacles, maxWeightKg: Math.min(cell.maxWeightKg, geometry.maxWeightKg), usedWeightKg: cell.usedWeightKg,
+        maxVolumeM3: geometry.maxVolumeM3, usedVolumeM3: cell.usedVolumeM3 }],
+      supports: [{ cellId: String(cell._id), reactionKg: unit.weightKg, occupiedVolumeM3: unit.volumeM3 }],
+      level: { facilityId: String(item.facilityId), rackId: String(cell.rackId), levelNumber: cell.levelNumber,
+        maxWeightKg: Math.min(Number(rack.maxWeightKgPerLevel), Number(certificate.levelMaxWeightKg)), usedWeightKg: levelUsed, certificationRevision: certificate.revision },
+      allocatedCellIds: cellIds.map(String), now,
+    });
+    return { verified, cell, geometry, certificate, pose: { xStartM: pose.xStartM, yStartM: pose.yStartM, rotationDeg: pose.rotationDeg } };
+  } catch (error: any) { fail(409, 'A1_GEOMETRY_INVALID', error?.message || 'A1 geometry/capacity validation failed.'); }
+}
 function assertActualMeasurements(body: any) {
   const dims = body.dimensionsM;
   if (!finitePositive(body.actualUnitWeightKg) || !dims || !finitePositive(dims.widthM) || !finitePositive(dims.depthM) || !finitePositive(dims.heightM) ||
@@ -117,7 +177,7 @@ export class ManagedInventoryV3Service {
 
   static async previewInbound(itemId: unknown, body: unknown, actor: Actor) {
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được xem placement preview.');
-    const input = plain(body, ['accessSessionId', 'cellIds', 'itemKind', 'physicalUnitId', 'quantity', 'quantityUnit', 'actualUnitWeightKg', 'dimensionsM', 'placements'], 'Preview nhập hàng');
+    const input = plain(body, ['accessSessionId', 'cellIds', 'itemKind', 'physicalUnitId', 'quantity', 'quantityUnit', 'actualUnitWeightKg', 'dimensionsM', 'pose', 'placements'], 'Preview nhập hàng');
     if (!Array.isArray(input.cellIds) || input.cellIds.length < 1 || input.cellIds.length > 100) fail(422, 'INVALID_INPUT', 'Cần từ 1 đến 100 Cell.');
     const cellIds = input.cellIds.map((value: unknown) => oid(value, 'cellId'));
     if (new Set(cellIds.map(String)).size !== cellIds.length) fail(422, 'INVALID_INPUT', 'Cell không được lặp.');
@@ -135,22 +195,18 @@ export class ManagedInventoryV3Service {
       const unit = await PhysicalUnitModel.findOne({ _id: oid(input.physicalUnitId, 'physicalUnitId'), skuId: item._id, reservationId: reservation._id, customerId: actor._id,
         facilityId: item.facilityId, state: 'PREPARED' }).lean().exec();
       if (!unit) fail(404, 'PHYSICAL_UNIT_NOT_FOUND', 'Không tìm thấy PhysicalUnit đã chuẩn bị.');
-      const cell: any = certified.cells[0], geometry: any = certified.byCell.get(String(cell._id))!.geometry;
-      if (geometry.obstacles.length) fail(503, 'CELL_GEOMETRY_UNSUPPORTED', 'Cell có vật cản; chưa thể xác nhận vị trí đặt an toàn nếu chưa khai báo tọa độ thực tế.');
-      if (unit.weightKg > Math.min(cell.maxWeightKg, geometry.maxWeightKg) || unit.volumeM3 > geometry.maxVolumeM3 || unit.dimensionsM.widthM > cell.dimensions.widthM ||
-        unit.dimensionsM.depthM > cell.dimensions.depthM || unit.dimensionsM.heightM > (geometry.usableHeightM ?? 0)) fail(409, 'CAPACITY_EXCEEDED', 'PhysicalUnit vượt kích thước hoặc tải trọng Cell.');
-      const rack: any = await RackModel.findOne({ _id: cell.rackId, facilityId: item.facilityId, deletedAt: { $exists: false }, operationalStatus: 'AVAILABLE' }).lean().exec();
-      const levelCells: any[] = await CellModel.find({ rackId: cell.rackId, levelNumber: cell.levelNumber, deletedAt: { $exists: false } }).select('usedWeightKg').lean().exec();
-      const levelUsed = levelCells.reduce((sum, row) => sum + Number(row.usedWeightKg), 0);
-      if (!rack || !Number.isFinite(levelUsed) || levelUsed + unit.weightKg > Math.min(rack.maxWeightKgPerLevel, certified.byCell.get(String(cell._id))!.certification.levelMaxWeightKg)) fail(409, 'LEVEL_CAPACITY_EXCEEDED', 'Level không đủ tải trọng được chứng nhận.');
+      const placement = await validateA1Pose({ item, reservation, actor, unit, certified, cellIds, pose: input.pose, now });
+      const { cell, geometry, certificate } = placement;
       return { status: 'READY', itemKind: input.itemKind, skuId: String(item._id), physicalUnitId: String(unit._id), reservationId: String(reservation._id), accessSessionId: String(session._id),
         sessionRevision: session.revision, cellIds: cellIds.map(String), topologyCertificationId: String(certified.byCell.get(String(cell._id))!.certification._id),
-        topologyRevision: certified.byCell.get(String(cell._id))!.certification.revision, quantity: 1, weightKg: unit.weightKg, volumeM3: unit.volumeM3,
+        topologyRevision: certificate.revision, pose: placement.pose, quantity: 1, weightKg: unit.weightKg, volumeM3: unit.volumeM3,
+        poseBounds: { xStartM: geometry.xStartM, xEndM: geometry.xEndM, yStartM: geometry.yStartM, yEndM: geometry.yEndM, usableHeightM: geometry.usableHeightM, rotationDeg: [0, 90] },
         previewRevision: item.managedV3Revision ?? 0, remainingWeightKg: Math.max(0, Math.min(cell.maxWeightKg, geometry.maxWeightKg) - cell.usedWeightKg), remainingVolumeM3: Math.max(0, geometry.maxVolumeM3 - cell.usedVolumeM3), expiresAt: session.expiresAt };
     }
     if (input.itemKind !== 'A2_BATCH') fail(422, 'INVALID_INPUT', 'Loại placement không hợp lệ.');
     const measurements = assertActualMeasurements(input);
     if (!Array.isArray(input.placements) || input.placements.length < 1 || input.placements.length > 100) fail(422, 'INVALID_INPUT', 'Cần từ 1 đến 100 dòng phân bổ.');
+    const placementTotals = canonicalA2PlacementTotals(input.placements, input.quantity, input.actualUnitWeightKg, measurements.unitVolume);
     const seen = new Set<string>(); let totalQuantity = 0, totalWeightKg = 0, totalVolumeM3 = 0;
     const byCell = new Map<string, any>();
     for (const line of input.placements) {
@@ -159,11 +215,11 @@ export class ManagedInventoryV3Service {
       seen.add(String(line.cellId)); const cell: any = (certified.cells as any[]).find((row: any) => String(row._id) === String(line.cellId)), geometry: any = certified.byCell.get(String(cell._id))!.geometry;
       if (measurements.dimensionsM.widthM > cell.dimensions.widthM || measurements.dimensionsM.depthM > cell.dimensions.depthM || measurements.dimensionsM.heightM > geometry.usableHeightM) fail(409, 'ITEM_DOES_NOT_FIT', 'Kích thước SKU không vừa Cell.');
       if (geometry.obstacles.length) fail(503, 'CELL_GEOMETRY_UNSUPPORTED', 'Cell có vật cản; chưa thể xác nhận vị trí đặt an toàn nếu chưa khai báo tọa độ thực tế.');
-      const weightKg = round(input.actualUnitWeightKg * line.quantity, 3), volumeM3 = round(measurements.unitVolume * line.quantity, 6);
+      const { weightKg, volumeM3 } = placementTotals.amounts.get(String(line.cellId))!;
       if (cell.usedWeightKg + weightKg > Math.min(cell.maxWeightKg, geometry.maxWeightKg) || cell.usedVolumeM3 + volumeM3 > geometry.maxVolumeM3) fail(409, 'CAPACITY_EXCEEDED', 'Cell không đủ dung lượng cho số lượng nhập.');
       totalQuantity += line.quantity; totalWeightKg += weightKg; totalVolumeM3 += volumeM3; byCell.set(String(line.cellId), { cell, geometry, weightKg, volumeM3 });
     }
-    if (!Number.isSafeInteger(totalQuantity) || totalQuantity !== input.quantity || totalWeightKg !== measurements.totalWeight || totalVolumeM3 !== measurements.totalVolume) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Tổng số lượng phân bổ phải khớp tổng nhập.');
+    if (!Number.isSafeInteger(totalQuantity) || totalQuantity !== input.quantity || totalWeightKg !== placementTotals.totalWeightKg || totalVolumeM3 !== placementTotals.totalVolumeM3) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Tổng số lượng phân bổ phải khớp tổng nhập.');
     for (const [cellId, value] of byCell) {
       const rack: any = await RackModel.findOne({ _id: value.cell.rackId, facilityId: item.facilityId, deletedAt: { $exists: false }, operationalStatus: 'AVAILABLE' }).lean().exec();
       if (!rack) fail(409, 'RACK_UNAVAILABLE', 'Rack không khả dụng.');
@@ -184,6 +240,10 @@ export class ManagedInventoryV3Service {
   static async confirmInbound(itemId: unknown, body: unknown, actor: Actor, idempotencyHeader: unknown) {
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được xác nhận Self-Inbound.');
     const input = plain(body, ['itemKind', 'accessSessionId', 'sessionRevision', 'physicalUnitId', 'quantity', 'quantityUnit', 'actualUnitWeightKg', 'dimensionsM', 'pose', 'cellIds', 'placements', 'topologyCertificationId', 'topologyRevision', 'topologyCertificationIds', 'topologyRevisions', 'previewRevision'], 'Xác nhận nhập hàng');
+    if (input.itemKind === 'A1_PHYSICAL_UNIT' && (!input.pose || typeof input.pose !== 'object' || Array.isArray(input.pose) ||
+        Object.keys(input.pose).some((field: string) => !['xStartM', 'yStartM', 'rotationDeg'].includes(field)))) {
+      fail(422, 'A1_POSE_REQUIRED', 'Cần vị trí X/Y và góc xoay 0° hoặc 90° của PhysicalUnit.');
+    }
     const requestKey = key(idempotencyHeader), itemObjectId = oid(itemId, 'skuId'), requestHash = hash(input);
     const ownedItem = await findCustomerSku(itemObjectId, actor); await scopedV3Reservation(ownedItem, actor);
     const existing = await ItemMovementModel.findOne({ itemId: itemObjectId, idempotencyKey: requestKey }).lean().exec();
@@ -223,39 +283,15 @@ export class ManagedInventoryV3Service {
           physicalUnit = await PhysicalUnitModel.findOne({ _id: oid(input.physicalUnitId, 'physicalUnitId'), skuId: item._id, reservationId: reservation._id,
             customerId: actor._id, facilityId: item.facilityId, state: 'PREPARED' }).session(dbSession).exec();
           if (!physicalUnit) fail(404, 'PHYSICAL_UNIT_NOT_FOUND', 'Không tìm thấy PhysicalUnit chưa được đặt.');
-          const cell: any = certified.cells[0], certifiedCell = certified.byCell.get(String(cell._id))!, geometry: any = certifiedCell.geometry;
-          if (!input.pose || typeof input.pose !== 'object' || Array.isArray(input.pose) || Object.keys(input.pose).some((field: string) => !['xStartM', 'yStartM', 'rotationDeg'].includes(field))) {
-            fail(422, 'A1_POSE_REQUIRED', 'Cần vị trí và góc xoay thực tế của PhysicalUnit khi xác nhận nhập.');
-          }
-          const levelCells: any[] = await CellModel.find({ rackId: cell.rackId, levelNumber: cell.levelNumber, deletedAt: { $exists: false } }).session(dbSession).select('usedWeightKg').lean().exec();
-          const levelUsed = levelCells.reduce((sum, row) => sum + Number(row.usedWeightKg), 0);
-          const certificate = certifiedCell.certification;
-          let verified: ReturnType<typeof validateA1Footprint>;
-          try {
-            verified = validateA1Footprint({
-              scope: { skuId: String(item._id), reservationId: String(reservation._id), customerId: String(actor._id), facilityId: String(item.facilityId) },
-              physicalUnit: { skuId: String(physicalUnit.skuId), reservationId: String(physicalUnit.reservationId), customerId: String(physicalUnit.customerId), facilityId: String(physicalUnit.facilityId),
-                weightKg: physicalUnit.weightKg, dimensionsM: physicalUnit.dimensionsM, volumeM3: physicalUnit.volumeM3,
-                pose: { xStartM: input.pose.xStartM, yStartM: input.pose.yStartM, rotationDeg: input.pose.rotationDeg } },
-              cells: [{ cellId: String(cell._id), facilityId: String(item.facilityId), rackId: String(cell.rackId), levelNumber: cell.levelNumber, supportSurfaceId: certificate.supportSurfaceId,
-                xStartM: geometry.xStartM, xEndM: geometry.xEndM, yStartM: geometry.yStartM, yEndM: geometry.yEndM, usableHeightM: geometry.usableHeightM,
-                certified: true, certificationState: certificate.certificationState, certificationRevision: certificate.revision, certifiedAt: certificate.certifiedAt, expiresAt: certificate.expiresAt,
-                certifiedBy: String(certificate.certifiedBy), provenance: certificate.provenance, transformRevision: certificate.revision, worldTransform: certificate.worldTransform,
-                obstacles: geometry.obstacles, maxWeightKg: Math.min(cell.maxWeightKg, geometry.maxWeightKg), usedWeightKg: cell.usedWeightKg,
-                maxVolumeM3: geometry.maxVolumeM3, usedVolumeM3: cell.usedVolumeM3 }],
-              supports: [{ cellId: String(cell._id), reactionKg: physicalUnit.weightKg, occupiedVolumeM3: physicalUnit.volumeM3 }],
-              level: { facilityId: String(item.facilityId), rackId: String(cell.rackId), levelNumber: cell.levelNumber,
-                maxWeightKg: Math.min(Number((await RackModel.findOne({ _id: cell.rackId, facilityId: item.facilityId, deletedAt: { $exists: false }, operationalStatus: 'AVAILABLE' }).session(dbSession).lean().exec())?.maxWeightKgPerLevel), Number(certificate.levelMaxWeightKg)),
-                usedWeightKg: levelUsed, certificationRevision: certificate.revision },
-              allocatedCellIds: cellIds.map(String), now,
-            });
-          } catch (error: any) { fail(409, 'A1_GEOMETRY_INVALID', error?.message || 'A1 geometry/capacity validation failed.'); }
+          const placement = await validateA1Pose({ item, reservation, actor, unit: physicalUnit, certified, cellIds, pose: input.pose, now, dbSession });
+          const { cell, certificate, pose } = placement;
           const supportReactionKg = physicalUnit.weightKg, occupiedVolumeM3 = physicalUnit.volumeM3;
           effectLines = [{ cellId: cell._id, topologyCertificationId: certificate._id, topologyRevision: certificate.revision,
-            physicalUnitId: physicalUnit._id, quantity: 1, quantityUnit: item.quantityUnit, weightKg: supportReactionKg, volumeM3: occupiedVolumeM3, supportReactionKg, occupiedVolumeM3 }];
+            physicalUnitId: physicalUnit._id, quantity: 1, quantityUnit: item.quantityUnit, weightKg: supportReactionKg, volumeM3: occupiedVolumeM3, supportReactionKg, occupiedVolumeM3, pose }];
         } else if (input.itemKind === 'A2_BATCH') {
           kind = 'A2_BATCH'; const calculated = assertActualMeasurements(input); batchId = String(movementId);
           if (input.quantityUnit !== item.quantityUnit) fail(422, 'QUANTITY_UNIT_MISMATCH', 'Đơn vị nhập phải khớp đơn vị SKU.');
+          const placementTotals = canonicalA2PlacementTotals(input.placements, input.quantity, input.actualUnitWeightKg, calculated.unitVolume);
           effectLines = input.placements.map((line: any) => {
             if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) fail(422, 'INVALID_QUANTITY', 'Số lượng theo Cell phải là số nguyên dương.');
             const cell: any = (certified.cells as any[]).find((row: any) => String(row._id) === String(line.cellId)), geometry: any = certified.byCell.get(String(cell?._id))?.geometry;
@@ -263,11 +299,12 @@ export class ManagedInventoryV3Service {
             if (calculated.dimensionsM.widthM > cell.dimensions.widthM || calculated.dimensionsM.depthM > cell.dimensions.depthM || calculated.dimensionsM.heightM > geometry.usableHeightM) fail(409, 'ITEM_DOES_NOT_FIT', 'Hàng hóa không vừa Cell đã chọn.');
             if (geometry.obstacles.length) fail(503, 'CELL_GEOMETRY_UNSUPPORTED', 'Cell có vật cản; chưa thể xác nhận vị trí đặt an toàn nếu chưa khai báo tọa độ thực tế.');
             const certificate = certified.byCell.get(String(cell._id))!.certification;
+            const physical = placementTotals.amounts.get(String(line.cellId))!;
             return { cellId: cell._id, topologyCertificationId: certificate._id, topologyRevision: certificate.revision,
-              batchId, quantity: line.quantity, quantityUnit: input.quantityUnit, weightKg: round(input.actualUnitWeightKg * line.quantity, 3), volumeM3: round(calculated.unitVolume * line.quantity, 6) };
+              batchId, quantity: line.quantity, quantityUnit: input.quantityUnit, weightKg: physical.weightKg, volumeM3: physical.volumeM3 };
           });
           const totalQty = effectLines.reduce((n: number, line: any) => n + line.quantity, 0), totalWeight = effectLines.reduce((n: number, line: any) => n + line.weightKg, 0), totalVolume = effectLines.reduce((n: number, line: any) => n + line.volumeM3, 0);
-          if (!Number.isSafeInteger(input.quantity) || input.quantity !== totalQty || totalWeight !== calculated.totalWeight || totalVolume !== calculated.totalVolume) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Số lượng phân bổ phải khớp chính xác tổng nhập.');
+          if (!Number.isSafeInteger(input.quantity) || input.quantity !== totalQty || totalWeight !== placementTotals.totalWeightKg || totalVolume !== placementTotals.totalVolumeM3) fail(422, 'INVALID_PLACEMENT_TOTALS', 'Số lượng phân bổ phải khớp chính xác tổng nhập.');
         } else fail(422, 'INVALID_ITEM_KIND', 'Loại hàng nhập không hợp lệ.');
         const expectedRevisions = [...new Set([...certified.byCell.values()].map((value: any) => String(value.certification._id)))].sort();
         const expectedTopologyRevisions = [...new Set([...certified.byCell.values()].map((value: any) => Number(value.certification.revision)))].sort((a, b) => a - b);
@@ -326,10 +363,11 @@ export class ManagedInventoryV3Service {
         }], { session: dbSession });
         const movementDoc: any = movement[0];
         if (kind === 'A1_PHYSICAL_UNIT') {
-          const unitUpdate = await PhysicalUnitModel.updateOne({ _id: physicalUnit._id, state: 'PREPARED', revision: physicalUnit.revision }, { $set: { state: 'PLACED', sourceMovementId: movementDoc._id }, $inc: { revision: 1 } }, { session: dbSession }).exec();
+          const unitUpdate = await PhysicalUnitModel.updateOne({ _id: physicalUnit._id, state: 'PREPARED', revision: physicalUnit.revision, currentPose: null },
+            { $set: { state: 'PLACED', sourceMovementId: movementDoc._id, currentPose: effectLines[0].pose }, $inc: { revision: 1 } }, { session: dbSession }).exec();
           if (unitUpdate.matchedCount !== 1) fail(412, 'STALE_PHYSICAL_UNIT', 'PhysicalUnit vừa thay đổi.');
           const cell = effectLines[0];
-          await FootprintModel.create([{ physicalUnitId: physicalUnit._id, reservationId: reservation._id, customerId: actor._id, facilityId: item.facilityId,
+          await FootprintModel.create([{ physicalUnitId: physicalUnit._id, reservationId: reservation._id, customerId: actor._id, facilityId: item.facilityId, pose: effectLines[0].pose,
             cells: [{ cellId: cell.cellId, supportReactionKg: cell.supportReactionKg, occupiedVolumeM3: cell.occupiedVolumeM3,
               topologyCertificationId: cell.topologyCertificationId, topologyRevision: cell.topologyRevision }],
             topologyCertificationId: certificate._id, topologyRevision: certificate.revision, sourceMovementId: movementDoc._id, verifiedAt: now, state: 'ACTIVE', revision: 0 }], { session: dbSession });
@@ -404,14 +442,14 @@ export class ManagedInventoryV3Service {
     for (const item of items) {
       const [projection, movementCount, reservation] = await Promise.all([ProjectionModel.findOne({ skuId: item._id, facilityId: actor.assignedFacilityId }).lean().exec(),
         ItemMovementModel.countDocuments({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).exec(),
-        ReservationModel.findOne({ _id: item.managedReservationId, facilityId: actor.assignedFacilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).select('allocatedCellIds').lean().exec()]);
+        ReservationModel.findOne({ _id: item.managedReservationId, facilityId: actor.assignedFacilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).select('allocatedCellIds allocatedCapacity usedCapacityM3 inventoryVersion').lean().exec()]);
       const recentMovements = await ItemMovementModel.find({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).sort({ performedAt: -1 }).limit(25).lean().exec();
-      let status = 'UNKNOWN';
+      let status = 'UNKNOWN', replaySnapshot: any = null;
       if (movementCount <= 5000) {
         const movements = await ItemMovementModel.find({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).sort({ performedAt: 1, _id: 1 }).lean().exec();
         status = 'RECONCILED';
       try {
-        const replay = replayManagedInventoryV3(item, movements as any[]);
+        const replay = replayManagedInventoryV3(item, movements as any[]); replaySnapshot = replay;
         const comparable = (value: any) => JSON.stringify(canonical({ skuId: String(value?.skuId), reservationId: String(value?.reservationId), customerId: String(value?.customerId), facilityId: String(value?.facilityId),
           onHandQuantity: value?.onHandQuantity, heldQuantity: value?.heldQuantity,
           availableQuantity: value?.availableQuantity, totalWeightKg: value?.totalWeightKg, totalVolumeM3: value?.totalVolumeM3,
@@ -424,12 +462,35 @@ export class ManagedInventoryV3Service {
       const capacityReconciliationReasons = ['CELL_COUNTERS_INCLUDE_LEGACY_AND_V3_WRITERS', 'FACILITY_WIDE_LEDGER_BASELINE_NOT_REPLAYED'];
       if (!projection) capacityReconciliationReasons.push('V3_STOCK_PROJECTION_MISSING');
       else if (status !== 'RECONCILED') capacityReconciliationReasons.push('V3_LEDGER_AND_PROJECTION_MISMATCH');
+      const allocatedCells: any[] = cellCapacity.filter((cell: any) => allocatedCellIds.includes(String(cell._id)));
+      const levelGroups = new Map<string, any>();
+      for (const cell of allocatedCells) {
+        const key = `${cell.rackId}:${cell.levelNumber}`, group = levelGroups.get(key) ?? { rackId: String(cell.rackId), levelNumber: cell.levelNumber,
+          allocatedCellsSharedUsedWeightKg: 0, allocatedCellsV3LedgerWeightKg: 0, cells: [] };
+        group.allocatedCellsSharedUsedWeightKg += Number(cell.usedWeightKg);
+        const v3Cell = replaySnapshot?.byCell?.find((row: any) => String(row.cellId) === String(cell._id));
+        group.allocatedCellsV3LedgerWeightKg += Number(v3Cell?.weightKg ?? 0);
+        group.cells.push(String(cell._id)); levelGroups.set(key, group);
+      }
+      const capacityReconciliationEvidence = {
+        v3Ledger: { status: replaySnapshot ? 'REPLAYED_FOR_THIS_SKU' : 'UNKNOWN', ledgerRevision: replaySnapshot?.ledgerRevision ?? null,
+          byCell: (replaySnapshot?.byCell ?? []).filter((row: any) => allocatedCellIds.includes(String(row.cellId))) },
+        cells: allocatedCells.map((cell: any) => ({ cellId: String(cell._id), rackId: String(cell.rackId), levelNumber: cell.levelNumber,
+          sharedCounters: { usedWeightKg: cell.usedWeightKg, usedVolumeM3: cell.usedVolumeM3 },
+          v3Ledger: replaySnapshot?.byCell?.find((row: any) => String(row.cellId) === String(cell._id)) ?? null,
+          status: 'UNKNOWN', missingEvidence: ['Legacy/non-V3 movement replay for this Cell.', 'Writer provenance or a reconciled legacy counter baseline.'] })),
+        rackLevels: [...levelGroups.values()].map((group: any) => ({ ...group, status: 'UNKNOWN', missingEvidence: ['Rack/level certified limit and full cross-SKU Cell usage.', 'Legacy and V3 movements for every Cell on this level.'] })),
+        reservation: { reservationId: String(reservation?._id ?? item.managedReservationId), usedCapacityM3: reservation?.usedCapacityM3 ?? null,
+          allocatedCapacityM3: reservation?.allocatedCapacity ?? null, thisSkuV3LedgerVolumeM3: replaySnapshot?.totalVolumeM3 ?? null,
+          inventoryVersion: reservation?.inventoryVersion ?? null, status: 'UNKNOWN',
+          missingEvidence: ['All SKU and legacy inventory volumes within the Reservation.', 'Proof that Reservation capacity is not duplicated across item projections.'] },
+      };
       rows.push({ item, projection, recentMovements, reconciliationStatus: status,
         capacityReconciliationStatus: 'UNKNOWN', capacityReconciliationReasons,
         capacityReconciliationRequiredEvidence: ['Replay every active legacy and V3 movement once at Facility scope.',
           'Reconcile each Cell counter and Rack/Level load against the combined replay.',
           'Reconcile Reservation used capacity against its non-duplicated stock volume and allocation scope.'],
-        capacity: cellCapacity.filter((cell: any) => allocatedCellIds.includes(String(cell._id))) });
+        capacityReconciliationEvidence, capacity: allocatedCells });
     }
     return { facilityId: String(actor.assignedFacilityId), rows, readOnly: true };
   }

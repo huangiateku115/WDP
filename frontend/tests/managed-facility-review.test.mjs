@@ -78,6 +78,7 @@ function renderPage(file, role, tab = 'inventory', state = {}) {
     '@/lib/managedFacilityReview': { managedItemPage, managedReadiness, scopedManagedReservation, scopedTopology, positiveNumber },
     '@/components/manager/ManagerUI': ui,
     '@/components/staff/QueuePagination': { default: simple('nav') },
+    '@/components/facility/FacilityInventoryDetail': { default: simple('section') },
     'react-router-dom': { useSearchParams: () => [new URLSearchParams({ tab }), () => {}] },
   };
   const code = transformSync(readFileSync(new URL(`../src/pages/${file}.jsx`, import.meta.url), 'utf8'), { loader: 'jsx', format: 'cjs', jsx: 'automatic' }).code;
@@ -86,11 +87,11 @@ function renderPage(file, role, tab = 'inventory', state = {}) {
   return renderToStaticMarkup(React.createElement(module.exports.default));
 }
 
-test('both roles render role-correct stock/history links without stock write actions', () => {
+test('both roles open a unified inventory detail without stock write actions', () => {
   for (const [role, base] of [['FACILITY_STAFF', 'staff'], ['FACILITY_MANAGER', 'manager']]) {
     const html = renderPage('staff/ManagedFacilityPage', role, 'inventory', { data: { rows: [{ ...row, id: item, itemCode: 'TEST-ITEM', name: 'Thùng thử nghiệm', customerId: other, status: 'IN_STORAGE' }], pagination: { page: 1, total: 1, totalPages: 1 } } });
-    assert.ok(html.includes(`/${base}/inventory/stock?itemId=${item}`));
-    assert.ok(html.includes(`/${base}/inventory/items/${item}/history`));
+    assert.ok(html.includes(`/${base}/managed?itemId=${item}`));
+    assert.ok(html.includes('Xem tồn và lịch sử'));
     assert.ok(html.includes('Thùng thử nghiệm'));
     assert.doesNotMatch(html, /Xác nhận nhập|Xác nhận xuất|Ghi biến động/);
   }

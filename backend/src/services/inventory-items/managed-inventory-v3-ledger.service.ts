@@ -103,8 +103,8 @@ export function replayManagedInventoryV3(item: Row, input: Row[]) {
     byCellMap.set(line.cellId, cell);
     if (line.itemKind === 'A1_PHYSICAL_UNIT') {
       const unitId = id(line.physicalUnitId), unit: Row = unitMap.get(unitId) ?? { itemKind: 'A1_PHYSICAL_UNIT', physicalUnitId: unitId, quantity: 1,
-        quantityUnit: line.quantityUnit, weightKg: 0, volumeM3: 0, cellIds: [] };
-      if (unit.quantityUnit !== line.quantityUnit) invalid('QUANTITY_UNIT_MISMATCH', 'PhysicalUnit footprint has inconsistent quantity units');
+        quantityUnit: line.quantityUnit, pose: line.pose, weightKg: 0, volumeM3: 0, cellIds: [] };
+      if (unit.quantityUnit !== line.quantityUnit || JSON.stringify(unit.pose) !== JSON.stringify(line.pose)) invalid('A1_FOOTPRINT_MISMATCH', 'PhysicalUnit footprint has inconsistent unit or pose data');
       unit.weightKg += line.weightKg; unit.volumeM3 += line.volumeM3; unit.cellIds.push(line.cellId); unitMap.set(unitId, unit);
     }
   }

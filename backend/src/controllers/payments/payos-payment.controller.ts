@@ -55,6 +55,12 @@ export const lookupSelfStoragePayosOrder = async (req: Request, res: Response) =
 export const payosWebhook = async (req: Request, res: Response) => {
   try {
     const data = await payosPaymentService.handleWebhook(req.body);
+    console.info('PAYOS_WEBHOOK_DIAGNOSTIC', { stage: 'HTTP_RESPONSE', outcome: 'ACKNOWLEDGED', httpStatus: 200 });
     return res.status(200).json({ success: true, data });
-  } catch (error) { return sendError(error, res); }
+  } catch (error) {
+    const status = error instanceof PayosPaymentError ? error.status : 500;
+    const code = error instanceof PayosPaymentError ? error.code : 'PAYMENT_PROCESSING_FAILED';
+    console.warn('PAYOS_WEBHOOK_DIAGNOSTIC', { stage: 'HTTP_RESPONSE', outcome: 'REJECTED', httpStatus: status, errorCode: code });
+    return sendError(error, res);
+  }
 };

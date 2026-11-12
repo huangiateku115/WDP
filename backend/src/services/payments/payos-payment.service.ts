@@ -330,6 +330,13 @@ function logCheckoutDiagnostic(payment: any, category: string, stage: string, pr
     } : {}),
   });
 }
+function logWebhookDiagnostic(stage: string, outcome: string, payment?: any, attributes: Record<string, string | number | boolean> = {}): void {
+  // Deliberately allowlist fields; never log webhook bodies, bank data, tokens or provider error objects.
+  const allowed = ['serviceType', 'purpose', 'httpStatus', 'errorCode'] as const;
+  const safeAttributes = Object.fromEntries(allowed.flatMap(key => attributes[key] === undefined ? [] : [[key, attributes[key]]]));
+  console.info('PAYOS_WEBHOOK_DIAGNOSTIC', { stage, outcome,
+    ...(payment ? { correlationId: checkoutCorrelationId(payment) } : {}), ...safeAttributes });
+}
 function isDocumentedRegistrationProbe(event: {
   orderCode: number; amount: number; currency: string; paymentLinkId: string; reference: string;
   description?: string; transactionDateTime: string; code: string; desc: string;
@@ -947,7 +954,9 @@ export class PayosPaymentService {
     const selfStorageFullRent = payment.serviceType === FacilityServiceType.SELF_STORAGE && payment.purpose === PaymentPurpose.FULL_RENT;
     let link: Awaited<ReturnType<PayosGateway['get']>>;
     try {
-      link = await this.gateway.get(orderCode);
+      // Reconciliation decisions (including cancellation) must use the SDK-verified
+      // response signature. An unsigned link status is not settlement evidence.
+      link = await this.gateway.get(orderCode, { requireSignature: true });
     } catch {
       logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_FAILED', 'LOOKUP_BY_ORIGINAL_ORDER_CODE', null, false, null);
       throw new Error('PayOS lookup failed for the original payment order code');
@@ -1171,13 +1180,16 @@ export class PayosPaymentService {
   }
 
   async handleWebhook(input: unknown) {
+    logWebhookDiagnostic('RECEIVED', 'UNVERIFIED');
     let verified: Awaited<ReturnType<PayosGateway['verify']>>;
     try {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('invalid webhook shape');
       verified = await this.gateway.verify(input as Webhook);
     } catch {
+      logWebhookDiagnostic('SIGNATURE_VERIFICATION', 'INVALID');
       throw new PayosPaymentError(400, 'PAYOS_WEBHOOK_SIGNATURE_INVALID', 'PayOS webhook signature is invalid');
     }
+    logWebhookDiagnostic('SIGNATURE_VERIFICATION', 'VALID');
     if (!verified || !Number.isSafeInteger(verified.orderCode) || !verified.reference ||
         !Number.isSafeInteger(verified.amount) || typeof verified.currency !== 'string' ||
         typeof verified.paymentLinkId !== 'string' || typeof verified.transactionDateTime !== 'string' ||
@@ -1187,6 +1199,7 @@ export class PayosPaymentService {
     const payment = await Payments.findOne({ provider: PaymentProvider.PAYOS,
       providerReference: String(verified.orderCode) }).exec();
     if (!payment) {
+      logWebhookDiagnostic('PAYMENT_MATCH', 'NOT_FOUND');
       if (isDocumentedRegistrationProbe(verified)) {
         // PayOS confirms webhook URLs by sending this signed sample transaction.
         // Acknowledge delivery only; this is deliberately not a WDP settlement.
@@ -1194,12 +1207,17 @@ export class PayosPaymentService {
       }
       throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment intent not found');
     }
+    logWebhookDiagnostic('PAYMENT_MATCH', 'FOUND', payment);
     if (verified.code !== '00') {
-      return this.recordNonSuccessOutcome(payment._id, verified);
+      logWebhookDiagnostic('PROVIDER_OUTCOME', 'NON_SUCCESS', payment, { serviceType: payment.serviceType, purpose: payment.purpose });
+      const result = await this.recordNonSuccessOutcome(payment._id, verified);
+      logWebhookDiagnostic('TRANSACTION_RESULT', result.duplicate ? 'DUPLICATE_EVENT' : 'RECORDED_NON_SUCCESS', payment);
+      return result;
     }
     const event = { ...verified, eventHash: captureHash(verified) };
     const session = await this.createSession();
     let result: any;
+    logWebhookDiagnostic('TRANSACTION', 'STARTED', payment);
     try {
       await session.withTransaction(async () => {
         result = undefined;
@@ -1208,6 +1226,7 @@ export class PayosPaymentService {
         if (!currentPayment) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment intent not found');
         if ((currentPayment.providerCaptures ?? []).some((entry: any) => entry.eventHash === event.eventHash)) {
           result = { duplicate: true, paymentId: currentPayment._id };
+          logWebhookDiagnostic('TRANSACTION_RESULT', 'DUPLICATE_EVENT', currentPayment);
           return;
         }
 
@@ -1450,8 +1469,12 @@ export class PayosPaymentService {
         result = { applied: true, paymentId: currentPayment._id };
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       if (!result) throw new PayosPaymentError(503, 'WEBHOOK_OUTCOME_UNKNOWN', 'Webhook processing outcome is uncertain');
+      logWebhookDiagnostic('TRANSACTION_RESULT', result.duplicate ? 'DUPLICATE_EVENT' : result.applied ? 'APPLIED' : 'MANUAL_REVIEW', payment,
+        { serviceType: payment.serviceType, purpose: payment.purpose });
       return { success: true, duplicate: result.duplicate === true, reconciled: result.reconciled === true };
     } catch (error: any) {
+      logWebhookDiagnostic('TRANSACTION', 'ROLLED_BACK_OR_UNCERTAIN', payment,
+        { errorCode: error instanceof PayosPaymentError ? error.code : 'INTERNAL' });
       if (error instanceof PayosPaymentError) throw error;
       if (errorHasLabel(error, 'UnknownTransactionCommitResult')) {
         const durable = await Payments.findById(payment._id).exec().catch(() => null);

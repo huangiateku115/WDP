@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose';
+import { ManagedV3Pose } from './managed-inventory-v3.type';
 
 export enum ItemMovementType { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND', RELOCATION = 'RELOCATION' }
 
@@ -18,6 +19,7 @@ export interface V3PlacementEffect {
   volumeM3: number;
   supportReactionKg?: number;
   occupiedVolumeM3?: number;
+  pose?: ManagedV3Pose;
 }
 export interface V3MovementEffect {
   action: 'ADD' | 'REMOVE' | 'MOVE';
