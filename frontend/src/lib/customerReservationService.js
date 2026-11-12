@@ -16,7 +16,10 @@ const v3Labels={RESERVED:'Cells held — Deposit pending',DEPOSIT_PAID:'Deposit 
 export function reservationLifecycle(reservation){
   const flow=isManagedV3(reservation)?'MANAGED_V3':isManagedV2(reservation)?'MANAGED_V2':isLegacyManaged(reservation)?'MANAGED_LEGACY':serviceType(reservation)===SELF_STORAGE?'SELF_STORAGE':'UNKNOWN';
   const descriptions=flow==='MANAGED_V3'?managedV3Descriptions:flow==='MANAGED_V2'?managedV2Descriptions:flow==='MANAGED_LEGACY'?managedLegacyDescriptions:flow==='SELF_STORAGE'?selfDescriptions:{};
-  return {flow,status:reservation?.status,label:flow==='MANAGED_V3'?v3Labels[reservation.status]:flow==='MANAGED_V2'?v2Labels[reservation.status]:undefined,description:descriptions[reservation?.status]||'Status or flow version is not supported. Refresh the record; service-specific actions are unavailable.'};
+  const fullUpfront=reservation?.rentalPaymentFlow==='FULL_UPFRONT_V1';
+  const description=fullUpfront&&reservation?.status==='PAID'?'Đã thanh toán đủ tiền thuê. Đang chờ hợp đồng và bàn giao; quyền sử dụng kho chưa được kích hoạt.':fullUpfront&&reservation?.status==='CONTRACTED'?'Đơn thuê đã được xác nhận. Thanh toán 100% tiền thuê qua PayOS trước khi hoàn tất hợp đồng và bàn giao.':fullUpfront&&reservation?.status==='RESERVED'?'Các Cell đã được giữ. Thanh toán 100% tiền thuê qua PayOS trước khi thời hạn giữ chỗ kết thúc.':descriptions[reservation?.status];
+  const label=fullUpfront&&reservation?.status==='PAID'?'Đã thanh toán — chờ hợp đồng/bàn giao':fullUpfront&&reservation?.status==='CONTRACTED'?'Chờ thanh toán 100% tiền thuê':fullUpfront&&reservation?.status==='RESERVED'?'Chờ thanh toán 100% tiền thuê':flow==='MANAGED_V3'?v3Labels[reservation.status]:flow==='MANAGED_V2'?v2Labels[reservation.status]:undefined;
+  return {flow,status:reservation?.status,label,description:description||'Status or flow version is not supported. Refresh the record; service-specific actions are unavailable.'};
 }
 export const serviceLabel=reservation=>serviceType(reservation)===SELF_STORAGE?'Self Storage':serviceType(reservation)===MANAGED_INVENTORY?'Managed Inventory':'Unsupported / unknown service';
 export const liveHold=(reservation,now=Date.now())=>Number.isFinite(Date.parse(reservation?.expiresAt))&&Date.parse(reservation.expiresAt)>now;

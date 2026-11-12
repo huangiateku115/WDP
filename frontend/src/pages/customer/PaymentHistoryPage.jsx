@@ -93,13 +93,17 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
   const applied = relevantPayment?.providerSettlementStatus === "VERIFIED" && relevantPayment?.applicationStatus === "APPLIED";
   const confirmedCancel = cancelReturn && relevantPayment?.status === "CANCELLED" && !!relevantPayment?.cancelVerifiedAt;
   const awaitingCancelCheck = cancelReturn && !confirmedCancel && !applied;
-  const retryStageValid = relevantPayment?.purpose === "DEPOSIT"
+  const retryStageValid = relevantPayment?.purpose === "FULL_RENT"
+    ? reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && (service === MANAGED_INVENTORY
+      ? reservation.status === "RESERVED" && Date.parse(reservation.expiresAt || "") > Date.now()
+      : reservation.status === "CONTRACTED" && Date.parse(reservation.expiresAt || "") > Date.now())
+    : relevantPayment?.purpose === "DEPOSIT"
     ? reservation.status === "CONTRACTED" && Date.parse(reservation.expiresAt || "") > Date.now() || service === MANAGED_INVENTORY && reservation.status === "RESERVED" && Date.parse(reservation.expiresAt || "") > Date.now()
     : service === MANAGED_INVENTORY ? reservation.status === "DEPOSIT_PAID" : reservation.status === "CHECKIN_READY";
 
   return (
     <>
-      {applied && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status" aria-live="polite">Thanh toán đã được xác minh và ghi nhận thành công.</div>}
+      {applied && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status" aria-live="polite">{reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && reservation.status === "PAID" ? "Đã thanh toán — Chờ ký hợp đồng và bàn giao. Quyền sử dụng kho chưa được kích hoạt." : "Thanh toán đã được xác minh và ghi nhận thành công."}</div>}
       {confirmedCancel && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status" aria-live="polite">Đã hủy thanh toán. Reservation không bị hủy.</div>}
       {awaitingCancelCheck && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="status" aria-live="polite">Đang xác minh trạng thái hủy với Backend. Chưa xác nhận hủy.</div>}
       {cancelReturn && awaitingCancelCheck && <div className="mt-3"><Message error={reconcileError}/><Button variant="outline" disabled={reconcileBusy} onClick={() => void verifyCancellation()}>{reconcileBusy ? "Đang kiểm tra…" : "Kiểm tra trạng thái hủy"}</Button></div>}
@@ -113,7 +117,7 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
         {payments.length > 0 && <div className="mt-4 space-y-3">
           {payments.map((payment) => {
             const status = customerPaymentStatus(payment);
-            const purpose = payment.purpose === "DEPOSIT" ? "Tiền thuê trả trước" : "Tiền thuê còn lại";
+            const purpose = payment.purpose === "FULL_RENT" ? "Thanh toán 100% tiền thuê" : payment.purpose === "DEPOSIT" ? "Tiền thuê trả trước" : "Tiền thuê còn lại";
             const date = new Date(payment.createdAt);
             return <article key={payment.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">

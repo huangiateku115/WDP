@@ -8,13 +8,11 @@ function breakdown(value,depositRequired,currency){
 export function managedQuoteFinancials(quote){
   if(quote?.bookingFlowVersion===3){
     const vndAmount=value=>Number.isSafeInteger(value)&&value>=0;
-    const rent=quote.pricing?.estimatedRent,tax=quote.taxAmount,deposit=quote.deposit?.amount;
-    if(quote.pricing?.currency!=='VND'||!vndAmount(rent)||rent<=0||!vndAmount(tax)||!vndAmount(deposit)||deposit<=0)
+    const rent=quote.pricing?.estimatedRent,tax=quote.taxAmount,payment=quote.payment;
+    if(quote.pricing?.currency!=='VND'||!vndAmount(rent)||rent<=0||!vndAmount(tax)||
+      payment?.purpose!=='FULL_RENT'||!vndAmount(payment.amount)||payment.amount!==rent+tax||payment.currency!=='VND')
       throw Error('Managed V3 quote amounts are unavailable or inconsistent. Refresh the server quote.');
-    const result=breakdown(quote.paymentBreakdown,deposit,'VND');
-    if(result.totalRentPayable!==rent+tax)
-      throw Error('Managed V3 quote total does not match server rent and tax. Refresh the server quote.');
-    return result;
+    return {totalRentPayable:payment.amount,advanceDepositRequired:0,balanceAfterDeposit:0,currency:'VND',paymentFlow:'FULL_RENT'};
   }
   if(quote?.bookingFlowVersion!==2)throw Error('Unsupported Managed quote version.');
   if(![quote.pricing?.estimatedRent,quote.taxAmount,quote.deposit?.amount].every(amount))throw Error('Managed V2 quote amounts are unavailable or inconsistent.');
@@ -33,4 +31,4 @@ export function managedReservationFinancials(reservation){
   const depositConfirmed=['DEPOSIT_PAID','CHECKIN_READY','ACTIVE'].includes(reservation.status),rentSettled=['CHECKIN_READY','ACTIVE'].includes(reservation.status);
   return {...result,confirmedDepositCredit:depositConfirmed?result.advanceDepositRequired:reservation.status==='RESERVED'?0:null,remainingRentDue:rentSettled?0:depositConfirmed?result.balanceAfterDeposit:reservation.status==='RESERVED'?result.totalRentPayable:null};
 }
-export function managedFinancialRows(result,formatAmount=(value,currency)=>`${value} ${currency}`){return [['Total rent payable',formatAmount(result.totalRentPayable,result.currency)],['Scheduled advance-rent deposit',formatAmount(result.advanceDepositRequired,result.currency)],['Balance after required deposit (plan)',formatAmount(result.balanceAfterDeposit,result.currency)],...(Object.hasOwn(result,'confirmedDepositCredit')?[['Confirmed advance-rent credit',result.confirmedDepositCredit===null?'Unavailable from this lifecycle state':formatAmount(result.confirmedDepositCredit,result.currency)],['Remaining rent due',result.remainingRentDue===null?'Unavailable from this lifecycle state':formatAmount(result.remainingRentDue,result.currency)]]:[])];}
+export function managedFinancialRows(result,formatAmount=(value,currency)=>`${value} ${currency}`){if(result.paymentFlow==='FULL_RENT')return [['Total rent due now (100%)',formatAmount(result.totalRentPayable,result.currency)]];return [['Total rent payable',formatAmount(result.totalRentPayable,result.currency)],['Scheduled advance-rent deposit',formatAmount(result.advanceDepositRequired,result.currency)],['Balance after required deposit (plan)',formatAmount(result.balanceAfterDeposit,result.currency)],...(Object.hasOwn(result,'confirmedDepositCredit')?[['Confirmed advance-rent credit',result.confirmedDepositCredit===null?'Unavailable from this lifecycle state':formatAmount(result.confirmedDepositCredit,result.currency)],['Remaining rent due',result.remainingRentDue===null?'Unavailable from this lifecycle state':formatAmount(result.remainingRentDue,result.currency)]]:[])];}

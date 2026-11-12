@@ -1,5 +1,5 @@
 const OBJECT_ID = /^[a-f\d]{24}$/i;
-const PURPOSES = new Set(["DEPOSIT", "BALANCE"]);
+const PURPOSES = new Set(["DEPOSIT", "BALANCE", "FULL_RENT"]);
 const MAX_PAYOS_QR_PAYLOAD_LENGTH = 4096;
 
 export function isUsablePayosQrPayload(value) {
@@ -55,15 +55,17 @@ export function payosContractMatchesIdentity(contract, reservationId, customerId
 export function assessPayosEligibility(reservation, contract, now = Date.now(), expectedCustomerId) {
   const reservationId = normalizePayosReferenceId(reservation);
   if (!reservationId) return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_ID" };
+  const fullUpfront = reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1";
   if (reservation?.serviceType === "MANAGED_INVENTORY" && reservation?.bookingFlowVersion === 3) {
     const owner = normalizePayosReferenceId(reservation.customerId);
     if (expectedCustomerId !== undefined && (!owner || owner !== normalizePayosReferenceId(expectedCustomerId))) return { eligible: false, purpose: null, reason: "CONTRACT_CUSTOMER_MISMATCH" };
     if (reservation.status === "RESERVED") {
       const expiry = Date.parse(reservation.expiresAt || "");
       return Number.isFinite(expiry) && expiry > now
-        ? { eligible: true, purpose: "DEPOSIT", reason: "ELIGIBLE" }
+        ? { eligible: true, purpose: fullUpfront ? "FULL_RENT" : "DEPOSIT", reason: "ELIGIBLE" }
         : { eligible: false, purpose: null, reason: "RESERVATION_HOLD_EXPIRED" };
     }
+    if (fullUpfront && reservation.status === "PAID") return { eligible: false, purpose: null, reason: "FULL_RENT_ALREADY_APPLIED" };
     if (reservation.status === "DEPOSIT_PAID") {
       if (!payosContractMatchesIdentity(contract, reservation, reservation.customerId)) return { eligible: false, purpose: null, reason: "CONTRACT_RESERVATION_MISMATCH" };
       const version = contract.currentContentVersion;
@@ -112,7 +114,7 @@ export function assessPayosEligibility(reservation, contract, now = Date.now(), 
     if (!Number.isFinite(expiresAt) || expiresAt <= now) {
       return { eligible: false, purpose: null, reason: "RESERVATION_HOLD_EXPIRED" };
     }
-    return { eligible: true, purpose: "DEPOSIT", reason: "ELIGIBLE" };
+    return { eligible: true, purpose: fullUpfront ? "FULL_RENT" : "DEPOSIT", reason: "ELIGIBLE" };
   }
 
   if (contract.status !== "SIGNED") {
@@ -133,6 +135,7 @@ export function payosEligibilityMessage(reason) {
     CONTRACT_CUSTOMER_MISMATCH: "Contract ownership could not be verified for this account. Payment is unavailable.",
     UNSUPPORTED_SERVICE: "PayOS checkout here is available only for supported Self-Storage or Managed V3 Reservations.",
     INVALID_RESERVATION_STATUS: "The Reservation is not in a payment-eligible state. Refresh its status before continuing.",
+    FULL_RENT_ALREADY_APPLIED: "Đã thanh toán đủ tiền thuê. Reservation đang chờ hoàn tất hợp đồng và bàn giao.",
     CONTRACT_NOT_DRAFT: "Deposit checkout requires the linked Contract to remain in DRAFT status.",
     RESERVATION_HOLD_EXPIRED: "The CONTRACTED Reservation payment eligibility window has expired.",
     CONTRACT_NOT_LOADED: "A linked Contract could not be found. The Reservation is saved; retry contract lookup before attempting a Deposit.",

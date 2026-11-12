@@ -1,7 +1,7 @@
 import { isUsablePayosQrPayload } from "../lib/selfStoragePayos.js";
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
-const PURPOSES = new Set(["DEPOSIT", "BALANCE"]);
+const PURPOSES = new Set(["DEPOSIT", "BALANCE", "FULL_RENT"]);
 const PAYMENT_STATUSES = new Set([
   "PENDING",
   "SUCCEEDED",
@@ -31,7 +31,7 @@ export function isMongoObjectId(value) {
 
 function assertCheckoutInput(reservationId, purpose, idempotencyKey) {
   if (!isMongoObjectId(reservationId)) throw Error("Invalid reservation ID.");
-  if (!PURPOSES.has(purpose)) throw Error("Payment purpose must be DEPOSIT or BALANCE.");
+  if (!PURPOSES.has(purpose)) throw Error("Payment purpose must be DEPOSIT, BALANCE or FULL_RENT.");
   if (
     typeof idempotencyKey !== "string" ||
     !idempotencyKey.trim() ||

@@ -136,6 +136,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
       PortalEmptyState: box,
       PortalTextLink: box,
     },
+    "@/components/common/CustomerScreen": { CustomerScreen: screen },
     "./ContractPrintAction": { default: () => null },
     "./inventory/ManagedContractReview": { default: () => null },
     "./CustomerBalancePayment": { default: () => null },
@@ -218,6 +219,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
     "@/api/storageApi": { default: { unitDetail: async () => undefined } },
     "@/api/customerRentalApi": { accessApi: {} },
     "@/components/ui/input": { Input: box },
+    "@/components/ui/dialog": { Dialog: ({ children }) => children },
     "@/lib/authSession": {
       useAuthSession: () => ({
         accessToken: "token",
@@ -338,6 +340,7 @@ function checkoutModule({
     "@/components/ui/card": { Card: box, CardContent: box },
     "@/components/ui/button": { Button: button },
     "@/components/ui/badge": { Badge: box },
+    "@/components/ui/dialog": { Dialog: ({ children }) => children },
     "@/api/paymentApi": {
       default: {
         listPayosPaymentsForReservation:
@@ -694,7 +697,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
   assert.equal(saved.idempotencyKey, bookingKey);
   assert.equal(createdStatus, "CONTRACTED");
   assert.deepEqual(destination, ["/portal/payments/" + reservationId, {
-    state: { selfStorageCreated: true, startDepositAfterBooking: true },
+    state: { selfStorageCreated: true, startFullRentAfterBooking: true },
   }]);
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);
@@ -800,8 +803,9 @@ test("Owned Self-Storage Reservation routes to PayOS and loads its exact owner-s
   );
 });
 
-test("New CONTRACTED + DRAFT booking hides technical reservation summary and fails closed when contract is unavailable", async () => {
-  const missingContract = checkoutModule({ contract: null });
+test("New full-rent Self-Storage booking still requires its existing DRAFT Contract", async () => {
+  const fullRentReservation = { ...reservation, rentalPaymentFlow: "FULL_UPFRONT_V1" };
+  const missingContract = checkoutModule({ reservation: fullRentReservation, contract: null });
   const html = renderToStaticMarkup(missingContract.render());
   const missingVisibleText = html.replace(/<[^>]*>/g, "");
   assert.doesNotMatch(
@@ -812,6 +816,7 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
 
   const failedContract = checkoutModule({
+    reservation: fullRentReservation,
     contract: null,
     contractError:
       "The reservation is saved, but its contract could not be loaded. Retry here; you do not need to book again.",
@@ -823,6 +828,7 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
   );
 
   const overviewFailure = checkoutModule({
+    reservation: fullRentReservation,
     overview: {
       error:
         "Facility or StorageUnit details could not be loaded. The verified reservation and payment status remain available.",
@@ -833,9 +839,9 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
     overviewHtml.replace(/<[^>]*>/g, ""),
     /BKG-TEST-01|3000000 VND|Facility or StorageUnit/,
   );
-  assert.match(overviewHtml, /Thanh toán tiền thuê trả trước/);
+  assert.match(overviewHtml, /Thanh toán 100% tiền thuê/);
 
-  assert.equal(eligiblePayosPurpose(reservation, draftContract), "DEPOSIT");
+  assert.equal(eligiblePayosPurpose(fullRentReservation, draftContract), "FULL_RENT");
 });
 
 test("Existing READY Deposit offers its Hosted Checkout on load without another checkout request", async (t) => {
@@ -1122,7 +1128,7 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const customer = customerId;
-  const storageKey = `SelfStorage_payos_${customer}_${reservationId}_DEPOSIT`;
+  const storageKey = `SelfStorage_payos_${customer}_${reservationId}_FULL_RENT`;
   const paymentId = "507f1f77bcf86cd799439098";
   const values = new Map([
     [
@@ -1153,8 +1159,8 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
   const failed = {
     id: paymentId,
     reservationId,
-    purpose: "DEPOSIT",
-    amount: 1500000,
+    purpose: "FULL_RENT",
+    amount: 3000000,
     currency: "VND",
     provider: "PAYOS",
     status: "FAILED",
@@ -1162,9 +1168,11 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
     providerSettlementStatus: "NOT_VERIFIED",
     checkoutStatus: "FAILED",
     reconciliationRequired: false,
+    retryAllowed: true,
     createdAt: new Date().toISOString(),
   };
   const module = checkoutModule({
+    reservation: { ...reservation, rentalPaymentFlow: "FULL_UPFRONT_V1" },
     paymentApi: {
       listPayosPaymentsForReservation: async () => ({
         items: [failed],
@@ -1250,8 +1258,8 @@ test("Checkout readiness scans older Backend history pages before allowing a new
   await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
   assert.equal(listCalls.length, 2);
-  assert.deepEqual(listCalls[0], { limit: 25 });
-  assert.deepEqual(listCalls[1], { limit: 25, cursor: "older-page" });
+  assert.deepEqual(listCalls[0], { limit: 25, serviceType: "SELF_STORAGE" });
+  assert.deepEqual(listCalls[1], { limit: 25, cursor: "older-page", serviceType: "SELF_STORAGE" });
   assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
   assert.equal(checkoutPosts, 0);

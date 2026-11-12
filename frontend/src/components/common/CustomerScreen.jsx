@@ -22,12 +22,6 @@ export function CustomerScreen({
         </div>
         {action}
       </div>
-      {showNotice && <p className="demo-notice mt-5 rounded-xl border px-4 py-3 text-xs">
-        {notice ??
-          (customerDemoEnabled
-            ? "Changes are saved in this browser."
-            : " Preview actions are unavailable in live mode.")}
-      </p>}
       <div className="customer-screen-content mt-6 space-y-6">{children}</div>
     </div>
   );
