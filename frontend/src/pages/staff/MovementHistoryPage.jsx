@@ -12,6 +12,7 @@ export default function MovementHistoryPage() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const { user, accessToken } = useAuthSession();
+  const workspace = user?.role === 'FACILITY_MANAGER' ? 'manager' : 'staff';
   const requestedId = id || params.get('itemId') || '';
   const [input, setInput] = useState(requestedId);
   const [result, setResult] = useState(null);
@@ -70,7 +71,7 @@ export default function MovementHistoryPage() {
     <Message error={error} />
     {loading && <p role="status">Đang tải lịch sử biến động…</p>}
     {result && <Panel title={`${result.item.itemCode} · ${result.item.name}`}>
-      <OpenLink to={`/staff/inventory/stock?itemId=${requestedId}`}>Xem tồn kho</OpenLink>
+      <OpenLink to={`/${workspace}/inventory/stock?itemId=${requestedId}`}>Xem tồn kho</OpenLink>
       <div className="my-4"><Select label="Loại biến động" value={type} onChange={setType} options={[
         ['', "Tất cả loại biến động"], 'INBOUND', 'OUTBOUND', 'RELOCATION',
       ]} /></div>

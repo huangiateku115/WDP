@@ -1,5 +1,6 @@
 // Display labels only. API values and persisted business data keep their original codes.
 const labels = {
+  READY: 'Đủ điều kiện', UNKNOWN: 'Chưa xác định', INACTIVE: 'Ngừng hoạt động',
   RESERVED: 'Chờ xử lý', CONTRACTED: 'Đã lập hợp đồng', DEPOSIT_PAID: 'Đã trả khoản đầu',
   CHECKIN_READY: 'Sẵn sàng bước nhận kho', PAID: 'Đã thanh toán', ACTIVE: 'Đang sử dụng',
   OVERDUE: 'Quá hạn', CHECKED_OUT: 'Đã trả kho', CLOSED: 'Đã đóng', CANCELLED: 'Đã hủy',

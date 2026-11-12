@@ -7,6 +7,7 @@ import {Screen, Panel, Details, Table, Button, Input, OpenLink, Message} from '@
 
 export default function StockBalancePage() {
   const {user, accessToken} = useAuthSession();
+  const workspace = user?.role === 'FACILITY_MANAGER' ? 'manager' : 'staff';
   const [params] = useSearchParams();
   const [itemId, setItemId] = useState(params.get('itemId') || '');
   const [result, setResult] = useState(null);
@@ -20,7 +21,7 @@ export default function StockBalancePage() {
     setError('');
     setLoading(false);
     return () => { request.current += 1; };
-  }, [accessToken]);
+  }, [accessToken, user?.assignedFacilityId]);
 
   async function load(event) {
     event.preventDefault();
@@ -77,7 +78,7 @@ export default function StockBalancePage() {
           ["Khối lượng thực tế (kg)", balance.actualTotalWeightKg], ["Thể tích thực tế (m³)", balance.actualTotalVolumeM3],
           ["Nguồn tính tồn", balance.source], ["Phiên bản tính tồn", balance.version],
         ]}/>
-        <OpenLink to={`/staff/inventory/items/${inventoryId(result.item)}/history`}>Mở lịch sử nhập xuất</OpenLink>
+        <OpenLink to={`/${workspace}/inventory/items/${inventoryId(result.item)}/history`}>Mở lịch sử nhập xuất</OpenLink>
       </Panel>
       <Panel title="Các lô nhập hàng">
         <Table rows={balance.batches.map(batch => ({...batch, id: batch.batchId}))} columns={[
