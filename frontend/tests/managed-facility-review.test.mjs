@@ -98,7 +98,7 @@ test('both roles render role-correct stock/history links without stock write act
 
 test('unavailable visits and return actions are explained without invented confirmation buttons', () => {
   const visits = renderPage('staff/ManagedFacilityPage', 'FACILITY_STAFF', 'visits');
-  assert.match(visits, /chưa khả dụng/);
+  assert.match(visits, /\/staff\/managed-access/);
   assert.doesNotMatch(visits, /<button[^>]*>Xác nhận/);
   const checkout = renderPage('staff/ManagedFacilityPage', 'FACILITY_STAFF', 'checkout');
   assert.match(checkout, /cần chờ chức năng xác nhận/);

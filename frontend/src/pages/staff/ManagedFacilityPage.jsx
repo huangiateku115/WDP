@@ -18,11 +18,11 @@ export default function ManagedFacilityPage() {
   const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab') : 'inventory';
   const role = user?.role === 'FACILITY_MANAGER' ? 'manager' : 'staff';
   const permitted = ['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(user?.role) && objectId(user?.assignedFacilityId);
-  return <Screen title="Vận hành lưu trữ hàng hóa" notice="Giám sát hàng hóa và hỗ trợ tại cơ sở. Quy trình khách tự ghi nhận nhập, xuất và di chuyển đang chờ hệ thống cung cấp đầy đủ chức năng.">
+  return <Screen title="Vận hành lưu trữ hàng hóa" notice="Khách tự ghi nhận nhập hàng V3 trong phiên truy cập hợp lệ. Nhân viên hỗ trợ, quản lý giám sát; xuất và di chuyển tự quản vẫn chờ API tương ứng.">
     {!permitted ? <Panel title="Chưa có quyền truy cập"><p>Cần tài khoản nhân viên hoặc quản lý được phân công cơ sở.</p></Panel> : <>
       <Panel title="Nghiệp vụ"><div className="flex flex-wrap gap-2">{tabs.map(([key, label]) => <Button key={key} variant={tab === key ? 'default' : 'outline'} onClick={() => setParams({ tab: key })}>{label}</Button>)}</div></Panel>
       {tab === 'inventory' && <Inventory key={`${user.assignedFacilityId}:${accessToken}`} user={user} role={role} />}
-      {tab === 'visits' && <Panel title="Lịch truy cập và hộ tống chưa khả dụng"><p>Hệ thống chưa cung cấp lịch truy cập, phân công hộ tống và phiên vào kho. Chưa thể xác nhận khách đến, kết thúc hoặc thu hồi phiên truy cập tại đây.</p><p className="mt-3">Khi đến kho, khách cần được xác minh danh tính, quyền thuê ô và điều kiện an toàn. Nhân viên hỗ trợ khách trong phạm vi được phép.</p><div className="mt-4"><OpenLink to={`/${role}/reservations`}>Xem đơn thuê và tiến độ bàn giao</OpenLink></div></Panel>}
+      {tab === 'visits' && <Panel title="Lịch đến kho và hộ tống"><p>Quản lý phân công nhân viên cùng cơ sở. Nhân viên xác minh khách đến, bắt đầu phiên và ghi nhận khách rời kho. Thu hồi phiên phải có lý do an toàn.</p><div className="mt-4 flex flex-wrap gap-4"><OpenLink to={`/${role}/managed-access`}>Mở lịch đến kho và phiên truy cập</OpenLink><OpenLink to={`/${role}/managed-inventory-v3`}>Giám sát nhập hàng tự quản V3</OpenLink></div></Panel>}
       {tab === 'incidents' && <Panel title="Theo dõi sự cố và điều chỉnh tồn"><p>Chức năng lập sự cố hàng hóa, phê duyệt điều chỉnh và đối chiếu chuyên biệt chưa được cung cấp. Các sai lệch cần được xử lý có lý do và lịch sử xác nhận.</p><div className="mt-4 flex flex-wrap gap-4"><OpenLink to={`/${role}/support`}>Mở hỗ trợ khách hàng</OpenLink><OpenLink to={`/${role}/maintenance`}>Mở bảo trì cơ sở</OpenLink></div></Panel>}
       {tab === 'checkout' && <Panel title="Trả không gian lưu trữ"><p>Khách cần đưa tồn về không, xử lý lượng đang giữ và các yêu cầu còn mở trước khi bàn giao lại không gian. Xác nhận trả ô và giải phóng quyền thuê chưa khả dụng tại đây.</p>{role === 'manager' ? <CheckoutReadiness key={`${user.assignedFacilityId}:${accessToken}:${params.get('reservationId') || ''}`} user={user} /> : <p className="mt-3">Quản lý có thể xem báo cáo điều kiện hiện tại. Nhân viên cần chờ chức năng xác nhận trả không gian được cấp quyền.</p>}</Panel>}
     </>}
@@ -37,7 +37,7 @@ function Inventory({ user, role }) {
   const resource = useFacilityResource(load);
   return <Panel title="Hàng hóa trong cơ sở" action={<Button variant="outline" onClick={resource.reload}>Tải lại</Button>}>
     <p className="mb-4">Thông tin đăng ký và trạng thái lấy từ hệ thống. Xem tồn và lô hàng trong chi tiết; số lượng đăng ký chưa phải số lượng đang lưu thực tế.</p>
-    <form className="mb-4 grid gap-3 sm:grid-cols-3" onSubmit={event => { event.preventDefault(); setPage(1); setQuery(search.trim()); }}>
+    <form className="facility-filter-row mb-4" onSubmit={event => { event.preventDefault(); setPage(1); setQuery(search.trim()); }}>
       <Field label="Tìm mã hoặc tên mặt hàng"><Input maxLength={100} value={search} onChange={event => setSearch(event.target.value)} /></Field>
       <Field label="Trạng thái"><Select label="Trạng thái hàng hóa" value={status} onChange={value => { setStatus(value); setPage(1); }} options={[["", 'Tất cả trạng thái'], ...['REGISTERED', 'PENDING_INBOUND', 'RECEIVED_PENDING_ACCEPTANCE', 'IN_STORAGE', 'PENDING_OUTBOUND', 'CHECKED_OUT'].map(value => [value, value])]} /></Field>
       <Button type="submit">Tìm kiếm</Button>
@@ -47,7 +47,7 @@ function Inventory({ user, role }) {
       { key: 'itemCode', label: 'Mã hàng' }, { key: 'name', label: 'Tên hàng' },
       { key: 'customerId', label: 'Khách hàng', render: row => recordId(row.customerId) },
       { key: 'status', label: 'Trạng thái', render: row => <Status value={row.status} /> },
-      { key: 'actions', label: 'Theo dõi', render: row => <div className="flex flex-wrap gap-3"><OpenLink to={`/${role}/inventory/stock?itemId=${row.id}`}>Tồn và lô hàng</OpenLink><OpenLink to={`/${role}/inventory/items/${row.id}/history`}>Lịch sử</OpenLink>{role === 'manager' && <><OpenLink to={`/manager/reservations/${recordId(row.managedReservationId)}?service=managed`}>Đơn thuê và hợp đồng</OpenLink><OpenLink to={`/manager/managed?tab=checkout&reservationId=${recordId(row.managedReservationId)}`}>Điều kiện trả không gian</OpenLink></>}</div> },
+      { key: 'actions', label: 'Theo dõi', render: row => <div className="flex flex-wrap gap-3">{row.inventorySchemaVersion===3?<OpenLink to={`/${role}/managed-inventory-v3`}>Tồn và biến động V3</OpenLink>:<><OpenLink to={`/${role}/inventory/stock?itemId=${row.id}`}>Tồn và lô hàng</OpenLink><OpenLink to={`/${role}/inventory/items/${row.id}/history`}>Lịch sử</OpenLink></>}{role === 'manager' && <><OpenLink to={`/manager/reservations/${recordId(row.managedReservationId)}?service=managed`}>Đơn thuê và hợp đồng</OpenLink><OpenLink to={`/manager/managed?tab=checkout&reservationId=${recordId(row.managedReservationId)}`}>Điều kiện trả không gian</OpenLink></>}</div> },
     ]} /><QueuePagination page={page} pagination={resource.data.pagination} loading={resource.loading} onPageChange={setPage} /></>}
   </Panel>;
 }
@@ -60,7 +60,7 @@ function CheckoutReadiness({ user }) {
     return managedReadiness(await api.readiness(reservationId, { signal }), reservationId);
   }, [reservationId, user.assignedFacilityId]);
   const resource = useFacilityResource(load, objectId(reservationId));
-  return <div className="mt-5 space-y-4"><form className="flex flex-wrap gap-3" onSubmit={event => { event.preventDefault(); if (input === reservationId) resource.reload(); else setReservationId(input); }}><Field label="Mã định danh đơn hàng hóa"><Input value={input} onChange={event => setInput(event.target.value.trim())} /></Field><Button disabled={!objectId(input)}>Kiểm tra điều kiện</Button></form>
+  return <div className="mt-5 space-y-4"><form className="facility-filter-row" onSubmit={event => { event.preventDefault(); if (input === reservationId) resource.reload(); else setReservationId(input); }}><Field label="Mã định danh đơn hàng hóa"><Input value={input} onChange={event => setInput(event.target.value.trim())} /></Field><Button disabled={!objectId(input)}>Kiểm tra điều kiện</Button></form>
     <Message error={resource.error} />{resource.loading && <p role="status">Đang kiểm tra điều kiện…</p>}
     {resource.data && <><Details values={[
       ['Trạng thái đơn', resource.data.reservationStatus], ['Kết quả tổng thể', <Status value={resource.data.overallReadiness} />],

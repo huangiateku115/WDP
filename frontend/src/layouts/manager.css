@@ -3,3 +3,10 @@
 @media(max-width:1100px){.manager-workspace{grid-template-columns:205px minmax(0,1fr)}.manager-screen{padding:24px}.manager-facility{display:none}.manager-board{grid-template-columns:1fr}}
 @media(max-width:760px){.manager-topbar{height:70px;padding:0 16px}.manager-identity>span:last-child{display:none}.manager-workspace{display:block}.manager-sidebar{position:sticky;top:70px;height:auto;padding:10px 12px;border-right:none;border-bottom:1px solid #e1e8e2;z-index:25}.manager-sidebar>p,.manager-scope{display:none}.manager-sidebar nav{display:flex;overflow:auto;gap:6px}.manager-sidebar nav a{white-space:nowrap;padding:10px 12px;font-size:11px}.manager-screen{padding:24px 16px}.manager-chart-row{grid-template-columns:65px minmax(0,1fr) 95px}.manager-table{font-size:11px}.manager-table td,.manager-table th{padding:12px}.manager-screen h1{font-size:28px}}
 @media(prefers-reduced-motion:reduce){.manager-motion{opacity:1!important;transform:none!important;filter:none!important;transition:none!important}.manager-shell *{scroll-behavior:auto;transition:none!important}}
+
+/* Staff/Manager lookup forms: align actions with controls, below their labels. */
+.manager-shell .facility-filter-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px}
+.manager-shell .facility-filter-row>:is(input,select,.manager-field){flex:1 1 220px;min-width:0}
+.manager-shell .facility-filter-row>button{flex:0 0 auto;min-height:48px;height:auto;padding-block:12px;align-self:flex-end}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a svg{flex-shrink:0}
+@media(max-width:640px){.manager-shell .facility-filter-row{flex-direction:column;align-items:stretch}.manager-shell .facility-filter-row>:is(input,select,.manager-field,button){flex:0 0 auto;width:100%;align-self:stretch}}
