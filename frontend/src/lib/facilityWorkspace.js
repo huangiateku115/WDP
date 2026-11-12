@@ -1,6 +1,7 @@
 // Temporary API-only navigation for the two facility roles. Other roles are unaffected.
 export const facilityApiPages = {
   staff: [
+    "managed",
     "tasks",
     "access",
     "managed-access",
@@ -10,9 +11,6 @@ export const facilityApiPages = {
     "handovers",
     "inspections",
     "checkouts",
-    "inventory/inbound",
-    "inventory/outbound",
-    "inventory/relocation",
     "inventory/history",
     "inventory/stock",
     "warehouse-map",
@@ -20,6 +18,10 @@ export const facilityApiPages = {
     "support",
   ],
   manager: [
+    "managed",
+    "warehouse-settings",
+    "inventory/stock",
+    "inventory/history",
     "warehouse-map",
     "operations",
     "tasks",
@@ -37,7 +39,7 @@ export const facilityApiPages = {
 };
 export const facilityHome = (role) => `/${role}/reservations`;
 export function facilityPageVisible(role, path = "") {
-  if (role === 'staff' && /^inventory\/items\/[a-f\d]{24}\/history$/i.test(path)) return true;
+  if (['staff', 'manager'].includes(role) && /^inventory\/items\/[a-f\d]{24}\/history$/i.test(path)) return true;
   return (
     !facilityApiPages[role] ||
     facilityApiPages[role].some(

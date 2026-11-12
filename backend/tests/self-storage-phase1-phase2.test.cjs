@@ -81,7 +81,13 @@ test('Phase 1.3: PaymentPurpose includes FULL_RENT and paymentAmountForPurpose r
 test('Phase 1.4: calculatePricing resolves basePrice from PricingRuleModel first', async (t) => {
   const fakePolicyId = new mongoose.Types.ObjectId();
   t.mock.method(PricingRuleModel, 'findById', () => ({
-    exec: async () => ({ price: 2_000_000 })
+    exec: async () => ({
+      price: 2_000_000,
+      version: 1,
+      currency: 'VND',
+      effectiveFrom: new Date('2020-01-01'),
+      isActive: true
+    })
   }));
 
   const start = new Date('2026-12-01T00:00:00.000Z');
@@ -133,7 +139,9 @@ test('Phase 2.2: createReservationWithOutcome rejects start date in the past', a
       storageUnitId: fakeStorageUnitId.toString(),
       pricingPolicyId: fakePricingRuleId.toString(),
       startDate: yesterday,
-      endDate: end
+      endDate: end,
+      termsAccepted: true,
+      termsVersionId: 'VS-POLICY-002@2.1'
     }),
     (err) => err instanceof ReservationError && err.code === 400 && err.message.includes('quá khứ')
   );
