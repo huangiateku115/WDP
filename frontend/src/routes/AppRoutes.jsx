@@ -82,7 +82,6 @@ export default function AppRoutes() {
         <Route path="managed-access" element={<ManagedAccessVisitsPage />} />
         <Route path="inventory/register" element={<InventoryRegisterPage />} />
         <Route path="inventory/:id" element={<InventoryDetailPage />} />
-        <Route path="inventory/:id/inbound" element={<InventoryMovementRequestPage type="INBOUND" />} />
         <Route path="inventory/:id/outbound" element={<InventoryMovementRequestPage type="OUTBOUND" />} />
         <Route path="inventory/:id/history" element={<InventoryHistoryPage />} />
         <Route path="refunds/:id" element={<FinancialDetailPage kind="refund" />} />

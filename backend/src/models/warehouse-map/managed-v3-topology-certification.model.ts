@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 import { Document, Types } from 'mongoose';
 
 export interface IManagedV3TopologyCertification extends Document {
-  facilityId: Types.ObjectId; rackId: Types.ObjectId; levelNumber: number; revision: number; supportSurfaceId: string;
+  facilityId: Types.ObjectId; rackId: Types.ObjectId; levelNumber: number; revision: number; rackLayoutVersion: number; managedInventoryRevision: number; supportSurfaceId: string;
   certificationState: 'CERTIFIED' | 'REVOKED'; certifiedAt: Date; expiresAt: Date; certifiedBy: Types.ObjectId;
   provenance: string; worldTransform: { origin: [number, number, number]; axes: number[][] };
   levelMaxWeightKg: number; cells: Array<{ cellId: Types.ObjectId; xStartM: number; xEndM: number; yStartM: number; yEndM: number;
@@ -18,6 +18,8 @@ const schema = new Schema<IManagedV3TopologyCertification>({
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
   rackId: { type: Schema.Types.ObjectId, ref: 'WarehouseRack', required: true, index: true }, levelNumber: { type: Number, required: true, min: 1 },
   revision: { type: Number, required: true, min: 1 }, supportSurfaceId: { type: String, required: true, trim: true },
+  rackLayoutVersion: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+  managedInventoryRevision: { type: Number, required: true, min: 0, default: 0 },
   certificationState: { type: String, enum: ['CERTIFIED', 'REVOKED'], required: true }, certifiedAt: { type: Date, required: true },
   expiresAt: { type: Date, required: true }, certifiedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   provenance: { type: String, required: true, trim: true, maxlength: 500 },

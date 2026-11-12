@@ -21,6 +21,7 @@ const schema = new Schema<IWarehouseRack>({
   orientation: { type: Number, enum: Object.values(RackOrientation).filter(v => typeof v === 'number'), default: RackOrientation.DEG_0 },
   operationalStatus: { type: String, enum: Object.values(WarehouseOperationalStatus), default: WarehouseOperationalStatus.AVAILABLE },
   layoutVersion: { type: Number, required: true, default: 0, min: 0 },
+  managedInventoryRevision: { type: Number, required: true, default: 0, min: 0 },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });

@@ -6,6 +6,35 @@ export enum ItemMovementType { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND', RELOC
 export enum MovementBatchAction { ADD = 'ADD', REMOVE = 'REMOVE', MOVE = 'MOVE' }
 export type ItemMovementArithmeticPolicy = 'CANONICAL_V1';
 
+export interface V3PlacementEffect {
+  cellId: Types.ObjectId;
+  topologyCertificationId: Types.ObjectId;
+  topologyRevision: number;
+  batchId?: string;
+  physicalUnitId?: Types.ObjectId;
+  quantity: number;
+  quantityUnit: string;
+  weightKg: number;
+  volumeM3: number;
+  supportReactionKg?: number;
+  occupiedVolumeM3?: number;
+}
+export interface V3MovementEffect {
+  action: 'ADD' | 'REMOVE' | 'MOVE';
+  itemKind: 'A1_PHYSICAL_UNIT' | 'A2_BATCH';
+  operationId: string;
+  requestHash: string;
+  accessSessionId: Types.ObjectId;
+  inventoryRevision: number;
+  ledgerRevision: number;
+  topologyCertificationId: Types.ObjectId;
+  topologyRevision: number;
+  correlationId: string;
+  source?: V3PlacementEffect[];
+  destination?: V3PlacementEffect[];
+  evidenceIds?: Types.ObjectId[];
+}
+
 export interface MovementBatchLine {
   /** Stable receipt batch identity. New batches use an ObjectId string. */
   batchId: string;
@@ -45,11 +74,13 @@ export interface ItemMovementFields {
   physicalPackingConfirmed?: boolean;
   idempotencyKey: string;
   /** Missing on MI-03B/MI-04/MI-05 records, which are interpreted as schema v1. */
-  schemaVersion?: 1 | 2;
+  schemaVersion?: 1 | 2 | 3;
   /** Missing/null means historical tolerance; new v2 writes must set CANONICAL_V1. */
   arithmeticPolicy?: ItemMovementArithmeticPolicy | null;
   /** Present and immutable for schema v2 events. */
   batchLines?: MovementBatchLine[];
+  operationId?: string;
+  v3Effect?: V3MovementEffect;
 }
 
 export interface IItemMovement extends Document, ItemMovementFields {

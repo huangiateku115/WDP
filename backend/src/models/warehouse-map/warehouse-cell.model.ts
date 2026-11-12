@@ -20,6 +20,7 @@ const schema = new Schema<IWarehouseCell>({
   usedWeightKg: { type: Number, required: true, min: 0, default: 0 },
   usedVolumeM3: { type: Number, required: true, min: 0, default: 0 },
   allocationVersion: { type: Number, required: true, min: 0, default: 0 },
+  managedInventoryRevision: { type: Number, required: true, min: 0, default: 0 },
   operationalStatus: { type: String, enum: Object.values(WarehouseOperationalStatus), default: WarehouseOperationalStatus.AVAILABLE },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },

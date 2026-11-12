@@ -121,6 +121,12 @@ export function assertConfirmedRequest(config) {
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
       /^contracts\/[a-f\d]{24}\/sign\/facility$/i.test(path));
+  const managedV3Inventory =
+    (method === "GET" &&
+      (/^inventory-items\/[a-f\d]{24}\/v3\/(physical-units|operations|stock|movements)$/i.test(path) ||
+        /^inventory-items\/managed-v3\/facility\/overview$/i.test(path))) ||
+    (method === "POST" &&
+      (/^inventory-items\/[a-f\d]{24}\/v3\/(physical-units|inbound|inbound\/preview)$/i.test(path)));
   const managedAccess =
     (method === "POST" &&
       (/^access\/managed-v3\/visits$/i.test(path) ||
@@ -302,6 +308,7 @@ export function assertConfirmedRequest(config) {
     customerBalance ||
     selfStoragePayment ||
     managedIntake ||
+    managedV3Inventory ||
     deskAllowed ||
     inspectionAllowed ||
     facilityReviewAllowed ||

@@ -1,28 +1,28 @@
-# Managed Inventory V3 ledger contract (design freeze)
+# Managed Inventory V3 ledger contract
 
-**Status:** design only. No V3 stock writer or operational endpoint is enabled by this document.
+**Status:** D3/D4 implementation present; production release remains blocked pending infrastructure and facility acceptance.
 
-## Authority and compatibility
+## Canonical record and projections
 
-`ItemMovement` remains the single append-only canonical ledger. Historical records with no `schemaVersion` remain V1; existing V2 `batchLines` retain their current meaning. V3 must be an additive discriminated event representation in the same collection, never a reinterpretation of V1/V2 and never a parallel authoritative journal. `ManagedV3BatchPlacement.sourceMovementId` references the canonical `ItemMovement` event and is a projection pointer only.
+`ItemMovement` remains append-only and authoritative. Missing `schemaVersion` and versions 1–2 keep their existing meaning. Version 3 adds an immutable `v3Effect` with `ADD | MOVE | REMOVE`, `A1_PHYSICAL_UNIT | A2_BATCH`, operation/request identity, access-session and inventory/ledger/topology revisions, and per-placement Cell plus topology certificate/revision. V3 never falls back to `currentCellId` or `batchLines`.
 
-## V3 event shape
+`ManagedV3StockProjection`, `ManagedV3Footprint`, `ManagedV3PhysicalUnit`, and `ManagedV3BatchPlacement` are derived or identity/projection records. Replay folds version-3 events in revision order and reconstructs A2 batch/Cell quantities and A1 units/footprints; A1 contributes quantity one regardless of footprint Cell count. The projection is compared with replay before it is presented as ledger-reconciled. Facility Cell counters are exposed separately; they remain `UNKNOWN` for full ledger reconciliation because the shared counters also include historical/legacy inventory.
 
-Each event carries an explicit `schemaVersion: 3`, action (`ADD`, `MOVE`, `REMOVE`), SKU, reservation, customer, facility, actor, event time, idempotency key, expected item/ledger/topology revisions, and correlation/operation ID. Exactly one of the payloads below is present:
+## Customer Self-Inbound
 
-- **A1 PhysicalUnit effect:** one row per indivisible `physicalUnitId`, with quantity exactly `1`, total weight and volume exactly once, and a footprint of unique Cell IDs with certified support-reaction weight and occupied-volume contribution. The sum of support reactions equals the unit weight; cell count never affects inventory quantity.
-- **A2 batch placement effect:** rows keyed by `batchId + cellId`, carrying positive safe-integer quantity and canonical weight/volume. A batch may span Cells; a Cell may contain many batches. Per-batch placement sums must equal the batch balance.
+The Customer flow supports SKU-owned PhysicalUnit preparation, certified placement preview, A2 split across allocated Cells, and transactional confirmation. Confirmation checks Customer/SKU/Reservation/Facility ownership, active reservation and access-session scope, allocation, certified topology/capacity, preview revisions, idempotency, and reservation/Cell/Rack/certificate fences. It appends one canonical ADD movement and updates placement, stock projection, reservation usage and Cell occupancy inside one MongoDB transaction. Exact retries resolve by the original idempotency key.
 
-For every event, quantity, weight and volume are conserved across its effect lines under the established integer-unit rounding rules (weight: 0.001 kg, volume: 0.000001 m³). `MOVE` has matching source and destination effects. `ADD` and `REMOVE` balance against the SKU/reservation stock effects. V3 placement is never projected to an arbitrary single `currentCellId`.
+Single-Cell A1 is supported when capacity and certified geometry are available. Multi-Cell A1 deliberately fails closed: the current certification data does not prove the object's actual support reactions/pose across its footprint. Cells with obstacles also fail closed because the Customer request does not declare a certified object pose. No movement, outbound, relocation, stock hold or removal writer is added here.
 
-## Write ordering and concurrency
+## Read access
 
-The future writer must validate ownership, reservation lifecycle/access session, physical-presence evidence, certified topology, reservation allocation, holds and capacity before writes. Within one supported MongoDB multi-document transaction it will acquire deterministic Cell/level and SKU/reservation revision fences; append exactly one immutable movement; update batch/PhysicalUnit placement, stock and capacity projections; consume the idempotency key/session nonce; and commit. Unique keys cover event idempotency and active A2 `(skuId,batchId,cellId)` placement. Compare-and-swap revisions reject stale submissions. Any conflict aborts the entire transaction. An ambiguous commit is resolved by reading the original idempotency key, never by issuing a new operation key.
+Customer APIs are scoped to the owning Customer and reservation. Staff/Manager APIs are read-only and facility-assigned. Manager/Staff overview replays the full event history up to 5,000 events per SKU; above that threshold it reports `UNKNOWN`, never `RECONCILED` from only the recent movement list. Staff activity is filtered in the UI to active access-session IDs; Manager can inspect batch placements. Legacy V1/V2 readers and writers are not rewritten by this change; unsupported legacy mutation paths remain a release compatibility risk and must be guarded before enabling V3 data in production.
 
-## Legacy operations
+## Release gates
 
-Legacy single-Cell readers may continue reading V1/V2 history. Before writing, any legacy writer must reject a V3 item or any V3 movement/projection it cannot fully understand. Warehouse maps must expose V3 quantities by placement projection; unsupported old map/outbound/relocation/closure code must fail closed rather than infer a Cell or omit stock. This task adds no migration, ledger writer, projection rebuild or production activation.
-
-## Release prerequisite
-
-The implementation must not enable stock mutations until transaction-capable deployment topology, certified facility geometry, trusted physical-presence evidence, access-session issuance/revocation, legacy-writer fences, and reconciliation/rollback procedures have independent acceptance.
+- Verify deployment is a MongoDB replica set or sharded cluster that supports multi-document transactions; no repository `withTransaction` call proves deployment capability.
+- Deploy and verify indexes for V3 operation/idempotency and placement uniqueness before enabling writes.
+- Certify real facility geometry, capacities, topology revisions and invalidation workflow. Synthetic tests do not certify real facilities.
+- Integrate trusted physical-presence evidence; current D4 confirmation represents Customer attestation and access-session scope, not independent sensor proof.
+- Prove all legacy inventory writers, maps, outbound, relocation, holds, warehouse counters and closure readers either understand V3 placements or reject them.
+- Run replica-set integration tests and concurrency/ambiguous-commit tests in an isolated environment, then obtain independent review before production activation.

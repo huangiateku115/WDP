@@ -1,0 +1,33 @@
+import { useCallback, useEffect, useState } from 'react';
+import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
+import { managedAccessApi } from '@/api/managedAccessApi';
+
+export default function ManagedInventoryV3Monitor({ role }) {
+  const [overview, setOverview] = useState(null), [sessions, setSessions] = useState([]), [error, setError] = useState(''), [loading, setLoading] = useState(false);
+  const refresh = useCallback(async () => { setLoading(true); setError(''); try {
+    const [response, access] = await Promise.all([managedInventoryV3Api.facilityOverview(), managedAccessApi.facilitySessions()]);
+    setOverview(response.data?.data || null); setSessions(access.data?.data || []);
+  } catch (e) { setError(e?.response?.data?.message || 'Không tải được dữ liệu Managed Inventory V3.'); } finally { setLoading(false); } }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const activeSessions = sessions.filter(session => session.status === 'ACTIVE' && new Date(session.expiresAt) > new Date());
+  const activeIds = new Set(activeSessions.map(session => String(session._id)));
+  const rows = (overview?.rows || []).map(row => ({ ...row, recentMovements: role === 'staff'
+    ? row.recentMovements.filter(movement => activeIds.has(String(movement.v3Effect?.accessSessionId))) : row.recentMovements }));
+  return <main className="mx-auto max-w-7xl space-y-5 p-4 md:p-6">
+    <header><p className="text-xs font-bold uppercase tracking-widest text-emerald-800">Managed Inventory V3 · {role === 'manager' ? 'Manager' : 'Staff'}</p>
+      <h1 className="mt-2 text-2xl font-bold">{role === 'manager' ? 'Giám sát tồn kho và dung lượng' : 'Hoạt động nhập hàng trong Session'}</h1>
+      <p className="mt-2 text-sm text-slate-600">{role === 'manager' ? 'Chỉ xem movement, phân bổ và trạng thái đối soát; không có thao tác sửa tồn. Capacity Cell hiển thị counter hiện tại, chưa đối soát với toàn bộ lịch sử V1/V2/V3.' : 'Customer là người xác nhận nhập. Màn hình Staff chỉ hiển thị hoạt động đã ghi nhận, không có nút xác nhận thay.'}</p></header>
+    {error && <p role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{error} <button onClick={refresh} className="ml-2 underline">Thử lại</button></p>}
+    <div className="grid gap-3 sm:grid-cols-3"><article className="rounded-xl border bg-white p-4"><b>SKU V3</b><p className="mt-1 text-2xl">{overview?.rows?.length ?? '—'}</p></article><article className="rounded-xl border bg-white p-4"><b>Session hoạt động</b><p className="mt-1 text-2xl">{activeSessions.length}</p></article><article className="rounded-xl border bg-white p-4"><b>Trạng thái</b><p className="mt-1">{loading ? 'Đang tải…' : 'Chỉ đọc'}</p></article></div>
+    {!rows.length&&!loading?<p className="rounded-xl border bg-white p-6 text-sm text-slate-600">Chưa có SKU V3 trong Facility này.</p>:<div className="space-y-4">{rows.map(({item,projection,recentMovements,reconciliationStatus,capacityReconciliationStatus,capacityReconciliationReasons=[],capacityReconciliationRequiredEvidence=[],capacity=[]})=><article key={item._id} className="rounded-xl border bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap justify-between gap-2"><div><h2 className="font-bold">{item.name} · {item.itemCode}</h2><p className="text-xs text-slate-500">Reservation {String(item.managedReservationId)}</p></div><span className={`rounded-full px-2 py-1 text-xs ${reconciliationStatus==='RECONCILED'?'bg-emerald-100 text-emerald-800':'bg-amber-100 text-amber-800'}`}>{reconciliationStatus==='RECONCILED'?'Đã đối soát':reconciliationStatus==='UNKNOWN'?'Chưa đủ dữ liệu đối soát':'Cần đối soát'}</span></div>
+      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4"><p>Tồn: {reconciliationStatus==='RECONCILED'?(projection?.onHandQuantity ?? '—'):'—'} {item.quantityUnit}</p><p>Khối lượng: {reconciliationStatus==='RECONCILED'?(projection?.totalWeightKg ?? '—'):'—'} kg</p><p>Thể tích: {reconciliationStatus==='RECONCILED'?(projection?.totalVolumeM3 ?? '—'):'—'} m³</p><p>Ledger revision: {projection?.ledgerRevision ?? '—'}</p></div>
+      {reconciliationStatus==='RECONCILED'&&projection?.byCell?.length>0&&<div className="mt-3 flex flex-wrap gap-2">{projection.byCell.map(cell=><span key={cell.cellId} className="rounded bg-slate-100 px-2 py-1 text-xs">Cell {String(cell.cellId)} · {cell.quantity} units + {cell.physicalUnitCount} vật thể · {cell.weightKg} kg / {cell.volumeM3} m³</span>)}</div>}
+      {capacity.length>0&&<div className="mt-3 space-y-1"><h3 className="text-sm font-semibold">Dung lượng Cell được cấp</h3>{capacity.map(cell=><p key={cell._id} className="text-xs text-slate-600">Cell {String(cell._id)} · {cell.operationalStatus} · tải {cell.usedWeightKg}/{cell.maxWeightKg} kg · thể tích đang dùng {cell.usedVolumeM3} m³</p>)}</div>}
+      {role==='manager'&&capacityReconciliationStatus==='UNKNOWN'&&<div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><b>Đối soát capacity: chưa thể kết luận.</b><ul className="mt-1 list-disc pl-5">{capacityReconciliationReasons.map(reason=><li key={reason}>{reason==='CELL_COUNTERS_INCLUDE_LEGACY_AND_V3_WRITERS'?'Counter Cell dùng chung giữa writer lịch sử và Managed V3.':reason==='FACILITY_WIDE_LEDGER_BASELINE_NOT_REPLAYED'?'Chưa replay ledger toàn Facility để xác định tải tổng hợp.':'Stock projection chưa khớp canonical ledger.'}</li>)}</ul><p className="mt-2">Cần: {capacityReconciliationRequiredEvidence.join(' ')}</p></div>}
+      <h3 className="mt-4 text-sm font-semibold">Movement gần đây {role==='staff'?'trong Session đang hoạt động':''}</h3>{recentMovements.length===0?<p className="mt-1 text-xs text-slate-500">Không có movement phù hợp để hiển thị.</p>:recentMovements.map(movement=><p key={movement._id} className="mt-1 break-all text-xs">{new Date(movement.performedAt).toLocaleString('vi-VN')} · {movement.v3Effect?.action} · Customer {String(movement.performedBy).slice(-6)} · {movement.quantity} {movement.quantityUnit}</p>)}
+      {role==='manager'&&reconciliationStatus==='RECONCILED'&&projection?.byBatch?.length>0&&<details className="mt-3"><summary className="cursor-pointer text-sm font-semibold">Chi tiết Batch placement ({projection.byBatch.length})</summary>{projection.byBatch.map(line=><p key={`${line.batchId}-${line.cellId}`} className="mt-1 text-xs">Lô {line.batchId} · Cell {line.cellId} · {line.quantity} {line.quantityUnit}</p>)}</details>}
+    </article>)}</div>}
+    <button type="button" disabled={loading} onClick={refresh} className="rounded-lg border px-4 py-2 text-sm font-semibold">Làm mới số liệu Backend</button>
+  </main>;
+}

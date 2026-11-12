@@ -9,7 +9,10 @@ const schema = new Schema<IManagedV3BatchPlacement>({
   batchId: { type: String, required: true, trim: true, maxlength: 120 }, cellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', required: true },
   quantity: { type: Number, required: true, min: 1, validate: Number.isSafeInteger }, quantityUnit: { type: String, required: true, trim: true, maxlength: 32 },
   weightKg: { type: Number, required: true, min: Number.MIN_VALUE }, volumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
+  topologyCertificationId: { type: Schema.Types.ObjectId, required: true, immutable: true },
+  topologyRevision: { type: Number, required: true, min: 1, validate: Number.isSafeInteger, immutable: true },
   sourceMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', required: true },
+  receiptMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', required: true, immutable: true },
   state: { type: String, enum: ['ACTIVE', 'DEPLETED'], required: true, default: 'ACTIVE' },
   revision: { type: Number, required: true, min: 0, default: 0 },
 }, { timestamps: true, strict: 'throw', optimisticConcurrency: true });
