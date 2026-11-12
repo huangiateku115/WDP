@@ -38,7 +38,7 @@ test('Staff repeated receiving page uses the real Facility-scoped API and saves 
   assert.match(source, /evidenceUploadIds/);
   assert.match(source, /ACCEPTED_PENDING_CONFIRMATION/);
   assert.match(source, /RETURN_PENDING/);
-  assert.match(routes, /path="inventory\/inbound" element=\{<Navigate to="\/staff\/managed" replace \/>\}/);
+  assert.match(routes, /path="inventory\/inbound" element=\{<Navigate to="\/staff\/managed-inventory-v3" replace \/>\}/);
   assert.doesNotMatch(routes, /\['inventory\/inbound',\s*'INBOUND'\]/);
   assert.match(source, /token !== getAccessToken\(\)/);
 });
@@ -46,7 +46,8 @@ test('Staff repeated receiving page uses the real Facility-scoped API and saves 
 test('Staff legacy inventory routes redirect to V3 supervision without stock mutation pages', async () => {
   const [routes, workspace] = await Promise.all([readFile(routesPath, 'utf8'), readFile(workspacePath, 'utf8')]);
   for (const route of ['inventory/inbound', 'inventory/outbound', 'inventory/relocation']) {
-    assert.ok(routes.includes(`path="${route}" element={<Navigate to="/staff/managed" replace />}`));
+    const target = route === 'inventory/inbound' ? '/staff/managed-inventory-v3' : '/staff/managed';
+    assert.ok(routes.includes(`path="${route}" element={<Navigate to="${target}" replace />}`));
     assert.ok(!workspace.includes(`"${route}"`));
   }
   assert.match(routes, /path="managed" element=\{<ManagedFacilityPage \/>\}/);

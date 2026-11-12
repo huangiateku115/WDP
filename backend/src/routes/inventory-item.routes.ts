@@ -6,6 +6,7 @@ import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
 import * as checkinController from '../controllers/reservations/managed-checkin.controller';
+import * as v3Controller from '../controllers/inventory-items/managed-inventory-v3.controller';
 import rateLimit from 'express-rate-limit';
 import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
 
@@ -16,6 +17,15 @@ const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY
 const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
 
 router.use(requireAuth);
+// V3 read-only facility oversight is intentionally mounted before the dynamic legacy /:id routes.
+router.get('/managed-v3/facility/overview', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), v3Controller.facilityOverview);
+router.get('/:id/v3/physical-units', customer, v3Controller.listPhysicalUnits);
+router.post('/:id/v3/physical-units', customer, v3Controller.preparePhysicalUnit);
+router.post('/:id/v3/inbound/preview', customer, v3Controller.previewInbound);
+router.post('/:id/v3/inbound', customer, v3Controller.confirmInbound);
+router.get('/:id/v3/operations', itemReaders, v3Controller.operation);
+router.get('/:id/v3/stock', itemReaders, v3Controller.stock);
+router.get('/:id/v3/movements', itemReaders, v3Controller.movements);
 router.post('/:itemId/inbound-requests', customer, inboundRequestController.create);
 router.get('/:itemId/inbound-requests', customer, inboundRequestController.listForItem);
 router.post('/:itemId/outbound-requests', customer, outboundRequestController.create);

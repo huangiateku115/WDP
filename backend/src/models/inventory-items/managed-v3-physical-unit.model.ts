@@ -11,9 +11,11 @@ const schema = new Schema<IPhysicalUnit>({
   serial: { type: String, required: true, trim: true, maxlength: 120 },
   weightKg: { type: Number, required: true, min: Number.MIN_VALUE }, dimensionsM: { type: dimensions, required: true },
   volumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
+  sourceMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', default: null, immutable: true },
   state: { type: String, enum: ['PREPARED', 'PLACED', 'REMOVED', 'QUARANTINED'], required: true, default: 'PREPARED' },
   revision: { type: Number, required: true, min: 0, default: 0 },
 }, { timestamps: true, strict: 'throw', optimisticConcurrency: true });
 schema.index({ reservationId: 1, serial: 1 }, { unique: true });
 schema.index({ skuId: 1, state: 1, updatedAt: -1 });
+schema.index({ reservationId: 1, customerId: 1, facilityId: 1, state: 1, createdAt: -1 });
 export default mongoose.model<IPhysicalUnit>('ManagedV3PhysicalUnit', schema);
