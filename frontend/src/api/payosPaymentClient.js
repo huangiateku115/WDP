@@ -71,7 +71,14 @@ function assertPaymentDto(payment, reservationId, purpose) {
   ) {
     throw Error("The payment service returned an unsafe checkout link.");
   }
-  return { ...payment, qrCode: isUsablePayosQrPayload(payment.qrCode) ? payment.qrCode : null };
+  const details = payment.transferDetails;
+  const transferDetails = details && typeof details.bin === "string" && /^\d{6}$/.test(details.bin) &&
+    typeof details.accountNumber === "string" && /^\d{4,34}$/.test(details.accountNumber) &&
+    typeof details.accountName === "string" && details.accountName.trim() && details.accountName.length <= 120 &&
+    typeof details.description === "string" && /^WDPF[a-f\d]{5}$/i.test(details.description)
+    ? { bin: details.bin, accountNumber: details.accountNumber, accountName: details.accountName, description: details.description }
+    : null;
+  return { ...payment, transferDetails, qrCode: isUsablePayosQrPayload(payment.qrCode) ? payment.qrCode : null };
 }
 
 export function isSafePayosCheckoutUrl(value) {
@@ -92,6 +99,7 @@ export function canOpenPayosCheckout(payment) {
     payment?.applicationStatus !== "MANUAL_REVIEW" &&
     payment?.providerSettlementStatus !== "VERIFIED" &&
     payment?.reconciliationRequired === false &&
+    (payment.expiresAt == null || Date.parse(payment.expiresAt) > Date.now()) &&
     isSafePayosCheckoutUrl(payment?.checkoutUrl);
 }
 

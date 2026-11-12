@@ -30,7 +30,7 @@ export const canCancel=reservation=>{
   }
   return hasLegacyRentalFlow(reservation)&&['RESERVED','CONTRACTED'].includes(reservation?.status);
 };
-export const canSign=(contract,reservation,now=Date.now())=>contract?.status==='DRAFT'&&hasLegacyRentalFlow(reservation)&&(serviceType(reservation)===SELF_STORAGE?reservation.status==='DEPOSIT_PAID':reservation.status==='CONTRACTED'&&liveHold(reservation,now));
+export const canSign=(contract,reservation,now=Date.now())=>contract?.status==='DRAFT'&&hasLegacyRentalFlow(reservation)&&(serviceType(reservation)===SELF_STORAGE?reservation.rentalPaymentFlow!=='FULL_UPFRONT_V1'&&reservation.status==='DEPOSIT_PAID':reservation.status==='CONTRACTED'&&liveHold(reservation,now));
 export function contractAmounts(contract,reservation) {
   if(serviceType(reservation)===MANAGED_INVENTORY)return contract?.pricingSnapshot?.amountBreakdown||{};
   if(serviceType(reservation)===SELF_STORAGE)return contract?.pricingSnapshot||{};
@@ -59,4 +59,29 @@ export function managedCreation(response) {
   const data=response?.data?.success===true?response.data.data:null,r=data?.reservation;
   if(!r||!/^([a-f\d]{24})$/i.test(r._id||'')||r.serviceType!==MANAGED_INVENTORY||r.status!=='RESERVED'||!data.quote||typeof data.quote!=='object')throw Error('Backend did not confirm a Managed reservation. Check My Storage before attempting another booking.');
   return data;
+}
+
+export function selfStoragePaperProgress(reservation, contract) {
+  if (serviceType(reservation) !== SELF_STORAGE || reservation.rentalPaymentFlow !== 'FULL_UPFRONT_V1') return null;
+  const status = reservation.status;
+  const verified = contract?.status === 'SIGNED' && Number.isFinite(Date.parse(contract.verifiedAt));
+  if (status === 'CANCELLED') return { message: 'Đơn thuê đã hủy.' };
+  if (!['CONTRACTED', 'PAID', 'CHECKIN_READY', 'ACTIVE'].includes(status)) {
+    return { message: 'Hãy kiểm tra lại trạng thái đơn thuê.' };
+  }
+  const paid = status !== 'CONTRACTED';
+  const handedOver = status === 'ACTIVE';
+  const message = status === 'CONTRACTED' ? 'Chờ thanh toán 100% tiền thuê.'
+    : handedOver ? 'Đã bàn giao — Đang thuê.'
+    : status === 'CHECKIN_READY' && verified ? 'Hợp đồng đã xác minh — Chờ bàn giao.'
+    : status === 'PAID' && contract?.status === 'DRAFT' ? 'Đã thanh toán — Chờ ký hợp đồng giấy.'
+    : 'Đã thanh toán. Hãy kiểm tra lại trạng thái hợp đồng giấy.';
+  return {
+    message, visitFacility: status === 'PAID' && contract?.status === 'DRAFT',
+    steps: [
+      ['Thanh toán 100%', paid ? 'Hoàn thành' : 'Đang chờ'],
+      ['Ký và xác minh hợp đồng giấy', verified ? 'Đã xác minh' : paid ? 'Đang chờ' : 'Chưa thực hiện'],
+      ['Bàn giao kho', handedOver ? 'Hoàn thành' : status === 'CHECKIN_READY' && verified ? 'Đang chờ' : 'Chưa thực hiện'],
+    ],
+  };
 }

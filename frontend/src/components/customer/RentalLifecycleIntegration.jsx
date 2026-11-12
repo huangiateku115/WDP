@@ -19,6 +19,7 @@ import {
   liveHold,
   canCancel,
   canSign,
+  selfStoragePaperProgress,
   contractAmounts,
   isManagedV3,
   isManagedV2,
@@ -289,6 +290,39 @@ export function ReservationDetailIntegration() {
     );
   const paymentContracts = useBackend(config => serviceType(resource.data) === SELF_STORAGE ? contractApi.mineReal(config).then(rows) : Promise.resolve([]), [id, resource.data?.serviceType, resource.data?.status]);
   const paymentContract = paymentContracts.data?.find(c => recordId(c.reservationId) === id);
+  const selfStorage = serviceType(resource.data) === SELF_STORAGE;
+  const upfront = selfStorage && resource.data.rentalPaymentFlow === "FULL_UPFRONT_V1";
+  const unpaid = upfront && ["RESERVED", "CONTRACTED"].includes(resource.data.status);
+  const cancelEligible = unpaid && resource.data.customerCancellationEligible === true;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const cancelBusy = useRef(false);
+
+  async function cancelRental() {
+    if (!cancelEligible || cancelBusy.current) return;
+    cancelBusy.current = true;
+    setCancelPending(true);
+    setCancelError("");
+    const token = getAccessToken();
+    try {
+      const result = record(await reservationApi.cancelReal(id));
+      if (getAccessToken() !== token) return;
+      if (recordId(result) !== id || result.status !== "CANCELLED") {
+        throw Error("Backend chưa xác nhận hủy đơn thuê.");
+      }
+      setCancelOpen(false);
+      resource.retry();
+    } catch (error) {
+      if (getAccessToken() === token) {
+        setCancelError(error.response?.data?.message || "Chưa xác nhận được kết quả hủy. Hãy kiểm tra trạng thái đơn thuê.");
+      }
+    } finally {
+      cancelBusy.current = false;
+      setCancelPending(false);
+    }
+  }
+
   const allocated = resource.data?.allocatedCapacity, used = resource.data?.usedCapacityM3;
   const capacityKnown = [allocated, used].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -334,26 +368,32 @@ export function ReservationDetailIntegration() {
   };
   return (
     <BackendScreen
-      title="Reservation details"
-      description="Current backend status is the source of truth."
+      title={selfStorage ? "Chi tiết đơn thuê" : "Reservation details"}
+      description={selfStorage ? "Thông tin và trạng thái đơn thuê kho của bạn." : "Current backend status is the source of truth."}
     >
       <LoadState resource={resource} />
-      {location.state?.selfStorageCreated && (
-        <Message success={resource.data?.rentalPaymentFlow === "FULL_UPFRONT_V1" ? "Đã tạo Reservation Self Storage. Thanh toán 100% tiền thuê qua PayOS để tiếp tục hoàn tất hợp đồng." : "Self Storage booking confirmed. Continue with the existing payment step."} />
+      {location.state?.selfStorageCreated && resource.data?.status !== "CANCELLED" && (
+        <Message success={resource.data?.rentalPaymentFlow === "FULL_UPFRONT_V1" ? "Đã tạo đơn thuê kho. Thanh toán 100% tiền thuê qua PayOS để tiếp tục hoàn tất hợp đồng." : "Self Storage booking confirmed. Continue with the existing payment step."} />
       )}
       {location.state?.managedCreated && (
         <Message success={isManagedV2(resource.data) || isManagedV3(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
       )}
       {resource.data && (
         <>
-          <RentalSummary item={resource.data} localizeManagedV2 />
+          <RentalSummary item={resource.data} localizeManagedV2 localizeSelfStorage />
           {isManagedV2(resource.data) && <Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity", typeof allocated === 'number' && Number.isFinite(allocated) && allocated >= 0 ? volumeText(allocated) : 'Not returned'], ["Used capacity", typeof used === 'number' && Number.isFinite(used) && used >= 0 ? volumeText(used) : 'Not returned'], ["Remaining capacity", capacityKnown ? volumeText(Math.max(0, allocated - used)) : 'Not available — capacity data is missing or invalid']]} /></CardContent></Card>}
           {isManagedV2(resource.data) && <CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(id, config).then(record)} onReservationRefresh={resource.retry} />}
           {isManagedV2(resource.data) && <CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => contractContext(id, config)} onReservationRefresh={resource.retry} />}
           <ManagedCellSummary reservation={resource.data} />{isManagedV2(resource.data) && <div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data) && <Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Deposit and balance</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status === 'RESERVED' && <p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
           {isManagedV3(resource.data) && <div className="flex flex-wrap gap-3">{['RESERVED', 'DEPOSIT_PAID'].includes(resource.data.status) && <Button asChild variant="orange"><Link to={`/portal/payments/${id}`}>{resource.data.rentalPaymentFlow === 'FULL_UPFRONT_V1' ? 'Thanh toán 100% qua PayOS' : resource.data.status === 'RESERVED' ? 'Thanh toán tiền thuê qua PayOS' : 'Review balance payment'}</Link></Button>}{['DEPOSIT_PAID', 'PAID', 'ACTIVE'].includes(resource.data.status) && <Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review Managed V3 contract</Link></Button>}{resource.data.status === 'PAID' && <p role="status" className="text-sm text-orange-700">{resource.data.rentalPaymentFlow === 'FULL_UPFRONT_V1' ? 'Đã thanh toán — Chờ ký hợp đồng và bàn giao.' : 'Rent is settled. Facility Staff must record the Cell access handover before the rental becomes ACTIVE.'}</p>}{resource.data.status === 'ACTIVE' && <p role="status" className="text-sm text-emerald-700">Access handover is recorded. Physical inbound is tracked separately.</p>}</div>}
           <p>
-            {reservationLifecycle(resource.data).description}
+            {upfront && resource.data.status === "CANCELLED"
+              ? "Thời gian giữ chỗ của đơn thuê này đã kết thúc."
+              : upfront && resource.data.status === "CHECKIN_READY"
+                ? "Hợp đồng đã được xác minh. Vui lòng đến cơ sở để nhận kho."
+                : upfront && resource.data.status === "ACTIVE"
+                  ? "Đã bàn giao kho."
+                  : reservationLifecycle(resource.data).description}
           </p>
           {serviceType(resource.data) === MANAGED_INVENTORY &&
             ["RESERVED", "CONTRACTED"].includes(resource.data.status) &&
@@ -365,6 +405,23 @@ export function ReservationDetailIntegration() {
             )}
           {serviceType(resource.data) === SELF_STORAGE && <><LoadState resource={paymentContracts} /><SelfPaymentNavigation contract={paymentContract} reservation={resource.data} /></>}
           <div className="flex flex-wrap gap-4">
+            {cancelEligible && <Button variant="outline" onClick={() => { setCancelError(""); setCancelOpen(true); }}>Hủy đơn thuê</Button>}
+            {unpaid && !cancelEligible && <p role="status" className="text-sm text-orange-700">
+              {resource.data.customerCancellationEligible === false
+                ? "Giao dịch thanh toán chưa kết thúc hoặc cần đối soát. Hãy kiểm tra giao dịch trước khi hủy đơn thuê."
+                : "Chưa xác minh được điều kiện hủy đơn thuê."}
+            </p>}
+            {cancelOpen && <Dialog title="Hủy đơn thuê" closeLabel="Đóng xác nhận hủy đơn thuê"
+              description="Bạn đang hủy đơn thuê kho. Khi hủy thành công, thời gian giữ chỗ của đơn này sẽ kết thúc. Nếu có giao dịch PayOS đang xử lý, hãy kiểm tra giao dịch trước."
+              busy={cancelPending} onClose={() => setCancelOpen(false)}>
+              {cancelError && <Message error={cancelError} />}
+              <div className="flex flex-wrap gap-3">
+                <Button variant="outline" disabled={cancelPending} onClick={() => setCancelOpen(false)}>Giữ đơn thuê</Button>
+                <Button variant="orange" disabled={cancelPending || !cancelEligible} onClick={cancelRental}>
+                  {cancelPending ? "Đang hủy…" : "Xác nhận hủy đơn thuê"}
+                </Button>
+              </div>
+            </Dialog>}
             {canCancel(resource.data) && (
               <ConfirmAction
                 label="Cancel reservation"
@@ -395,7 +452,7 @@ export function ReservationDetailIntegration() {
               />
             )}
             <Button variant="outline" onClick={resource.retry}>
-              Refresh status
+              {selfStorage ? "Kiểm tra trạng thái" : "Refresh status"}
             </Button>
             {hasLegacyRentalFlow(resource.data) &&
               [
@@ -408,7 +465,7 @@ export function ReservationDetailIntegration() {
               ].includes(resource.data.status) && (
                 <Button asChild>
                   <Link to={`/portal/contracts/${id}`}>
-                    View reservation contract
+                    {selfStorage ? "Xem hợp đồng" : "View reservation contract"}
                   </Link>
                 </Button>
               )}
@@ -418,7 +475,7 @@ export function ReservationDetailIntegration() {
                 <>
                   <Button asChild>
                     <Link to={`/portal/rentals/${id}/access`}>
-                      Simulated unit access
+                      Mô phỏng truy cập kho
                     </Link>
                   </Button>
                   <Button variant="outline" onClick={() => setShowRenew(true)}>
@@ -554,6 +611,7 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
+  const paperProgress = selfStoragePaperProgress(reservation, contract);
   if (isManagedV2(reservation) && contract) return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2 /><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={() => contractContext(reservationId)} onRefresh={resource.retry} /><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
   if (isManagedV3(reservation) && contract) {
     const active = contract.contentVersions?.find(version => version.version === contract.currentContentVersion);
@@ -575,10 +633,10 @@ export function ContractDetailIntegration() {
           <CardContent className="p-0">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50 via-white to-white p-6">
               <div className="flex min-w-0 items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-800"><FileText size={22} /></span><div><p className="text-xs font-semibold uppercase tracking-wider text-emerald-800">Hợp đồng thuê</p><h2 className="mt-1 break-words text-2xl font-bold text-slate-900">{contract.contractCode || "Chi tiết hợp đồng"}</h2><p className="mt-1 text-sm text-slate-600">Mã đặt thuê: {reservation?.reservationCode || reservationId}</p></div></div>
-              <RentalStatus status={contract.status} reservation={reservation} />
+              <RentalStatus status={contract.status} reservation={paperProgress ? undefined : reservation} />
             </div>
             <div className="space-y-5 p-5 md:p-7">
-              <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} />
+              <ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} expectUpfrontSelfStorage={Boolean(paperProgress)} />
               {isManagedV2(reservation) && <ManagedFinancialSummary reservation={reservation} />}
               <section className="rounded-2xl border border-slate-200 p-5">
                 <h3 className="mb-4 font-semibold text-slate-900">Thông tin đặt thuê</h3>
@@ -587,7 +645,9 @@ export function ContractDetailIntegration() {
                     ["Mã hợp đồng", contract.contractCode],
                     ["Ngày ký", contract.signedByCustomerAt ? vietnamDateTime(contract.signedByCustomerAt) : undefined],
                     ["Dịch vụ", serviceLabel(reservation)],
-                    ...(!isManagedV2(reservation) ? (serviceType(reservation) === SELF_STORAGE ? [["Tổng tiền thanh toán", amounts.estimatedRent]] : [["Estimated rent", amounts.estimatedRent], ["Deposit", amounts.depositAmount], ["Total due", amounts.totalDue]]) : []),
+                    ...(!isManagedV2(reservation) ? (serviceType(reservation) === SELF_STORAGE ? [["Tổng tiền thanh toán", amounts.estimatedRent == null ? undefined : reservationAmount(amounts.estimatedRent, reservation.currency || "VND")],
+                      ...(!paperProgress && amounts.depositAmount != null ? [["Tiền đặt cọc", amounts.depositAmount]] : []),
+                      ...(!paperProgress && amounts.balanceDue != null ? [["Số tiền còn lại", amounts.balanceDue]] : [])] : [["Estimated rent", amounts.estimatedRent], ["Deposit", amounts.depositAmount], ["Total due", amounts.totalDue]]) : []),
                     [
                       "Tiền tệ",
                       serviceType(reservation) === MANAGED_INVENTORY
@@ -598,7 +658,8 @@ export function ContractDetailIntegration() {
                     ["Cơ sở", reservation?.facilityId?.name || reservation?.facility?.name],
                     ["Địa chỉ cơ sở", addressText(reservation?.facilityId?.address || reservation?.facility?.address)],
                     ["Thời hạn thuê", reservation?.startDate && reservation?.endDate ? `${reservationVietnamTime(reservation.startDate)} – ${reservationVietnamTime(reservation.endDate)}` : undefined],
-                    ...(reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1" ? [["Hạn ký", vietnamDateTime(reservation.signingDeadline)], ["Payment status", reservation.status === "CONTRACTED" ? "Chờ thanh toán 100%" : "Đã thanh toán 100%"], ["Handover", reservation.status === "ACTIVE" ? "Đã ghi nhận bàn giao" : reservation.status === "CHECKIN_READY" ? "Sẵn sàng làm thủ tục nhận kho" : "Chưa bàn giao"]] : []),
+                    ...(paperProgress?.steps ? [["Trạng thái thanh toán", paperProgress.steps[0][1]]] : []),
+                    ...(paperProgress?.visitFacility ? [["Hạn ký", vietnamDateTime(reservation.signingDeadline)]] : []),
                     ["Phiên bản điều khoản", contract.termsVersion],
                   ].filter(([, value]) => value != null)}
                 />
@@ -608,15 +669,14 @@ export function ContractDetailIntegration() {
                   {contract.content}
                 </p></section>
               )}
-              {reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1" && contract.status === "DRAFT" && reservation.status === "PAID" && (
-                <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Đã thanh toán 100% — Chờ ký hợp đồng giấy tại cơ sở. Customer và đại diện Facility cần ký cùng phiên bản; Staff sẽ tải bằng chứng thực tế và xác minh. Nút ký điện tử không khả dụng cho luồng này.</p>
-              )}
-              {reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1" && contract.status === "SIGNED" && contract.verifiedAt && reservation.status === "CHECKIN_READY" && (
-                <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Hợp đồng đã được xác minh — Sẵn sàng thực hiện thủ tục nhận kho. Thuê chưa ACTIVE cho đến khi Staff ghi nhận bàn giao.</p>
-              )}
-              {reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1" && reservation.status === "ACTIVE" && (
-                <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Đã ghi nhận bàn giao. Trạng thái truy cập: {reservation.accessPinCode ? "đã có credential từ Backend" : "chưa được cấp credential an toàn"}.</p>
-              )}
+              {paperProgress && <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
+                <h3 className="mb-3 font-semibold text-slate-900">Tiến độ hợp đồng giấy</h3>
+                <p role="status" className="mb-3 text-sm font-medium text-emerald-900">{paperProgress.message}</p>
+                {paperProgress.steps && <Details values={paperProgress.steps} />}
+                {paperProgress.visitFacility && <p className="mt-3 text-sm text-slate-700">
+                  Vui lòng đến cơ sở để ký hợp đồng giấy{reservation.signingDeadline && vietnamDateTime(reservation.signingDeadline) ? ` trước ${vietnamDateTime(reservation.signingDeadline)}` : ''}. Nhân viên cơ sở sẽ kiểm tra và xác minh hợp đồng đã ký.
+                </p>}
+              </section>}
               {Array.isArray(contract.terms) && (
                 <section className="rounded-2xl border border-slate-200 p-5"><h3 className="font-semibold text-slate-900">Các điều khoản</h3><ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-slate-700">
                   {contract.terms
@@ -627,7 +687,7 @@ export function ContractDetailIntegration() {
                 </ol></section>
               )}
               <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5"><h3 className="mb-3 font-semibold text-slate-900">Việc cần làm tiếp theo</h3>
-                {canSign(contract, reservation, now) &&
+                {!paperProgress && canSign(contract, reservation, now) &&
                   validId(recordId(contract)) && (
                     <ConfirmAction
                       label="Xác nhận chữ ký hợp đồng"
@@ -665,7 +725,7 @@ export function ContractDetailIntegration() {
                     />
                   )}
 
-                {contract.status === "DRAFT" &&
+                {!paperProgress && contract.status === "DRAFT" &&
                   !canSign(contract, reservation, now) && (
                     <div
                       role="status"

@@ -49,6 +49,8 @@ export interface IReservationPayment extends Document {
   cancelVerifiedAt?: Date;
   checkoutUrl?: string;
   qrCode?: string;
+  transferDetails?: { bin: string; accountNumber: string; accountName: string; description: string };
+  checkoutExpiresAt?: Date;
   providerPaymentLinkId?: string;
   providerCurrency?: string;
   providerCaptures?: Array<{

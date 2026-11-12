@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import paymentApi, { reconcilePayosPayment } from "@/api/paymentApi";
 import { Button } from "@/components/ui/button";
@@ -16,23 +16,31 @@ export default function PayosPaymentReturnPage() {
   const serviceType = params.get("serviceType");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const verifying = useRef(false);
 
   const verify = useCallback(async () => {
     if (!isValidObjectId(reservationId) || !isValidObjectId(paymentId) || !["SELF_STORAGE", "MANAGED_INVENTORY"].includes(serviceType)) {
       setError("Thiếu mã đơn thuê hoặc giao dịch hợp lệ. Không thể xác minh kết quả trả về.");
       return;
     }
+    if (verifying.current) return;
+    verifying.current = true;
     const token = getAccessToken();
     setBusy(true);
     setError("");
     try {
-      await reconcilePayosPayment(reservationId, paymentId, serviceType);
+      const payment = !cancelReturn && serviceType === "SELF_STORAGE"
+        ? await paymentApi.getPayosPaymentStatus(reservationId, paymentId, serviceType)
+        : null;
+      if (getAccessToken() !== token) return;
+      if (cancelReturn || payment?.purpose !== "FULL_RENT") await reconcilePayosPayment(reservationId, paymentId, serviceType);
       if (getAccessToken() !== token) return;
     } catch {
       // Provider lookup can be temporarily unavailable after the hosted checkout
       // returns. Keep the callback identity and let Payment History retry; URL
       // parameters alone never establish a payment status.
     } finally {
+      verifying.current = false;
       if (getAccessToken() === token) {
         const query = new URLSearchParams({ reservationId, paymentId });
         if (cancelReturn) query.set("cancel", "true");

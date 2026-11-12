@@ -386,6 +386,7 @@ function checkoutModule({
       isPayosPaymentPollable: () => false,
       pollPayosPaymentStatuses: async () => {},
     },
+    "./SelfStorageTransferDetails": { default: () => null },
     "./RentalBackendUI": {
       Details: details,
       LoadState: ({ resource }) =>
@@ -697,7 +698,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
   assert.equal(saved.idempotencyKey, bookingKey);
   assert.equal(createdStatus, "CONTRACTED");
   assert.deepEqual(destination, ["/portal/payments/" + reservationId, {
-    state: { selfStorageCreated: true, startFullRentAfterBooking: true },
+    state: { selfStorageCreated: true },
   }]);
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);

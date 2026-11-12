@@ -1361,7 +1361,7 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
   assert.match(checkout, /Tiếp tục thanh toán qua PayOS/);
   assert.match(review, /Idempotency-Key/);
   assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
-  assert.match(review, /startFullRentAfterBooking: response\.status === 201/);
+  assert.doesNotMatch(review, /startFullRentAfterBooking/);
   assert.match(checkout, /if \(automatic && attempt\) return/);
   assert.match(
     checkout,
