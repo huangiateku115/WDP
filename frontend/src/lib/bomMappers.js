@@ -319,15 +319,6 @@ export function pricingUpdateBody(form, { effective = false } = {}) {
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
-export function pricingUpdateBody(form) {
-  const body = {
-    price: Number(form.rate),
-    currency: form.currency || BOM_CURRENCY,
-    effectiveFrom: toInstant(form.effectiveFrom),
-  };
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
-}
 
 /* ------------------------------ Policies ------------------------------ */
 export function policyFromDto(d) {

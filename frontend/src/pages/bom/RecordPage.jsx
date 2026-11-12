@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";

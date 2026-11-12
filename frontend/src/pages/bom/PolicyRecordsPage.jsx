@@ -9,7 +9,7 @@ import { bomPolicyApi } from "@/api/bomApi";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES, BOM_CATEGORY_STATUS,
+  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES,
   responseData, discountFromDto, discountValueLabel, categoryFromDto,
 } from "@/lib/bomMappers";
 

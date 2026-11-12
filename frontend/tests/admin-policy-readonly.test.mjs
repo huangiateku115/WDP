@@ -19,12 +19,19 @@ test('Pricing Rule CRUD remains allowlisted',()=>{
 test('Pricing Rule edit sends only mutable fields and keeps the selected effective date',()=>{
   const mapper=readFileSync(new URL('../src/lib/bomMappers.js',import.meta.url),'utf8');
   const editor=readFileSync(new URL('../src/pages/bom/RecordPage.jsx',import.meta.url),'utf8');
-  assert.match(mapper,/export function pricingUpdateBody\(form\)/);
+  assert.match(mapper,/export function pricingUpdateBody\(form[,)]/);
   assert.match(mapper,/price:\s*Number\(form\.rate\)/);
   assert.match(mapper,/currency:\s*form\.currency\s*\|\|\s*BOM_CURRENCY/);
   assert.match(mapper,/effectiveFrom:\s*toInstant\(form\.effectiveFrom\)/);
   assert.match(editor,/const body = isEdit \? pricingUpdateBody\(form\) : config\.body\(form\)/);
   assert.doesNotMatch(mapper,/pricingUpdateBody[\s\S]{0,400}facilityId:/);
+});
+
+test('Pricing Rule create sends the PER_M3 basis required by Managed Inventory',()=>{
+  const mapper=readFileSync(new URL('../src/lib/bomMappers.js',import.meta.url),'utf8');
+  const createBody=mapper.slice(mapper.indexOf('export function pricingBody'),mapper.indexOf('export function pricingUpdateBody'));
+  assert.match(createBody,/if \(form\.service === "SELF_STORAGE"\) body\.unitSize = form\.unitSize;/);
+  assert.match(createBody,/if \(form\.service === "MANAGED_INVENTORY"\) body\.billingBasis = "PER_M3";/);
 });
 
 test('Admin and BOM Policy pages expose read-only routes and omit mutation controls',()=>{
