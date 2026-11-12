@@ -5,7 +5,7 @@ import { useAuthSession } from '@/lib/authSession';
 import { inventoryId, validInventoryId } from '@/lib/inventoryRegistration';
 import { validateWarehouseMap, validateRackDetail, warehouseAxis, weightText } from '@/lib/warehouseMap';
 import { useBackend, record, LoadState } from '@/components/customer/RentalBackendUI';
-import { Screen, Panel, Select, Button, Details } from '@/components/manager/ManagerUI';
+import { Screen, Panel, Select, Button, Details, OpenLink } from '@/components/manager/ManagerUI';
 
 const volume = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? `${value} m³` : "Chưa xác định";
 
@@ -32,6 +32,7 @@ export default function FacilityWarehouseMapPage() {
   return <Screen title="Bản đồ kho" notice="Trạng thái vận hành, quyền phân bổ và mức sử dụng thực tế được hiển thị riêng." action={
     <Button variant="outline" onClick={() => { map.retry(); detail.retry(); }}>Tải lại bản đồ kho</Button>
   }>
+    {user?.role === 'FACILITY_MANAGER' && <OpenLink to="/manager/warehouse-settings">Cấu hình khu vực, kệ và ô lưu trữ</OpenLink>}
     <LoadState resource={map} />
     {map.data && <>
       <Panel title="Sơ đồ cơ sở được phân công">
