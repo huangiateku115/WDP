@@ -4,6 +4,7 @@ const { Types } = require('mongoose');
 const { replayManagedInventoryV3 } = require('../dist/services/inventory-items/managed-inventory-v3-ledger.service');
 const Movement = require('../dist/models/inventory-items/item-movement.model').default;
 const Projection = require('../dist/models/inventory-items/managed-v3-stock-projection.model').default;
+const { ManagedInventoryV3Service } = require('../dist/services/inventory-items/managed-inventory-v3.service');
 
 const ids = { sku: new Types.ObjectId(), reservation: new Types.ObjectId(), customer: new Types.ObjectId(), facility: new Types.ObjectId(),
   actor: new Types.ObjectId(), session: new Types.ObjectId(), topology: new Types.ObjectId(), c1: new Types.ObjectId(), c2: new Types.ObjectId(),
@@ -15,7 +16,7 @@ function movement({ revision, action = 'ADD', itemKind = 'A2_BATCH', destination
     v3Effect: { action, itemKind, operationId, ledgerRevision: revision, source, destination } };
 }
 const a2 = (cellId, batchId, quantity, weightKg, volumeM3) => ({ cellId, topologyCertificationId: ids.topology, topologyRevision: 1, batchId, quantity, quantityUnit: 'box', weightKg, volumeM3 });
-const a1 = (cellId, physicalUnitId, weightKg, volumeM3, supportReactionKg) => ({ cellId, topologyCertificationId: ids.topology, topologyRevision: 1, physicalUnitId, quantity: 1, quantityUnit: 'unit', weightKg, volumeM3, supportReactionKg, occupiedVolumeM3: volumeM3 });
+const a1 = (cellId, physicalUnitId, weightKg, volumeM3, supportReactionKg) => ({ cellId, topologyCertificationId: ids.topology, topologyRevision: 1, physicalUnitId, quantity: 1, quantityUnit: 'unit', weightKg, volumeM3, supportReactionKg, occupiedVolumeM3: volumeM3, pose: { xStartM: 0, yStartM: 0, rotationDeg: 0 } });
 
 test('A2 batch split across Cells and multiple batches replay to exact SKU and Cell totals', () => {
   const rows = [
@@ -35,11 +36,19 @@ test('A1 footprint spanning Cells remains one unit and conserves distributed sup
 });
 
 test('ledger replay DTO validates as a strict persisted projection for both A1 and A2', async () => {
+  const normalize = value => value?.toHexString ? value.toHexString() : Array.isArray(value) ? value.map(normalize) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).filter(key => !['_id', 'createdAt', 'updatedAt', '__v'].includes(key) && value[key] !== undefined).sort().map(key => [key, normalize(value[key])]))
+    : value;
   const a2Replay = replayManagedInventoryV3(item, [movement({ revision: 1, destination: [a2(ids.c1, 'batch-1', 2, 4, .2)], quantity: 2, weight: 4, volume: .2 })]);
   assert.equal(a2Replay.byBatch[0].itemKind, 'A2_BATCH');
   assert.equal(a2Replay.byBatch[0].quantityUnit, 'box');
   assert.equal(a2Replay.byBatch[0].heldQuantity, 0);
-  await assert.doesNotReject(new Projection(a2Replay).validate());
+  const a2Document = new Projection(a2Replay); await assert.doesNotReject(a2Document.validate());
+  const a2Read = a2Document.toObject();
+  assert.deepEqual(normalize({ ...a2Read, _id: undefined }), normalize({ ...a2Replay, _id: undefined }));
+  assert.equal(String(a2Read.skuId), String(ids.sku));
+  assert.equal(a2Read.ledgerRevision, 1); assert.equal(a2Read.projectionRevision, 1);
+  assert.deepEqual(a2Read.byCell.map(row => String(row.cellId)), a2Replay.byCell.map(row => row.cellId));
 
   const a1Replay = replayManagedInventoryV3(item, [movement({ revision: 1, itemKind: 'A1_PHYSICAL_UNIT', quantity: 1, weight: 50, volume: .475,
     destination: [a1(ids.c1, ids.unit, 25, .25, 25), a1(ids.c2, ids.unit, 25, .225, 25)] })]);
@@ -47,7 +56,18 @@ test('ledger replay DTO validates as a strict persisted projection for both A1 a
   assert.equal(a1Replay.byPhysicalUnit[0].quantityUnit, 'unit');
   assert.equal(a1Replay.byPhysicalUnit[0].quantity, 1);
   assert.deepEqual(a1Replay.byPhysicalUnit[0].cellIds, [String(ids.c1), String(ids.c2)].sort());
-  await assert.doesNotReject(new Projection(a1Replay).validate());
+  const a1Document = new Projection(a1Replay); await assert.doesNotReject(a1Document.validate());
+  const a1Read = a1Document.toObject();
+  assert.deepEqual(normalize({ ...a1Read, _id: undefined }), normalize({ ...a1Replay, _id: undefined }));
+  assert.equal(a1Read.byPhysicalUnit[0].quantity, 1); assert.deepEqual(a1Read.byPhysicalUnit[0].cellIds.map(String), a1Replay.byPhysicalUnit[0].cellIds);
+  assert.equal(a1Read.totalWeightKg, 50); assert.equal(a1Read.totalVolumeM3, .475);
+});
+
+test('direct confirm rejects A1 without a declared pose before any database access', async () => {
+  await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), {
+    itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: ids.session.toString(), sessionRevision: 0,
+    physicalUnitId: ids.unit.toString(), cellIds: [ids.c1.toString()], placements: [{ cellId: ids.c1.toString() }],
+  }, { _id: ids.customer, role: 'CUSTOMER' }, 'missing-pose-key'), error => error.code === 'A1_POSE_REQUIRED' && error.status === 422);
 });
 
 test('MOVE conserves A2 batches split across Cells and moves an entire A1 footprint as one unit', () => {
