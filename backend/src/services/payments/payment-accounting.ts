@@ -56,6 +56,7 @@ export function calculateRentalPaymentBreakdown(input: {
 export function paymentAmountForPurpose(breakdown: RentalPaymentBreakdown, purpose: PaymentPurpose): number {
   if (purpose === PaymentPurpose.DEPOSIT) return breakdown.depositCredit;
   if (purpose === PaymentPurpose.BALANCE) return breakdown.balanceDue;
+  if (purpose === PaymentPurpose.FULL_RENT) return breakdown.totalDue;
   throw new PaymentAccountingError(400, 'Unsupported payment purpose');
 }
 
@@ -70,7 +71,7 @@ export function assertIdempotentPaymentMatch(existing: PaymentIdentity, retry: P
 /** Duplicate terminal callbacks are safe; contradictory terminal outcomes require reconciliation. */
 export function transitionPaymentStatus(current: PaymentStatus, next: PaymentStatus): { status: PaymentStatus; idempotent: boolean } {
   if (current === next) return { status: current, idempotent: true };
-  if (current !== PaymentStatus.PENDING || ![PaymentStatus.SUCCEEDED, PaymentStatus.FAILED, PaymentStatus.RECONCILIATION_REQUIRED].includes(next)) {
+  if (current !== PaymentStatus.PENDING || ![PaymentStatus.SUCCEEDED, PaymentStatus.FAILED, PaymentStatus.CANCELLED, PaymentStatus.RECONCILIATION_REQUIRED].includes(next)) {
     throw new PaymentAccountingError(409, 'Conflicting or invalid payment status transition');
   }
   return { status: next, idempotent: false };

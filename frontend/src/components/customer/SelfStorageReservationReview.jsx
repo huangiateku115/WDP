@@ -9,6 +9,7 @@ import {
   sameEstimate,
   readOrCreateSelfStorageBookingAttempt,
   writeSelfStorageBookingAttempt,
+  clearSelfStorageBookingAttempt,
 } from "@/lib/selfStorageReservation";
 import reservationApi from "@/api/reservationApi";
 import { isValidObjectId } from "@/lib/selfStoragePayos";
@@ -16,14 +17,20 @@ import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
 import { selfStorageAlternatives } from "./selfStorageSuggestions";
 import { pricingApi, customerProfileApi } from "@/api/customerRentalApi";
+import { termsApi } from "@/api/termsApi";
+import TermsModal from "@/components/customer/terms/TermsModal";
 import { Checkbox } from "@/components/ui/checkbox";
+import { reservationDateOnly, reservationAmount } from "@/lib/customerReservationDisplay";
+import { CalendarDays, CheckCircle2, ClipboardCheck, Warehouse, ArrowLeft } from "lucide-react";
+
+const displayDate = (value) => reservationDateOnly(typeof value === "string" ? value.slice(0, 10) : value) || "Chưa có thông tin";
+const displayMoney = (value, currency) => typeof value === "number" && Number.isFinite(value) && typeof currency === "string" ? reservationAmount(value, currency) : "Chưa xác định đơn vị tiền tệ";
 import Steps from "@/components/common/Steps";
 import {
   BackendScreen,
   Card,
   CardContent,
   Button,
-  Details,
   Message,
   Link,
   useBackend,
@@ -31,11 +38,12 @@ import {
   record,
   recordId,
   rentalError,
+  addressText,
 } from "./RentalBackendUI";
 
 async function reviewContext(draft, config) {
   const request = selfStorageRequest(draft);
-  const [facility, unit, profile, price] = await Promise.all([
+  const [facility, unit, profile, price, terms] = await Promise.all([
     facilityApi.publicDetail(request.facilityId, config).then(record),
     storageApi.unitDetail(request.storageUnitId, config).then(record),
     customerProfileApi.get(config).then(record),
@@ -52,6 +60,7 @@ async function reviewContext(draft, config) {
         config,
       )
       .then(record),
+    termsApi.current('SELF_STORAGE', config).then(record),
   ]);
   if (
     recordId(facility) !== request.facilityId ||
@@ -69,7 +78,7 @@ async function reviewContext(draft, config) {
   const estimate = selfStorageEstimate(
     await reservationApi.estimateReal(payload, config),
   );
-  return { facility, unit, profile, price, payload, estimate };
+  return { facility, unit, profile, price, payload, estimate, terms };
 }
 export default function SelfStorageReservationReview() {
   const { rentalDraft } = useReservation(),
@@ -87,6 +96,8 @@ function Review({ draft, session }) {
     { updateRentalDraft } = useReservation();
   const resource = useBackend((config) => reviewContext(draft, config));
   const [confirmed, setConfirmed] = useState(false),
+    [termsAccepted, setTermsAccepted] = useState(false),
+    [termsOpen, setTermsOpen] = useState(false),
     [pending, setPending] = useState(false),
     [uncertain, setUncertain] = useState(false),
     [error, setError] = useState(""),
@@ -96,6 +107,7 @@ function Review({ draft, session }) {
     context = resource.data;
   useEffect(() => {
     setConfirmed(false);
+    setTermsAccepted(false);
   }, [context]);
   const verified = context?.profile.verificationStatus === "VERIFIED";
   async function create() {
@@ -103,8 +115,10 @@ function Review({ draft, session }) {
       busy.current ||
       attempted.current ||
       !confirmed ||
+      !termsAccepted ||
       !verified ||
       !context ||
+      !context.terms?.versionId ||
       resource.loading ||
       resource.error
     )
@@ -128,14 +142,29 @@ function Review({ draft, session }) {
           "This browser cannot safely preserve the booking request. Allow session storage and try again.",
         );
       }
-      const bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+      let bookingAttempt = readOrCreateSelfStorageBookingAttempt(
         bookingStorage,
         customerId,
         context.payload,
       );
       if (bookingAttempt.reservationId) {
-        nav("/portal/payments/" + bookingAttempt.reservationId);
-        return;
+        try {
+          const detailRes = await reservationApi.detailForCustomer(bookingAttempt.reservationId);
+          const existingRes = detailRes.data?.data;
+          if (existingRes && existingRes.status === 'CONTRACTED') {
+            nav("/portal/payments/" + bookingAttempt.reservationId);
+            return;
+          }
+        } catch {
+          // Bỏ qua lỗi nếu không tải được đơn cũ
+        }
+        // Đơn cũ đã bị CANCELLED, PAID hoặc không còn là CONTRACTED -> Xóa cache và khởi tạo phiên đặt mới
+        clearSelfStorageBookingAttempt(bookingStorage, customerId, context.payload);
+        bookingAttempt = readOrCreateSelfStorageBookingAttempt(
+          bookingStorage,
+          customerId,
+          context.payload,
+        );
       }
       const fresh = await reviewContext(draft);
       if (getAccessToken() !== token) return;
@@ -148,14 +177,21 @@ function Review({ draft, session }) {
         !sameEstimate(fresh.estimate, context.estimate)
       ) {
         setConfirmed(false);
+        setTermsAccepted(false);
         resource.retry();
         throw Error(
           "The Backend price or selected unit changed. Review the refreshed estimate and confirm again.",
         );
       }
+      if (fresh.terms.versionId !== context.terms.versionId) {
+        setConfirmed(false);
+        setTermsAccepted(false);
+        resource.retry();
+        throw Error('Điều khoản đã được cập nhật. Vui lòng xem và xác nhận lại phiên bản mới trước khi đặt thuê.');
+      }
       attempted.current = true;
       sent = true;
-      const response = await reservationApi.createReal(fresh.payload, {
+      const response = await reservationApi.createReal({ ...fresh.payload, termsAccepted, termsVersionId: fresh.terms.versionId }, {
         headers: { "Idempotency-Key": bookingAttempt.idempotencyKey },
       });
       const created = selfStorageCreation(response, fresh.payload);
@@ -170,7 +206,7 @@ function Review({ draft, session }) {
         // The booking is already saved. Its original key still protects a replay.
       }
       nav("/portal/payments/" + createdReservationId, {
-        state: { selfStorageCreated: true, startDepositAfterBooking: response.status === 201 },
+        state: { selfStorageCreated: true, startFullRentAfterBooking: response.status === 201 },
       });
       updateRentalDraft({
         facility: null,
@@ -186,7 +222,7 @@ function Review({ draft, session }) {
       if (sent && (!status || status >= 500)) {
         setUncertain(true);
         setError(
-          "The reservation result could not be verified. Check My Storage before booking again. This request will not be retried automatically.",
+          "Chưa thể xác minh kết quả đặt thuê. Vui lòng kiểm tra Kho của tôi trước khi tạo đơn khác. Hệ thống sẽ không tự gửi lại yêu cầu này.",
         );
       } else {
         attempted.current = false;
@@ -234,115 +270,28 @@ function Review({ draft, session }) {
     setUncertain(false);
     void create();
   }
-  return (
-    <BackendScreen
-      title="Review your reservation"
-      description="Confirm the selected facility, unit, UTC rental period and authoritative Backend estimate."
-    >
-      <Steps current={3} />
-      <LoadState resource={resource} />
-      {context && (
-        <>
-          <Card>
-            <CardContent>
-              <Details
-                values={[
-                  ["Service", "Self Storage"],
-                  ["Facility", context.facility.name],
-                  ["Storage unit", context.unit.unitCode],
-                  ["Start date", context.payload.startDate],
-                  ["End date", context.payload.endDate],
-                  ["Commitment", `${draft.term.value} ${draft.term.unit}`],
-                  ["Pricing rule", context.payload.pricingPolicyId],
-                  ["Currency", context.price.currency],
-                  ["Estimated rent", context.estimate.estimatedRent],
-                  ["Deposit", context.estimate.depositAmount],
-                  ["Tax", context.estimate.taxAmount],
-                  ["Duration (days)", context.estimate.durationDays],
-                ]}
-              />
-            </CardContent>
-          </Card>
-          {!verified && (
-            <Message error="Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt." />
-          )}
-          <label className="flex cursor-pointer items-start gap-3 text-sm">
-            <Checkbox
-              aria-label="Confirm provided personal data"
-              checked={confirmed}
-              disabled={pending || uncertain}
-              onCheckedChange={(v) => setConfirmed(v === true)}
-            />
-            <span>
-              I confirm that all provided personal data and reservation details
-              are accurate.
-            </span>
-          </label>
-        </>
-      )}
-      <Message error={error} />
-      {alternatives.length > 0 && !uncertain && (
-        <section
-          aria-label="Alternative storage units"
-          className="soft-panel space-y-3 p-4"
-        >
-          <h2 className="font-bold">
-            Other Units suggested for your rental period
-          </h2>
-          <p>
-            Your dates are preserved. Choose a Unit explicitly, then review its
-            availability and pricing. No booking is retried automatically.
-          </p>
-          {alternatives.map((unit) => (
-            <Button
-              key={unit._id}
-              variant="outline"
-              disabled={pending}
-              onClick={() => selectAlternative(unit)}
-            >
-              Review {unit.unitCode} · {unit.size}
-              {unit.sameSize ? " · same size" : ""}
-            </Button>
-          ))}
-        </section>
-      )}
-      <Button
-        variant="orange"
-        disabled={
-          !confirmed ||
-          !verified ||
-          !context ||
-          resource.loading ||
-          !!resource.error ||
-          pending ||
-          uncertain
-        }
-        onClick={create}
-      >
-        {pending
-          ? "Đang xác nhận đặt kho và thanh toán…"
-          : "Xác nhận đặt kho và thanh toán"}
-      </Button>
-      {uncertain && (
-        <div className="grid gap-2 sm:flex">
-          <Button
-            variant="orange"
-            disabled={pending}
-            onClick={retryUncertainCreation}
-          >
-            Thử khôi phục đơn thuê an toàn
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/portal">Kiểm tra kho của tôi</Link>
-          </Button>
-        </div>
-      )}
-      <Link to="/portal/rent/period" className="block">
-        Back to rental period
-      </Link>
-      <Link to="/portal/rent" className="block">
-        Select another unit
-      </Link>
-    </BackendScreen>
-  );
+  const sizeLabel = { SMALL: 'Nhỏ', MEDIUM: 'Vừa', LARGE: 'Lớn' };
+  const termLabel = `${draft.term?.value || '—'} ${{ MONTH: 'tháng', DAY: 'ngày', YEAR: 'năm' }[draft.term?.unit] || ''}`.trim();
+  return <BackendScreen title="Kiểm tra thông tin thuê kho" description="Vui lòng kiểm tra thông tin và chi phí trước khi xác nhận đặt thuê." eyebrow="BƯỚC 3 / 4 · KIỂM TRA ĐƠN" notice="Đơn thuê chỉ được gửi sau khi bạn xác nhận thông tin.">
+    <Steps current={3} />
+    <div className="mb-5 flex items-center gap-3 rounded-xl border border-[#c9dfd0] bg-[#e8f4ec] px-4 py-3 text-sm text-[#17382A]"><ClipboardCheck className="shrink-0 text-[#176B45]" size={19} /><span>Bạn sắp hoàn tất việc đặt kho. Hãy rà soát các mục bên dưới.</span></div>
+    <LoadState resource={resource} />
+    {context && <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(270px,3fr)]">
+      <div className="min-w-0 space-y-5">
+        <Card className="border-[#d4e2d8] shadow-sm"><CardContent><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><Warehouse size={20} /></span><div><h2 className="text-lg font-bold">Kho bạn đã chọn</h2><p className="text-sm text-[#607568]">Thông tin cơ sở và không gian lưu trữ</p></div></div><Link className="text-sm font-semibold text-[#176B45] underline-offset-4 hover:underline" to="/portal/rent">Thay đổi kho</Link></div><dl className="mt-5 grid gap-4 sm:grid-cols-2">{[['Cơ sở', context.facility.name], ['Địa chỉ', addressText(context.facility.address)], ['Mã kho', context.unit.unitCode], ['Kích thước', sizeLabel[context.unit.size] || context.unit.size], ['Thể tích', typeof context.unit.volumeM3 === 'number' ? `${context.unit.volumeM3} m³` : null]].filter(([, value]) => value != null && value !== '').map(([label, value]) => <div key={label} className="min-w-0 rounded-lg bg-[#f7faf7] p-3"><dt className="text-xs font-medium text-[#607568]">{label}</dt><dd className="mt-1 break-words text-sm font-semibold text-[#17382A]">{value}</dd></div>)}</dl></CardContent></Card>
+        <Card className="border-[#d4e2d8] shadow-sm"><CardContent><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CalendarDays size={20} /></span><div><h2 className="text-lg font-bold">Thời gian thuê</h2><p className="text-sm text-[#607568]">Thời hạn đã được kiểm tra ở bước trước</p></div></div><Link className="text-sm font-semibold text-[#176B45] underline-offset-4 hover:underline" to="/portal/rent/period">Thay đổi thời gian</Link></div><div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center"><div className="rounded-xl border border-[#d4e2d8] p-4"><p className="text-xs text-[#607568]">Ngày bắt đầu</p><p className="mt-1 text-lg font-bold text-[#17382A]">{displayDate(context.payload.startDate)}</p></div><div className="hidden h-px w-12 bg-[#176B45] sm:block" aria-hidden="true" /><div className="rounded-xl border border-[#d4e2d8] p-4"><p className="text-xs text-[#607568]">Ngày kết thúc</p><p className="mt-1 text-lg font-bold text-[#17382A]">{displayDate(context.payload.endDate)}</p></div></div><p className="mt-4 rounded-lg bg-[#f7faf7] p-3 text-sm text-[#607568]">Thời hạn thuê: <b className="text-[#17382A]">{termLabel}</b></p></CardContent></Card>
+        {!verified && <Message error="Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt." />}
+      </div>
+      <aside className="space-y-4 lg:sticky lg:top-28"><Card className="border-[#c9dfd0] shadow-md"><CardContent><div className="flex items-center gap-3"><span className="rounded-xl bg-[#e8f4ec] p-2.5 text-[#176B45]"><CheckCircle2 size={20} /></span><div><h2 className="text-lg font-bold">Tóm tắt chi phí</h2><span className="text-xs font-semibold text-[#607568]">Thanh toán 100% tiền thuê</span></div></div><div className="mt-5 space-y-4"><div className="flex items-start justify-between gap-4"><span className="text-sm text-[#607568]">Tổng tiền thuê phải thanh toán</span><b className="text-right text-base text-[#17382A]">{displayMoney(context.estimate.estimatedRent, context.price.currency)}</b></div></div><p className="mt-5 text-xs leading-5 text-[#607568]">Số tiền chính thức được Backend tính từ Pricing Rule hiện hành và xác nhận lại khi tạo đơn.</p></CardContent></Card>
+        <Message error={error} />
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#d4e2d8] bg-white p-4 text-sm leading-6 text-[#17382A]"><Checkbox aria-label="Xác nhận thông tin đặt thuê chính xác" checked={confirmed} disabled={pending || uncertain} onCheckedChange={v => setConfirmed(v === true)} /><span>Tôi xác nhận thông tin cá nhân đã cung cấp và thông tin đơn thuê ở trên là chính xác.</span></label>
+        {context.terms && <div className="rounded-xl border border-[#d4e2d8] bg-white p-4 text-sm leading-6 text-[#17382A]"><div className="flex items-start gap-3"><Checkbox aria-label={`Chấp nhận điều khoản phiên bản ${context.terms.version}`} checked={termsAccepted} disabled={pending || uncertain} onCheckedChange={v => setTermsAccepted(v === true)} /><span>Tôi đã đọc và đồng ý với Điều khoản & Chính sách phiên bản {context.terms.version}.</span></div><button type="button" className="ml-8 mt-1 font-medium text-[#176B45] underline underline-offset-2" onClick={() => setTermsOpen(true)}>Xem điều khoản &amp; chính sách</button></div>}
+        <TermsModal open={termsOpen} onClose={() => setTermsOpen(false)} serviceType="SELF_STORAGE" initialTerms={context?.terms} />
+        <Button className="w-full" disabled={!confirmed || !termsAccepted || !verified || !context || resource.loading || !!resource.error || pending || uncertain} onClick={create}>{pending ? 'Đang xác nhận đơn thuê…' : 'Xác nhận đặt thuê'}</Button>
+        {uncertain && <div className="space-y-2"><Button className="w-full" variant="outline" disabled={pending} onClick={retryUncertainCreation}>Thử lại bằng yêu cầu đã lưu</Button><Button className="w-full" variant="outline" asChild><Link to="/portal">Kiểm tra Kho của tôi</Link></Button></div>}
+        <Button className="w-full" variant="outline" asChild><Link to="/portal/rent/period"><ArrowLeft size={16} />Quay lại</Link></Button>
+      </aside>
+    </div>}
+    {!resource.loading && !context && !resource.error && <div className="rounded-xl border border-dashed border-[#c9dfd0] bg-white p-6 text-center"><p className="text-sm text-[#607568]">Chưa có đủ thông tin để kiểm tra đơn thuê.</p><Button className="mt-4" variant="outline" asChild><Link to="/portal/rent">Quay lại chọn kho</Link></Button></div>}
+  </BackendScreen>;
 }

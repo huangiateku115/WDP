@@ -12,11 +12,11 @@ export default function FacilityAccessPage({manager=false}) {
   const load=useCallback(async signal=>apiRows(await facilityReservationApi.list(user.assignedFacilityId,{signal})).filter(r=>recordId(r.facilityId)===user.assignedFacilityId&&r.serviceType==='SELF_STORAGE'),[user?.assignedFacilityId]);
   const resource=useFacilityResource(load,permitted);
   const rows=(resource.data||[]).filter(r=>`${r.reservationCode} ${r.customerId?.email||''}`.toLowerCase().includes(search.toLowerCase()));
-  return <Screen title="Access simulation" notice="Software simulation only; no physical lock is controlled. The current test PIN is 1234." action={<Button variant="outline" onClick={resource.reload}>Refresh list</Button>}>
-    {!permitted?<Panel title="An authorized account and assigned facility are required"/>:<>
-    <Message error={resource.error}/>{resource.loading?<p role="status">Loading reservations…</p>:<Panel title="Select a facility reservation"><Field label="Search reservation code or email"><Input value={search} onChange={e=>setSearch(e.target.value)}/></Field><Select label="Access reservation" value={rows.some(r=>recordId(r)===selected)?selected:''} onChange={setSelected} options={[['','Select a reservation'],...rows.map(r=>[recordId(r),`${r.reservationCode} · ${r.status}`])]}/>{!rows.length&&<p>No matching reservations in the loaded data.</p>}</Panel>}
+  return <Screen title="Mô phỏng mở cửa" notice="Mô phỏng bằng phần mềm. Nhập mã PIN 6 chữ số cấp cho đơn thuê." action={<Button variant="outline" onClick={resource.reload}>Tải lại danh sách</Button>}>
+    {!permitted?<Panel title="Cần tài khoản có quyền và được phân công cơ sở"/>:<>
+    <Message error={resource.error}/>{resource.loading?<p role="status">Đang tải đơn thuê…</p>:<Panel title="Chọn đơn thuê trong cơ sở"><Field label="Tìm mã đơn hoặc email"><Input value={search} onChange={e=>setSearch(e.target.value)}/></Field><Select label="Đơn thuê cần truy cập" value={rows.some(r=>recordId(r)===selected)?selected:''} onChange={setSelected} options={[['',"Chọn một đơn thuê"],...rows.map(r=>[recordId(r),`${r.reservationCode} · ${r.status}`])]}/>{!rows.length&&<p>Không có đơn thuê phù hợp trong dữ liệu đã tải.</p>}</Panel>}
     {!resource.loading&&!resource.error&&resource.data?.some(r=>recordId(r)===selected)&&<AccessRecord key={`${user.id}:${user.assignedFacilityId}:${selected}`} id={selected} user={user}/>}
-    <Panel title="Available features"><p>PIN issuance, reset, revocation and facility access logs are not available yet. This page checks reservation status and simulates unlocking. PINs are not saved in browser storage.</p></Panel>
+    <Panel title="Chức năng hiện có"><p>Chưa có chức năng cấp, đổi, thu hồi PIN và nhật ký truy cập cơ sở. Trang này kiểm tra trạng thái đơn và mô phỏng mở khóa. PIN không được lưu trên trình duyệt.</p></Panel>
     </>}
   </Screen>;
 }
@@ -24,7 +24,7 @@ function AccessRecord({id,user}) {
   const [pin,setPin]=useState(''),[confirmation,setConfirmation]=useState(false),[saving,setSaving]=useState(false),[feedback,setFeedback]=useState({}),busy=useRef(false);
   const load=useCallback(async signal=>{
     const row=apiRecord(await facilityReservationApi.detail(id,false,{signal}));
-    if(recordId(row)!==id||recordId(row.facilityId)!==user.assignedFacilityId||row.serviceType!=='SELF_STORAGE'||!objectId(recordId(row.storageUnitId))||!row.reservationCode)throw Error('The reservation is outside your facility or missing unit information.');
+    if(recordId(row)!==id||recordId(row.facilityId)!==user.assignedFacilityId||row.serviceType!=='SELF_STORAGE'||!objectId(recordId(row.storageUnitId))||!row.reservationCode)throw Error("Đơn ngoài cơ sở của bạn hoặc thiếu thông tin kho.");
     return row;
   },[id,user.assignedFacilityId]);
   const resource=useFacilityResource(load,true),row=resource.data;
@@ -32,17 +32,17 @@ function AccessRecord({id,user}) {
     e.preventDefault();if(busy.current)return;busy.current=true;setSaving(true);setFeedback({});
     try {
       const fresh=await load();
-      if(fresh.status!=='ACTIVE')throw Error('The reservation is no longer ACTIVE. Refresh before continuing.');
-      if(!/^\d{4}$/.test(pin))throw Error('Enter a 4-digit simulation PIN.');
+      if(fresh.status!=='ACTIVE')throw Error("Đơn không còn ở trạng thái đang sử dụng. Tải lại trước khi tiếp tục.");
+      if(!/^\d{4,6}$/.test(pin))throw Error("Nhập mã PIN mô phỏng gồm 4-6 chữ số.");
       let response;
       try{response=await client.post('/access/simulate-unlock',{reservationCode:fresh.reservationCode,pinCode:pin});}
-      catch(error){const log=error?.response?.data?.data;if(error?.response?.status===401&&log?.action==='UNLOCK_FAILED'&&recordId(log.reservationId)===id)throw Error('Incorrect PIN. Unlock denied; your session is still active.');throw error;}
+      catch(error){const log=error?.response?.data?.data;if(error?.response?.status===401&&log?.action==='UNLOCK_FAILED'&&recordId(log.reservationId)===id)throw Error("Sai mã PIN. Không cho phép mở khóa. Phiên đăng nhập vẫn hoạt động.");throw error;}
       const log=apiRecord(response);
-      if(log.action!=='UNLOCK_SUCCESS'||recordId(log.reservationId)!==id||recordId(log.storageUnitId)!==recordId(fresh.storageUnitId)||recordId(log.customerId)!==recordId(fresh.customerId))throw Error('Unlock was not confirmed for the selected reservation and unit.');
+      if(log.action!=='UNLOCK_SUCCESS'||recordId(log.reservationId)!==id||recordId(log.storageUnitId)!==recordId(fresh.storageUnitId)||recordId(log.customerId)!==recordId(fresh.customerId))throw Error("Chưa xác nhận mở khóa cho đơn và kho đã chọn.");
       setFeedback({success:'The server recorded UNLOCK_SUCCESS for reservation '+fresh.reservationCode+'. This is a simulation result.'});setConfirmation(false);
     }catch(error){setFeedback({error:reviewError(error)});}finally{setPin('');resource.reload();busy.current=false;setSaving(false);}
   }
-  return <Panel title="Access status"><Message error={resource.error}/><Message {...feedback}/>{resource.loading&&<p role="status">Checking status…</p>}{row&&<><Details values={[["Reservation",row.reservationCode],['Status',<Status value={row.status}/>],['Unit',row.storageUnitId?.unitCode||recordId(row.storageUnitId)],['Access eligibility',row.status==='ACTIVE'?'Eligible for PIN verification':row.status==='OVERDUE'?'Blocked due to overdue payment':'Not activated or already ended']]}/>{row.status==='ACTIVE'&&<div className="mt-4 space-y-4"><Field label="Simulation PIN"><Input type="password" inputMode="numeric" autoComplete="off" maxLength={4} value={pin} disabled={saving} onChange={e=>{setPin(e.target.value);setFeedback({});}}/></Field><Button disabled={saving||!/^\d{4}$/.test(pin)} onClick={()=>setConfirmation(true)}>Simulate unlock</Button></div>}</>}
-    {confirmation&&<Dialog title="Confirm simulation" onClose={()=>{if(!busy.current){setConfirmation(false);setPin('');}}}><form onSubmit={unlock}><p className="mb-4">Simulate unlocking for the selected reservation. The server will record the result.</p><Message {...feedback}/><Button disabled={saving||!pin}>{saving?'Checking…':'Confirm unlock'}</Button></form></Dialog>}
+  return <Panel title="Trạng thái truy cập"><Message error={resource.error}/><Message {...feedback}/>{resource.loading&&<p role="status">Đang kiểm tra trạng thái…</p>}{row&&<><Details values={[["Đơn thuê",row.reservationCode],["Trạng thái",<Status value={row.status}/>],['Unit',row.storageUnitId?.unitCode||recordId(row.storageUnitId)],["Điều kiện truy cập",row.status==='ACTIVE'?"Đủ điều kiện kiểm tra PIN":row.status==='OVERDUE'?"Bị chặn do thanh toán quá hạn":"Chưa kích hoạt hoặc đã kết thúc"]]}/>{row.status==='ACTIVE'&&<div className="mt-4 space-y-4"><Field label="Mã PIN mô phỏng"><Input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={pin} disabled={saving} onChange={e=>{setPin(e.target.value);setFeedback({});}}/></Field><Button disabled={saving||!/^\d{4,6}$/.test(pin)} onClick={()=>setConfirmation(true)}>Mô phỏng mở khóa</Button></div>}</>}
+    {confirmation&&<Dialog title="Xác nhận mô phỏng" onClose={()=>{if(!busy.current){setConfirmation(false);setPin('');}}}><form onSubmit={unlock}><p className="mb-4">Mô phỏng mở khóa cho đơn đã chọn. Máy chủ sẽ lưu kết quả.</p><Message {...feedback}/><Button disabled={saving||!pin}>{saving?"Đang kiểm tra…":"Xác nhận mở khóa"}</Button></form></Dialog>}
   </Panel>;
 }

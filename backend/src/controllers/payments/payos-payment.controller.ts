@@ -15,7 +15,7 @@ export const createSelfStorageCheckout = async (req: Request, res: Response) => 
       return res.status(400).json({ success: false, code: 'INVALID_PAYMENT_REQUEST', message: 'Only purpose is accepted in the request body' });
     }
     const result = await payosPaymentService.createCheckout(req.params.id, req.body.purpose,
-      req.get('Idempotency-Key'), req.user!._id);
+      req.get('Idempotency-Key'), req.user!._id, req.get('X-WDP-Payment-Client') ?? 'WEB');
     const { httpStatus, outcome, ...data } = result;
     return res.status(httpStatus).json({ success: true, outcome, data });
   } catch (error) { return sendError(error, res); }
@@ -24,6 +24,13 @@ export const createSelfStorageCheckout = async (req: Request, res: Response) => 
 export const getSelfStoragePaymentStatus = async (req: Request, res: Response) => {
   try {
     const data = await payosPaymentService.getCustomerStatus(req.params.paymentId, req.params.id, req.user!._id);
+    return res.json({ success: true, data });
+  } catch (error) { return sendError(error, res); }
+};
+
+export const reconcileCustomerPayment = async (req: Request, res: Response) => {
+  try {
+    const data = await payosPaymentService.reconcileCustomerPayment(req.params.paymentId, req.params.id, req.user!._id);
     return res.json({ success: true, data });
   } catch (error) { return sendError(error, res); }
 };

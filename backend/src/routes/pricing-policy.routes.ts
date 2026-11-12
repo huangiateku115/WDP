@@ -14,9 +14,11 @@ for (const [path, service] of [['/pricing-rules', pricingService], ['/policies',
   resource.get('/resolve', controller.resolve);
   resource.get('/', controller.list);
   resource.get('/:id', controller.get);
-  resource.post('/', manage, controller.create);
-  resource.patch('/:id', manage, controller.update);
-  resource.patch('/:id/status', manage, controller.status);
+  if (service === pricingService) {
+    resource.post('/', manage, controller.create);
+    resource.patch('/:id', manage, controller.update);
+    resource.patch('/:id/status', manage, controller.status);
+  }
   router.use(path, resource);
 }
 export default router;

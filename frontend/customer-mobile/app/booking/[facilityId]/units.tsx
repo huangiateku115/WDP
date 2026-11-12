@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/UnitSelectionScreen';
+export {Units as default} from '../../../src/screens/LiveCatalog';

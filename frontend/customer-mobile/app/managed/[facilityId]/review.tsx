@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/ManagedBookingReviewScreen';
+export {ManagedReview as default} from '../../../src/screens/ManagedBooking';

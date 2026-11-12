@@ -35,7 +35,7 @@ const cellB = oid('507f1f77bcf86cd7994390d2');
 const future = '2030-01-01T00:00:00.000Z';
 let sessionReadOverlaps = 0;
 const activeSessionReads = new WeakMap();
-const request = extra => ({ facilityId: String(fid), allocatedCapacityM3: 1.5, startDate: future, term: { value: 1, unit: 'MONTH' }, ...extra });
+const request = extra => ({ facilityId: String(fid), allocatedCapacityM3: 1.5, startDate: future, term: { value: 1, unit: 'MONTH' }, termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.1', ...extra });
 const customer = { _id: cid, role: UserRole.CUSTOMER, assignedFacilityId: null };
 const manager = { _id: mid, role: UserRole.FACILITY_MANAGER, assignedFacilityId: fid };
 
@@ -74,7 +74,8 @@ function mockQuote(t, options = {}) {
     assert.equal(filter.billingBasis, 'PER_M3');
     assert.equal(filter.serviceType, 'MANAGED_INVENTORY');
     assert.equal(filter['term.value'], 1);
-    return new Query(options.prices ?? [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 100, currency: 'VND', version: 3, billingBasis: 'PER_M3' }]);
+    return new Query(options.prices ?? [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 100, currency: 'VND', version: 3,
+      effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), isActive: true, billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' } }]);
   });
   t.mock.method(Policy, 'find', filter => {
     assert.equal(filter.type, 'DEPOSIT');
@@ -87,12 +88,13 @@ function mockQuote(t, options = {}) {
 test('exhausted MongoDB WriteConflict maps to 409 while unexpected transaction errors remain 500-class errors', async t => {
   const conflict = Object.assign(new Error('write conflict'), { code: 112, codeName: 'WriteConflict' });
   let transactionError = conflict;
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async () => { throw transactionError; }, endSession: async () => {} }));
-  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer), { status: 409 });
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer, 'write-conflict-test-key-1'), { status: 409 });
 
   const unexpected = Object.assign(new Error('database unavailable'), { code: 91, codeName: 'ShutdownInProgress' });
   transactionError = unexpected;
-  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer), error => error === unexpected);
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)] }), customer, 'write-conflict-test-key-2'), error => error === unexpected);
 });
 function mockCellLocks(t, ids = [cellA], volume = 1.5, conflict = null) {
   const cells = ids.map((cellId, index) => ({ _id: cellId, facilityId: fid, zoneId: oid('507f1f77bcf86cd7994390e1'),
@@ -141,6 +143,18 @@ test('quote uses explicit per-m3 rate, percentage deposit and calendar term; nev
   assert.equal(result.deposit.amount, 30);
   assert.equal(result.availableCapacityM3, 10);
   assert.equal(Object.hasOwn(result, 'storageUnitId'), false);
+});
+
+test('Managed V3 quote selects the price revision effective on the requested start date', async t => {
+  mockQuote(t, { prices: [{ _id: oid('507f1f77bcf86cd7994390a1'), price: 200, currency: 'VND', version: 4,
+    effectiveFrom: new Date('2030-01-01T00:00:00.000Z'), isActive: true, billingBasis: 'PER_M3', term: { value: 1, unit: 'MONTH' },
+    priceRevisions: [
+      { version: 3, price: 100, currency: 'VND', effectiveFrom: new Date('2020-01-01T00:00:00.000Z'), effectiveTo: new Date('2030-01-01T00:00:00.000Z') },
+      { version: 4, price: 200, currency: 'VND', effectiveFrom: new Date('2030-01-01T00:00:00.000Z') },
+    ] }], deposits: [{ _id: oid('507f1f77bcf86cd7994390b1'), config: { calculation: 'PERCENT_OF_RENT', percentage: 20 }, version: 2 }] });
+  const result = await service.quote(request());
+  assert.equal(result.pricing.ratePerM3, 200);
+  assert.equal(result.pricing.estimatedRent, 300);
 });
 
 test('availability uses peak concurrent intervals rather than every overlapping row sum', async t => {
@@ -199,12 +213,13 @@ test('quote rejects inactive and non-Managed facilities', async t => {
 });
 
 test('unverified customer cannot create a Managed quota reservation', async t => {
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'PENDING' }));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
-  await assert.rejects(service.create(request({ cellIds: [String(cellA)] }), customer), { status: 403 });
+  await assert.rejects(service.create(request({ cellIds: [String(cellA)] }), customer, 'unverified-customer-test-key'), { status: 403 });
 });
 
-test('verified customer creates RESERVED quota with derived snapshot and no StorageUnit', async t => {
+test('verified customer creates a full-rent V3 reservation with derived snapshot and no StorageUnit', async t => {
   const { cap } = mockQuote(t);
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   const allocationState = mockCellLocks(t);
@@ -213,22 +228,23 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
     assert.deepEqual(update, { $inc: { bookingVersion: 1 } });
     return new Query({ ...cap, bookingVersion: 2 });
   });
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
   let saved;
   t.mock.method(Reservation.prototype, 'save', async function () { saved = this; return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
-  const result = await service.create(request({ cellIds: [String(cellA)] }), customer);
+  const result = await service.create(request({ cellIds: [String(cellA)] }), customer, 'managed-full-rent-key-0001');
   assert.equal(result.reservation.serviceType, 'MANAGED_INVENTORY');
   assert.equal(result.reservation.status, 'RESERVED');
-  assert.equal(result.reservation.bookingFlowVersion, undefined, 'default-off booking remains legacy');
+  assert.equal(result.reservation.bookingFlowVersion, 3);
+  assert.equal(result.reservation.rentalPaymentFlow, 'FULL_UPFRONT_V1');
   assert.equal(result.reservation.allocatedCapacity, 1.5);
   assert.equal(result.reservation.storageUnitId, undefined);
   assert.equal(result.reservation.estimatedRent, 150);
-  assert.equal(result.reservation.depositAmount, 30);
-  assert.deepEqual(result.quote.paymentBreakdown, { totalDue: 150, depositCredit: 30, balanceDue: 120 });
+  assert.equal(result.reservation.depositAmount, 0);
+  assert.deepEqual(result.quote.payment, { purpose: 'FULL_RENT', amount: 150, currency: 'VND' });
   assert.deepEqual(saved.managedPricingSnapshot.amountBreakdown, {
-    estimatedRent: 150, depositAmount: 30, taxAmount: 0, discountAmount: 0,
-    totalDue: 150, depositCredit: 30, balanceDue: 120,
+    estimatedRent: 150, taxAmount: 0, discountAmount: 0, totalDue: 150,
   });
   assert.equal(saved.managedPricingSnapshot.pricingRule.billingBasis, 'PER_M3');
   assert.equal(saved.managedPricingSnapshot.capacityBookingVersion, 2);
@@ -239,7 +255,7 @@ test('verified customer creates RESERVED quota with derived snapshot and no Stor
   assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
 });
 
-test('versioned Managed booking creates only a RESERVED reservation and HOLD allocations without contract or manager approval', async t => {
+test('Managed full-rent booking is independent of the old deposit gate and creates no contract or manager approval', async t => {
   const previous = process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED, previousNodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = 'development'; process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = 'true';
   t.after(() => { process.env.NODE_ENV = previousNodeEnv; if (previous === undefined) delete process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED; else process.env.MI_MANAGED_DEPOSIT_FLOW_ENABLED = previous; });
@@ -252,15 +268,37 @@ test('versioned Managed booking creates only a RESERVED reservation and HOLD all
   t.mock.method(Reservation.prototype, 'save', async function () { saved = this; return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
   t.mock.method(Contract, 'exists', () => { throw Error('booking must not create a Contract'); });
-  const result = await service.create(request({ cellIds: [String(cellA)] }), customer);
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
+  const result = await service.create(request({ cellIds: [String(cellA)] }), customer, 'managed-full-rent-key-0002');
   assert.equal(result.reservation.status, 'RESERVED');
-  assert.equal(result.reservation.bookingFlowVersion, 2);
+  assert.equal(result.reservation.bookingFlowVersion, 3);
+  assert.equal(result.reservation.rentalPaymentFlow, 'FULL_UPFRONT_V1');
   assert.equal(result.reservation.estimatedRent, 150);
-  assert.equal(result.reservation.depositAmount, 30);
-  assert.equal(result.reservation.managedPricingSnapshot.amountBreakdown.balanceDue, 120);
-  assert.equal(saved.bookingFlowVersion, 2);
+  assert.equal(result.reservation.depositAmount, 0);
+  assert.equal(result.quote.payment.purpose, 'FULL_RENT');
+  assert.equal(saved.bookingFlowVersion, 3);
   assert.equal(allocationState.allocations()[0].status, 'HOLD');
   assert.equal(allocationState.allocations()[0].holdExpiresAt.getTime(), saved.expiresAt.getTime());
+});
+
+test('Managed V3 booking retry with the same Idempotency-Key replays one reservation', async t => {
+  const { cap } = mockQuote(t);
+  t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
+  mockCellLocks(t);
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  let saved, saveCount = 0;
+  t.mock.method(Reservation, 'findOne', () => new Query(saved ?? null));
+  t.mock.method(Reservation.prototype, 'save', async function () { saveCount += 1; saved = this; return this; });
+  t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
+
+  const key = 'customer-cell-booking-retry-0001';
+  const first = await service.create(request({ cellIds: [String(cellA)] }), customer, key);
+  const replay = await service.create(request({ cellIds: [String(cellA)] }), customer, key);
+  assert.equal(first.reservation.bookingFlowVersion, 3);
+  assert.equal(replay.idempotent, true);
+  assert.equal(String(replay.reservation._id), String(first.reservation._id));
+  assert.equal(saveCount, 1, 'a replay must not create another Reservation');
 });
 
 function enableManagedDeposit(t) {
@@ -420,13 +458,14 @@ test('Managed v2 routes are customer-only and the schema keeps flow version opti
   assert.ok(rows.includes('POST /managed/:id/deposit'));
   assert.ok(rows.includes('POST /managed/:id/deposit/mock-confirm'));
   assert.equal(Reservation.schema.path('bookingFlowVersion').options.default, undefined);
-  assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2]);
+  assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2, 3]);
   assert.ok(Reservation.schema.path('status').enumValues.includes('DEPOSIT_PAID'));
   assert.ok(ReservationPayment.schema.path('status').enumValues.includes('RECONCILIATION_REQUIRED'));
 });
 
 test('legacy Cell with absent physical counters is rejected by the transactional emptiness lock', async t => {
   const { cap } = mockQuote(t);
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   const state = mockCellLocks(t);
   delete state.cells[0].usedWeightKg;
@@ -438,7 +477,7 @@ test('legacy Cell with absent physical counters is rejected by the transactional
     endSession: async () => {},
   }));
   t.mock.method(Reservation.prototype, 'save', async function () { savedReservations++; return this; });
-  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer), {
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer, 'legacy-cell-empty-test-key'), {
     status: 409, message: 'Selected Cell is not physically available for a new reservation',
   });
   assert.equal(aborted, true);
@@ -448,12 +487,13 @@ test('legacy Cell with absent physical counters is rejected by the transactional
 
 test('transactional emptiness lock does not overwrite a Cell with existing stock counters', async t => {
   const { cap } = mockQuote(t);
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   const state = mockCellLocks(t);
   state.cells[0].usedWeightKg = 40;
   t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ ...cap, bookingVersion: 2 }));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
-  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer), { status: 409 });
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 1.5, cellIds: [String(cellA)] }), customer, 'legacy-cell-occupied-test-key'), { status: 409 });
   assert.equal(state.cells[0].usedWeightKg, 40);
   assert.equal(state.allocations().length, 0);
 });
@@ -466,12 +506,13 @@ test('multi-cell hold derives commercial m3 from configured dimensions and rejec
   t.mock.restoreAll();
   mockQuote(t);
   mockCellLocks(t, [cellA, cellB], 0.12, { _id: oid('507f1f77bcf86cd7994390d9') });
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({ sellableCapacityM3: 10, holdDurationMinutes: 30, bookingVersion: 2, isActive: true }));
   t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
   t.mock.method(Reservation.prototype, 'save', async function () { return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
-  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer), { status: 409 });
+  await assert.rejects(service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer, 'multi-cell-conflict-test-key'), { status: 409 });
   assert.equal(state.cells.length, 2);
 });
 
@@ -499,13 +540,16 @@ test('quote applies half-open selected-Cell availability checks and accepts adja
     assert.deepEqual(filter.$or[1].endDate, { $gt: new Date('2030-01-31T00:00:00.000Z') });
     return new Query(null);
   });
-  const quoted = await service.quote(request({ allocatedCapacityM3: 0.12, cellIds: [String(cellA)], startDate: '2030-01-31T00:00:00.000Z', term: { value: 1, unit: 'DAY' } }));
+  const quoted = await service.quote(request({ allocatedCapacityM3: undefined, cellIds: [String(cellA)], startDate: '2030-01-31T00:00:00.000Z', term: { value: 1, unit: 'DAY' } }));
+  assert.equal(quoted.allocatedCapacityM3, 0.12, 'quote capacity is derived from the selected Cell');
   assert.equal(quoted.startDate.toISOString(), '2030-01-31T00:00:00.000Z');
+  assert.deepEqual(quoted.cellIds, [String(cellA)], 'V3 quote echoes the exact server-validated Cell ID set');
 });
 
 test('concurrent intersecting multi-Cell selections commit only one complete hold set', async t => {
   const rows = [], ids = [cellA, cellB, oid('507f1f77bcf86cd7994390d3')];
   mockQuote(t, { commitments: rows });
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   let cellState;
   cellState = mockCellLocks(t, ids, 0.12, filter => {
@@ -521,8 +565,8 @@ test('concurrent intersecting multi-Cell selections commit only one complete hol
   t.mock.method(Reservation.prototype, 'save', async function () { rows.push(this); return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
   const results = await Promise.allSettled([
-    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer),
-    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellB), String(ids[2])] }), customer),
+    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellA), String(cellB)] }), customer, 'overlap-create-key-1'),
+    service.create(request({ allocatedCapacityM3: 0.24, cellIds: [String(cellB), String(ids[2])] }), customer, 'overlap-create-key-2'),
   ]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);
@@ -556,6 +600,7 @@ test('Facility booking-version lock prevents two concurrent requests from overbo
   const rows = [];
   let version = 1, queue = Promise.resolve();
   mockQuote(t, { commitments: rows });
+  t.mock.method(Reservation, 'findOne', () => new Query(null));
   t.mock.method(Profile, 'findOne', () => new Query({ verificationStatus: 'VERIFIED' }));
   mockCellLocks(t, [cellA, cellB], 6);
   t.mock.method(Capacity, 'findOneAndUpdate', (filter, update) => {
@@ -571,8 +616,8 @@ test('Facility booking-version lock prevents two concurrent requests from overbo
   t.mock.method(Reservation.prototype, 'save', async function () { rows.push(this); return this; });
   t.mock.method(ManagedAudit.prototype, 'save', async function () { return this; });
   const results = await Promise.allSettled([
-    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellA)] }), customer),
-    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellB)] }), customer),
+    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellA)] }), customer, 'peak-capacity-create-key-1'),
+    service.create(request({ allocatedCapacityM3: 6, cellIds: [String(cellB)] }), customer, 'peak-capacity-create-key-2'),
   ]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);
@@ -658,6 +703,33 @@ test('cross-Facility Manager cannot approve a Managed reservation', async t => {
   t.mock.method(Reservation, 'findOne', () => new Query(reservation));
   const wrongManager = { ...manager, assignedFacilityId: oid('507f1f77bcf86cd799439099') };
   await assert.rejects(service.approve(String(reservation._id), wrongManager), { status: 403 });
+});
+
+test('legacy approve, reject, mock-pay and activate filters exclude Managed V3', async t => {
+  t.mock.method(mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession: async () => {} }));
+  const reservationId = oid('507f1f77bcf86cd7994390c3');
+  const versions = [];
+  t.mock.method(Reservation, 'findOne', filter => {
+    if (filter.status) {
+      versions.push(filter.bookingFlowVersion);
+      return new Query(null);
+    }
+    return new Query({ facilityId: fid });
+  });
+  t.mock.method(Capacity, 'findOneAndUpdate', () => new Query({}));
+  t.mock.method(Contract, 'findOne', () => new Query({ status: 'SIGNED', signedByCustomerAt: new Date(), customerId: cid }));
+  const oldGate = process.env.MI_MOCK_PAYMENT_ENABLED;
+  try {
+    process.env.MI_MOCK_PAYMENT_ENABLED = 'true';
+    await assert.rejects(service.approve(String(reservationId), manager), { status: 409 });
+    await assert.rejects(service.reject(String(reservationId), { reason: 'fixture' }, manager), { status: 409 });
+    await assert.rejects(service.mockPay(String(reservationId), customer), { status: 409 });
+    await assert.rejects(service.activate(String(reservationId), manager), { status: 409 });
+  } finally {
+    if (oldGate === undefined) delete process.env.MI_MOCK_PAYMENT_ENABLED;
+    else process.env.MI_MOCK_PAYMENT_ENABLED = oldGate;
+  }
+  assert.deepEqual(versions, [{ $nin: [2, 3] }, { $nin: [2, 3] }, { $nin: [2, 3] }, { $ne: 3 }]);
 });
 
 test('paid, signed Managed reservation activates quota only and never assigns a physical Cell', async t => {

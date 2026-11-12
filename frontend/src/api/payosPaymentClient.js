@@ -1,11 +1,12 @@
 import { isUsablePayosQrPayload } from "../lib/selfStoragePayos.js";
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
-const PURPOSES = new Set(["DEPOSIT", "BALANCE"]);
+const PURPOSES = new Set(["DEPOSIT", "BALANCE", "FULL_RENT"]);
 const PAYMENT_STATUSES = new Set([
   "PENDING",
   "SUCCEEDED",
   "FAILED",
+  "CANCELLED",
   "RECONCILIATION_REQUIRED",
 ]);
 const APPLICATION_STATUSES = new Set([
@@ -19,6 +20,8 @@ const CHECKOUT_STATUSES = new Set([
   "CREATING",
   "READY",
   "UNKNOWN",
+  "FAILED",
+  "CANCELLED",
   "RECONCILIATION_REQUIRED",
 ]);
 
@@ -28,7 +31,7 @@ export function isMongoObjectId(value) {
 
 function assertCheckoutInput(reservationId, purpose, idempotencyKey) {
   if (!isMongoObjectId(reservationId)) throw Error("Invalid reservation ID.");
-  if (!PURPOSES.has(purpose)) throw Error("Payment purpose must be DEPOSIT or BALANCE.");
+  if (!PURPOSES.has(purpose)) throw Error("Payment purpose must be DEPOSIT, BALANCE or FULL_RENT.");
   if (
     typeof idempotencyKey !== "string" ||
     !idempotencyKey.trim() ||
@@ -55,7 +58,9 @@ function assertPaymentDto(payment, reservationId, purpose) {
     !APPLICATION_STATUSES.has(payment.applicationStatus) ||
     !SETTLEMENT_STATUSES.has(payment.providerSettlementStatus) ||
     !CHECKOUT_STATUSES.has(payment.checkoutStatus) ||
-    typeof payment.reconciliationRequired !== "boolean"
+    typeof payment.reconciliationRequired !== "boolean" ||
+    typeof payment.retryAllowed !== "boolean" ||
+    !(payment.cancelVerifiedAt === null || payment.cancelVerifiedAt === undefined || typeof payment.cancelVerifiedAt === "string")
   ) {
     throw Error("The payment service returned an invalid payment record.");
   }
@@ -104,9 +109,15 @@ function unwrap(response, reservationId, purpose, allowedHttpStatuses) {
   if (
     !allowedHttpStatuses.includes(response?.status) ||
     envelope?.success !== true ||
-    !["CREATED", "REPLAYED"].includes(envelope?.outcome)
+    !["CREATED", "REPLAYED", "SETTLED"].includes(envelope?.outcome)
   ) {
     throw Error("The payment service returned an unsupported response.");
+  }
+  if (envelope.outcome === "SETTLED") {
+    if (response.status !== 200 || envelope?.data?.zeroBalance !== true ||
+        envelope.data.reservation?.serviceType !== "MANAGED_INVENTORY" || envelope.data.reservation?.bookingFlowVersion !== 3 ||
+        envelope.data.reservation?.status !== "PAID" || !envelope.data.reservation?.balanceSettledAt) throw Error("The zero-balance settlement response is invalid.");
+    return { payment: null, zeroBalance: true, reservation: envelope.data.reservation, outcome: "SETTLED", httpStatus: 200 };
   }
   const payment = assertPaymentDto(envelope.data, reservationId, purpose);
   const expectedOutcome = response.status === 201 ? "CREATED" : "REPLAYED";
@@ -121,22 +132,24 @@ export function createPayosPaymentApi(client) {
     throw Error("A payment API client is required.");
   }
   return {
-    createPayosCheckout: async (reservationId, purpose, idempotencyKey) => {
+    createPayosCheckout: async (reservationId, purpose, idempotencyKey, serviceType = "SELF_STORAGE") => {
       assertCheckoutInput(reservationId, purpose, idempotencyKey);
+      if (!["SELF_STORAGE", "MANAGED_INVENTORY"].includes(serviceType)) throw Error("Unsupported payment service type.");
+      const root = serviceType === "MANAGED_INVENTORY" ? `/reservations/managed/${reservationId}/payments/payos` : `/reservations/${reservationId}/payments/payos`;
       const response = await client.post(
-        `/reservations/${reservationId}/payments/payos`,
+        root,
         { purpose },
         { headers: { "Idempotency-Key": idempotencyKey } },
       );
       return unwrap(response, reservationId, purpose, [200, 201]);
     },
-    getPayosPaymentStatus: async (reservationId, paymentId) => {
+    getPayosPaymentStatus: async (reservationId, paymentId, serviceType = "SELF_STORAGE") => {
       if (!isMongoObjectId(reservationId) || !isMongoObjectId(paymentId)) {
         throw Error("Invalid reservation or payment ID.");
       }
-      const response = await client.get(
-        `/reservations/${reservationId}/payments/${paymentId}`,
-      );
+      if (!["SELF_STORAGE", "MANAGED_INVENTORY"].includes(serviceType)) throw Error("Unsupported payment service type.");
+      const root = serviceType === "MANAGED_INVENTORY" ? `/reservations/managed/${reservationId}/payments` : `/reservations/${reservationId}/payments`;
+      const response = await client.get(`${root}/${paymentId}`);
       const envelope = response?.data;
       if (response?.status !== 200 || envelope?.success !== true) {
         throw Error("The payment service returned an unsupported status response.");
@@ -145,7 +158,18 @@ export function createPayosPaymentApi(client) {
       if (payment.id !== paymentId) throw Error("Payment identity did not match the requested record.");
       return payment;
     },
-    listPayosPaymentsForReservation: async (reservationId, { limit, cursor } = {}) => {
+    reconcilePayosPayment: async (reservationId, paymentId, serviceType = "SELF_STORAGE") => {
+      if (!isMongoObjectId(reservationId) || !isMongoObjectId(paymentId)) throw Error("Invalid reservation or payment ID.");
+      if (!["SELF_STORAGE", "MANAGED_INVENTORY"].includes(serviceType)) throw Error("Unsupported payment service type.");
+      const root = serviceType === "MANAGED_INVENTORY" ? `/reservations/managed/${reservationId}/payments` : `/reservations/${reservationId}/payments`;
+      const response = await client.post(`${root}/${paymentId}/reconcile`, {});
+      const envelope = response?.data;
+      if (response?.status !== 200 || envelope?.success !== true) throw Error("Payment reconciliation is not confirmed yet.");
+      const payment = assertPaymentDto(envelope.data, reservationId);
+      if (payment.id !== paymentId) throw Error("Payment identity did not match the requested record.");
+      return payment;
+    },
+    listPayosPaymentsForReservation: async (reservationId, { limit, cursor, serviceType = "SELF_STORAGE" } = {}) => {
       if (!isMongoObjectId(reservationId)) throw Error("Invalid reservation ID.");
       const params = new URLSearchParams();
       if (limit !== undefined) {
@@ -159,7 +183,9 @@ export function createPayosPaymentApi(client) {
         params.set("cursor", cursor);
       }
       const suffix = params.size ? `?${params.toString()}` : "";
-      const response = await client.get(`/reservations/${reservationId}/payments/payos${suffix}`);
+      if (!["SELF_STORAGE", "MANAGED_INVENTORY"].includes(serviceType)) throw Error("Unsupported payment service type.");
+      const root = serviceType === "MANAGED_INVENTORY" ? `/reservations/managed/${reservationId}/payments/payos` : `/reservations/${reservationId}/payments/payos`;
+      const response = await client.get(`${root}${suffix}`);
       const envelope = response?.data;
       const page = envelope?.data;
       if (response?.status !== 200 || envelope?.success !== true || !page || !Array.isArray(page.items) ||

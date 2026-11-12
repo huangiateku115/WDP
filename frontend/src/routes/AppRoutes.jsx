@@ -13,6 +13,7 @@ import FacilitiesPage from "@/pages/public/FacilitiesPage";
 import HowItWorksPage from "@/pages/public/HowItWorksPage";
 import PricingPage from "@/pages/public/PricingPage";
 import SupportPublicPage from "@/pages/public/SupportPublicPage";
+import TermsPage from "@/pages/public/TermsPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
@@ -32,6 +33,7 @@ import WarehouseFacilitySelectionPage from '@/pages/customer/WarehouseFacilitySe
 import WarehouseMapPage, {InteractiveWarehouseRackDetailPage as WarehouseRackDetailPage} from '@/pages/customer/WarehouseMapPage';
 import ProfilePage from '@/pages/customer/ProfilePage';
 import PaymentHistoryPage from '@/pages/customer/PaymentHistoryPage';
+import PayosPaymentReturnPage from '@/pages/customer/PayosPaymentReturnPage';
 import NotificationsPage from '@/pages/customer/NotificationsPage';
 import RentalExtensionPage from '@/pages/customer/RentalExtensionPage';
 import RentalAccessPage from '@/pages/customer/RentalAccessPage';
@@ -55,6 +57,7 @@ export default function AppRoutes() {
         <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/support" element={<SupportPublicPage />} />
+        <Route path="/terms" element={<TermsPage />} />
       </Route>
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
@@ -71,6 +74,7 @@ export default function AppRoutes() {
         <Route path="warehouse-map" element={<WarehouseFacilitySelectionPage />} />
         <Route path="inventory" element={<MyInventoryPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="terms" element={<TermsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="rentals/:id/extend" element={<RentalExtensionPage />} />
         <Route path="rentals/:id/access" element={<RentalAccessPage />} />
@@ -82,6 +86,7 @@ export default function AppRoutes() {
         <Route path="refunds/:id" element={<FinancialDetailPage kind="refund" />} />
         <Route path="charges/:id" element={<FinancialDetailPage kind="charge" />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="payments/return" element={<PayosPaymentReturnPage />} />
         <Route
           path="contracts"
           element={<ContractsPage />}

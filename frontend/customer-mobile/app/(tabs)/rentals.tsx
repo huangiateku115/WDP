@@ -1,1 +1,1 @@
-export {default} from '../../src/screens/RentalsScreen';
+export {Rentals as default} from '../../src/screens/LiveRental';

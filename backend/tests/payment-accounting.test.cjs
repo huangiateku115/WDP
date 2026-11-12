@@ -19,8 +19,8 @@ test('invalid amounts and deposit greater than final rent fail closed', () => {
   assert.throws(() => calculateRentalPaymentBreakdown({ rentAmount: 100, depositAmount: 0, discountAmount: 101 }), PaymentAccountingError);
 });
 
-test('payment purpose is limited to DEPOSIT and BALANCE and schema enforces idempotency indexes', () => {
-  assert.deepEqual(Object.values(PaymentPurpose).sort(), ['BALANCE', 'DEPOSIT']);
+test('payment purpose includes DEPOSIT, BALANCE, FULL_RENT and RENEWAL and schema enforces idempotency indexes', () => {
+  assert.deepEqual(Object.values(PaymentPurpose).sort(), ['BALANCE', 'DEPOSIT', 'FULL_RENT', 'RENEWAL']);
   const indexes = Payment.schema.indexes();
   assert.ok(indexes.some(([keys, options]) => keys.idempotencyKey === 1 && options.unique));
   assert.ok(indexes.some(([keys, options]) => keys.reservationId === 1 && keys.purpose === 1 && options.unique && options.partialFilterExpression?.status === 'SUCCEEDED'));

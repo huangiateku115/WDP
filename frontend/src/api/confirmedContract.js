@@ -28,7 +28,7 @@ export function assertConfirmedRequest(config) {
   };
   const customerAllowed =
     (method === "GET" &&
-        /^(public\/facilities(\/[^/]+(\/(storage-options|pricing))?)?|facilities\/[^/]+\/storage-units|storage-units\/[^/]+|pricing-rules(\/resolve)?|policies(\/resolve)?|reservations\/(me|[^/]+)|contracts\/me|support-requests(\/[^/]+(\/messages)?)?)$/.test(
+        /^(public\/(facilities(\/[^/]+(\/(storage-options|pricing))?)?|terms(\/current|\/[^/]+)?)|facilities\/[^/]+\/storage-units|storage-units\/[^/]+|pricing-rules(\/resolve)?|policies(\/resolve)?|reservations\/(me|[^/]+)|contracts\/me|support-requests(\/[^/]+(\/messages)?)?)$/.test(
         path,
       )) ||
     (method === "GET" && /^storage-units\/[a-f\d]{24}\/availability$/i.test(path)) ||
@@ -43,9 +43,15 @@ export function assertConfirmedRequest(config) {
   const customerPayosStatus =
     method === "GET" &&
     /^reservations\/[a-f\d]{24}\/payments\/[a-f\d]{24}$/i.test(path);
+  const customerPayosReconcile = method === "POST" &&
+    /^reservations\/[a-f\d]{24}\/payments\/[a-f\d]{24}\/reconcile$/i.test(path);
   const customerPayosHistory =
     method === "GET" &&
     /^reservations\/[a-f\d]{24}\/payments\/payos(?:\?[^#]*)?$/i.test(path);
+  const managedCustomerPayos =
+    (method === "POST" && /^reservations\/managed\/[a-f\d]{24}\/payments\/payos$/i.test(path)) ||
+    (method === "GET" && /^reservations\/managed\/[a-f\d]{24}\/payments\/(?:payos(?:\?[^#]*)?|[a-f\d]{24})$/i.test(path)) ||
+    (method === "POST" && /^reservations\/managed\/[a-f\d]{24}\/payments\/[a-f\d]{24}\/reconcile$/i.test(path));
   const warehouseRead =
     method === "GET" &&
     (path === "warehouse-map" ||
@@ -172,7 +178,6 @@ export function assertConfirmedRequest(config) {
       (/^facilities$/.test(path) ||
         /^facilities\/[^/]+\/(restore|storage-units)$/.test(path) ||
         /^pricing-rules$/.test(path) ||
-        /^policies$/.test(path) ||
         /^storage-units\/[^/]+\/restore$/.test(path) ||
         /^users$/.test(path) ||
         /^(maintenance-tickets|support-requests)\/[^/]+\/(assign|unassign|escalate)$/.test(
@@ -184,7 +189,6 @@ export function assertConfirmedRequest(config) {
     (method === "PATCH" &&
       (/^facilities\/[^/]+(\/status)?$/.test(path) ||
         /^pricing-rules\/[^/]+(\/status)?$/.test(path) ||
-        /^policies\/[^/]+(\/status)?$/.test(path) ||
         /^storage-units\/[^/]+(\/status)?$/.test(path) ||
         /^users\/[^/]+\/reactivate$/.test(path) ||
         /^(maintenance-tickets|support-requests)\/[^/]+\/status$/.test(
@@ -235,7 +239,13 @@ export function assertConfirmedRequest(config) {
   const facilityHandover =
     (method === "GET" && /^contracts\/[a-f\d]{24}\/print$/i.test(path)) ||
     (method === "POST" &&
-      /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover)$/i.test(
+      /^(contracts\/[a-f\d]{24}\/confirm-signed-paper|reservations\/[a-f\d]{24}\/handover|reservations\/managed\/[a-f\d]{24}\/handover)$/i.test(
+        path,
+      ));
+  const selfStorageCheckoutAndRenew =
+    (method === "GET" && /^reservations\/checkout-queue(?:\?[^#]*)?$/i.test(path)) ||
+    (method === "POST" &&
+      /^reservations\/[^/]+\/(checkout-request|complete-checkout|reject-checkout|renew|renew-quote)(?:\?[^#]*)?$/i.test(
         path,
       ));
   // Verified Staff MI-06 routes. Server authentication, Facility scope and gates remain authoritative.
@@ -251,11 +261,14 @@ export function assertConfirmedRequest(config) {
         /^outbound-requests\/[a-f\d]{24}\/confirm$/i.test(path) ||
         /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
   const allowed =
+    selfStorageCheckoutAndRenew ||
     staffInventoryOperations ||
     customerInventoryRequests ||
     facilityHandover ||
     customerPayosHistory ||
     customerPayosStatus ||
+    customerPayosReconcile ||
+    managedCustomerPayos ||
     bomInventoryRead ||
     bomReservationAdmin ||
     bomStorageUnitWrite ||

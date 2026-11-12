@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { availabilityMatches, buildAvailabilityDays, monthKey, rangeContainsDay, shiftMonth } from '../src/lib/selfStorageAvailability.js';
-import { selfStorageCreation, selfStorageRequest } from '../src/lib/selfStorageReservation.js';
+import { selfStorageCreateReservationPayload, selfStorageCreation, selfStorageRequest } from '../src/lib/selfStorageReservation.js';
 import { rentalEndDate } from '../src/lib/rentalPeriod.js';
 import { assertConfirmedRequest } from '../src/api/confirmedContract.js';
 import { transformSync } from 'esbuild';
@@ -48,6 +48,38 @@ test('booking confirmation validates identity independently of Deposit eligibili
   assert.throws(() => selfStorageCreation({ status: 201, data: { success: true, data: { ...reservation, storageUnitId: facilityId } } }, payload), /did not confirm/);
 });
 
+test('Self Storage create payload preserves Backend Terms acceptance contract fields', () => {
+  const input = { facilityId, storageUnitId: unitId, startDate: '2026-12-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z', pricingPolicyId: pricingId, termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.1' };
+  assert.deepEqual(selfStorageCreateReservationPayload(input), {
+    facilityId, storageUnitId: unitId, startDate: input.startDate, endDate: input.endDate,
+    pricingPolicyId: pricingId, estimatedRent: undefined, depositAmount: undefined,
+    termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.1',
+  });
+  assert.equal(selfStorageCreateReservationPayload({ ...input, termsAccepted: false }).termsAccepted, false);
+  assert.equal(selfStorageCreateReservationPayload({ ...input, termsVersionId: 'VS-POLICY-002@2.0' }).termsVersionId, 'VS-POLICY-002@2.0');
+});
+
+test('reservationApi.createReal sends termsAccepted and termsVersionId to POST /reservations', async () => {
+  const calls = [];
+  const source = readFileSync(new URL('../src/api/reservationApi.js', import.meta.url), 'utf8');
+  const compiled = transformSync(source, { loader: 'js', format: 'cjs', define: { 'import.meta.env': JSON.stringify({ VITE_USE_MOCK: 'false' }) } }).code;
+  const apiModule = { exports: {} };
+  new Function('require', 'module', 'exports', compiled)((name) => {
+    if (name === './axiosClient') return { __esModule: true, default: { post: (...args) => { calls.push(args); return Promise.resolve({ status: 201 }); } } };
+    if (name === './managedReservationApi') return { __esModule: true, default: {} };
+    if (name === '@/lib/customerReservationService') return { serviceType: () => 'SELF_STORAGE', MANAGED_INVENTORY: 'MANAGED_INVENTORY', SELF_STORAGE: 'SELF_STORAGE' };
+    if (name === '@/lib/selfStorageReservation') return { selfStorageCreateReservationPayload };
+    throw Error(`Unexpected import: ${name}`);
+  }, apiModule, apiModule.exports);
+  const request = { facilityId, storageUnitId: unitId, startDate: '2026-12-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z', pricingPolicyId: pricingId, termsAccepted: true, termsVersionId: 'VS-POLICY-002@2.1' };
+  const config = { headers: { 'Idempotency-Key': 'wdp-booking-test-key' } };
+  await apiModule.exports.default.createReal(request, config);
+  assert.equal(calls[0][0], '/reservations');
+  assert.equal(calls[0][1].termsAccepted, true);
+  assert.equal(calls[0][1].termsVersionId, 'VS-POLICY-002@2.1');
+  assert.equal(calls[0][2], config);
+});
+
 test('Customer booking routes to PayOS summary and Step 2 exposes accessible monthly availability UI', async () => {
   const [review, period, checkout, lifecycle] = await Promise.all([
     readFile(new URL('../src/components/customer/SelfStorageReservationReview.jsx', import.meta.url), 'utf8'),
@@ -55,12 +87,12 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
     readFile(new URL('../src/components/customer/SelfStoragePayosCheckout.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/customer/RentalLifecycleIntegration.jsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(review, /startDepositAfterBooking: response\.status === 201/);
+  assert.match(review, /startFullRentAfterBooking: response\.status === 201/);
   assert.doesNotMatch(review, /createPayosCheckout/);
   assert.match(checkout, /pay\(\{ automatic: true \}\)/);
   assert.match(review, /nav\("\/portal\/payments\/" \+ createdReservationId/);
-  assert.match(period, /aria-label=\{`Availability calendar for \$\{visibleMonth\}`\}/);
-  assert.match(period, /Previous month/);
+  assert.match(period, /aria-label=\{`Lịch tình trạng kho tháng \$\{visibleMonth\}`\}/);
+  assert.match(period, /Tháng trước/);
   assert.match(period, /lg:grid-cols/);
   assert.match(period, /rangeState === "CONFLICT"/);
   assert.match(checkout, /Hosted Checkout chính thức của PayOS/);

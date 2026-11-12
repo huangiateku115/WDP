@@ -3,8 +3,10 @@ import InspectionModel from '../../models/inspections/inspection.model';
 import { InspectionStatus, InspectionType, UnitCondition } from '../../types/inspection.type';
 import ReservationModel from '../../models/reservations/reservation.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
+import ContractModel from '../../models/contracts/contract.model';
 import { ReservationStatus } from '../../types/reservation.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
+import { ContractStatus } from '../../types/contract.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import mongoose from 'mongoose';
 
@@ -218,25 +220,41 @@ export const completeInspection = async (req: Request, res: Response) => {
         }
       });
     } else if (inspection.type === InspectionType.CHECK_OUT) {
+      const now = new Date();
+      const currentRes = await ReservationModel.findById(inspection.reservationId);
+      const isEarly = currentRes?.endDate ? now.getTime() < new Date(currentRes.endDate).getTime() - (24 * 60 * 60 * 1000) : false;
+      const contractStatus = isEarly ? ContractStatus.TERMINATED : ContractStatus.EXPIRED;
+
       // Nếu là CHECK_OUT hoàn tất -> Chuyển Reservation thành CHECKED_OUT và dọn dẹp StorageUnit
       await ReservationModel.findByIdAndUpdate(inspection.reservationId, {
         status: ReservationStatus.CHECKED_OUT,
+        actualCheckoutDate: now,
+        'checkoutRequest.status': 'COMPLETED',
         $push: {
           statusHistory: {
             status: ReservationStatus.CHECKED_OUT,
             actorId: req.user!._id,
-            reason: 'Hoàn tất nghiệm thu trả kho (CHECK_OUT)'
+            reason: isEarly
+              ? 'Hoàn tất nghiệm thu trả kho sớm hạn (không hoàn tiền, CHECK_OUT)'
+              : 'Hoàn tất nghiệm thu trả kho đúng hạn (CHECK_OUT)'
           }
         }
       });
+
+      // Cập nhật hợp đồng
+      await ContractModel.findOneAndUpdate(
+        { reservationId: inspection.reservationId },
+        { $set: { status: contractStatus } }
+      );
       
       // Nếu kho bị hỏng hoặc bẩn thì chuyển sang MAINTENANCE để dọn dẹp, ngược lại là AVAILABLE
-      const nextUnitStatus = (inspection.condition === UnitCondition.DAMAGED || inspection.condition === UnitCondition.NEEDS_CLEANING)
+      const nextUnitStatus = (inspection.condition === UnitCondition.DAMAGED || inspection.condition === UnitCondition.NEEDS_CLEANING || (inspection.damageFee && inspection.damageFee > 0))
         ? StorageUnitStatus.MAINTENANCE
         : StorageUnitStatus.AVAILABLE;
 
       await StorageUnitModel.findByIdAndUpdate(inspection.storageUnitId, {
-        status: nextUnitStatus
+        status: nextUnitStatus,
+        $inc: { bookingVersion: 1 }
       });
     }
     

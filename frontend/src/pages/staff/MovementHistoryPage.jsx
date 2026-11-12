@@ -1,3 +1,4 @@
+import {facilityLabel} from '@/lib/facilityLabels';
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { inventoryApi } from '@/api/inventoryApi';
@@ -30,7 +31,7 @@ export default function MovementHistoryPage() {
     async function load() {
       setLoading(true);
       try {
-        if (!validInventoryId(requestedId)) throw Error('Enter a valid inventory Item ID.');
+        if (!validInventoryId(requestedId)) throw Error("Nhập mã mặt hàng hợp lệ.");
         const item = inventoryRecord(await inventoryApi.get(requestedId, { signal: controller.signal }));
         if (inventoryId(item) !== requestedId || inventoryId(item.facilityId) !== inventoryId(user?.assignedFacilityId)) {
           throw Error('This Item is outside your assigned Facility.');
@@ -59,27 +60,27 @@ export default function MovementHistoryPage() {
 
   const cell = value => inventoryId(value) || 'Outside / no Cell';
   const rows = result?.movements.filter(movement => !type || movement.type === type) || [];
-  return <Screen title="Item movement history" notice="Completed backend movements for your assigned Facility.">
-    <Panel title="Find an inventory Item">
+  return <Screen title="Lịch sử biến động mặt hàng" notice="Biến động hàng đã hoàn tất trên máy chủ trong cơ sở được phân công.">
+    <Panel title="Tìm mặt hàng">
       <form onSubmit={find} className="flex flex-wrap gap-3">
-        <Input aria-label="Inventory Item ID" value={input} onChange={event => setInput(event.target.value.trim())} disabled={!!id} />
-        <Button disabled={loading}>{loading ? 'Loading…' : 'Load or refresh history'}</Button>
+        <Input aria-label="Mã mặt hàng" value={input} onChange={event => setInput(event.target.value.trim())} disabled={!!id} />
+        <Button disabled={loading}>{loading ? "Đang tải…" : "Tải / cập nhật lịch sử"}</Button>
       </form>
     </Panel>
     <Message error={error} />
-    {loading && <p role="status">Loading movement history…</p>}
+    {loading && <p role="status">Đang tải lịch sử biến động…</p>}
     {result && <Panel title={`${result.item.itemCode} · ${result.item.name}`}>
-      <OpenLink to={`/staff/inventory/stock?itemId=${requestedId}`}>View stock balance</OpenLink>
-      <div className="my-4"><Select label="Movement type" value={type} onChange={setType} options={[
-        ['', 'All movement types'], 'INBOUND', 'OUTBOUND', 'RELOCATION',
+      <OpenLink to={`/staff/inventory/stock?itemId=${requestedId}`}>Xem tồn kho</OpenLink>
+      <div className="my-4"><Select label="Loại biến động" value={type} onChange={setType} options={[
+        ['', "Tất cả loại biến động"], 'INBOUND', 'OUTBOUND', 'RELOCATION',
       ]} /></div>
-      {!rows.length && <p>No completed movements match this filter.</p>}
+      {!rows.length && <p>Không có biến động hoàn tất phù hợp bộ lọc.</p>}
       <div className="space-y-4">{rows.map(movement => <article key={inventoryId(movement)} className="rounded-xl border p-4">
-        <h3 className="font-semibold">{movement.type} · {movement.quantity} {movement.quantityUnit}</h3>
-        <p className="mt-2 break-all text-sm">Movement ID {inventoryId(movement)}</p>
-        <p className="break-all text-sm">From {cell(movement.sourceCellId)} → To {cell(movement.destinationCellId)}</p>
-        <p className="text-sm">{new Date(movement.performedAt).toLocaleString('en-GB')}</p>
-        <p className="break-all text-sm">Performed by {inventoryId(movement.performedBy) || 'Not returned'}</p>
+        <h3 className="font-semibold">{facilityLabel(movement.type)} · {movement.quantity} {facilityLabel(movement.quantityUnit)}</h3>
+        <p className="mt-2 break-all text-sm">Mã biến động {inventoryId(movement)}</p>
+        <p className="break-all text-sm">Từ {cell(movement.sourceCellId)} → Đến {cell(movement.destinationCellId)}</p>
+        <p className="text-sm">{new Date(movement.performedAt).toLocaleString('vi-VN')}</p>
+        <p className="break-all text-sm">Người thực hiện {inventoryId(movement.performedBy) || "Máy chủ chưa trả dữ liệu"}</p>
         <p className="my-2 whitespace-pre-wrap text-sm">{movement.inspectionNote || movement.handoverNote || movement.relocationNote}</p>
         <MovementMeasurements movement={movement} />
       </article>)}</div>

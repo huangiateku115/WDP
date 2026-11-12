@@ -5,6 +5,7 @@ import {
   SELF_STORAGE,
 } from "@/lib/customerReservationService";
 import axiosClient from "./axiosClient";
+import { selfStorageCreateReservationPayload } from "@/lib/selfStorageReservation";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const delay = (ms = 450) => new Promise((r) => setTimeout(r, ms));
@@ -21,31 +22,8 @@ const saveOne = (item) => {
 const reservationApi = {
   createManaged: (payload) =>
     axiosClient.post("/reservations/managed", payload),
-  createReal: (
-    {
-      facilityId,
-      storageUnitId,
-      startDate,
-      endDate,
-      pricingPolicyId,
-      estimatedRent,
-      depositAmount,
-    },
-    config,
-  ) =>
-    axiosClient.post(
-      "/reservations",
-      {
-        facilityId,
-        storageUnitId,
-        startDate,
-        endDate,
-        pricingPolicyId,
-        estimatedRent,
-        depositAmount,
-      },
-      config,
-    ),
+  createReal: (payload, config) =>
+    axiosClient.post("/reservations", selfStorageCreateReservationPayload(payload), config),
   // Public route (no auth): POST /reservations/estimate {startDate,endDate,pricingPolicyId}
   // -> {estimatedRent,depositAmount,taxAmount,durationDays,basePrice}. Consumed by
   // selfStorageEstimate() in lib/selfStorageReservation.js and by RentalPeriodIntegration.
@@ -146,6 +124,10 @@ const reservationApi = {
     saveOne(updated);
     return { data: updated };
   },
+
+  requestCheckout: (id, note) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/checkout-request`, { note }),
+  renewQuote: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew-quote`, { durationMonths }),
+  renewReservation: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew`, { durationMonths }),
 };
 
 export default reservationApi;

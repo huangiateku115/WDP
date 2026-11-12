@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {assertOwner,idRef,instant,nonnegative,objectId,readData,readPage,refId,reservationStatus,service,whole} from './core';
 
-export const customerUser=z.object({_id:objectId,role:z.literal('CUSTOMER'),displayName:z.string().min(1),email:z.string().email(),phone:z.string().optional(),isActive:z.boolean().optional()}).passthrough();
+export const customerUser=z.object({_id:objectId,role:z.literal('CUSTOMER'),displayName:z.string().min(1),email:z.string().email(),phone:z.string().nullish(),isActive:z.boolean().optional()}).passthrough();
 export const loginBody=z.object({email:z.string().trim().email(),password:z.string().min(1)}).strict();
 export const logoutBody=z.object({refreshToken:z.string().min(1)}).strict();
 export const registrationBody=z.object({email:z.string().trim().email(),password:z.string().min(8),displayName:z.string().trim().min(1),phone:z.string().trim().optional()}).strict();
@@ -13,7 +13,7 @@ export function mapLogin(response:unknown){
   const result=readData(z.object({accessToken:z.string().min(1),refreshToken:z.string().min(1),user:customerUser}),response);
   if(result.user.isActive===false)throw Error('Account inactive');return result;
 }
-export const identityProfile=z.object({userId:idRef,verificationStatus:z.enum(['UNVERIFIED','PENDING','VERIFIED','REJECTED']),identityCard:z.string().optional(),address:z.string().optional(),taxCode:z.string().optional()}).passthrough();
+export const identityProfile=z.object({userId:idRef,verificationStatus:z.enum(['UNVERIFIED','PENDING','VERIFIED','REJECTED']),identityCard:z.string().nullish(),address:z.string().nullish(),taxCode:z.string().nullish()}).passthrough();
 export const facilityDto=z.object({_id:objectId,name:z.string().min(1),serviceTypes:z.array(service).min(1),address:z.object({street:z.string().optional(),district:z.string().optional(),city:z.string().optional()}).passthrough(),images:z.array(z.string().url()).optional(),description:z.string().optional()}).passthrough();
 export const reservationDto=z.object({_id:objectId,reservationCode:z.string().min(1),customerId:idRef,facilityId:idRef,storageUnitId:idRef.nullish(),serviceType:service,status:reservationStatus,
   startDate:instant,endDate:instant,expiresAt:instant.nullish(),bookingFlowVersion:z.union([z.literal(1),z.literal(2)]).optional(),

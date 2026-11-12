@@ -19,12 +19,12 @@ export function mapContract(response:unknown,owner:string,service:'SELF_STORAGE'
   return {contract,current,customer,facility,progress:signed?'SIGNED':stale||contract.status==='SIGNED'?'REQUIRES_VERIFICATION':customer?'PARTIAL':'DRAFT',
     canSign:false as const,signingReason:'Tạm khóa ký: Backend chưa ràng buộc đúng phiên bản/mã băm đã đọc. Self hợp đồng giấy không được suy diễn thành chữ ký V2.'};
 }
-export const paymentDto=z.object({id:objectId,reservationId:objectId,purpose:z.enum(['DEPOSIT','BALANCE']),amount:whole.min(1),currency:z.literal('VND'),provider:z.literal('PAYOS'),providerSettlementStatus:z.enum(['NOT_VERIFIED','VERIFIED']),status:z.enum(['PENDING','SUCCEEDED','FAILED','RECONCILIATION_REQUIRED']),applicationStatus:z.enum(['NOT_APPLIED','APPLIED','MANUAL_REVIEW']),checkoutStatus:z.enum(['NOT_CREATED','CREATING','READY','UNKNOWN','RECONCILIATION_REQUIRED']),checkoutUrl:httpUrl.nullable(),qrCode:z.string().nullable(),succeededAt:instant.nullable(),reconciliationRequired:z.boolean()});
+export const paymentDto=z.object({id:objectId,reservationId:objectId,purpose:z.enum(['DEPOSIT','BALANCE']),amount:whole.min(1),currency:z.literal('VND'),provider:z.literal('PAYOS'),providerSettlementStatus:z.enum(['NOT_VERIFIED','VERIFIED']),status:z.enum(['PENDING','SUCCEEDED','FAILED','CANCELLED','RECONCILIATION_REQUIRED']),applicationStatus:z.enum(['NOT_APPLIED','APPLIED','MANUAL_REVIEW']),checkoutStatus:z.enum(['NOT_CREATED','CREATING','READY','UNKNOWN','FAILED','CANCELLED','RECONCILIATION_REQUIRED']),checkoutUrl:httpUrl.nullable(),qrCode:z.string().nullable(),succeededAt:instant.nullable(),cancelVerifiedAt:instant.nullable().optional(),retryAllowed:z.boolean().optional(),reconciliationRequired:z.boolean()});
 export function mapSelfPayment(response:unknown,reservation:ReservationDto,owner:string){
   assertOwner(reservation,owner);if(reservation.serviceType!=='SELF_STORAGE')throw Error('Managed PayOS is not supported');const p=readData(paymentDto,response);
   if(p.reservationId!==reservation._id)throw Error('Payment scope mismatch');
   return {...p,applied:p.status==='SUCCEEDED'&&p.providerSettlementStatus==='VERIFIED'&&p.applicationStatus==='APPLIED'&&!p.reconciliationRequired,
-    canInitiate:false as const,nativeReturnSupported:false as const};
+    canInitiate:false as const,nativeReturnSupported:true as const};
 }
 export const payosBody=z.object({purpose:z.enum(['DEPOSIT','BALANCE'])}).strict();
 export const payosKey=z.string().trim().min(1).max(120).refine(v=>!/[\r\n]/.test(v));

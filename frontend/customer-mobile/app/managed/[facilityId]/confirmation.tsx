@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/ManagedConfirmationScreen';
+export {ManagedRentalDetail as default} from '../../../src/screens/ManagedCatalog';

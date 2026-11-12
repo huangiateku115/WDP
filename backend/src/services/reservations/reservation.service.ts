@@ -7,10 +7,12 @@ import ContractModel from '../../models/contracts/contract.model';
 import { ContractStatus } from '../../types/contract.type';
 import PricingRuleModel from '../../models/pricing-policy/pricing-rule.model';
 import PolicyModel from '../../models/pricing-policy/policy.model';
+import { pricingRevisionAt } from '../pricing-policy/pricing-revision';
 import { IReservation, ReservationStatus } from '../../types/reservation.type';
 import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
+import { captureTermsAcceptance } from '../terms/terms.catalog';
 
 export interface SuggestedStorageUnit {
   _id: Types.ObjectId | string;
@@ -38,7 +40,7 @@ export class ReservationError extends Error {
 
 export class ReservationService {
   private static bookingPayloadHash(data: {
-    customerId: string; facilityId: string; storageUnitId: string; startDate: Date; endDate: Date; pricingPolicyId: string;
+    customerId: string; facilityId: string; storageUnitId: string; startDate: Date; endDate: Date; pricingPolicyId: string; termsVersionId?: string;
   }): string {
     const canonical = {
       customerId: String(data.customerId).toLowerCase(),
@@ -48,6 +50,7 @@ export class ReservationService {
       endDate: new Date(data.endDate).toISOString(),
       pricingPolicyId: String(data.pricingPolicyId).toLowerCase(),
       serviceType: FacilityServiceType.SELF_STORAGE,
+      termsVersionId: data.termsVersionId,
     };
     return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
   }
@@ -59,6 +62,10 @@ export class ReservationService {
     if (!existing) return null;
     if (existing.bookingPayloadHash !== payloadHash) {
       throw new ReservationError(409, 'This booking request key was already used with different reservation details.');
+    }
+    // Nếu đơn cũ đã bị CANCELLED, không coi là Replay hợp lệ để cho phép tạo đơn mới
+    if (existing.status === ReservationStatus.CANCELLED) {
+      return null;
     }
     return existing;
   }
@@ -227,6 +234,9 @@ export class ReservationService {
     depositAmount: number;
     durationDays: number;
     basePrice: number;
+    currency: string;
+    pricingRevisionVersion?: number;
+    effectiveFrom?: Date;
   }> {
     if (!pricingPolicyId) {
       throw new ReservationError(400, 'pricingPolicyId là bắt buộc.');
@@ -238,13 +248,22 @@ export class ReservationService {
     }
 
     let basePrice = 0;
+    let currency = 'VND';
+    let pricingRevisionVersion: number | undefined;
+    let effectiveFrom: Date | undefined;
     const pricingRule = await PricingRuleModel.findById(pricingPolicyId).exec();
     if (pricingRule) {
-      basePrice = pricingRule.price;
+      const revision = pricingRule.isActive ? pricingRevisionAt(pricingRule, start) : undefined;
+      if (!revision) throw new ReservationError(409, 'Pricing Rule is not effective for the requested rental start date.');
+      basePrice = revision.price;
+      currency = revision.currency;
+      pricingRevisionVersion = revision.version;
+      effectiveFrom = revision.effectiveFrom;
     } else {
       const policy = await PolicyModel.findById(pricingPolicyId).exec();
       if (policy && typeof policy.config?.price === 'number') {
         basePrice = policy.config.price as number;
+        currency = typeof policy.config?.currency === 'string' ? policy.config.currency : 'VND';
       } else {
         throw new ReservationError(400, 'Không tìm thấy chính sách giá (Pricing Policy) hợp lệ.');
       }
@@ -255,7 +274,9 @@ export class ReservationService {
     const estimatedRent = Math.round((durationDays / 30) * basePrice);
     const depositAmount = durationDays < 30 ? Math.round(basePrice * 0.5) : basePrice;
 
-    return { estimatedRent, depositAmount, durationDays, basePrice };
+    return { estimatedRent, depositAmount, durationDays, basePrice, currency,
+      ...(pricingRevisionVersion !== undefined ? { pricingRevisionVersion } : {}),
+      ...(effectiveFrom !== undefined ? { effectiveFrom } : {}) };
   }
 
   /**
@@ -268,6 +289,8 @@ export class ReservationService {
     startDate: Date;
     endDate: Date;
     pricingPolicyId: string;
+    termsAccepted?: boolean;
+    termsVersionId?: string;
   }): Promise<IReservation> {
     const result = await this.createReservationWithOutcome(data);
     return result.reservation;
@@ -280,6 +303,8 @@ export class ReservationService {
     startDate: Date;
     endDate: Date;
     pricingPolicyId: string;
+    termsAccepted?: boolean;
+    termsVersionId?: string;
     idempotencyKey?: string;
   }): Promise<{ reservation: IReservation; replayed: boolean }> {
 
@@ -290,12 +315,19 @@ export class ReservationService {
     let payloadHash: string | undefined;
     if (idempotencyKey) {
       try {
-        payloadHash = this.bookingPayloadHash(data);
+      payloadHash = this.bookingPayloadHash(data);
       } catch {
         throw new ReservationError(400, 'Reservation dates are invalid.');
       }
       const replay = await this.findBookingReplay(data.customerId, idempotencyKey, payloadHash);
       if (replay) return { reservation: replay, replayed: true };
+    }
+    let termsAcceptance;
+    try { termsAcceptance = captureTermsAcceptance(FacilityServiceType.SELF_STORAGE, data.termsVersionId, data.termsAccepted); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      throw new ReservationError(message === 'TERMS_VERSION_STALE' ? 409 : message === 'NO_EFFECTIVE_TERMS' ? 503 : 400,
+        message === 'TERMS_VERSION_STALE' ? 'Terms have changed. Review and accept the current version before continuing.' : message === 'NO_EFFECTIVE_TERMS' ? 'No effective Terms are configured for this service.' : 'Customer acceptance of the current Terms is required.');
     }
     
     // 1. Kiểm tra Gate Verification (Bắt buộc KH phải VERIFIED)
@@ -304,15 +336,17 @@ export class ReservationService {
       throw new ReservationError(403, 'Tài khoản chưa được xác minh CCCD. Vui lòng cập nhật và chờ duyệt.');
     }
 
-    const startDate = new Date(data.startDate);
+    const now = new Date();
+    const startDate = data.startDate ? new Date(data.startDate) : new Date(now);
     const endDate = new Date(data.endDate);
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       throw new ReservationError(400, 'Ngày bắt đầu hoặc ngày kết thúc không hợp lệ.');
     }
 
-    if (startDate <= new Date()) {
-      throw new ReservationError(400, 'Ngày bắt đầu thuê phải nằm trong tương lai.');
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (startDate < todayStart) {
+      throw new ReservationError(400, 'Ngày bắt đầu thuê không được nằm trong quá khứ.');
     }
 
     if (endDate <= startDate) {
@@ -320,11 +354,12 @@ export class ReservationService {
     }
 
     // 2. Tự tính toán tiền thuê và tiền cọc từ Pricing Policy
-    const { estimatedRent, depositAmount } = await this.calculatePricing(
+    const pricing = await this.calculatePricing(
       data.pricingPolicyId,
       startDate,
       endDate
     );
+    const { estimatedRent, depositAmount } = pricing;
 
     const session = await mongoose.startSession();
     try {
@@ -417,6 +452,11 @@ export class ReservationService {
           customerId: data.customerId,
           facilityId: data.facilityId,
           serviceType: FacilityServiceType.SELF_STORAGE,
+          rentalPaymentFlow: 'FULL_UPFRONT_V1',
+          rentalPricingSnapshot: { pricingRuleId: String(data.pricingPolicyId), revisionVersion: pricing.pricingRevisionVersion ?? null,
+            currency: pricing.currency, unitPrice: pricing.basePrice, durationDays: pricing.durationDays,
+            estimatedRent, taxAmount: 0, discountAmount: 0, effectiveFrom: pricing.effectiveFrom ?? null },
+          termsAcceptance,
           ...(idempotencyKey && payloadHash ? { bookingIdempotencyKey: idempotencyKey, bookingPayloadHash: payloadHash } : {}),
           storageUnitId: unit._id,
           
@@ -429,12 +469,13 @@ export class ReservationService {
           estimatedRent,
           depositAmount,
           
+          signingDeadline: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 days SLA to inspect and sign
           expiresAt, // Đồng hồ đếm ngược 24h
           
           statusHistory: [{
             status: ReservationStatus.CONTRACTED,
             actorId: data.customerId,
-            reason: 'Self-Storage reservation automatically contracted; advance-rent Deposit is pending.'
+            reason: 'Self-Storage reservation created; full-rent PayOS payment is pending.'
           }]
         });
 
@@ -443,6 +484,20 @@ export class ReservationService {
         const profileUser: any = verifiedProfile.userId && typeof verifiedProfile.userId === 'object'
           ? verifiedProfile.userId
           : {};
+        const contractContent = {
+          schemaVersion: 1, reservationId: String(reservation._id), reservationCode: reservation.reservationCode,
+          customerId: String(reservation.customerId), facilityId: String(reservation.facilityId), serviceType: reservation.serviceType,
+          bookingFlowVersion: 1, rentalPaymentFlow: reservation.rentalPaymentFlow,
+          storageUnitId: String(unit._id), storageUnitSize: unit.size, startDate, endDate,
+          pricing: { estimatedRent, currency: pricing.currency, depositAmount, taxAmount: reservation.taxAmount || 0,
+            discountAmount: reservation.discountAmount || 0, pricingPolicyId: String(reservation.pricingPolicyId) },
+          termsAcceptance: reservation.termsAcceptance ? { documentCode: reservation.termsAcceptance.documentCode,
+            version: reservation.termsAcceptance.version, versionId: reservation.termsAcceptance.versionId,
+            serviceType: reservation.termsAcceptance.serviceType, contentHash: reservation.termsAcceptance.contentHash,
+            acceptedAt: reservation.termsAcceptance.acceptedAt } : null,
+          signingDeadline: reservation.signingDeadline,
+        };
+        const contractContentHash = createHash('sha256').update(JSON.stringify(contractContent)).digest('hex');
         const contract = new ContractModel({
           contractCode: `CTR-${reservation.reservationCode}`,
           reservationId: reservation._id,
@@ -463,6 +518,11 @@ export class ReservationService {
             discountAmount: reservation.discountAmount || 0,
             pricingPolicyId: reservation.pricingPolicyId,
           },
+          currentContentVersion: 1,
+          contentVersions: [{ version: 1, contentHash: contractContentHash, content: contractContent,
+            createdBy: reservation.customerId, createdAt: now }],
+          signatures: [],
+          termsVersion: reservation.termsAcceptance?.version ?? 'legacy',
         });
         await contract.save({ session });
         createdReservation = reservation;

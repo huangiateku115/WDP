@@ -14,7 +14,8 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   provider: { type: String, enum: Object.values(PaymentProvider), required: true, immutable: true },
   providerReference: { type: String, maxlength: 200, immutable: true },
   // For PAYOS this immutable, already-uniquely-indexed value is the local orderCode.
-  checkoutState: { type: String, enum: ['NOT_CREATED', 'CREATING', 'READY', 'UNKNOWN', 'RECONCILIATION_REQUIRED'] },
+  checkoutState: { type: String, enum: ['NOT_CREATED', 'CREATING', 'READY', 'UNKNOWN', 'FAILED', 'CANCELLED', 'RECONCILIATION_REQUIRED'] },
+  cancelVerifiedAt: { type: Date },
   checkoutUrl: { type: String, maxlength: 2048 },
   // Raw provider-generated EMV QR payload. It is never synthesized by WDP.
   qrCode: { type: String, maxlength: 4096, match: /^000201[\x20-\x7E]+$/ },

@@ -99,10 +99,17 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
                 ["Used capacity", `${reservation.usedCapacityM3 ?? 0} m³`],
               ] : []),
               ["Rental window", `${day(reservation.startDate)} → ${day(reservation.endDate)}`],
-              ["Estimated rent", money(reservation.estimatedRent)],
-              ["Deposit", money(reservation.depositAmount)],
+              ...(managed ? [
+                ["Estimated rent", money(reservation.estimatedRent)],
+                ["Deposit", money(reservation.depositAmount)],
+              ] : [
+                ["Tổng tiền thanh toán", money(reservation.estimatedRent)],
+              ]),
               ["Hold expires", reservation.expiresAt ? new Date(reservation.expiresAt).toLocaleString("en-GB") : "—"],
               ["Rejection reason", reservation.rejectReason || "—"],
+              ...(reservation.actualCheckoutDate || reservation.status === "CHECKED_OUT" ? [
+                ["Ngày trả kho", reservation.actualCheckoutDate ? new Date(reservation.actualCheckoutDate).toLocaleString("vi-VN") : "—"],
+              ] : []),
               ["Created", day(reservation.createdAt)],
             ]} />
             <Message {...feedback} />

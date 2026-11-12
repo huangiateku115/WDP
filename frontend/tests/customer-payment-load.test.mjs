@@ -136,6 +136,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
       PortalEmptyState: box,
       PortalTextLink: box,
     },
+    "@/components/common/CustomerScreen": { CustomerScreen: screen },
     "./ContractPrintAction": { default: () => null },
     "./inventory/ManagedContractReview": { default: () => null },
     "./CustomerBalancePayment": { default: () => null },
@@ -180,6 +181,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
       useLocation: () => ({ state: null }),
       useNavigate: () => () => {},
     },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/reservationApi": {
       default: {
         detailForCustomer: async (...args) => {
@@ -217,6 +219,7 @@ function lifecycleModule({ routeResource, contractResponse } = {}) {
     "@/api/storageApi": { default: { unitDetail: async () => undefined } },
     "@/api/customerRentalApi": { accessApi: {} },
     "@/components/ui/input": { Input: box },
+    "@/components/ui/dialog": { Dialog: ({ children }) => children },
     "@/lib/authSession": {
       useAuthSession: () => ({
         accessToken: "token",
@@ -337,6 +340,7 @@ function checkoutModule({
     "@/components/ui/card": { Card: box, CardContent: box },
     "@/components/ui/button": { Button: button },
     "@/components/ui/badge": { Badge: box },
+    "@/components/ui/dialog": { Dialog: ({ children }) => children },
     "@/api/paymentApi": {
       default: {
         listPayosPaymentsForReservation:
@@ -366,6 +370,7 @@ function checkoutModule({
     },
     "@/lib/booking": { formatMoney: (value) => String(value) },
     "@/lib/selfStoragePayos": { ...require("../src/lib/selfStoragePayos.js") },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/payosPaymentClient": {
       canOpenPayosCheckout: (payment) =>
         safeCheckout &&
@@ -479,6 +484,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
     unit,
     profile: { verificationStatus: "VERIFIED" },
     price: { currency: "VND" },
+    terms: { documentCode: "VS-POLICY-002", version: "2.0", versionId: "VS-POLICY-002@2.0" },
     payload,
     estimate: {
       estimatedRent: 3000000,
@@ -560,6 +566,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
       readOrCreateSelfStorageBookingAttempt,
       writeSelfStorageBookingAttempt,
     },
+    "@/lib/customerReservationDisplay": { reservationDateOnly: value => String(value || ""), reservationAmount: value => String(value) },
     "@/api/reservationApi": {
       default: {
         estimateReal: async () => response(reviewData.estimate),
@@ -567,6 +574,8 @@ test("Review submits one Reservation and hands off a saved booking without calli
           createCalls++;
           bookingKey = config?.headers?.["Idempotency-Key"];
           assert.equal(request.facilityId, facilityId);
+          assert.equal(request.termsAccepted, true);
+          assert.equal(request.termsVersionId, reviewData.terms.versionId);
           return { ...response({
             _id: reservationId,
             status: "CONTRACTED",
@@ -585,8 +594,12 @@ test("Review submits one Reservation and hands off a saved booking without calli
       pricingApi: { resolve: async () => response(reviewData.price) },
       customerProfileApi: { get: async () => response(reviewData.profile) },
     },
+    "@/api/termsApi": { termsApi: { current: async () => response(reviewData.terms) } },
     "@/components/ui/checkbox": {
       Checkbox: (props) => element("input", { type: "checkbox", ...props }),
+    },
+    "@/components/customer/terms/TermsModal": {
+      default: ({ open, onClose }) => open ? element("div", { "data-testid": "terms-modal" }, element("button", { onClick: onClose }, "Đóng Terms")) : null,
     },
     "@/components/common/Steps": { default: () => null },
     "./RentalBackendUI": {
@@ -606,6 +619,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
       LoadState: () => null,
       record,
       recordId,
+      addressText: () => "Test address",
       rentalError: (error) => error.message,
     },
   };
@@ -638,16 +652,41 @@ test("Review submits one Reservation and hands off a saved booking without calli
     tree,
     (node) =>
       node.type === "input" &&
-      node.props["aria-label"] === "Confirm provided personal data",
+      node.props["aria-label"] === "Xác nhận thông tin đặt thuê chính xác",
   );
   assert(checkbox);
   checkbox.props.onCheckedChange(true);
+  tree = render();
+  const uncheckedTerms = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert(uncheckedTerms);
+  assert.equal(uncheckedTerms.props.checked, false);
+  const blockedCreate = find(tree, node => node.type === "button" && node.props.children === "Xác nhận đặt thuê");
+  assert(blockedCreate?.props.disabled, "unchecked Terms must disable reservation submit");
+  await blockedCreate.props.onClick();
+  assert.equal(createCalls, 0, "direct handler invocation must also reject unchecked Terms");
+  const viewTerms = find(tree, node => node.type === "button" && node.props.children === "Xem điều khoản & chính sách");
+  assert(viewTerms);
+  viewTerms.props.onClick();
+  tree = render();
+  assert(find(tree, node => node.props?.["data-testid"] === "terms-modal"));
+  const termsCheckbox = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert(termsCheckbox);
+  assert.equal(termsCheckbox.props.checked, false, "viewing Terms must not accept them");
+  const closeTerms = find(tree, node => node.type === "button" && node.props.children === "Đóng Terms");
+  assert(closeTerms);
+  closeTerms.props.onClick();
+  tree = render();
+  const afterCloseTerms = find(tree, node => node.type === "input" && node.props["aria-label"] === `Chấp nhận điều khoản phiên bản ${reviewData.terms.version}`);
+  assert.equal(afterCloseTerms.props.checked, false, "closing Terms must not accept them");
+  const stillConfirmed = find(tree, node => node.type === "input" && node.props["aria-label"] === "Xác nhận thông tin đặt thuê chính xác");
+  assert.equal(stillConfirmed.props.checked, true, "opening Terms must preserve the booking review state");
+  termsCheckbox.props.onCheckedChange(true);
   tree = render();
   const create = find(
     tree,
     (node) =>
       node.type === "button" &&
-      node.props.children === "Xác nhận đặt kho và thanh toán",
+      node.props.children === "Xác nhận đặt thuê",
   );
   assert(create && !create.props.disabled);
   await Promise.all([create.props.onClick(), create.props.onClick()]);
@@ -658,7 +697,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
   assert.equal(saved.idempotencyKey, bookingKey);
   assert.equal(createdStatus, "CONTRACTED");
   assert.deepEqual(destination, ["/portal/payments/" + reservationId, {
-    state: { selfStorageCreated: true, startDepositAfterBooking: true },
+    state: { selfStorageCreated: true, startFullRentAfterBooking: true },
   }]);
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);
@@ -764,8 +803,9 @@ test("Owned Self-Storage Reservation routes to PayOS and loads its exact owner-s
   );
 });
 
-test("New CONTRACTED + DRAFT booking hides technical reservation summary and fails closed when contract is unavailable", async () => {
-  const missingContract = checkoutModule({ contract: null });
+test("New full-rent Self-Storage booking still requires its existing DRAFT Contract", async () => {
+  const fullRentReservation = { ...reservation, rentalPaymentFlow: "FULL_UPFRONT_V1" };
+  const missingContract = checkoutModule({ reservation: fullRentReservation, contract: null });
   const html = renderToStaticMarkup(missingContract.render());
   const missingVisibleText = html.replace(/<[^>]*>/g, "");
   assert.doesNotMatch(
@@ -776,6 +816,7 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
 
   const failedContract = checkoutModule({
+    reservation: fullRentReservation,
     contract: null,
     contractError:
       "The reservation is saved, but its contract could not be loaded. Retry here; you do not need to book again.",
@@ -787,6 +828,7 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
   );
 
   const overviewFailure = checkoutModule({
+    reservation: fullRentReservation,
     overview: {
       error:
         "Facility or StorageUnit details could not be loaded. The verified reservation and payment status remain available.",
@@ -797,9 +839,9 @@ test("New CONTRACTED + DRAFT booking hides technical reservation summary and fai
     overviewHtml.replace(/<[^>]*>/g, ""),
     /BKG-TEST-01|3000000 VND|Facility or StorageUnit/,
   );
-  assert.match(overviewHtml, /Thanh toán tiền thuê trả trước/);
+  assert.match(overviewHtml, /Thanh toán 100% tiền thuê/);
 
-  assert.equal(eligiblePayosPurpose(reservation, draftContract), "DEPOSIT");
+  assert.equal(eligiblePayosPurpose(fullRentReservation, draftContract), "FULL_RENT");
 });
 
 test("Existing READY Deposit offers its Hosted Checkout on load without another checkout request", async (t) => {
@@ -1086,7 +1128,7 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const customer = customerId;
-  const storageKey = `SelfStorage_payos_${customer}_${reservationId}_DEPOSIT`;
+  const storageKey = `SelfStorage_payos_${customer}_${reservationId}_FULL_RENT`;
   const paymentId = "507f1f77bcf86cd799439098";
   const values = new Map([
     [
@@ -1117,8 +1159,8 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
   const failed = {
     id: paymentId,
     reservationId,
-    purpose: "DEPOSIT",
-    amount: 1500000,
+    purpose: "FULL_RENT",
+    amount: 3000000,
     currency: "VND",
     provider: "PAYOS",
     status: "FAILED",
@@ -1126,9 +1168,11 @@ test("confirmed terminal failure exposes only the explicit safe retry action", a
     providerSettlementStatus: "NOT_VERIFIED",
     checkoutStatus: "FAILED",
     reconciliationRequired: false,
+    retryAllowed: true,
     createdAt: new Date().toISOString(),
   };
   const module = checkoutModule({
+    reservation: { ...reservation, rentalPaymentFlow: "FULL_UPFRONT_V1" },
     paymentApi: {
       listPayosPaymentsForReservation: async () => ({
         items: [failed],
@@ -1214,8 +1258,8 @@ test("Checkout readiness scans older Backend history pages before allowing a new
   await module.flushEffects();
   const html = renderToStaticMarkup(module.render());
   assert.equal(listCalls.length, 2);
-  assert.deepEqual(listCalls[0], { limit: 25 });
-  assert.deepEqual(listCalls[1], { limit: 25, cursor: "older-page" });
+  assert.deepEqual(listCalls[0], { limit: 25, serviceType: "SELF_STORAGE" });
+  assert.deepEqual(listCalls[1], { limit: 25, cursor: "older-page", serviceType: "SELF_STORAGE" });
   assert.match(html, /Chưa thể xác nhận liên kết thanh toán/);
   assert.doesNotMatch(html, /Tạo mã QR thanh toán/);
   assert.equal(checkoutPosts, 0);

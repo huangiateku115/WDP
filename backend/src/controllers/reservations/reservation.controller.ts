@@ -2,15 +2,17 @@ import { Request, Response } from 'express';
 import ReservationModel from '../../models/reservations/reservation.model';
 import ContractModel from '../../models/contracts/contract.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
+import FacilityModel from '../../models/facilities/facility.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import { ReservationService, ReservationError } from '../../services/reservations/reservation.service';
 import { ReservationStatus } from '../../types/reservation.type';
-import { FacilityServiceType } from '../../types/facility.type';
-import { UserRole } from '../../types/user.type';
+import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
-import { PaymentPurpose, PaymentStatus, PaymentProvider } from '../../types/payment.type';
+import { PaymentPurpose, PaymentStatus, PaymentProvider, PaymentApplicationStatus, ProviderSettlementStatus } from '../../types/payment.type';
+import { UserRole } from '../../types/user.type';
+import { createHash } from 'node:crypto';
 import { calculateRentalPaymentBreakdown } from '../../services/payments/payment-accounting';
 import mongoose from 'mongoose';
 
@@ -44,7 +46,7 @@ async function confirmManagedLegacyMockBalance(reservationId: string, customerId
     let result: { reservation: any; payment: any } | undefined;
     await session.withTransaction(async () => {
       const reservation = await ReservationModel.findOne({ _id: reservationId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 }, customerId })
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] }, customerId })
         .session(session).exec();
       if (!reservation) throw new ReservationControllerError(404, 'Managed reservation not found');
 
@@ -80,7 +82,7 @@ async function confirmManagedLegacyMockBalance(reservationId: string, customerId
         : { inventoryVersion: version };
       const lockedReservation = await ReservationModel.findOneAndUpdate({ _id: reservation._id,
         customerId: reservation.customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
-        bookingFlowVersion: { $ne: 2 }, status: ReservationStatus.CHECKIN_READY,
+        bookingFlowVersion: { $nin: [2, 3] }, status: ReservationStatus.CHECKIN_READY,
         activeClosureRequestId: null, $and: [versionFilter] }, {
         $inc: { inventoryVersion: 1 },
         $set: { status: ReservationStatus.PAID, balancePaymentId: payment._id },
@@ -119,7 +121,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
   try {
     await session.withTransaction(async () => {
       const reservation = await ReservationModel.findOne({ _id: reservationId, customerId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 } })
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] } })
         .session(session).exec();
       if (!reservation) throw new ReservationControllerError(404, 'Managed reservation not found');
 
@@ -165,7 +167,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
       });
       const lockedReservation = await ReservationModel.findOneAndUpdate({ _id: reservation._id,
         customerId: reservation.customerId, facilityId: reservation.facilityId,
-        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 },
+        serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] },
         status: ReservationStatus.RESERVED, activeClosureRequestId: null, $and: [versionFilter] }, {
         $inc: { inventoryVersion: 1 },
         $set: { status: ReservationStatus.DEPOSIT_PAID, depositPaymentId: payment._id,
@@ -214,7 +216,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
     if (unknownCommit || duplicateOrConflict || stateConflict) {
       try {
         const committedReservation = await ReservationModel.findOne({ _id: reservationId, customerId,
-          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $ne: 2 },
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: { $nin: [2, 3] },
           status: ReservationStatus.DEPOSIT_PAID }).exec();
         if (committedReservation?.depositPaymentId) {
           const payment = await ReservationPaymentModel.findById(committedReservation.depositPaymentId).exec();
@@ -242,7 +244,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
 
 export const createReservation = async (req: Request, res: Response) => {
   try {
-    const { facilityId, storageUnitId, startDate, endDate, pricingPolicyId } = req.body;
+    const { facilityId, storageUnitId, startDate, endDate, pricingPolicyId, termsAccepted, termsVersionId } = req.body;
     
     if (!facilityId || !storageUnitId || !startDate || !endDate || !pricingPolicyId) {
       return res.status(400).json({ 
@@ -260,7 +262,9 @@ export const createReservation = async (req: Request, res: Response) => {
       storageUnitId,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
-      pricingPolicyId
+      pricingPolicyId,
+      termsAccepted,
+      termsVersionId,
     };
     if (idempotencyKey) {
       const result = await ReservationService.createReservationWithOutcome({ ...input, idempotencyKey });
@@ -405,31 +409,93 @@ export const rejectReservation = async (req: Request, res: Response) => {
 
 export const cancelReservation = async (req: Request, res: Response) => {
   try {
-    // Chỉ cho phép Khách hàng hủy nếu chưa đến bước PAID (Theo Safeguard đã chốt)
-    const reservation = await ReservationModel.findOneAndUpdate(
-      { 
-        _id: req.params.id, 
-        customerId: req.user!._id,
-        serviceType: FacilityServiceType.SELF_STORAGE,
-        status: { $in: [ReservationStatus.RESERVED, ReservationStatus.CONTRACTED] } 
-      } as any,
-      { 
-        status: ReservationStatus.CANCELLED,
+    const isStaffOrAdmin = [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN].includes(req.user?.role as any);
+    
+    const existing = await ReservationModel.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (!isStaffOrAdmin && existing.customerId.toString() !== req.user!._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
+    }
+    if (existing.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho đơn dịch vụ Self-Storage.' });
+    }
+    if (existing.status === ReservationStatus.ACTIVE || existing.paperContractProofUrl) {
+      return res.status(400).json({ success: false, message: 'Không thể hủy đơn sau khi đã ký hợp đồng và nhận bàn giao kho.' });
+    }
+    if (existing.status === ReservationStatus.CANCELLED) {
+      return res.status(409).json({ success: false, message: 'Đơn này đã bị hủy trước đó.' });
+    }
+    if (![ReservationStatus.RESERVED, ReservationStatus.CONTRACTED, ReservationStatus.PAID].includes(existing.status)) {
+      return res.status(400).json({ success: false, message: `Không thể hủy đơn ở trạng thái ${existing.status}.` });
+    }
+
+    // Nếu đơn đã thanh toán (PAID), khách hàng không được tự hủy; chỉ Staff/Admin tại cơ sở mới có quyền từ chối nhận kho
+    if (existing.status === ReservationStatus.PAID && !isStaffOrAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Khách hàng không thể tự hủy đơn đã thanh toán. Vui lòng liên hệ nhân viên tại cơ sở để xử lý từ chối nhận kho.' 
+      });
+    }
+
+    const reason = req.body?.reason?.trim();
+    // Khi Staff hoặc Admin từ chối/hủy đơn, lý do là bắt buộc
+    if (isStaffOrAdmin && !reason) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Vui lòng cung cấp lý do từ chối nhận kho.' 
+      });
+    }
+
+    const finalReason = reason || (existing.status === ReservationStatus.PAID ? 'Khách hàng không ưng ý kho thực tế' : 'Customer cancelled before payment');
+    const now = new Date();
+
+    const reservation = await ReservationModel.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: finalReason,
+          refundPenaltyPercent: 0, // Hoàn 100% ngoài hệ thống khi hủy trước khi ký giấy
+          updatedAt: now
+        },
+        $unset: {
+          bookingIdempotencyKey: 1 // Giải phóng key để không chiếm dụng unique index nếu khách đặt lại
+        },
         $push: {
           statusHistory: {
             status: ReservationStatus.CANCELLED,
             actorId: req.user!._id,
-            reason: 'Customer auto cancelled'
+            reason: finalReason,
+            createdAt: now
           }
         }
       },
       { new: true }
     );
-    
-    if (!reservation) {
-      return res.status(403).json({ success: false, message: 'Không thể hủy. Đơn đã đi vào hiệu lực thanh toán hoặc bạn không có quyền.' });
+
+    // Giải phóng StorageUnit về AVAILABLE
+    if (existing.storageUnitId) {
+      await StorageUnitModel.findByIdAndUpdate(existing.storageUnitId, {
+        $set: { status: StorageUnitStatus.AVAILABLE }
+      });
     }
-    return res.json({ success: true, data: reservation });
+
+    // Cập nhật Contract sang TERMINATED
+    await ContractModel.findOneAndUpdate(
+      { reservationId: existing._id },
+      { $set: { status: ContractStatus.TERMINATED, updatedAt: now } }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Hủy đơn thành công. Ô kho đã được giải phóng.',
+      data: reservation,
+      refundNotice: existing.status === ReservationStatus.PAID
+        ? 'Quản lý cơ sở sẽ làm thủ tục hoàn trả 100% số tiền qua chuyển khoản ngân hàng ngoài hệ thống.'
+        : undefined
+    });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -447,16 +513,18 @@ export const mockPayReservation = async (req: Request, res: Response) => {
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       return res.status(404).json({ success: false, message: 'Mock payment is disabled in this environment.' });
     }
+    const signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const reservation = await ReservationModel.findOneAndUpdate(
       { _id: req.params.id, customerId: req.user!._id, serviceType: FacilityServiceType.SELF_STORAGE, status: ReservationStatus.CONTRACTED } as any,
       { 
         status: ReservationStatus.PAID,
+        signingDeadline,
         $unset: { expiresAt: 1 }, // Xóa bỏ đồng hồ đếm ngược
         $push: {
           statusHistory: {
             status: ReservationStatus.PAID,
             actorId: req.user!._id,
-            reason: 'Mock Payment Webhook successful'
+            reason: 'Mock Payment 100% full rent successful'
           }
         }
       },
@@ -472,7 +540,30 @@ export const mockPayReservation = async (req: Request, res: Response) => {
       }
       return res.status(409).json({ success: false, message: 'Chưa thể thanh toán. Khách phải được duyệt Hợp đồng (CONTRACTED) trước.' });
     }
-    return res.json({ success: true, data: reservation });
+
+    // Record mock payment in reservationpayments for financial audit tracking
+    const payment = await ReservationPaymentModel.create({
+      reservationId: reservation._id,
+      customerId: reservation.customerId,
+      facilityId: reservation.facilityId,
+      serviceType: reservation.serviceType,
+      purpose: PaymentPurpose.FULL_RENT,
+      amount: reservation.estimatedRent,
+      currency: 'VND',
+      idempotencyKey: `mock-full-${reservation._id}-${Date.now()}`,
+      provider: PaymentProvider.MOCK,
+      providerReference: `MOCK-PAYOS-FULL-${reservation._id}`,
+      status: PaymentStatus.SUCCEEDED,
+      succeededAt: new Date(),
+      checkoutState: 'READY'
+    }).catch(() => null);
+
+    if (payment) {
+      reservation.fullPaymentId = payment._id;
+      await reservation.save();
+    }
+
+    return res.json({ success: true, data: reservation, payment });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -568,7 +659,10 @@ export const confirmMockDeposit = async (req: Request, res: Response) => {
       if (process.env.NODE_ENV === 'production') {
         return res.status(404).json({ success: false, message: 'Managed mock deposit confirmation is disabled in production.' });
       }
-      if ((reservation as any).bookingFlowVersion === 2) {
+      if (reservation.bookingFlowVersion === 3) {
+        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
+      }
+      if (reservation.bookingFlowVersion === 2) {
         return res.status(409).json({ success: false, message: 'Use the versioned Managed deposit confirmation endpoint.' });
       }
       const simulationEnvironment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
@@ -734,7 +828,10 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
     }
 
     if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
-      if ((reservation as any).bookingFlowVersion === 2) {
+      if (reservation.bookingFlowVersion === 3) {
+        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
+      }
+      if (reservation.bookingFlowVersion === 2) {
         return res.status(409).json({ success: false,
           message: 'Use the versioned Managed balance confirmation endpoint for this reservation.' });
       }
@@ -803,10 +900,84 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
  */
 export const handoverReservation = async (req: Request, res: Response) => {
   try {
+    const reservationId = req.params.id;
+    const candidate: any = await (ReservationModel as any).findById(reservationId);
+    if (candidate?.rentalPaymentFlow === 'FULL_UPFRONT_V1') {
+      if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(req.user!.role as UserRole)) {
+        return res.status(403).json({ success: false, code: 'FACILITY_VERIFICATION_REQUIRED', message: 'Chỉ Staff hoặc Manager được phân công tại cơ sở mới được bàn giao.' });
+      }
+      if (req.body?.customerIdentityVerified !== true) return res.status(422).json({ success: false, code: 'CUSTOMER_IDENTITY_REQUIRED', message: 'Staff phải xác minh danh tính khách hàng trực tiếp trước khi bàn giao.' });
+      const storageCondition = req.body?.storageCondition ?? 'GOOD';
+      if (!['GOOD', 'MINOR_DAMAGE', 'UNSAFE'].includes(storageCondition)) return res.status(422).json({ success: false, code: 'INVALID_HANDOVER_CONDITION', message: 'storageCondition không hợp lệ.' });
+      if (storageCondition === 'UNSAFE') return res.status(409).json({ success: false, code: 'HANDOVER_UNSAFE', message: 'Không thể kích hoạt thuê khi điều kiện kho không an toàn.' });
+      if (candidate.status === ReservationStatus.ACTIVE && candidate.handoverAt &&
+          req.user!.assignedFacilityId && String(req.user!.assignedFacilityId) === String(candidate.facilityId)) {
+        return res.json({ success: true, message: 'Bàn giao đã được ghi nhận trước đó. Quyền truy cập số chưa được cấp.',
+          data: { reservation: candidate, accessProvisioning: { status: 'UNAVAILABLE' }, replayed: true } });
+      }
+      const session = await mongoose.startSession();
+      let activated: any = null;
+      try {
+        await session.withTransaction(async () => {
+          const current: any = await (ReservationModel as any).findOne({ _id: reservationId, serviceType: FacilityServiceType.SELF_STORAGE,
+            rentalPaymentFlow: 'FULL_UPFRONT_V1', status: ReservationStatus.CHECKIN_READY }).session(session).exec();
+          if (!current || !req.user!.assignedFacilityId || String(req.user!.assignedFacilityId) !== String(current.facilityId)) {
+            throw new ReservationControllerError(404, 'Reservation not found.');
+          }
+          const now = new Date();
+          if (current.startDate > now || current.endDate <= now) throw new ReservationControllerError(409, 'Rental period has not started or has ended.');
+          const payment = current.fullPaymentId ? await ReservationPaymentModel.findOne({ _id: current.fullPaymentId,
+            reservationId: current._id, customerId: current.customerId, facilityId: current.facilityId,
+            serviceType: FacilityServiceType.SELF_STORAGE, purpose: PaymentPurpose.FULL_RENT, provider: PaymentProvider.PAYOS,
+            status: PaymentStatus.SUCCEEDED, providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+            applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
+          if (payment && payment.amount !== current.estimatedRent + (current.taxAmount ?? 0) - (current.discountAmount ?? 0)) {
+            throw new ReservationControllerError(409, 'Full-rent amount does not match the immutable Reservation price.');
+          }
+          const contract = await ContractModel.findOne({ reservationId: current._id, customerId: current.customerId,
+            status: ContractStatus.SIGNED, verifiedAt: { $exists: true }, signedProofPublicId: { $exists: true } }).session(session).exec();
+          const active = contract?.contentVersions?.find(version => version.version === contract.currentContentVersion);
+          const signed = active && contract?.signatures?.filter(signature => signature.version === active.version && signature.contentHash === active.contentHash);
+          if (!payment || !contract || !signed?.some(signature => signature.signerRole === UserRole.CUSTOMER) ||
+              !signed?.some(signature => [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(signature.signerRole as UserRole)) ||
+              !active || createHash('sha256').update(JSON.stringify(active.content)).digest('hex') !== active.contentHash) {
+            throw new ReservationControllerError(409, 'Verified full payment and two-party signed-paper Contract are required before handover.');
+          }
+          const unit: any = await (StorageUnitModel as any).findOne({ _id: current.storageUnitId, facilityId: current.facilityId, deletedAt: { $exists: false } }).session(session).exec();
+          if (!unit) throw new ReservationControllerError(409, 'Reservation and Storage Unit allocation is invalid.');
+          const facility = await FacilityModel.findOne({ _id: current.facilityId, status: FacilityStatus.ACTIVE,
+            serviceTypes: FacilityServiceType.SELF_STORAGE, deletedAt: { $exists: false } }).session(session).exec();
+          if (!facility) throw new ReservationControllerError(409, 'Self Storage Facility is not active.');
+          const locked: any = StorageUnitModel;
+          const lockedUnit = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
+            bookingVersion: currentVersion(unit.bookingVersion) }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+          if (!lockedUnit) throw new ReservationControllerError(409, 'Storage Unit changed concurrently; reload and retry.');
+          activated = await (ReservationModel as any).findOneAndUpdate({ _id: current._id, status: ReservationStatus.CHECKIN_READY,
+            rentalPaymentFlow: 'FULL_UPFRONT_V1', inventoryVersion: current.inventoryVersion ?? 0 }, {
+            $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id,
+              handoverAt: now, paperContractVerifiedBy: contract.verifiedByStaff, paperContractVerifiedAt: contract.verifiedAt,
+              storageCondition: String(storageCondition) },
+            $unset: { accessPinCode: 1 },
+            $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
+              reason: 'Authorized Facility Staff confirmed identity and physical handover; credential provisioning unavailable', createdAt: now } },
+          }, { new: true, session, runValidators: true }).exec();
+          if (!activated) throw new ReservationControllerError(409, 'Reservation changed concurrently; reload and retry.');
+          const occupied = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
+            bookingVersion: currentVersion(unit.bookingVersion) + 1 }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { new: true, session }).exec();
+          if (!occupied) throw new ReservationControllerError(409, 'Storage Unit changed before handover could commit.');
+        }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+      } catch (error: any) {
+        if (error instanceof ReservationControllerError) return res.status(error.status).json({ success: false, message: error.message });
+        if (isTransactionConflict(error)) return res.status(409).json({ success: false, message: 'Reservation or Storage Unit changed concurrently; reload and retry.' });
+        throw error;
+      } finally { await session.endSession(); }
+      if (!activated) return res.status(503).json({ success: false, code: 'HANDOVER_OUTCOME_UNKNOWN', message: 'Không xác định được kết quả bàn giao; hãy tải lại trạng thái trước khi thử lại.' });
+      return res.json({ success: true, message: 'Đã ghi nhận bàn giao vật lý. Quyền truy cập số chưa được cấp.',
+        data: { reservation: activated, accessProvisioning: { status: 'UNAVAILABLE' } } });
+    }
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       return res.status(404).json({ success: false, message: 'Self-Storage handover is disabled in this environment pending payment verification.' });
     }
-    const reservationId = req.params.id;
     const reservation = await ReservationModel.findById(reservationId);
     if (!reservation) return res.status(404).json({ success: false, message: 'Reservation not found.' });
 
@@ -832,7 +1003,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           replayUnit.status === StorageUnitStatus.OCCUPIED) {
         return res.json({ success: true,
           message: 'Bàn giao kho đã được hoàn tất trước đó.',
-          data: { reservation, pinCode: '1234' } });
+          data: { reservation, pinCode: reservation.accessPinCode || '1234' } });
       }
     }
     if (reservation.status !== ReservationStatus.PAID) {
@@ -869,6 +1040,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
         if (!lockedUnit) throw new ReservationControllerError(409, 'StorageUnit changed before handover.');
 
         const handoverAt = new Date();
+        const accessPinCode = reservation.accessPinCode || Math.floor(100000 + Math.random() * 900000).toString();
         activatedReservation = await reservationWriter.findOneAndUpdate({
           _id: reservation._id,
           facilityId: reservation.facilityId,
@@ -877,7 +1049,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           status: ReservationStatus.PAID,
           ...versionCas(reservation.__v, '__v'),
         }, {
-          $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id, handoverAt },
+          $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id, handoverAt, accessPinCode },
           $inc: { __v: 1 },
           $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
             reason: 'Staff confirmed physical handover. Rental is activated.', createdAt: handoverAt } },
@@ -931,8 +1103,373 @@ export const handoverReservation = async (req: Request, res: Response) => {
       message: 'Bàn giao kho thành công. Đơn hàng đã chuyển sang trạng thái ACTIVE.',
       data: {
         reservation: activatedReservation,
-        pinCode: '1234', // Mã PIN mô phỏng được giữ nguyên theo yêu cầu
+        pinCode: activatedReservation.accessPinCode || '1234',
       }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Khách hàng gửi yêu cầu trả kho (Checkout Request)
+ */
+export const requestCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ hỗ trợ trả kho cho đơn thuê Self-Storage.' });
+    }
+    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền yêu cầu trả kho cho đơn này.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE && reservation.status !== ReservationStatus.OVERDUE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể yêu cầu trả kho khi đơn đang ACTIVE hoặc OVERDUE.' });
+    }
+    const now = new Date();
+    reservation.checkoutRequest = {
+      requestedAt: now,
+      note: typeof note === 'string' ? note.slice(0, 500) : '',
+      status: 'PENDING',
+    };
+    reservation.statusHistory.push({
+      status: reservation.status,
+      actorId: req.user!._id,
+      reason: 'Khách hàng gửi yêu cầu trả kho',
+      createdAt: now,
+    });
+    await reservation.save();
+    return res.json({
+      success: true,
+      message: 'Đã gửi yêu cầu trả kho thành công. Nhân viên cơ sở sẽ kiểm tra và nghiệm thu kho.',
+      data: reservation,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff tra cứu danh sách đơn chờ trả kho tại cơ sở (Checkout Queue)
+ */
+export const getCheckoutQueue = async (req: Request, res: Response) => {
+  try {
+    const filter: any = {
+      serviceType: FacilityServiceType.SELF_STORAGE,
+      $or: [
+        { 'checkoutRequest.status': 'PENDING' },
+        { status: ReservationStatus.OVERDUE },
+      ],
+    };
+    if (req.user?.assignedFacilityId) {
+      filter.facilityId = req.user.assignedFacilityId;
+    } else if (req.query.facilityId) {
+      filter.facilityId = req.query.facilityId;
+    }
+    const items = await ReservationModel.find(filter)
+      .populate('customerId', 'fullName email phone')
+      .populate('storageUnitId', 'unitCode size volumeM3')
+      .populate('facilityId', 'name address')
+      .sort({ updatedAt: -1 });
+    return res.json({ success: true, data: items });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff duyệt và hoàn tất nghiệm thu trả kho (Complete Checkout)
+ * - Đúng hạn: Contract -> EXPIRED, Kho -> AVAILABLE
+ * - Sớm hạn: Contract -> TERMINATED (không hoàn tiền), Kho -> AVAILABLE
+ * - Kho bẩn / hư hại: Kho -> MAINTENANCE
+ * - Thu hồi mã PIN (simulateUnlock từ chối)
+ */
+export const completeCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { condition, note, damageFee } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE && reservation.status !== ReservationStatus.OVERDUE) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chỉ có thể nghiệm thu trả kho cho đơn đang ACTIVE hoặc OVERDUE.',
+      });
+    }
+    if (!reservation.storageUnitId) {
+      return res.status(409).json({ success: false, message: 'Đơn thuê không có kho liên kết.' });
+    }
+    if (reservation.checkoutRequest?.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        message: 'Đơn thuê chưa có yêu cầu trả kho từ khách hàng (hoặc đã được xử lý xong).',
+      });
+    }
+
+    const now = new Date();
+    const endDateMs = new Date(reservation.endDate).getTime();
+    // Trả sớm hơn 24 giờ trước endDate được tính là sớm hạn
+    const isEarly = now.getTime() < endDateMs - (24 * 60 * 60 * 1000);
+    const contractStatus = isEarly ? ContractStatus.TERMINATED : ContractStatus.EXPIRED;
+
+    // Kho bẩn / hỏng -> MAINTENANCE, sạch đẹp -> AVAILABLE
+    const isDamaged = condition === 'DAMAGED' || condition === 'NEEDS_CLEANING' || (typeof damageFee === 'number' && damageFee > 0);
+    const nextUnitStatus = isDamaged ? StorageUnitStatus.MAINTENANCE : StorageUnitStatus.AVAILABLE;
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // 1. Cập nhật StorageUnit
+        const storageUnitWriter: any = StorageUnitModel;
+        await storageUnitWriter.findByIdAndUpdate(
+          reservation.storageUnitId,
+          {
+            $set: { status: nextUnitStatus },
+            $inc: { bookingVersion: 1 },
+          },
+          { session }
+        ).exec();
+
+        // 2. Cập nhật Reservation
+        const reservationWriter: any = ReservationModel;
+        const checkoutUpdate: any = {
+          status: ReservationStatus.CHECKED_OUT,
+          actualCheckoutDate: now,
+          'checkoutRequest.status': 'COMPLETED',
+        };
+        const staffNoteSuffix = typeof note === 'string' && note.trim() ? ` Ghi chú kiểm tra: ${note.trim()}` : '';
+        await reservationWriter.findByIdAndUpdate(
+          reservation._id,
+          {
+            $set: checkoutUpdate,
+            $push: {
+              statusHistory: {
+                status: ReservationStatus.CHECKED_OUT,
+                actorId: req.user!._id,
+                reason: isEarly
+                  ? `Staff duyệt nghiệm thu trả kho sớm hạn (không hoàn tiền). Kho -> ${nextUnitStatus}.${staffNoteSuffix}`
+                  : `Staff duyệt nghiệm thu trả kho đúng hạn. Kho -> ${nextUnitStatus}.${staffNoteSuffix}`,
+                createdAt: now,
+              },
+            },
+          },
+          { session }
+        ).exec();
+
+        // 3. Cập nhật Contract
+        const contractWriter: any = ContractModel;
+        await contractWriter.findOneAndUpdate(
+          { reservationId: reservation._id },
+          { $set: { status: contractStatus } },
+          { session }
+        ).exec();
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    const updated = await ReservationModel.findById(id)
+      .populate('customerId', 'fullName email phone')
+      .populate('storageUnitId', 'unitCode size volumeM3')
+      .exec();
+
+    return res.json({
+      success: true,
+      message: isEarly
+        ? 'Nghiệm thu trả kho sớm thành công. Hợp đồng chấm dứt trước hạn, không hoàn lại tiền thừa.'
+        : 'Nghiệm thu trả kho đúng hạn thành công. Kho đã giải phóng cho khách mới.',
+      data: {
+        reservation: updated,
+        contractStatus,
+        unitStatus: nextUnitStatus,
+        isEarly,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.1: Staff từ chối yêu cầu trả kho khi kho chưa sạch hoặc còn đồ
+ */
+export const rejectCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({ success: false, message: 'Bắt buộc cung cấp lý do từ chối trả kho.' });
+    }
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng cho Self-Storage.' });
+    }
+    if (!reservation.checkoutRequest || reservation.checkoutRequest.status !== 'PENDING') {
+      return res.status(400).json({ success: false, message: 'Không có yêu cầu trả kho chờ xử lý.' });
+    }
+
+    reservation.checkoutRequest.status = 'CANCELLED';
+    reservation.statusHistory.push({
+      status: reservation.status,
+      actorId: req.user!._id,
+      reason: `Staff từ chối yêu cầu trả kho: ${reason.trim()}`,
+      createdAt: new Date(),
+    });
+    await reservation.save();
+
+    return res.json({
+      success: true,
+      message: 'Đã từ chối yêu cầu trả kho. Khách hàng cần xử lý trước khi gửi lại yêu cầu.',
+      data: reservation,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.2: Báo giá gia hạn hợp đồng (Renew Quote)
+ */
+export const renewQuote = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
+    }
+
+    let monthlyPrice = 0;
+    if (reservation.pricingPolicyId) {
+      const PricingRuleModel = mongoose.model('PricingRule');
+      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
+      if (rule && typeof rule.price === 'number') {
+        monthlyPrice = rule.price;
+      }
+    }
+    if (!monthlyPrice) {
+      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
+      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
+    }
+
+    const totalAmount = monthlyPrice * durationMonths;
+    const oldEndDate = new Date(reservation.endDate);
+    const newEndDate = new Date(oldEndDate);
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
+
+    return res.json({
+      success: true,
+      data: {
+        reservationId: reservation._id,
+        durationMonths,
+        monthlyPrice,
+        totalAmount,
+        currency: 'VND',
+        oldEndDate,
+        newEndDate,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Phase 5.2: Khách hàng xác nhận và thanh toán gia hạn (Renew Reservation)
+ */
+export const renewReservation = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
+    }
+    if (reservation.status !== ReservationStatus.ACTIVE) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
+    }
+    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
+    }
+
+    let monthlyPrice = 0;
+    if (reservation.pricingPolicyId) {
+      const PricingRuleModel = mongoose.model('PricingRule');
+      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
+      if (rule && typeof rule.price === 'number') {
+        monthlyPrice = rule.price;
+      }
+    }
+    if (!monthlyPrice) {
+      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
+      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
+    }
+
+    const totalAmount = monthlyPrice * durationMonths;
+    const oldEndDate = new Date(reservation.endDate);
+    const newEndDate = new Date(oldEndDate);
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
+
+    if (!Array.isArray(reservation.renewals)) {
+      reservation.renewals = [];
+    }
+    reservation.renewals.push({
+      renewalDate: new Date(),
+      durationMonths,
+      amount: totalAmount,
+      oldEndDate,
+      newEndDate,
+    });
+    reservation.endDate = newEndDate;
+    reservation.statusHistory.push({
+      status: ReservationStatus.ACTIVE,
+      actorId: req.user!._id,
+      reason: `Gia hạn hợp đồng thêm ${durationMonths} tháng thành công (Hạn mới: ${newEndDate.toLocaleDateString('vi-VN')})`,
+      createdAt: new Date(),
+    });
+    await reservation.save();
+
+    await ContractModel.findOneAndUpdate(
+      { reservationId: reservation._id },
+      {
+        $set: {
+          'pricingSnapshot.endDate': newEndDate,
+        },
+      }
+    ).exec();
+
+    return res.json({
+      success: true,
+      message: `Gia hạn thành công thêm ${durationMonths} tháng. Thời hạn mới: ${newEndDate.toLocaleDateString('vi-VN')}.`,
+      data: {
+        reservation,
+        durationMonths,
+        amount: totalAmount,
+        oldEndDate,
+        newEndDate,
+      },
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });

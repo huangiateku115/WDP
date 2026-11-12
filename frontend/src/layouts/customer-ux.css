@@ -26,6 +26,22 @@
 .customer-portal .customer-resource-error>p{flex:1;min-width:0;overflow-wrap:anywhere}
 .customer-portal .portal-notification p{overflow-wrap:anywhere}
 .customer-portal .customer-screen :is([role=status],[role=alert]){scroll-margin-top:150px}
+.customer-portal .booking-steps{align-items:start;gap:10px;padding:16px 0 20px}
+.customer-portal .booking-steps .portal-step{min-width:0;gap:9px;color:#607568}
+.customer-portal .booking-steps .portal-step::after{height:2px;background:#cbd9d0;margin-left:3px}
+.customer-portal .booking-steps .portal-step.complete::after{background:#176b45}
+.customer-portal .portal-step-marker{display:grid;place-items:center;width:36px;height:36px;flex:0 0 36px;border:1px solid #cbd9d0;border-radius:50%;background:#edf2ee;color:#52665a;font-size:14px;font-weight:800;transition:background .18s,border-color .18s,color .18s}
+.customer-portal .booking-steps .portal-step.active .portal-step-marker,.customer-portal .booking-steps .portal-step.complete .portal-step-marker{border-color:#176b45;background:#176b45;color:#fff}
+.customer-portal .booking-steps .portal-step-text{min-width:0;color:#52665a;font-size:12px;line-height:1.35}
+.customer-portal .booking-steps .portal-step-title{display:flex;align-items:center;gap:5px;color:#52665a}
+.customer-portal .booking-steps .portal-step-title svg{flex:0 0 auto;color:#718477}
+.customer-portal .booking-steps .portal-step.active .portal-step-title,.customer-portal .booking-steps .portal-step.active .portal-step-title svg,.customer-portal .booking-steps .portal-step.complete .portal-step-title,.customer-portal .booking-steps .portal-step.complete .portal-step-title svg{color:#145b3b}
+.customer-portal .booking-steps .portal-step.future .portal-step-text small{color:#52665a}
+.customer-portal .booking-steps .portal-step-text small{margin-top:3px;color:#718477;font-size:10px;font-weight:500;letter-spacing:0}
+.customer-portal :is(.booking-intro,.booking-unit-card,.booking-facility-card){transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.customer-portal :is(.booking-intro,.booking-unit-card,.booking-facility-card):focus-within{outline:2px solid #176b45;outline-offset:2px}
+@media(max-width:640px){.customer-portal .booking-steps{gap:4px;padding:14px 0 18px}.customer-portal .booking-steps .portal-step{gap:4px}.customer-portal .booking-steps .portal-step::after{display:none}.customer-portal .portal-step-marker{width:30px;height:30px;flex-basis:30px}.customer-portal .booking-steps .portal-step-text{font-size:10px}.customer-portal .booking-steps .portal-step-title{gap:3px}.customer-portal .booking-steps .portal-step-title svg{width:12px;height:12px}.customer-portal .booking-steps .portal-step-text small{font-size:9px}.customer-portal .booking-steps .portal-step.active .portal-step-text small{font-size:8px}}
+@media(prefers-reduced-motion:reduce){.customer-portal .booking-steps .portal-step-marker,.customer-portal :is(.booking-intro,.booking-unit-card,.booking-facility-card){transition:none}}
 @media(max-width:389px){
  .customer-portal .customer-ux-dialog{padding:14px}
  .customer-portal .customer-ux-dialog h2{font-size:18px}

@@ -4,6 +4,7 @@ artifacts/
 coverage/
 *.tsbuildinfo
 .env*
+!.env.example
 android/
 ios/
 

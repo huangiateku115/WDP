@@ -29,11 +29,22 @@ export interface IReservation extends Document {
   facilityId: Types.ObjectId;
   
   serviceType: FacilityServiceType;
+  termsAcceptance?: {
+    documentCode: string;
+    version: string;
+    versionId: string;
+    serviceType: FacilityServiceType;
+    contentHash: string;
+    acceptedAt: Date;
+  };
   /** Optional immutable key/hash used to replay Customer Self-Storage creation safely. */
   bookingIdempotencyKey?: string;
   bookingPayloadHash?: string;
   /** Absent on legacy records. Version 2 is never inferred from legacy status/payment fields. */
-  bookingFlowVersion?: 2;
+  bookingFlowVersion?: 2 | 3;
+  /** Explicit marker for bookings that must use one 100% PayOS checkout. Absent on legacy reservations. */
+  rentalPaymentFlow?: 'FULL_UPFRONT_V1';
+  rentalPricingSnapshot?: Record<string, unknown>;
   storageUnitId?: Types.ObjectId;
   /** Cells exclusively allocated to this Managed Inventory reservation. */
   allocatedCellIds?: Types.ObjectId[];
@@ -50,9 +61,37 @@ export interface IReservation extends Document {
   balanceSettledBy?: Types.ObjectId;
   depositPaymentId?: Types.ObjectId;
   balancePaymentId?: Types.ObjectId;
+  fullPaymentId?: Types.ObjectId;
+  /** Idempotency identity for a Backend-confirmed zero-balance V3 settlement. */
+  balanceSettlementKey?: string;
   handoverByStaffId?: Types.ObjectId;
   handoverAt?: Date;
   storageCondition?: string;
+  handoverAccessNotes?: string;
+  
+  /** Deadline for customer to arrive at facility, inspect unit and sign paper contract (default 3 days). */
+  signingDeadline?: Date;
+  paperContractProofUrl?: string;
+  paperContractVerifiedBy?: Types.ObjectId;
+  paperContractVerifiedAt?: Date;
+  accessPinCode?: string;
+  cancellationReason?: string;
+  refundPenaltyPercent?: number;
+  actualCheckoutDate?: Date;
+  checkoutRequest?: {
+    requestedAt: Date;
+    note?: string;
+    status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  };
+  checkoutInspectionId?: Types.ObjectId;
+  renewals?: Array<{
+    renewalDate: Date;
+    durationMonths: number;
+    amount: number;
+    paymentId?: Types.ObjectId;
+    oldEndDate: Date;
+    newEndDate: Date;
+  }>;
   
   startDate: Date;
   endDate: Date;

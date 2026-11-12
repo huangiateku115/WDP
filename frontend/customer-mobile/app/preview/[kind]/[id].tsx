@@ -1,1 +1,1 @@
-export {default} from '../../../src/screens/PreviewDetailScreen';
+export {Detail as default} from '../../../src/screens/LiveAccount';

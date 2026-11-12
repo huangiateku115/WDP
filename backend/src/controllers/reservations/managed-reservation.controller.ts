@@ -12,8 +12,14 @@ const endpoint = (run: (req: Request) => Promise<unknown>, status = 200) => asyn
   catch (error) { return handle(error, res); }
 };
 
-export const quote = endpoint(req => ManagedReservationService.quote(req.body));
-export const create = endpoint(req => ManagedReservationService.create(req.body, req.user!), 201);
+export const quote = endpoint(req => {
+  if (!Array.isArray((req.body as any)?.cellIds) || !(req.body as any).cellIds.length) throw new ManagedReservationError(400, 'cellIds must select one or more Cells');
+  return ManagedReservationService.quote(req.body);
+});
+export const create = endpoint(req => {
+  if (!req.get('Idempotency-Key')) throw new ManagedReservationError(400, 'A valid Idempotency-Key header is required');
+  return ManagedReservationService.create(req.body, req.user!, req.get('Idempotency-Key'));
+}, 201);
 export const configureCapacity = endpoint(req => ManagedReservationService.configureCapacity(req.params.facilityId, req.body, req.user!));
 export const getCapacity = endpoint(req => ManagedReservationService.getCapacity(req.params.facilityId, req.query, req.user!));
 export const get = endpoint(req => ManagedReservationService.get(req.params.id, req.user!));
@@ -25,3 +31,4 @@ export const mockPay = endpoint(req => ManagedReservationService.mockPay(req.par
 export const initiateDeposit = endpoint(req => ManagedReservationService.initiateDeposit(req.params.id, req.body, req.user!), 201);
 export const confirmMockDeposit = endpoint(req => ManagedReservationService.confirmMockDeposit(req.params.id, req.body, req.user!));
 export const activate = endpoint(req => ManagedReservationService.activate(req.params.id, req.user!));
+export const confirmHandover = endpoint(req => ManagedReservationService.confirmHandover(req.params.id, req.body, req.user!));
