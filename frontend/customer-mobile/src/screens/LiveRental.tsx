@@ -33,6 +33,7 @@ import {
 } from "../components/liveUI";
 
 import { ReservationProgressTracker } from "../components/ReservationProgressTracker";
+import { SelfStorageCheckoutRequest } from "../components/SelfStorageCheckoutRequest";
 import { FullRentCheckout } from "../components/FullRentCheckout";
 import { reservationProgress } from "../domain/reservationProgress";
 import {
@@ -200,13 +201,14 @@ export function RentalDetail({ id }: { id: string }) {
           )}
         </Card>
       )}
+      <SelfStorageCheckoutRequest key={"checkout:" + owner + ":" + id} rental={r} owner={owner} id={id} reload={data.reload} />
       {cancellation && <Button label="Hủy đơn thuê" variant="outline" onPress={() => { setCancelError(""); setCancelOpen(true); }} />}
       <Modal visible={cancelOpen} transparent animationType="none" onRequestClose={() => { if (!cancelBusy.current) setCancelOpen(false); }}>
         <View accessibilityViewIsModal style={{flex:1, justifyContent:"center", padding:20, backgroundColor:"rgba(0,0,0,0.55)"}}>
           <Card>
             <AppText variant="heading">Hủy đơn thuê</AppText>
             <AppText>Hủy đơn sẽ kết thúc giữ chỗ sau khi máy chủ xác nhận. Giao dịch PayOS được xử lý riêng.</AppText>
-            {cancelError && <AppText accessibilityRole="alert">{cancelError}</AppText>}
+            {!!cancelError && <AppText accessibilityRole="alert">{cancelError}</AppText>}
             <Button label="Giữ đơn thuê" variant="outline" disabled={cancelPending} onPress={() => setCancelOpen(false)} />
             <Button label="Xác nhận hủy đơn thuê" loading={cancelPending} disabled={!cancellation} onPress={() => void cancel()} />
           </Card>
@@ -214,7 +216,7 @@ export function RentalDetail({ id }: { id: string }) {
       </Modal>
       {r?.serviceType === "SELF_STORAGE" && (
         <RentalProgress
-          key={owner + ":" + id}
+          key={"progress:" + owner + ":" + id}
           reservation={r}
           owner={owner}
           onRetry={data.reload}
@@ -366,6 +368,18 @@ function BookingForm({
     const { store, quote } = currentReview;
     const controller = new AbortController();
     preflight.current = controller;
+    async function continueWithReservation(rental: ReservationDto) {
+      if (controller.signal.aborted || useLiveSession.getState().user?._id !== owner) return;
+      if (rental.status !== "CONTRACTED") {
+        router.replace({pathname:"/preview/[kind]/[id]",params:{kind:"rental",id:rental._id}});
+        return;
+      }
+      const contract = await mobileRepo.contract(rental, owner, controller.signal);
+      if (!contract || contract.status !== "DRAFT")
+        throw new MobileInputError("Đã lưu mã đơn. Chưa xác minh được hợp đồng nháp; hãy kiểm tra Kho của tôi trước khi thanh toán.");
+      if (!controller.signal.aborted && useLiveSession.getState().user?._id === owner)
+        router.replace({pathname:"/rentals/[id]/payment",params:{id:rental._id}});
+    }
     let creating = false;
     try {
       let attempt = await store.read();
@@ -375,14 +389,7 @@ function BookingForm({
           owner,
           controller.signal,
         );
-        if (
-          !controller.signal.aborted &&
-          useLiveSession.getState().user?._id === owner
-        )
-          router.replace({
-            pathname: "/rentals/[id]/payment",
-            params: { id: r._id },
-          });
+        await continueWithReservation(r);
         return;
       }
       if (!attempt) {
@@ -430,12 +437,9 @@ function BookingForm({
         return;
       creating = true;
       const r = await mobileRepo.book(attempt.bookingBody, attempt.key, owner);
+      creating = false;
       await store.write({ ...attempt, resourceId: r._id }).catch(() => {});
-      if (useLiveSession.getState().user?._id === owner)
-        router.replace({
-          pathname: "/rentals/[id]/payment",
-          params: { id: r._id },
-        });
+      await continueWithReservation(r);
     } catch (cause) {
       if (controller.signal.aborted) return;
       const conflict =
@@ -896,7 +900,7 @@ function PaymentScreen({
           {upfront && <Button label="Kiểm tra trạng thái PayOS" variant="outline" loading={pending} onPress={() => void verifyFullRent()} />}
         </ReservationProgressTracker>
       )}
-      {error && (
+      {!!error && (
         <StateCard
           kind="error"
           title="Không mở được thanh toán"
@@ -934,7 +938,7 @@ function PaymentScreen({
           <AppText>
             Ngày tạo: {p.createdAt ? dateLabel(p.createdAt) : "Chưa có dữ liệu"}
           </AppText>
-          {p.succeededAt && (
+          {!!p.succeededAt && (
             <AppText>Ngày thanh toán: {dateLabel(p.succeededAt)}</AppText>
           )}
         </Card>

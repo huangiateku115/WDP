@@ -16,7 +16,7 @@ Task WDP_CUSTOMER_MOBILE_REAL_API_INTEGRATION_V1. Source được xác minh từ
 
 ## Cấu hình
 
-Mobile mặc định dùng https://wdp-m4ns.onrender.com/api/v1. Để chỉ định môi trường khác, tạo .env dựa trên .env.example với EXPO_PUBLIC_API_BASE_URL. Đây là cấu hình công khai, không đặt secret vào biến EXPO_PUBLIC. HTTPS bắt buộc cho bản phát hành. HTTP private LAN chỉ được phép trong bản dev. Android emulator có thể dùng 10.0.2.2. Thiết bị thật dùng địa chỉ LAN của máy chạy Backend, nếu chính sách thiết bị cho phép.
+Development mặc định dùng `http://localhost:5000/api/v1` trên Expo Web và `http://10.0.2.2:5000/api/v1` trên Android emulator. Thiết bị thật cần đặt `EXPO_PUBLIC_API_BASE_URL` thành địa chỉ LAN của Backend. Bản release yêu cầu URL HTTPS được cấu hình rõ ràng. Giá trị cấu hình sai hoặc thiếu ở release chặn request.
 
 Dùng Expo SDK 58 và cài dependency từ lockfile. Chạy npm start để mở Metro. Hai module SDK bổ sung là expo-secure-store và expo-crypto. Trên native, token được lưu trong SecureStore theo Backend origin. Web chỉ giữ token trong bộ nhớ và cần đăng nhập lại sau khi tải lại trang. Cấu hình Keycloak hiện đọc được là confidential client dùng qua Backend. Chưa xác nhận public client PKCE hoặc endpoint refresh của WDP, nên app không nhúng secret và yêu cầu đăng nhập lại khi nhận 401.
 
@@ -43,3 +43,13 @@ Cần tài khoản test và xác nhận deployment để chạy smoke có xác t
 - Notification cần đích có kiểu và ID đã xác minh theo owner để mở Reservation. Bulk read hoặc xóa cần endpoint riêng có kiểm tra owner.
 - Hủy Self Storage cần Backend kiểm tra intent đang chờ hoặc chưa rõ kết quả một cách nguyên tử. Bộ lọc hủy hiện chỉ kiểm tra owner, loại dịch vụ và trạng thái Reservation. Mobile chưa bật nút hủy để tránh xung đột khi tiền đang được xử lý.
 - DTO payment nội bộ chưa cung cấp CANCELLED/EXPIRED từ provider. Để hiện hai trạng thái này, cần xác nhận contract lookup theo orderCode trên deployment và chỉ hiển thị kết quả provider tách khỏi settlement nội bộ.
+
+### Self Storage localhost
+
+Mở một PowerShell tại Backend và chạy `npm run dev` nếu chưa có Backend test chạy. Kiểm tra cấu hình test và cổng 5000 trước khi đăng nhập. Không chạy thêm một tiến trình trên cùng cổng.
+
+Trên Expo Web, dùng `npm run web -- --port 8081`, mở `http://localhost:8081` và đặt `EXPO_PUBLIC_API_BASE_URL=http://localhost:5000/api/v1` nếu cần override. Backend phải cho phép đúng Origin của trang qua `CORS_ORIGINS`. `localhost` và `127.0.0.1` là hai origin khác nhau. Giữ các origin hiện có khi bổ sung một origin đã được duyệt.
+
+Trên Android emulator dùng `$env:EXPO_PUBLIC_API_BASE_URL='http://10.0.2.2:5000/api/v1'` rồi `npm run android`. Với điện thoại thật, thay bằng IP LAN và dùng mạng test phù hợp. Cổng đang dùng được giữ nguyên khi chạy audit; nếu cần mở Metro thứ hai, chọn cổng khác.
+
+Dùng tài khoản Customer test đã xác minh, Facility/Unit test và Terms hiện hành. Đi qua báo giá, xác nhận điều khoản, đọc đơn `CONTRACTED` và hợp đồng `DRAFT`. Chỉ dùng PayOS test được phê duyệt. Sau settlement, để Staff test xác minh hợp đồng giấy và bàn giao. Từ Chi tiết đơn thuê `ACTIVE` hoặc `OVERDUE`, chọn **Yêu cầu trả kho**, đọc chính sách và gửi ghi chú. Chỉ Staff test mới nghiệm thu hoặc từ chối. Mobile đọc lại trạng thái Backend để hiển thị `PENDING`, kết quả từ chối hoặc `CHECKED_OUT`.

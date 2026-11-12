@@ -177,6 +177,16 @@ export const mobileRepo = {
     if (result.id !== paymentId) throw new MobileInputError('Giao dịch không khớp.');
     return result;
   },
+  async requestSelfStorageCheckout(r: ReservationDto, note: string, owner: string) {
+    assertOwner(r, owner);
+    if (r.serviceType !== 'SELF_STORAGE' || !['ACTIVE','OVERDUE'].includes(r.status) || r.checkoutRequest?.status === 'PENDING')
+      throw new MobileInputError('Đơn thuê chưa đủ điều kiện yêu cầu trả kho.');
+    const body = z.object({note:z.string().trim().max(500)}).parse({note});
+    const result = mapReservation(await wire('POST','/reservations/'+id(r._id)+'/checkout-request',{body}),owner);
+    if (result._id !== r._id || result.serviceType !== 'SELF_STORAGE' || result.checkoutRequest?.status !== 'PENDING')
+      throw new MobileInputError('Máy chủ chưa xác nhận yêu cầu trả kho. Hãy tải lại đơn thuê.');
+    return result;
+  },
   async cancelUpfrontRental(r: ReservationDto, owner: string) {
     assertOwner(r, owner);
     if (r.serviceType !== 'SELF_STORAGE' || r.rentalPaymentFlow !== 'FULL_UPFRONT_V1' ||

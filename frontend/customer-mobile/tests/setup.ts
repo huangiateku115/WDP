@@ -15,3 +15,7 @@ jest.mock('react-native-svg',()=>{
   const Shape=({children}:any)=>React.createElement(View,null,children);
   return {__esModule:true,default:Shape,Svg:Shape,Rect:Shape,Path:Shape,Circle:Shape,Line:Shape};
 });
+
+// Transport tests install Axios adapters. Use an explicit non-routable API base,
+// including on the iOS Jest preset where no development host is inferred.
+process.env.EXPO_PUBLIC_API_BASE_URL='https://fixture.invalid/api/v1';
