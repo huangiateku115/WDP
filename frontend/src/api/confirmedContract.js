@@ -56,6 +56,8 @@ export function assertConfirmedRequest(config) {
     method === "GET" &&
     (path === "warehouse-map" ||
       /^racks\/[a-f\d]{24}\/detail-map$/i.test(path));
+  const facilityManagedReadiness = method === 'GET' &&
+    /^reservations\/managed\/[a-f\d]{24}\/closure-readiness$/i.test(path);
   const managedCustomer =
     (method === "POST" &&
       ["reservations/managed", "reservations/managed/quote"].includes(path)) ||
@@ -274,6 +276,7 @@ export function assertConfirmedRequest(config) {
         /^outbound-requests\/[a-f\d]{24}\/confirm$/i.test(path) ||
         /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
   const allowed =
+    facilityManagedReadiness ||
     selfStorageCheckoutAndRenew ||
     managedAccess ||
     staffInventoryOperations ||

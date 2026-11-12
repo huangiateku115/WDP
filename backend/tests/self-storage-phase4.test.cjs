@@ -423,6 +423,10 @@ test('Phase 4.3: calculatePricing và createReservation chấp nhận ngày bắ
     exec: async () => ({
       _id: pricingId,
       price: 1500000,
+      version: 1,
+      currency: 'VND',
+      effectiveFrom: new Date('2020-01-01T00:00:00.000Z'),
+      isActive: true,
       term: { value: 1, unit: 'MONTH' }
     })
   }));
@@ -456,6 +460,10 @@ test('Phase 4.5: calculatePricing nhân tiền thuê đúng theo số tháng (1,
     exec: async () => ({
       _id: pricingId,
       price: baseMonthlyPrice,
+      version: 1,
+      currency: 'VND',
+      effectiveFrom: new Date('2020-01-01T00:00:00.000Z'),
+      isActive: true,
       term: { value: 1, unit: 'MONTH' }
     })
   }));
@@ -477,7 +485,7 @@ test('Phase 4.5: calculatePricing nhân tiền thuê đúng theo số tháng (1,
   }
 });
 
-test('Phase 4.5: RuleService.resolve tự động fallback về base rule 1 tháng khi truy vấn kỳ hạn 2, 3, 4, 5, 6 tháng', async (t) => {
+test('Phase 4.5: RuleService.resolve lấy đúng theo policy, không tự fallback kỳ hạn không có trong policy', async (t) => {
   const { RuleService } = require('../dist/services/pricing-policy/rule.service');
   const PricingRuleModel = require('../dist/models/pricing-policy/pricing-rule.model').default;
   const facilityId = new mongoose.Types.ObjectId();
@@ -492,29 +500,28 @@ test('Phase 4.5: RuleService.resolve tự động fallback về base rule 1 thá
     currency: 'VND',
     term: { value: 1, unit: 'MONTH' },
     isActive: true,
+    version: 1,
     effectiveFrom: new Date('2026-01-01T00:00:00.000Z')
   };
 
   t.mock.method(PricingRuleModel, 'find', (filter) => ({
-    limit: () => ({
-      lean: () => ({
-        exec: async () => {
-          // Nếu truy vấn term.value = 1 thì trả về baseRule, nếu term.value > 1 thì trả về mảng rỗng
-          if (filter['term.value'] === 1) return [baseRule];
-          return [];
-        }
-      })
+    lean: () => ({
+      exec: async () => {
+        // Chỉ trả về baseRule khi term.value khớp với cấu hình trong policy (term.value = 1)
+        if (filter['term.value'] === 1) return [baseRule];
+        return [];
+      }
     })
   }));
 
   const adminActor = { role: UserRole.ADMIN, _id: new mongoose.Types.ObjectId() };
 
-  // Thử resolve kỳ hạn 3 tháng -> Phải tự động fallback về baseRule 1 tháng
+  // Resolve đúng kỳ hạn 1 tháng đã cấu hình trong policy
   const resolved = await ruleService.resolve({
     facilityId: facilityId.toString(),
     serviceType: 'SELF_STORAGE',
     unitSize: 'SMALL',
-    termValue: '3',
+    termValue: '1',
     termUnit: 'MONTH',
     at: '2026-11-11T00:00:00.000Z'
   }, adminActor);
@@ -522,5 +529,18 @@ test('Phase 4.5: RuleService.resolve tự động fallback về base rule 1 thá
   assert.equal(resolved._id.toString(), baseRule._id.toString());
   assert.equal(resolved.price, 1200000);
   assert.equal(resolved.term.value, 1);
+
+  // Truy vấn kỳ hạn 3 tháng chưa có trong policy -> Không tự gán, ném lỗi 404 No effective rule
+  await assert.rejects(
+    () => ruleService.resolve({
+      facilityId: facilityId.toString(),
+      serviceType: 'SELF_STORAGE',
+      unitSize: 'SMALL',
+      termValue: '3',
+      termUnit: 'MONTH',
+      at: '2026-11-11T00:00:00.000Z'
+    }, adminActor),
+    { status: 404, message: 'No effective rule' }
+  );
 });
 
