@@ -1,10 +1,11 @@
 import {z} from 'zod';
 import axios from 'axios';
+import {Platform} from 'react-native';
 import {wire,MobileInputError} from './client';
 import {assertOwner, idRef, instant, objectId, positive, readData, readPage, refId, whole} from './contracts/core';
 import {identityProfile, mapCurrentUser, mapFacilities, mapFacility, mapReservation, mapReservations, type ReservationDto} from './contracts/customer';
 import {day, mapAvailability, mapEstimate, selfBody, selfBookingBody, term, unitDto} from './contracts/booking';
-import {contractDto, mapContract, mapPaymentHistory, mapSelfPayment} from './contracts/documents';
+import {contractDto, payosBody, mapContract, mapPaymentHistory, mapSelfPayment} from './contracts/documents';
 import {itemDto, mapItem, mapMovements, mapStock} from './contracts/inventory';
 import {mapMarkOneRead, mapNotifications} from './contracts/communications';
 
@@ -89,9 +90,23 @@ export const mobileRepo = {
     const estimate=mapEstimate(await wire('POST','/reservations/estimate',{anonymous:true,body:priceRequest,signal}));
     return {body,estimate,unit};
   },
+  async bookingPolicy(signal?: AbortSignal) {
+    return readData(z.object({
+      versionId: z.string().min(1), version: z.string().min(1), status: z.literal('PUBLISHED'),
+      services: z.array(z.string()).refine(services => services.includes('SELF_STORAGE')),
+      groups: z.array(z.object({
+        id: z.string(), title: z.string(), appliesTo: z.array(z.string()),
+        sections: z.object({SELF_STORAGE: z.array(z.string().trim().min(1)).optional()})
+      })).refine(groups => {
+        const applicable = groups.filter(group => group.appliesTo.includes('SELF_STORAGE'));
+        return applicable.length > 0 && applicable.every(group => (group.sections.SELF_STORAGE?.length ?? 0) > 0);
+      })
+    }), await wire('GET','/public/terms/current',{anonymous:true,params:{serviceType:'SELF_STORAGE'},signal}));
+  },
   async book(body:ReturnType<typeof selfBookingBody>,key:string,owner:string) {
+    if (body.termsAccepted !== true || !body.termsVersionId) throw new MobileInputError('Cần chấp nhận điều khoản hiện hành.');
     const result=mapReservation(await wire('POST','/reservations',{body:selfBody.parse(body),key}),owner);
-    if(result.serviceType!=='SELF_STORAGE'||refId(result.facilityId)!==body.facilityId||!result.storageUnitId||
+    if(result.serviceType!=='SELF_STORAGE'||result.rentalPaymentFlow!=='FULL_UPFRONT_V1'||refId(result.facilityId)!==body.facilityId||!result.storageUnitId||
        refId(result.storageUnitId)!==body.storageUnitId||Date.parse(result.startDate)!==Date.parse(body.startDate)||
        Date.parse(result.endDate)!==Date.parse(body.endDate)) throw new MobileInputError('Chưa xác minh được đơn thuê vừa tạo.');
     return result;
@@ -119,7 +134,7 @@ export const mobileRepo = {
   async signSelfStorageContract(r:ReservationDto,contract:z.infer<typeof contractDto>,owner:string) {
     assertOwner(r,owner);
     assertOwner(contract,owner);
-    if(r.serviceType!=='SELF_STORAGE'||r.status!=='DEPOSIT_PAID'||contract.status!=='DRAFT'||refId(contract.reservationId)!==r._id){
+    if(r.serviceType!=='SELF_STORAGE'||r.rentalPaymentFlow==='FULL_UPFRONT_V1'||r.status!=='DEPOSIT_PAID'||contract.status!=='DRAFT'||refId(contract.reservationId)!==r._id){
       throw new MobileInputError('Đơn thuê hoặc hợp đồng chưa đủ điều kiện ký.');
     }
     const result=mapContract(await wire('PATCH','/contracts/'+id(contract._id)+'/sign'),owner,r.serviceType).contract;
@@ -155,14 +170,34 @@ export const mobileRepo = {
     if(result.id!==paymentId) throw new MobileInputError('Giao dịch không khớp.');
     return result;
   },
+  async reconcilePayment(r: ReservationDto, paymentId: string, owner: string) {
+    assertOwner(r, owner);
+    if (r.serviceType !== 'SELF_STORAGE') throw new MobileInputError('Giao dịch không thuộc dịch vụ kho tự quản.');
+    const result = mapSelfPayment(await wire('POST','/reservations/'+id(r._id)+'/payments/'+id(paymentId)+'/reconcile',{body:{}}), r, owner);
+    if (result.id !== paymentId) throw new MobileInputError('Giao dịch không khớp.');
+    return result;
+  },
+  async cancelUpfrontRental(r: ReservationDto, owner: string) {
+    assertOwner(r, owner);
+    if (r.serviceType !== 'SELF_STORAGE' || r.rentalPaymentFlow !== 'FULL_UPFRONT_V1' ||
+        !['RESERVED','CONTRACTED'].includes(r.status) || r.customerCancellationEligible !== true)
+      throw new MobileInputError('Máy chủ chưa xác nhận đủ điều kiện hủy đơn thuê.');
+    const cancelled = mapReservation(await wire('PATCH','/reservations/'+id(r._id)+'/cancel'),owner);
+    if (cancelled._id !== r._id || cancelled.status !== 'CANCELLED')
+      throw new MobileInputError('Chưa xác minh được kết quả hủy. Hãy tải lại đơn thuê.');
+    return cancelled;
+  },
   async deposit(r:ReservationDto,key:string,owner:string) {
     return mobileRepo.checkout(r,key,owner,'DEPOSIT');
   },
-  async checkout(r:ReservationDto,key:string,owner:string,purpose:'DEPOSIT'|'BALANCE') {
+  async checkout(r:ReservationDto,key:string,owner:string,purpose:z.infer<typeof payosBody>['purpose']) {
     assertOwner(r,owner);
     if(r.serviceType!=='SELF_STORAGE') throw new MobileInputError('Thanh toán PayOS chỉ dành cho kho tự quản.');
+    const upfront = r.rentalPaymentFlow === 'FULL_UPFRONT_V1';
+    if (upfront !== (purpose === 'FULL_RENT') || (upfront && r.status !== 'CONTRACTED'))
+      throw new MobileInputError('Mục đích thanh toán không khớp với đơn thuê.');
     if(purpose==='BALANCE'&&r.status!=='CHECKIN_READY')throw new MobileInputError('Đơn thuê chưa đủ điều kiện thanh toán số dư.');
-    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose}});
+    const response=await wire('POST','/reservations/'+id(r._id)+'/payments/payos',{key,body:{purpose},clientPlatform:Platform.OS==='web'?undefined:'MOBILE'});
     z.object({outcome:z.enum(['CREATED','REPLAYED'])}).parse(response);
     const result=mapSelfPayment(response,r,owner);
     if(result.purpose!==purpose) throw new MobileInputError('Loại giao dịch không khớp.');

@@ -8,7 +8,7 @@ import {applied,balanceDecision,hasPaperProof} from './livePayment';
 type Contract=z.infer<typeof contractDto>;
 type Payment=z.infer<typeof paymentDto>;
 type PaymentDecision='APPLIED'|'REVIEW'|'INELIGIBLE'|'READY'|'CREATE';
-type Action={destination:'PAYMENT'|'CONTRACT';label:string;intent?:'SIGN';purpose?:'BALANCE'};
+type Action={destination:'PAYMENT'|'CONTRACT';label:string;intent?:'SIGN';purpose?:'BALANCE'|'FULL_RENT'};
 type StepState='COMPLETED'|'CURRENT'|'UPCOMING'|'BLOCKED'|'FAILED'|'SKIPPED';
 type Mode='CUSTOMER_ACTION_REQUIRED'|'WAITING_FOR_SYSTEM'|'WAITING_FOR_STAFF'|'BLOCKED'|'COMPLETED';
 export type ProgressStep={id:string;title:string;state:StepState;description:string};
@@ -31,6 +31,7 @@ function paymentState(rows:Payment[]){
 
 export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date.now()):ReservationProgress|null{
   if(r.serviceType!=='SELF_STORAGE')return null;
+  if (r.rentalPaymentFlow === 'FULL_UPFRONT_V1') return upfrontProgress(r, evidence, now);
   const expired=(r.status==='RESERVED'||r.status==='CONTRACTED')&&!!r.expiresAt&&Date.parse(r.expiresAt)<=now;
   const summary=expired?'Đã hết hạn giữ kho':r.status==='CANCELLED'&&r.rejectReason?'Đơn thuê đã bị từ chối':({
     RESERVED:'Đang chờ duyệt đặt kho',CONTRACTED:'Đang ở bước đặt cọc',DEPOSIT_PAID:'Đang ở bước hợp đồng giấy',
@@ -143,4 +144,41 @@ export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date
     return finish('handover','BLOCKED','WAITING_FOR_SYSTEM','Đang chờ máy chủ cập nhật điều kiện bàn giao kho.');
   }
   return finish('handover','BLOCKED','BLOCKED','Cơ sở cần xác nhận điều kiện bàn giao trước khi bạn nhận kho.');
+}
+
+function upfrontProgress(r: ReservationDto, evidence: Evidence | undefined, now: number): ReservationProgress {
+  const summary = ({
+    RESERVED: 'Đã giữ kho', CONTRACTED: 'Chờ thanh toán 100% tiền thuê', PAID: 'Đã thanh toán — Chờ ký hợp đồng giấy',
+    CHECKIN_READY: 'Hợp đồng đã xác minh — Chờ bàn giao', ACTIVE: 'Đã bàn giao — Đang thuê',
+    CANCELLED: 'Đơn thuê đã hủy', CHECKED_OUT: 'Đã trả kho', CLOSED: 'Đơn thuê đã đóng', OVERDUE: 'Đơn thuê đã quá hạn',
+    DEPOSIT_PAID: 'Trạng thái cần xác minh'
+  })[r.status];
+  if (!evidence) return {summary, steps: []};
+  const {contract, payments} = evidence;
+  if (payments.some(p => p.reservationId !== r._id) || (contract &&
+      (refId(contract.reservationId) !== r._id || refId(contract.customerId) !== refId(r.customerId)))) {
+    return {summary, steps: [], next: {mode:'BLOCKED', description:'Chưa thể xác minh tiến độ của đơn thuê này.'}};
+  }
+  const settled = payments.some(p => p.purpose === 'FULL_RENT' && applied(p));
+  const verified = hasPaperProof(contract);
+  const handedOver = ['ACTIVE','OVERDUE','CHECKED_OUT','CLOSED'].includes(r.status);
+  const ended = ['CANCELLED','CHECKED_OUT','CLOSED'].includes(r.status);
+  const payable = r.status === 'CONTRACTED' && !!r.expiresAt && Date.parse(r.expiresAt) > now;
+  const steps: ProgressStep[] = [
+    {id:'payment', title:'Thanh toán 100% tiền thuê', state:settled?'COMPLETED':ended?'SKIPPED':payable?'CURRENT':'BLOCKED',
+      description:settled?'Máy chủ đã xác minh và ghi nhận thanh toán.':'Trạng thái thanh toán do máy chủ xác nhận.'},
+    {id:'contract', title:'Ký và xác minh hợp đồng giấy', state:verified?'COMPLETED':ended?'SKIPPED':r.status==='PAID'?'CURRENT':'UPCOMING',
+      description:verified?'Nhân viên đã xác minh hợp đồng.':'Ký hợp đồng giấy tại cơ sở.'},
+    {id:'handover', title:'Bàn giao kho', state:handedOver?'COMPLETED':ended?'SKIPPED':r.status==='CHECKIN_READY'&&verified?'CURRENT':'UPCOMING',
+      description:handedOver?'Máy chủ đã ghi nhận bàn giao.':'Nhân viên tại cơ sở thực hiện bàn giao.'},
+  ];
+  const contractAction: Action | undefined = contract ? {destination:'CONTRACT',label:'Xem hợp đồng'} : undefined;
+  const next: ReservationProgress['next'] = ended ? {mode:'COMPLETED',description:summary}
+    : handedOver ? {mode:'COMPLETED',description:summary,action:contractAction}
+    : payable && !settled ? {mode:'CUSTOMER_ACTION_REQUIRED',description:summary,
+      action:{destination:'PAYMENT',label:'Thanh toán và kiểm tra PayOS',purpose:'FULL_RENT'}}
+    : r.status==='PAID' && contract?.status==='DRAFT' ? {mode:'WAITING_FOR_STAFF',description:'Vui lòng đến cơ sở ký hợp đồng giấy trước hạn ký.',action:contractAction}
+    : r.status==='CHECKIN_READY' && verified ? {mode:'WAITING_FOR_STAFF',description:'Đang chờ nhân viên bàn giao kho.',action:contractAction}
+    : {mode:'WAITING_FOR_SYSTEM',description:'Hãy làm mới trạng thái đơn thuê và hợp đồng.',action:contractAction};
+  return {summary,steps,next};
 }

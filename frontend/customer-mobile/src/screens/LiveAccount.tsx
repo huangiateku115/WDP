@@ -1,5 +1,5 @@
 import {useRef,useState} from 'react';
-import {useLocalSearchParams,useRouter} from 'expo-router';
+import {useLocalSearchParams,useRouter,type Href} from 'expo-router';
 import {View} from 'react-native';
 import {apiIssue,wire,MobileInputError} from '../api/client';
 import {restoreNativePaymentReturnPath} from '../api/paymentReturnLink';
@@ -26,7 +26,7 @@ export function Login(){
   async function submit(){
     if(busy.current)return;
     busy.current=true;setPending(true);setError('');
-    try{await login({email,password});setPassword('');const target=restoreNativePaymentReturnPath(Array.isArray(returnTo)?returnTo[0]:returnTo);if(target)router.replace(target);}
+    try{await login({email,password});setPassword('');const target=restoreNativePaymentReturnPath(Array.isArray(returnTo)?returnTo[0]:returnTo);if(target)router.replace(target as Href);}
     catch(cause){setError(apiIssue(cause));}
     finally{busy.current=false;setPending(false);}
   }

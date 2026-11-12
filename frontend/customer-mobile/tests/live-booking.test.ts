@@ -1,12 +1,13 @@
 import {calendarDays,canStartOn,rentalEndDate,shiftMonth,unitSelection} from '../src/domain/liveBooking';
 import {optionalAddress} from '../src/api/contracts/profile';
 
-test.each(['OCCUPIED','HELD','MAINTENANCE','INACTIVE','BLOCKED','FUTURE_STATE',undefined,null])('unit %s cannot start booking from the list',status=>{
+test.each(['MAINTENANCE','INACTIVE','BLOCKED','FUTURE_STATE',undefined,null])('unit %s cannot start booking from the list',status=>{
   expect(unitSelection(status).selectable).toBe(false);
 });
-test('only AVAILABLE is selectable and occupied has a distinct label',()=>{
+test('physical occupancy permits checking other dates while interval availability still gates booking',()=>{
   expect(unitSelection('AVAILABLE').selectable).toBe(true);
-  expect(unitSelection('OCCUPIED').label).toBe('Đã có người thuê');
+  expect(unitSelection('OCCUPIED')).toEqual({label:'Đang có người thuê · kiểm tra kỳ khác',selectable:true});
+  expect(unitSelection('HELD').selectable).toBe(true);
 });
 test.each([
   ['2027-01-31',1,'MONTH','2027-02-28'],

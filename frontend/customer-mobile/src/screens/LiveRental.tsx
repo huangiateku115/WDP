@@ -1,7 +1,7 @@
 import { CardHeading, TintedPanel } from "../components/livePresentation";
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { Linking, View } from "react-native";
+import { AppState, Linking, Modal, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { apiIssue, MobileInputError } from "../api/client";
 import { mobileRepo } from "../api/mobileRepository";
@@ -10,6 +10,7 @@ import { journal, newAttempt } from "../state/attemptJournal";
 import { useLiveSession } from "../state/useLiveSession";
 import {
   openSelfStoragePayment,
+  createFullRentIntent,
   paymentContext,
   readRentalPayment,
 } from "../api/selfStoragePayment";
@@ -32,6 +33,7 @@ import {
 } from "../components/liveUI";
 
 import { ReservationProgressTracker } from "../components/ReservationProgressTracker";
+import { FullRentCheckout } from "../components/FullRentCheckout";
 import { reservationProgress } from "../domain/reservationProgress";
 import {
   BookingCalendar,
@@ -113,6 +115,33 @@ export function RentalDetail({ id }: { id: string }) {
     mobileRepo.rental(id, owner, signal),
   );
   const r = data.data;
+  const cancellation = r?.serviceType === "SELF_STORAGE" && r.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
+    ["RESERVED","CONTRACTED"].includes(r.status) && r.customerCancellationEligible === true;
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const cancelBusy = useRef(false);
+  useEffect(() => { setCancelOpen(false); setCancelError(""); }, [id, owner]);
+  async function cancel() {
+    if (!r || !cancellation || cancelBusy.current) return;
+    cancelBusy.current = true;
+    setCancelPending(true);
+    setCancelError("");
+    try {
+      const latest = await mobileRepo.rental(id, owner);
+      if (useLiveSession.getState().user?._id !== owner) return;
+      await mobileRepo.cancelUpfrontRental(latest, owner);
+      if (useLiveSession.getState().user?._id === owner) {
+        setCancelOpen(false);
+        data.reload();
+      }
+    } catch (cause) {
+      if (useLiveSession.getState().user?._id === owner) setCancelError(apiIssue(cause));
+    } finally {
+      cancelBusy.current = false;
+      setCancelPending(false);
+    }
+  }
   const facility =
     typeof r?.facilityId === "object" && typeof r.facilityId.name === "string"
       ? r.facilityId.name
@@ -135,6 +164,8 @@ export function RentalDetail({ id }: { id: string }) {
         <Card>
           <AppText variant="card">{r.reservationCode}</AppText>
           <AppText>{rentalLabel(r)}</AppText>
+          {r.serviceType === "SELF_STORAGE" && r.rentalPaymentFlow === "FULL_UPFRONT_V1" && r.status === "ACTIVE" &&
+            <AppText>Kho đã được bàn giao. Vui lòng liên hệ cơ sở để được hướng dẫn truy cập.</AppText>}
           <AppText>
             {dateLabel(r.startDate)} – {dateLabel(r.endDate)}
           </AppText>
@@ -155,7 +186,7 @@ export function RentalDetail({ id }: { id: string }) {
               })
             }
           />
-          {r.serviceType === "SELF_STORAGE" && (
+          {r.serviceType === "SELF_STORAGE" && r.status !== "CANCELLED" && (
             <Button
               label="Thanh toán và lịch sử"
               icon="card-outline"
@@ -169,6 +200,18 @@ export function RentalDetail({ id }: { id: string }) {
           )}
         </Card>
       )}
+      {cancellation && <Button label="Hủy đơn thuê" variant="outline" onPress={() => { setCancelError(""); setCancelOpen(true); }} />}
+      <Modal visible={cancelOpen} transparent animationType="none" onRequestClose={() => { if (!cancelBusy.current) setCancelOpen(false); }}>
+        <View accessibilityViewIsModal style={{flex:1, justifyContent:"center", padding:20, backgroundColor:"rgba(0,0,0,0.55)"}}>
+          <Card>
+            <AppText variant="heading">Hủy đơn thuê</AppText>
+            <AppText>Hủy đơn sẽ kết thúc giữ chỗ sau khi máy chủ xác nhận. Giao dịch PayOS được xử lý riêng.</AppText>
+            {cancelError && <AppText accessibilityRole="alert">{cancelError}</AppText>}
+            <Button label="Giữ đơn thuê" variant="outline" disabled={cancelPending} onPress={() => setCancelOpen(false)} />
+            <Button label="Xác nhận hủy đơn thuê" loading={cancelPending} disabled={!cancellation} onPress={() => void cancel()} />
+          </Card>
+        </View>
+      </Modal>
       {r?.serviceType === "SELF_STORAGE" && (
         <RentalProgress
           key={owner + ":" + id}
@@ -308,9 +351,15 @@ function BookingForm({
     return { quote, attempt, store };
   });
 
+  const facility = useResource("booking-facility:" + facilityId, signal => mobileRepo.facility(facilityId, signal));
+  const supportedFacility = facility.data?.serviceTypes.includes("SELF_STORAGE") === true;
+  const policy = useResource("self-storage-policy", signal => mobileRepo.bookingPolicy(signal));
+  const [acceptedVersion, setAcceptedVersion] = useState("");
+  const [policyOpen, setPolicyOpen] = useState(false);
+
   async function confirm() {
     const currentReview = review.data;
-    if (busy.current || !period || !currentReview) return;
+    if (busy.current || !period || !currentReview || !supportedFacility) return;
     busy.current = true;
     setPending(true);
     setError("");
@@ -337,8 +386,14 @@ function BookingForm({
         return;
       }
       if (!attempt) {
-        if (!quote)
+        if (!quote || !acceptedVersion || acceptedVersion !== policy.data?.versionId)
           throw new MobileInputError("Không xác minh được lần đặt kho đã lưu.");
+        const currentPolicy = await mobileRepo.bookingPolicy(controller.signal);
+        if (currentPolicy.versionId !== acceptedVersion) {
+          setAcceptedVersion("");
+          policy.reload();
+          throw new MobileInputError("Điều khoản đã thay đổi. Vui lòng đọc và xác nhận phiên bản mới.");
+        }
         const fresh = await mobileRepo.quote(
           facilityId,
           unitId,
@@ -358,7 +413,7 @@ function BookingForm({
           useLiveSession.getState().user?._id !== owner
         )
           return;
-        attempt = { ...newAttempt(), bookingBody: fresh.body };
+        attempt = { ...newAttempt(), bookingBody: { ...fresh.body, termsAccepted: true, termsVersionId: acceptedVersion } };
         if (!(await store.claim(attempt)))
           throw new MobileInputError(
             "Đã có lần đặt kho. Vui lòng kiểm tra lại.",
@@ -416,19 +471,22 @@ function BookingForm({
       eyebrow="ĐẶT KHO · THỜI HẠN"
       subtitle="Chọn ngày bắt đầu và kỳ hạn để xem báo giá."
     >
+      <ResourceState {...facility} />
       <ResourceState {...unitData} />
+      {facility.data && !supportedFacility && <StateCard title="Cơ sở không hỗ trợ kho tự quản" />}
       {unitData.data && !unitReady ? (
         <StateCard
           title="Kho không khả dụng"
           description="Vui lòng quay lại và chọn kho khác."
         />
       ) : null}
-      {unitReady && (
+      {unitReady && supportedFacility && (
         <Card>
           <CardHeading
             icon="calendar-outline"
             title={`Kho ${unitData.data?.unitCode ?? ""}`}
           />
+          <AppText>Cơ sở: {facility.data?.name}</AppText>
           <AppText variant="label">Ngày bắt đầu</AppText>
           <Button
             label={
@@ -514,14 +572,29 @@ function BookingForm({
             <TintedPanel>
               <AppText variant="label">CHI PHÍ DỰ KIẾN</AppText>
               <AppText>
-                Tiền thuê dự kiến {money(quote.estimate.estimatedRent)}
+                Tổng tiền thuê dự kiến {money(quote.estimate.estimatedRent)}
               </AppText>
-              <AppText>
-                Tiền đặt cọc {money(quote.estimate.depositAmount)}
-              </AppText>
-              <AppText>Thuế {money(quote.estimate.taxAmount)}</AppText>
+              <AppText>Thanh toán 100% qua PayOS. Số tiền giao dịch do máy chủ xác nhận.</AppText>
+              <AppText>Kho còn trống trong kỳ thuê đã chọn theo kiểm tra của máy chủ.</AppText>
             </TintedPanel>
           )}
+          {quote && <TintedPanel>
+            <AppText variant="label">Điều khoản thuê kho tự quản</AppText>
+            <ResourceState {...policy} />
+            {policy.data && <>
+              <Button variant="outline" label={policyOpen ? "Ẩn điều khoản" : `Đọc điều khoản v${policy.data.version}`}
+                onPress={() => setPolicyOpen(open => !open)} disabled={pending} />
+              {policyOpen && policy.data.groups.filter(group => group.appliesTo.includes("SELF_STORAGE")).map(group =>
+                <View key={group.id}>
+                  <AppText variant="label">{group.title}</AppText>
+                  {group.sections.SELF_STORAGE?.map((line, index) => <AppText key={index}>{line}</AppText>)}
+                </View>
+              )}
+              <Button variant="outline" disabled={!policyOpen || pending}
+                label={acceptedVersion === policy.data.versionId ? "Đã đồng ý · Bỏ chọn" : "Tôi đồng ý với điều khoản"}
+                onPress={() => setAcceptedVersion(value => value === policy.data?.versionId ? "" : policy.data?.versionId ?? "")} />
+            </>}
+          </TintedPanel>}
           <Button
             label={
               review.data?.attempt
@@ -530,12 +603,13 @@ function BookingForm({
             }
             loading={pending}
             disabled={
-              !review.data || (!review.data.quote && !review.data.attempt)
+              !review.data || (!review.data.attempt && (!review.data.quote || !acceptedVersion || acceptedVersion !== policy.data?.versionId))
             }
             onPress={() => void confirm()}
           />
         </Card>
       )}
+      {review.data?.attempt && <Button label="Mở Kho của tôi" variant="outline" onPress={() => router.push("/rentals")} />}
       {error ? (
         <StateCard
           kind="error"
@@ -565,6 +639,7 @@ const paymentStatus = {
   PENDING: "Đang chờ xác nhận",
   SUCCEEDED: "Đã nhận thanh toán",
   FAILED: "Thất bại",
+  CANCELLED: "Đã hủy thanh toán",
   RECONCILIATION_REQUIRED: "Cần đối soát",
 } as const;
 const checkoutStatus = {
@@ -572,6 +647,8 @@ const checkoutStatus = {
   CREATING: "Đang tạo",
   READY: "Sẵn sàng",
   UNKNOWN: "Chưa rõ kết quả",
+  FAILED: "Thất bại",
+  CANCELLED: "Đã hủy",
   RECONCILIATION_REQUIRED: "Cần đối soát",
 } as const;
 const applicationStatus = {
@@ -596,11 +673,69 @@ function PaymentScreen({
     redirected = useRef(false);
   const [pending, setPending] = useState(false),
     [error, setError] = useState("");
-  const balance = purpose === "BALANCE";
+  const upfront = data.data?.reservation.rentalPaymentFlow === "FULL_UPFRONT_V1";
+  const full = data.data?.fullRentDecision;
+  const balance = purpose === "BALANCE" && !upfront;
   const decision = balance
     ? data.data?.balanceDecision.kind
     : data.data?.decision.kind;
   const state = data.data?.reservation.status;
+  const currentPayment = data.data?.payments.find(row => row.purpose === "FULL_RENT" && row.status === "PENDING");
+  const lastCheck = useRef<{id: string; at: number} | null>(null);
+  const [blockedIntent, setBlockedIntent] = useState("");
+  const paymentId = currentPayment?.id;
+  async function verifyFullRent() {
+    const reservation = data.data?.reservation;
+    if (!reservation || !paymentId || busy.current) { if (!busy.current) data.reload(); return; }
+    busy.current = true;
+    setBlockedIntent(paymentId);
+    setPending(true);
+    setError("");
+    lastCheck.current = {id: paymentId, at: Date.now()};
+    try {
+      const verified = await mobileRepo.reconcilePayment(reservation, paymentId, owner);
+      if (useLiveSession.getState().user?._id === owner) {
+        data.reload();
+        if (verified.status === "PENDING" && verified.checkoutStatus === "READY" && !verified.reconciliationRequired) setBlockedIntent("");
+      }
+    } catch (cause) {
+      if (useLiveSession.getState().user?._id === owner) setError(apiIssue(cause));
+    } finally {
+      busy.current = false;
+      setPending(false);
+    }
+  }
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", next => {
+      if (next !== "active" || busy.current) return;
+      if (upfront && paymentId) {
+        if (lastCheck.current?.id !== paymentId || Date.now() - lastCheck.current.at >= 15000) void verifyFullRent();
+      } else data.reload();
+    });
+    return () => subscription.remove();
+  }, [upfront, paymentId, data.data?.reservation, owner]);
+  useEffect(() => {
+    if (!redirected.current && upfront && full?.kind === "APPLIED" && ["PAID","CHECKIN_READY","ACTIVE"].includes(state ?? "")) {
+      redirected.current = true;
+      router.replace({ pathname: "/rentals/[id]/contract", params: { id } });
+    }
+  }, [upfront, full?.kind, state, router, id]);
+
+  async function createFullPayment() {
+    if (busy.current) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await createFullRentIntent(id, owner, () => useLiveSession.getState().user?._id === owner);
+    } catch (cause) {
+      if (useLiveSession.getState().user?._id === owner) setError(apiIssue(cause));
+    } finally {
+      busy.current = false;
+      setPending(false);
+      data.reload();
+    }
+  }
   useEffect(() => {
     if (
       !redirected.current &&
@@ -644,7 +779,7 @@ function PaymentScreen({
         decision: data.data.decision.kind,
       })
     : null;
-  const checkout = (decision === "CREATE" || decision === "READY") && (
+  const checkout = !upfront && (decision === "CREATE" || decision === "READY") && (
     <Button
       label={
         decision === "READY"
@@ -684,20 +819,20 @@ function PaymentScreen({
             icon="wallet-outline"
             title={data.data.reservation.reservationCode}
             subtitle={
-              balance ? "Thanh toán phần còn lại" : "Thanh toán tiền cọc"
+              upfront ? "Thanh toán 100% tiền thuê" : balance ? "Thanh toán phần còn lại" : "Thanh toán tiền cọc"
             }
           />
           <AppText>{rentalLabel(data.data.reservation)}</AppText>
-          {decision === "APPLIED" && (
+          {!upfront && decision === "APPLIED" && (
             <TintedPanel>
-              <AppText accessibilityRole="status">
+              <AppText accessibilityLiveRegion="polite">
                 {balance
                   ? "Số dư đã được xác minh và ghi nhận."
                   : "Tiền đặt cọc đã được xác minh và ghi nhận."}
               </AppText>
             </TintedPanel>
           )}
-          {decision === "REVIEW" && (
+          {!upfront && decision === "REVIEW" && (
             <TintedPanel tone="amber">
               <AppText>
                 {balance
@@ -720,13 +855,16 @@ function PaymentScreen({
               theo.
             </AppText>
           )}
-          {decision === "INELIGIBLE" && (
+          {!upfront && decision === "INELIGIBLE" && (
             <AppText>
               {balance
                 ? "Đơn thuê chưa đủ điều kiện thanh toán số dư."
                 : "Đơn thuê hoặc hợp đồng chưa đủ điều kiện thanh toán tiền cọc."}
             </AppText>
           )}
+          {upfront && full?.kind === "REVIEW" && <AppText accessibilityLiveRegion="polite">Giao dịch đang chờ xác minh hoặc đối soát. Hãy kiểm tra trạng thái trước khi thử lại.</AppText>}
+          {upfront && full?.kind === "INELIGIBLE" && <AppText>Đơn thuê hiện chưa đủ điều kiện tạo giao dịch.</AppText>}
+          {upfront && full?.kind === "APPLIED" && <AppText accessibilityLiveRegion="polite">Thanh toán đã được xác minh và ghi nhận.</AppText>}
           {balance && decision === "CREATE" && (
             <AppText>
               Máy chủ xác định số tiền phải trả khi tạo liên kết.
@@ -738,7 +876,7 @@ function PaymentScreen({
         <ReservationProgressTracker
           progress={progress}
           paymentScreen
-          paymentPurpose={purpose}
+          paymentPurpose={upfront ? "FULL_RENT" : purpose}
           onAction={(action) =>
             router.push(
               action.destination === "PAYMENT"
@@ -751,6 +889,11 @@ function PaymentScreen({
           }
         >
           {checkout}
+          {upfront && full?.kind === "CREATE" && <Button label={full.retry ? "Thanh toán lại" : "Tạo giao dịch PayOS"}
+            loading={pending} onPress={() => void createFullPayment()} />}
+          {upfront && full?.kind === "READY" && blockedIntent !== full.payment.id && !pending &&
+            <FullRentCheckout payment={full.payment} url={full.url} />}
+          {upfront && <Button label="Kiểm tra trạng thái PayOS" variant="outline" loading={pending} onPress={() => void verifyFullRent()} />}
         </ReservationProgressTracker>
       )}
       {error && (
@@ -766,7 +909,7 @@ function PaymentScreen({
         <Card key={p.id}>
           <CardHeading
             icon="card-outline"
-            title={p.purpose === "DEPOSIT" ? "Đặt cọc" : "Tiền thuê còn lại"}
+            title={p.purpose === "FULL_RENT" ? "100% tiền thuê" : p.purpose === "DEPOSIT" ? "Đặt cọc" : "Tiền thuê còn lại"}
             subtitle={p.provider}
           />
           <AppText variant="heading">{money(p.amount)}</AppText>

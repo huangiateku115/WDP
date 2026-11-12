@@ -10,7 +10,7 @@ const nextLabels={CUSTOMER_ACTION_REQUIRED:'Bạn cần thực hiện',WAITING_F
   BLOCKED:'Cần kiểm tra',COMPLETED:'Đã hoàn tất'} as const;
 type Action=NonNullable<NonNullable<ReservationProgress['next']>['action']>;
 
-export function ReservationProgressTracker({progress,onAction,paymentScreen=false,paymentPurpose='DEPOSIT',children}:{progress:ReservationProgress;onAction:(action:Action)=>void;paymentScreen?:boolean;paymentPurpose?:'DEPOSIT'|'BALANCE';children?:ReactNode}){
+export function ReservationProgressTracker({progress,onAction,paymentScreen=false,paymentPurpose='DEPOSIT',children}:{progress:ReservationProgress;onAction:(action:Action)=>void;paymentScreen?:boolean;paymentPurpose?:'DEPOSIT'|'BALANCE'|'FULL_RENT';children?:ReactNode}){
   const {steps,next}=progress;
   const action=next?.action;
   return <Card>

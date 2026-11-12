@@ -9,6 +9,10 @@ export async function loadContractReview(id:string,owner:string,signal?:AbortSig
   if(reservation.serviceType!=='SELF_STORAGE'){
     return {reservation,contract:await mobileRepo.contract(reservation,owner,signal),canSign:false,reason:''};
   }
+  if (reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1') {
+    const contract = await mobileRepo.contract(reservation,owner,signal);
+    return {reservation,contract,canSign:false,reason:''};
+  }
   const {contract,payments,decision}=await readRentalPayment(reservation,owner,signal,true);
   const progress=reservationProgress(reservation,{contract,payments,decision:decision.kind});
   return {reservation,contract,canSign:progress?.next?.action?.intent==='SIGN',

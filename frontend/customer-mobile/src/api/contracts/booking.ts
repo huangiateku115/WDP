@@ -14,7 +14,7 @@ export function mapAvailability(response:unknown,unitId:string,month:string,rang
 }
 export const estimateDto=z.object({estimatedRent:nonnegative,depositAmount:nonnegative,taxAmount:nonnegative,basePrice:nonnegative,durationDays:whole.min(1)});
 export const mapEstimate=(response:unknown)=>readData(estimateDto,response);
-export const selfBody=z.object({facilityId:objectId,storageUnitId:objectId,pricingPolicyId:objectId,startDate:utc,endDate:utc}).strict();
+export const selfBody=z.object({facilityId:objectId,storageUnitId:objectId,pricingPolicyId:objectId,startDate:utc,endDate:utc,termsAccepted:z.literal(true).optional(),termsVersionId:z.string().trim().min(1).optional()}).strict();
 export function selfBookingBody(input:unknown,now=Date.now()){const b=selfBody.parse(input);if(Date.parse(b.startDate)<=now||Date.parse(b.endDate)<=Date.parse(b.startDate))throw Error('Chọn thời điểm thuê tương lai hợp lệ.');return b;}
 export function mapSelfCreation(response:unknown,body:z.infer<typeof selfBody>,owner:string){const r=mapReservation(response,owner);if(r.serviceType!=='SELF_STORAGE'||r.status!=='CONTRACTED'||refId(r.facilityId)!==body.facilityId||!r.storageUnitId||refId(r.storageUnitId)!==body.storageUnitId||Date.parse(r.startDate)!==Date.parse(body.startDate)||Date.parse(r.endDate)!==Date.parse(body.endDate))throw Error('Unconfirmed creation; reconcile owned reservations before retrying');return {...r,contractRetrieval:'SAFE_GET_REQUIRED' as const};}
 export const suggestionDto=z.object({_id:objectId,unitCode:z.string().trim().min(1).max(100),size:z.enum(['SMALL','MEDIUM','LARGE']),sameSize:z.boolean(),volumeM3:positive.optional(),dimensions:z.unknown().optional()});
