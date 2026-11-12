@@ -16,6 +16,17 @@ export interface IContract extends Document {
   
   customerSnapshot: any; // { identityCard, fullName, phone, address }
   pricingSnapshot: any;  // { estimatedRent, depositAmount, taxAmount... }
+  paymentSnapshot?: {
+    paymentId: Types.ObjectId;
+    purpose: string;
+    amount: number;
+    currency: string;
+    status: string;
+    providerSettlementStatus: string;
+    applicationStatus: string;
+    verifiedAt: Date;
+    appliedAt: Date;
+  };
   
   signedByCustomerAt?: Date;
   signedByFMAt?: Date;

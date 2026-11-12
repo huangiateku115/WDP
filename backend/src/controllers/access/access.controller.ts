@@ -90,6 +90,10 @@ export const simulateUnlock = async (req: Request, res: Response) => {
     }
 
     // 7. Kiểm tra mã PIN động
+    if (reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1' && !reservation.accessPinCode) {
+      return res.status(503).json({ success: false, code: 'ACCESS_PROVISIONING_UNAVAILABLE', message: 'Quyền truy cập số chưa được cấp bởi hệ thống khóa an toàn.' });
+    }
+    // Legacy simulated unlock compatibility only. New full-upfront bookings fail closed above.
     const expectedPin = reservation.accessPinCode || '1234';
     if (pinCode.trim() !== expectedPin) {
       const log = await AccessLogModel.create({

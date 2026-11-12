@@ -42,6 +42,9 @@ export interface IReservation extends Document {
   bookingPayloadHash?: string;
   /** Absent on legacy records. Version 2 is never inferred from legacy status/payment fields. */
   bookingFlowVersion?: 2 | 3;
+  /** Explicit marker for bookings that must use one 100% PayOS checkout. Absent on legacy reservations. */
+  rentalPaymentFlow?: 'FULL_UPFRONT_V1';
+  rentalPricingSnapshot?: Record<string, unknown>;
   storageUnitId?: Types.ObjectId;
   /** Cells exclusively allocated to this Managed Inventory reservation. */
   allocatedCellIds?: Types.ObjectId[];

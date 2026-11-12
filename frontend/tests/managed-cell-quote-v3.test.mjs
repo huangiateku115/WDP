@@ -27,8 +27,7 @@ function quote(overrides = {}) {
     startDate: range.startDate, endDate: range.endDate, term,
     sellableCapacityM3: 10, committedPeakCapacityM3: 0, availableCapacityM3: 10,
     pricing: { ruleId: '507f1f77bcf86cd7994390a1', version: 3, billingBasis: 'PER_M3', ratePerM3: 1000, currency: 'VND', estimatedRent: 120 },
-    deposit: { policyId: '507f1f77bcf86cd7994390b1', version: 2, calculation: 'PERCENT_OF_RENT', percentage: 20, amount: 24 },
-    taxAmount: 0, paymentBreakdown: { totalDue: 120, depositCredit: 24, balanceDue: 96 },
+    taxAmount: 0, payment: { purpose: 'FULL_RENT', amount: 120, currency: 'VND' },
     ...overrides,
   };
 }
@@ -38,7 +37,7 @@ test('Backend V3 quote envelope and schema are accepted and can proceed to booki
   const verified = verifiedCellQuote(response.data.data, payload, range);
   assert.equal(verified.bookingFlowVersion, 3);
   assert.deepEqual(managedQuoteFinancials(verified), {
-    totalRentPayable: 120, advanceDepositRequired: 24, balanceAfterDeposit: 96, currency: 'VND',
+    totalRentPayable: 120, advanceDepositRequired: 0, balanceAfterDeposit: 0, currency: 'VND', paymentFlow: 'FULL_RENT',
   });
   const quoteBody = managedQuoteRequest(payload);
   const createBody = managedCreateRequest(acceptedPayload);
@@ -68,14 +67,17 @@ test('server-derived capacity must match selected Cell dimensions', () => {
 });
 
 test('Managed V3 quote fields must contain internally consistent server pricing', () => {
-  assert.throws(() => verifiedCellQuote(quote({ paymentBreakdown: { totalDue: 120, depositCredit: 23, balanceDue: 97 } }), payload, range), /pricing or availability/);
+  assert.throws(() => verifiedCellQuote(quote({ payment: { purpose: 'FULL_RENT', amount: 119, currency: 'VND' } }), payload, range), /pricing or availability/);
   assert.throws(() => verifiedCellQuote(quote({ facilityId: '507f1f77bcf86cd799439012' }), payload, range), /Invalid Managed quote/);
   assert.throws(() => verifiedCellQuote(quote({ term: { value: 2, unit: 'MONTH' } }), payload, range), /Invalid Managed quote/);
   assert.throws(() => verifiedCellQuote(quote({ pricing: { ...quote().pricing, estimatedRent: 121 } }), payload, range), /pricing or availability/);
 });
 
 test('V2 quote financial compatibility remains explicit and independently validated', () => {
-  const v2 = quote({ bookingFlowVersion: 2 });
+  const v2 = quote({ bookingFlowVersion: 2,
+    deposit: { policyId: '507f1f77bcf86cd7994390b1', version: 2, calculation: 'PERCENT_OF_RENT', percentage: 20, amount: 24 },
+    paymentBreakdown: { totalDue: 120, depositCredit: 24, balanceDue: 96 },
+  });
   assert.deepEqual(managedQuoteFinancials(v2), {
     totalRentPayable: 120, advanceDepositRequired: 24, balanceAfterDeposit: 96, currency: 'VND',
   });
@@ -89,7 +91,7 @@ test('confirmation handler calls the real Managed create API with its stable ide
   assert.match(componentSource, /setQuote\(null\); setConfirmed\(false\); setTermsAccepted\(false\); \}, \[requestKey, terms\.data\?\.versionId\]/, 'Cell, period, dimensions or Terms version changing invalidates confirmation');
   assert.match(componentSource, /disabled=\{!b\.payload \|\| !b\.review \|\| !b\.confirmed \|\| !b\.termsAccepted/);
   assert.match(componentSource, /onClick=\{b\.create\}/);
-  assert.match(componentSource, /managedApi\.create\(\{ \.\.\.latest, termsAccepted: true, termsVersionId: terms\.data\.versionId \}, \{ headers: \{ 'Idempotency-Key': idempotencyKey \} \}\)/);
+  assert.match(componentSource, /managedApi\.create\(\{ \.\.\.latest, termsAccepted, termsVersionId: latestTerms\.versionId \}, \{ headers: \{ 'Idempotency-Key': idempotencyKey \} \}\)/);
   assert.match(componentSource, /nav\(`\/portal\/payments\/\$\{result\.reservation\._id\}`/);
 
   const source = readFileSync(new URL('../src/api/managedReservationApi.js', import.meta.url), 'utf8');

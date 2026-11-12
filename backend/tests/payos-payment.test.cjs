@@ -1249,13 +1249,16 @@ test('valid verified Deposit webhook applies once; duplicate callback does not a
   assert.equal(payment.providerPaymentLinkId, 'link-1', 'signed webhook may arrive before create-link response persistence');
 });
 
-function managedDepositFixture(t, issue) {
+function managedDepositFixture(t, issue, purpose = PaymentPurpose.DEPOSIT) {
   const now = new Date();
   const reservation = { ...baseReservation(ReservationStatus.RESERVED), serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
+    ...(purpose === PaymentPurpose.FULL_RENT ? { rentalPaymentFlow: 'FULL_UPFRONT_V1',
+      termsAcceptance: { serviceType: 'MANAGED_INVENTORY', versionId: 'terms-v1', contentHash: 'a'.repeat(64), acceptedAt: now },
+      managedPricingSnapshot: { pricingRule: { currency: 'VND' }, amountBreakdown: { totalDue: 300000 } } } : {}),
     startDate: new Date(+now - 60_000), endDate: new Date(+now + 86_400_000),
     expiresAt: new Date(+now + (issue === 'expired reservation' ? -1 : 60_000)), allocatedCellIds: [oid(), oid()], allocatedCapacity: 0.5 };
   const payment = { _id: oid(), reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
-    serviceType: 'MANAGED_INVENTORY', purpose: PaymentPurpose.DEPOSIT, amount: 100000, currency: 'VND', provider: PaymentProvider.PAYOS,
+    serviceType: 'MANAGED_INVENTORY', purpose, amount: purpose === PaymentPurpose.FULL_RENT ? 300000 : 100000, currency: 'VND', provider: PaymentProvider.PAYOS,
     providerReference: '1234567891', providerCaptures: [], status: PaymentStatus.PENDING,
     async save(options) { assert.equal(options.session, transaction); return this; } };
   const rows = reservation.allocatedCellIds.map(cellId => ({
@@ -1290,7 +1293,7 @@ function managedDepositFixture(t, issue) {
       throw error;
     }
   } };
-  const gateway = { verify: async () => ({ orderCode: 1234567891, amount: 100000, currency: 'VND', paymentLinkId: 'managed-link',
+  const gateway = { verify: async () => ({ orderCode: 1234567891, amount: purpose === PaymentPurpose.FULL_RENT ? 300000 : 100000, currency: 'VND', paymentLinkId: 'managed-link',
     reference: 'managed-bank-ref', transactionDateTime: '2026-11-10 10:00:00', code: '00', desc: 'success' }) };
   t.mock.method(ReservationPaymentModel, 'findOne', filter => query(filter._id?.$ne ? null : payment));
   t.mock.method(ReservationModel, 'findOne', filter => {
@@ -1368,6 +1371,47 @@ test('verified Managed V3 Deposit promotes every HOLD and records DEPOSIT_PAID o
   assert.equal((await apply()).duplicate, true);
   assert.deepEqual(writes, { reservation: 1, allocation: 1 });
   assert.equal(payment.providerCaptures.length, 1);
+});
+
+test('verified Managed V3 FULL_RENT applies once, promotes held Cells and leaves rental awaiting contract', async t => {
+  const { reservation, payment, rows, writes, apply } = managedDepositFixture(t, undefined, PaymentPurpose.FULL_RENT);
+  assert.deepEqual(await apply(), { success: true, duplicate: false, reconciled: false });
+  assert.equal(reservation.status, ReservationStatus.PAID);
+  assert.equal(reservation.fullPaymentId, payment._id);
+  assert.equal(reservation.balanceSettledAt, undefined);
+  assert.equal(payment.applicationStatus, PaymentApplicationStatus.APPLIED);
+  assert.ok(rows.every(row => row.status === 'RESERVED' && row.holdExpiresAt === undefined));
+  assert.equal((await apply()).duplicate, true);
+  assert.deepEqual(writes, { reservation: 1, allocation: 1 });
+  assert.equal(payment.providerCaptures.length, 1);
+});
+
+test('Self Storage full-rent intent freezes the server total and rejects legacy Deposit for a new booking', async t => {
+  const reservation = { ...baseReservation(ReservationStatus.CONTRACTED), rentalPaymentFlow: 'FULL_UPFRONT_V1',
+    termsAcceptance: { serviceType: 'SELF_STORAGE', versionId: 'terms-v1', contentHash: 'b'.repeat(64), acceptedAt: new Date() },
+    rentalPricingSnapshot: { currency: 'VND', estimatedRent: 300000, taxAmount: 25000, discountAmount: 5000 },
+    taxAmount: 25000, discountAmount: 5000 };
+  const now = new Date();
+  const fakeSession = session();
+  t.mock.method(ReservationPaymentModel, 'findOne', () => query(null));
+  t.mock.method(ReservationModel, 'findOne', () => query(reservation));
+  t.mock.method(ContractModel, 'findOne', () => query({ status: ContractStatus.DRAFT }));
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update) => {
+    assert.deepEqual(filter.expiresAt, { $gt: now });
+    reservation.inventoryVersion += update.$inc.inventoryVersion;
+    return query(reservation);
+  });
+  t.mock.method(ReservationPaymentModel.prototype, 'save', async function (options) {
+    assert.equal(options.session, fakeSession); return this;
+  });
+  const service = new PayosPaymentService({ now: () => now, createSession: async () => fakeSession });
+  const created = await service.createIntentTransaction(String(reservation._id), PaymentPurpose.FULL_RENT,
+    'self-full-rent-key', reservation.customerId, 1234567892);
+  assert.equal(created.payment.purpose, PaymentPurpose.FULL_RENT);
+  assert.equal(created.payment.amount, 320000);
+  assert.equal(created.payment.currency, 'VND');
+  await assert.rejects(service.createIntentTransaction(String(reservation._id), PaymentPurpose.DEPOSIT,
+    'self-deposit-key', reservation.customerId, 1234567893), { code: 'FULL_RENT_REQUIRED' });
 });
 
 for (const issue of ['expired reservation', 'missing allocation', 'extra allocation', 'wrong Cell', 'wrong owner', 'wrong Facility',

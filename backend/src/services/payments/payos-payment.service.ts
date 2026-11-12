@@ -10,6 +10,7 @@ import ReservationModel from '../../models/reservations/reservation.model';
 import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { ContractStatus } from '../../types/contract.type';
+import { managedSigningDeadline } from '../../utils/managed-signing-deadline';
 import { FacilityServiceType } from '../../types/facility.type';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { ReservationStatus } from '../../types/reservation.type';
@@ -52,6 +53,41 @@ function managedV3(reservation: any) {
 }
 function serviceSupported(reservation: any) {
   return reservation?.serviceType === FacilityServiceType.SELF_STORAGE || managedV3(reservation);
+}
+function isFullUpfrontBooking(reservation: any) {
+  return reservation?.rentalPaymentFlow === 'FULL_UPFRONT_V1' &&
+    reservation?.termsAcceptance?.serviceType === reservation?.serviceType &&
+    typeof reservation?.termsAcceptance?.versionId === 'string' &&
+    /^[a-f0-9]{64}$/.test(reservation?.termsAcceptance?.contentHash ?? '') &&
+    reservation?.termsAcceptance?.acceptedAt instanceof Date;
+}
+function fullRentAmount(reservation: any): number {
+  const breakdown = calculateRentalPaymentBreakdown({ rentAmount: reservation.estimatedRent,
+    depositAmount: 0, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
+  const calculated = roundVndAmount(breakdown.totalDue);
+  if (managedV3(reservation)) {
+    const snapshot = reservation.managedPricingSnapshot;
+    const frozen = snapshot?.amountBreakdown?.totalDue;
+    if (snapshot?.pricingRule?.currency !== 'VND' || !Number.isSafeInteger(frozen) || frozen !== calculated) {
+      throw new PayosPaymentError(409, 'PRICING_SNAPSHOT_INVALID', 'The frozen Managed V3 rental price could not be verified');
+    }
+    return frozen;
+  }
+  const snapshot = reservation.rentalPricingSnapshot;
+  if (snapshot?.currency !== 'VND' || snapshot?.estimatedRent !== reservation.estimatedRent ||
+      snapshot?.taxAmount !== (reservation.taxAmount ?? 0) || snapshot?.discountAmount !== (reservation.discountAmount ?? 0)) {
+    throw new PayosPaymentError(409, 'PRICING_SNAPSHOT_INVALID', 'The frozen Self Storage rental price could not be verified');
+  }
+  return calculated;
+}
+async function hasCurrentManagedHolds(reservation: any, now: Date): Promise<boolean> {
+  const expected = (reservation?.allocatedCellIds ?? []).map((cell: any) => id(cell));
+  if (!expected.length || new Set(expected).size !== expected.length || !reservation.expiresAt || reservation.expiresAt <= now) return false;
+  const holds = await CellAllocationModel.find({ reservationId: reservation._id, customerId: reservation.customerId,
+    facilityId: reservation.facilityId, status: CellAllocationStatus.HOLD, holdExpiresAt: { $eq: reservation.expiresAt, $gt: now } })
+    .select('cellId').lean().exec();
+  const actual = holds.map((hold: any) => id(hold.cellId));
+  return actual.length === expected.length && new Set(actual).size === actual.length && expected.every((cell: string) => actual.includes(cell));
 }
 function hasCurrentManagedSignatures(contract: any) {
   const version = contract?.currentContentVersion;
@@ -544,7 +580,16 @@ export class PayosPaymentService {
     const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
     if (!serviceSupported(reservation) || reservation.serviceType !== payment.serviceType) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'Payment service type does not match the reservation');
     let expectedAmount: number;
-    if (purpose === PaymentPurpose.DEPOSIT) {
+    if (purpose === PaymentPurpose.FULL_RENT) {
+      if (!isFullUpfrontBooking(reservation) || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original full-rent booking is no longer eligible for checkout');
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.RESERVED) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 full-rent booking is no longer reserved');
+        if (!(await hasCurrentManagedHolds(reservation, now))) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 Cell holds are no longer valid');
+      } else if (reservation.status !== ReservationStatus.CONTRACTED || !contract || contract.status !== ContractStatus.DRAFT) {
+        throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Self Storage full-rent booking requires its current Draft Contract');
+      }
+      expectedAmount = fullRentAmount(reservation);
+    } else if (purpose === PaymentPurpose.DEPOSIT) {
       if (managedV3(reservation)) {
         if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 Deposit requires an unexpired RESERVED reservation');
         expectedAmount = roundVndAmount(Number(reservation.depositAmount));
@@ -614,7 +659,14 @@ export class PayosPaymentService {
     const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
     if (!serviceSupported(reservation) || reservation.serviceType !== payment.serviceType) return 'NOT_ELIGIBLE';
     let expectedAmount: number;
-    if (payment.purpose === PaymentPurpose.DEPOSIT) {
+    if (payment.purpose === PaymentPurpose.FULL_RENT) {
+      if (!isFullUpfrontBooking(reservation) || !reservation.expiresAt || reservation.expiresAt <= this.now()) return 'NOT_ELIGIBLE';
+      if (managedV3(reservation)) {
+        if (reservation.status !== ReservationStatus.RESERVED) return 'NOT_ELIGIBLE';
+        if (!(await hasCurrentManagedHolds(reservation, this.now()))) return 'NOT_ELIGIBLE';
+      } else if (reservation.status !== ReservationStatus.CONTRACTED || !contract || contract.status !== ContractStatus.DRAFT) return 'NOT_ELIGIBLE';
+      try { expectedAmount = fullRentAmount(reservation); } catch { return 'ECONOMIC_IDENTITY_CHANGED'; }
+    } else if (payment.purpose === PaymentPurpose.DEPOSIT) {
       if (managedV3(reservation)) {
         if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= this.now()) return 'NOT_ELIGIBLE';
         expectedAmount = roundVndAmount(Number(reservation.depositAmount));
@@ -669,22 +721,28 @@ export class PayosPaymentService {
           $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).session(session).exec();
         if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
         if (!serviceSupported(reservation)) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'PayOS supports Self Storage and Managed V3 reservations only');
+        if (isFullUpfrontBooking(reservation) && purpose !== PaymentPurpose.FULL_RENT) {
+          throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'New reservations require one full-rent payment; Deposit and Balance are unavailable');
+        }
         const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
         if (!managedV3(reservation) && !contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
 
         let amount: number;
         if (purpose === PaymentPurpose.FULL_RENT) {
-          if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= now) {
-            throw new PayosPaymentError(409, 'PAYMENT_NOT_ELIGIBLE', 'Full rent requires an unexpired CONTRACTED Self-Storage Reservation');
+          if (!isFullUpfrontBooking(reservation) || !reservation.expiresAt || reservation.expiresAt <= now) {
+            throw new PayosPaymentError(409, 'PAYMENT_NOT_ELIGIBLE', 'Full rent requires a new, terms-accepted booking with an active hold');
           }
-          if (contract!.status !== ContractStatus.DRAFT) throw new PayosPaymentError(409, 'CONTRACT_STATE_INVALID', 'Full rent requires the existing DRAFT Contract');
-          const breakdown = calculateRentalPaymentBreakdown({
-            rentAmount: reservation.estimatedRent,
-            depositAmount: 0,
-            taxAmount: reservation.taxAmount ?? 0,
-            discountAmount: reservation.discountAmount ?? 0
-          });
-          amount = roundVndAmount(breakdown.totalDue);
+          if (managedV3(reservation)) {
+            if (reservation.status !== ReservationStatus.RESERVED) throw new PayosPaymentError(409, 'PAYMENT_NOT_ELIGIBLE', 'Managed V3 full rent requires an unexpired RESERVED reservation');
+            try { await lockManagedDepositHolds(reservation, now, session); }
+            catch (error) {
+              if (error instanceof ManagedReservationError) throw new PayosPaymentError(error.status, 'RESERVATION_HOLD_EXPIRED', error.message);
+              throw error;
+            }
+          } else if (reservation.status !== ReservationStatus.CONTRACTED || !contract || contract.status !== ContractStatus.DRAFT) {
+            throw new PayosPaymentError(409, 'CONTRACT_STATE_INVALID', 'Self Storage full rent requires the existing DRAFT Contract');
+          }
+          amount = fullRentAmount(reservation);
         } else if (purpose === PaymentPurpose.DEPOSIT) {
           if (managedV3(reservation)) {
             if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'DEPOSIT_NOT_ELIGIBLE', 'Managed V3 Deposit requires an unexpired RESERVED reservation');
@@ -739,7 +797,7 @@ export class PayosPaymentService {
         const serviceFilter = { serviceType: reservation.serviceType, ...(managedV3(reservation) ? { bookingFlowVersion: 3 } : {}) };
         const locked = await Reservations.findOneAndUpdate({ _id: reservation._id, customerId: reservation.customerId,
           ...serviceFilter, status: reservation.status,
-          ...(purpose === PaymentPurpose.DEPOSIT ? { expiresAt: { $gt: now } } : {}),
+          ...([PaymentPurpose.DEPOSIT, PaymentPurpose.FULL_RENT].includes(purpose) ? { expiresAt: { $gt: now } } : {}),
           $and: [versionFilter(reservation.inventoryVersion)] }, { $inc: { inventoryVersion: 1 } },
         { new: true, session }).exec();
         if (!locked) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed concurrently; refresh and retry');
@@ -747,7 +805,7 @@ export class PayosPaymentService {
         // Revalidate after the CAS, using the same transaction snapshot.
         const current = await Reservations.findOne({ _id: reservation._id, customerId: reservation.customerId,
           facilityId: reservation.facilityId, ...serviceFilter,
-          status: reservation.status, ...(purpose === PaymentPurpose.DEPOSIT ? { expiresAt: { $gt: now } } : {}) }).session(session).exec();
+          status: reservation.status, ...([PaymentPurpose.DEPOSIT, PaymentPurpose.FULL_RENT].includes(purpose) ? { expiresAt: { $gt: now } } : {}) }).session(session).exec();
         if (!current) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation eligibility changed; refresh and retry');
         const payment = new ReservationPaymentModel({ reservationId: reservation._id, customerId: reservation.customerId,
           facilityId: reservation.facilityId, serviceType: reservation.serviceType, purpose, amount, currency: 'VND',
@@ -1168,30 +1226,63 @@ export class PayosPaymentService {
 
         const time = now;
         if (currentPayment.purpose === PaymentPurpose.FULL_RENT) {
-          if (reservation.status !== ReservationStatus.CONTRACTED || !reservation.expiresAt || reservation.expiresAt <= time) {
+          const managed = managedV3(reservation);
+          if (!isFullUpfrontBooking(reservation) ||
+              (managed ? reservation.status !== ReservationStatus.RESERVED : reservation.status !== ReservationStatus.CONTRACTED) ||
+              !reservation.expiresAt || reservation.expiresAt <= time) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Verified Full Rent arrived after Reservation eligibility expired or changed';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
-          const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
-          if (!contract || contract.status !== ContractStatus.DRAFT) {
+          let holdFilter: Awaited<ReturnType<typeof lockManagedDepositHolds>> | undefined;
+          if (managed) {
+            try { holdFilter = await lockManagedDepositHolds(reservation, time, session); }
+            catch (error) {
+              if (!(error instanceof ManagedReservationError) || error.status !== 409) throw error;
+              currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+              currentPayment.reconciliationReason = 'Verified Managed V3 Full Rent cannot be applied because the Cell holds are no longer valid';
+              await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+            }
+          } else {
+            const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
+            if (!contract || contract.status !== ContractStatus.DRAFT) {
+              currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+              currentPayment.reconciliationReason = 'Verified Full Rent cannot be applied because the existing Contract state changed';
+              await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+            }
+          }
+          let expectedAmount: number;
+          try { expectedAmount = fullRentAmount(reservation); }
+          catch {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
-            currentPayment.reconciliationReason = 'Verified Full Rent cannot be applied because the existing Contract state changed';
+            currentPayment.reconciliationReason = 'Verified Full Rent cannot be applied because its frozen price snapshot is invalid';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
-          const signingDeadline = new Date(time.getTime() + 3 * 24 * 60 * 60 * 1000);
+          if (currentPayment.serviceType !== reservation.serviceType || currentPayment.customerId.toString() !== reservation.customerId.toString() ||
+              currentPayment.amount !== expectedAmount || currentPayment.currency !== 'VND' || verified.amount !== expectedAmount) {
+            currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+            currentPayment.reconciliationReason = 'Verified Full Rent does not match the immutable Reservation payment identity and amount';
+            await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+          }
+          // Managed V3 uses the immutable rental start date and an exclusive local
+          // midnight deadline. Self Storage keeps its previously configured deadline.
+          const signingDeadline = managed
+            ? (reservation.signingDeadline ?? managedSigningDeadline(reservation.startDate))
+            : reservation.signingDeadline;
           const locked = await Reservations.findOneAndUpdate({
             _id: reservation._id,
             customerId: reservation.customerId,
             facilityId: reservation.facilityId,
             serviceType: reservation.serviceType,
-            status: ReservationStatus.CONTRACTED,
-            expiresAt: { $gt: time }
+            ...(managed ? { bookingFlowVersion: 3 } : {}),
+            status: managed ? ReservationStatus.RESERVED : ReservationStatus.CONTRACTED,
+            expiresAt: { $gt: time }, $and: [versionFilter(reservation.inventoryVersion)]
           }, {
+            $inc: { inventoryVersion: 1 },
             $set: {
               status: ReservationStatus.PAID,
               fullPaymentId: currentPayment._id,
-              signingDeadline
+              ...(signingDeadline ? { signingDeadline } : {})
             },
             $unset: { expiresAt: 1 },
             $push: { statusHistory: { status: ReservationStatus.PAID, reason: 'PayOS verified 100% full rent applied', createdAt: time } }
@@ -1200,6 +1291,23 @@ export class PayosPaymentService {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Reservation changed while applying verified Full Rent';
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+          }
+          if (holdFilter) {
+            const transition = await CellAllocationModel.updateMany(holdFilter,
+              { $set: { status: CellAllocationStatus.RESERVED }, $unset: { holdExpiresAt: 1 } }, { session }).exec();
+            if (transition.matchedCount !== reservation.allocatedCellIds.length) {
+              throw new PayosPaymentError(503, 'WEBHOOK_CONCURRENT_RETRY', 'Managed V3 Cell holds changed during full-rent settlement; provider should retry');
+            }
+          }
+          if (!managed) {
+            const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId,
+              status: ContractStatus.DRAFT }).session(session).exec();
+            if (!contract) throw new PayosPaymentError(409, 'CONTRACT_CHANGED_DURING_PAYMENT', 'Linked Self Storage Contract changed during payment application');
+            contract.paymentSnapshot = { paymentId: currentPayment._id, purpose: currentPayment.purpose,
+              amount: currentPayment.amount, currency: currentPayment.currency, status: PaymentStatus.SUCCEEDED,
+              providerSettlementStatus: ProviderSettlementStatus.VERIFIED, applicationStatus: PaymentApplicationStatus.APPLIED,
+              verifiedAt: time, appliedAt: time };
+            await contract.save({ session });
           }
         } else if (currentPayment.purpose === PaymentPurpose.DEPOSIT) {
           const managed = managedV3(reservation);

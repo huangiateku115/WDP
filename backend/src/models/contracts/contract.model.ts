@@ -14,6 +14,13 @@ const contractSchema = new Schema<IContract>({
   
   customerSnapshot: { type: Schema.Types.Mixed, required: true },
   pricingSnapshot: { type: Schema.Types.Mixed, required: true },
+  paymentSnapshot: {
+    paymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment', immutable: true },
+    purpose: { type: String, immutable: true }, amount: { type: Number, immutable: true },
+    currency: { type: String, immutable: true }, status: { type: String, immutable: true },
+    providerSettlementStatus: { type: String, immutable: true }, applicationStatus: { type: String, immutable: true },
+    verifiedAt: { type: Date, immutable: true }, appliedAt: { type: Date, immutable: true },
+  },
   
   signedByCustomerAt: { type: Date },
   signedByFMAt: { type: Date },

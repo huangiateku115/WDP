@@ -32,6 +32,9 @@ export const statusLabels = {
   CHECKED_OUT: "Đã trả kho",
   CLOSED: "Hoàn tất",
   CANCELLED: "Đã hủy",
+  DRAFT: "Chờ ký",
+  SIGNED: "Đã ký",
+  VERIFIED: "Đã xác minh",
 };
 export const recordId = (record) =>
   typeof record === "string" ? record : record?._id || record?.id;
@@ -166,7 +169,7 @@ export function RentalStatus({ status, reservation }) {
   return (
     <Badge
       variant={
-        ["ACTIVE", "PAID", "CLOSED"].includes(status) ? "green" : "orange"
+        ["ACTIVE", "PAID", "CLOSED", "SIGNED", "VERIFIED"].includes(status) ? "green" : "orange"
       }
     >
       {(selfStorageContracted ? "Booking confirmed — advance-rent Deposit pending" : reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
@@ -231,7 +234,7 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
   );
 }
 export function ManagedFinancialSummary({reservation,quote,localizeCurrency=false}){
-  try{const result=quote?managedQuoteFinancials(quote):managedReservationFinancials(reservation);return <div><Details values={managedFinancialRows(result,localizeCurrency?reservationAmount:undefined)}/><p className="mt-2 text-xs text-slate-500">Advance rent is included in the total, not an additional security deposit. The planned balance does not prove payment.</p></div>;}
+  try{const result=quote?managedQuoteFinancials(quote):managedReservationFinancials(reservation);return <div><Details values={managedFinancialRows(result,localizeCurrency?reservationAmount:undefined)}/><p className="mt-2 text-xs text-slate-500">{result.paymentFlow==='FULL_RENT'?'Toàn bộ tiền thuê được thanh toán một lần trước khi sử dụng dịch vụ.':'Advance rent is included in the total, not an additional security deposit. The planned balance does not prove payment.'}</p></div>;}
   catch(error){return <Message error={error.message}/>;}
 }
 export function BackendScreen({ children, ...props }) {

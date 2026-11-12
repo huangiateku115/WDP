@@ -26,6 +26,9 @@ export interface SlaCheckResult {
 export async function checkSigningSla(checkTime: Date = new Date()): Promise<SlaCheckResult> {
   const expiredReservations = (await ReservationModel.find({
     serviceType: FacilityServiceType.SELF_STORAGE,
+    // New full-upfront bookings require manual review after the signing deadline.
+    // Phase 7 owns any cancellation/retention/refund policy; never auto-release here.
+    rentalPaymentFlow: { $ne: 'FULL_UPFRONT_V1' },
     status: ReservationStatus.PAID,
     signingDeadline: { $lte: checkTime },
     paperContractProofUrl: { $in: [null, undefined, ''] }

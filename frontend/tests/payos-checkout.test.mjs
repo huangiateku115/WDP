@@ -220,6 +220,27 @@ test("PayOS API client posts only purpose with the stable Idempotency-Key and pa
   assert.equal(replay.outcome, "REPLAYED");
 });
 
+test("new Self Storage and Managed V3 reservations select only one full-rent PayOS attempt", async () => {
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  const self = { _id: reservationId, customerId, serviceType: "SELF_STORAGE", rentalPaymentFlow: "FULL_UPFRONT_V1", status: "CONTRACTED", expiresAt };
+  const contract = { _id: contractId, reservationId, customerId, status: "DRAFT" };
+  assert.equal(assessPayosEligibility(self, contract, Date.now(), customerId).purpose, "FULL_RENT");
+
+  const managed = { _id: reservationId, customerId, serviceType: "MANAGED_INVENTORY", bookingFlowVersion: 3,
+    rentalPaymentFlow: "FULL_UPFRONT_V1", status: "RESERVED", expiresAt };
+  assert.equal(assessPayosEligibility(managed, null, Date.now(), customerId).purpose, "FULL_RENT");
+  assert.equal(assessPayosEligibility({ ...managed, rentalPaymentFlow: undefined }, null, Date.now(), customerId).purpose, "DEPOSIT");
+
+  const calls = [];
+  const payment = paymentRecord({ purpose: "FULL_RENT", amount: 1_200_000 });
+  const api = createPayosPaymentApi({ post: async (...args) => { calls.push(args); return response(201, payment); }, get: async () => undefined });
+  await api.createPayosCheckout(reservationId, "FULL_RENT", "full-rent-key", "SELF_STORAGE");
+  await api.createPayosCheckout(reservationId, "FULL_RENT", "managed-full-key", "MANAGED_INVENTORY");
+  assert.equal(calls[0][0], `/reservations/${reservationId}/payments/payos`);
+  assert.equal(calls[1][0], `/reservations/managed/${reservationId}/payments/payos`);
+  assert.deepEqual(calls.map(call => call[1]), [{ purpose: "FULL_RENT" }, { purpose: "FULL_RENT" }]);
+});
+
 test("Managed V3 PayOS calls use the managed routes and zero balance requires a Backend PAID confirmation", async () => {
   const calls = [];
   const client = {
@@ -1340,14 +1361,14 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
   assert.match(checkout, /Tiếp tục thanh toán qua PayOS/);
   assert.match(review, /Idempotency-Key/);
   assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
-  assert.match(review, /startDepositAfterBooking: response\.status === 201/);
+  assert.match(review, /startFullRentAfterBooking: response\.status === 201/);
   assert.match(checkout, /if \(automatic && attempt\) return/);
   assert.match(
     checkout,
     /startDepositAfterBooking === true && !returnQueryPresent/,
   );
   assert.match(review, /Xác nhận đặt thuê/);
-  assert.match(review, /termsAccepted: true/);
+  assert.match(review, /termsAccepted, termsVersionId: fresh\.terms\.versionId/);
   assert.match(review, /termsVersionId: fresh\.terms\.versionId/);
   assert.match(checkout, /unresolvedPayosPayment/);
   assert.match(checkout, /unmatchedReturn/);
@@ -1366,6 +1387,6 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
     checkout,
     /RentalSummary|Reservation reference|Contract status|Payment reference|Provider settlement|Reservation application/,
   );
-  assert.match(checkout, /Thanh toán tiền thuê trả trước/);
+  assert.match(checkout, /Thanh toán 100% tiền thuê/);
   assert.match(checkout, /goToHistory\(fresh\.id, true\)/);
 });

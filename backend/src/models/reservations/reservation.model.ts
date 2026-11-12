@@ -30,6 +30,9 @@ const reservationSchema = new Schema<IReservation>({
   bookingIdempotencyKey: { type: String, immutable: true },
   bookingPayloadHash: { type: String, immutable: true },
   bookingFlowVersion: { type: Number, enum: [2, 3], immutable: true },
+  /** Absent on historical records; distinguishes new one-shot full-rent bookings from legacy deposit/balance flows. */
+  rentalPaymentFlow: { type: String, enum: ['FULL_UPFRONT_V1'], immutable: true },
+  rentalPricingSnapshot: { type: Schema.Types.Mixed, immutable: true },
   storageUnitId: { type: Schema.Types.ObjectId, ref: 'StorageUnit' }, 
   allocatedCellIds: [{ type: Schema.Types.ObjectId, ref: 'WarehouseCell' }],
   allocatedCapacity: { type: Number },

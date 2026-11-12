@@ -87,7 +87,7 @@ test('Customer booking routes to PayOS summary and Step 2 exposes accessible mon
     readFile(new URL('../src/components/customer/SelfStoragePayosCheckout.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/customer/RentalLifecycleIntegration.jsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(review, /startDepositAfterBooking: response\.status === 201/);
+  assert.match(review, /startFullRentAfterBooking: response\.status === 201/);
   assert.doesNotMatch(review, /createPayosCheckout/);
   assert.match(checkout, /pay\(\{ automatic: true \}\)/);
   assert.match(review, /nav\("\/portal\/payments\/" \+ createdReservationId/);

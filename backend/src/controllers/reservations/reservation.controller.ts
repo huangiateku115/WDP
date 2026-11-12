@@ -2,15 +2,17 @@ import { Request, Response } from 'express';
 import ReservationModel from '../../models/reservations/reservation.model';
 import ContractModel from '../../models/contracts/contract.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
+import FacilityModel from '../../models/facilities/facility.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import { ReservationService, ReservationError } from '../../services/reservations/reservation.service';
 import { ReservationStatus } from '../../types/reservation.type';
-import { FacilityServiceType } from '../../types/facility.type';
-import { UserRole } from '../../types/user.type';
+import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
-import { PaymentPurpose, PaymentStatus, PaymentProvider } from '../../types/payment.type';
+import { PaymentPurpose, PaymentStatus, PaymentProvider, PaymentApplicationStatus, ProviderSettlementStatus } from '../../types/payment.type';
+import { UserRole } from '../../types/user.type';
+import { createHash } from 'node:crypto';
 import { calculateRentalPaymentBreakdown } from '../../services/payments/payment-accounting';
 import mongoose from 'mongoose';
 
@@ -898,10 +900,84 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
  */
 export const handoverReservation = async (req: Request, res: Response) => {
   try {
+    const reservationId = req.params.id;
+    const candidate: any = await (ReservationModel as any).findById(reservationId);
+    if (candidate?.rentalPaymentFlow === 'FULL_UPFRONT_V1') {
+      if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(req.user!.role as UserRole)) {
+        return res.status(403).json({ success: false, code: 'FACILITY_VERIFICATION_REQUIRED', message: 'Chỉ Staff hoặc Manager được phân công tại cơ sở mới được bàn giao.' });
+      }
+      if (req.body?.customerIdentityVerified !== true) return res.status(422).json({ success: false, code: 'CUSTOMER_IDENTITY_REQUIRED', message: 'Staff phải xác minh danh tính khách hàng trực tiếp trước khi bàn giao.' });
+      const storageCondition = req.body?.storageCondition ?? 'GOOD';
+      if (!['GOOD', 'MINOR_DAMAGE', 'UNSAFE'].includes(storageCondition)) return res.status(422).json({ success: false, code: 'INVALID_HANDOVER_CONDITION', message: 'storageCondition không hợp lệ.' });
+      if (storageCondition === 'UNSAFE') return res.status(409).json({ success: false, code: 'HANDOVER_UNSAFE', message: 'Không thể kích hoạt thuê khi điều kiện kho không an toàn.' });
+      if (candidate.status === ReservationStatus.ACTIVE && candidate.handoverAt &&
+          req.user!.assignedFacilityId && String(req.user!.assignedFacilityId) === String(candidate.facilityId)) {
+        return res.json({ success: true, message: 'Bàn giao đã được ghi nhận trước đó. Quyền truy cập số chưa được cấp.',
+          data: { reservation: candidate, accessProvisioning: { status: 'UNAVAILABLE' }, replayed: true } });
+      }
+      const session = await mongoose.startSession();
+      let activated: any = null;
+      try {
+        await session.withTransaction(async () => {
+          const current: any = await (ReservationModel as any).findOne({ _id: reservationId, serviceType: FacilityServiceType.SELF_STORAGE,
+            rentalPaymentFlow: 'FULL_UPFRONT_V1', status: ReservationStatus.CHECKIN_READY }).session(session).exec();
+          if (!current || !req.user!.assignedFacilityId || String(req.user!.assignedFacilityId) !== String(current.facilityId)) {
+            throw new ReservationControllerError(404, 'Reservation not found.');
+          }
+          const now = new Date();
+          if (current.startDate > now || current.endDate <= now) throw new ReservationControllerError(409, 'Rental period has not started or has ended.');
+          const payment = current.fullPaymentId ? await ReservationPaymentModel.findOne({ _id: current.fullPaymentId,
+            reservationId: current._id, customerId: current.customerId, facilityId: current.facilityId,
+            serviceType: FacilityServiceType.SELF_STORAGE, purpose: PaymentPurpose.FULL_RENT, provider: PaymentProvider.PAYOS,
+            status: PaymentStatus.SUCCEEDED, providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+            applicationStatus: PaymentApplicationStatus.APPLIED }).session(session).exec() : null;
+          if (payment && payment.amount !== current.estimatedRent + (current.taxAmount ?? 0) - (current.discountAmount ?? 0)) {
+            throw new ReservationControllerError(409, 'Full-rent amount does not match the immutable Reservation price.');
+          }
+          const contract = await ContractModel.findOne({ reservationId: current._id, customerId: current.customerId,
+            status: ContractStatus.SIGNED, verifiedAt: { $exists: true }, signedProofPublicId: { $exists: true } }).session(session).exec();
+          const active = contract?.contentVersions?.find(version => version.version === contract.currentContentVersion);
+          const signed = active && contract?.signatures?.filter(signature => signature.version === active.version && signature.contentHash === active.contentHash);
+          if (!payment || !contract || !signed?.some(signature => signature.signerRole === UserRole.CUSTOMER) ||
+              !signed?.some(signature => [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(signature.signerRole as UserRole)) ||
+              !active || createHash('sha256').update(JSON.stringify(active.content)).digest('hex') !== active.contentHash) {
+            throw new ReservationControllerError(409, 'Verified full payment and two-party signed-paper Contract are required before handover.');
+          }
+          const unit: any = await (StorageUnitModel as any).findOne({ _id: current.storageUnitId, facilityId: current.facilityId, deletedAt: { $exists: false } }).session(session).exec();
+          if (!unit) throw new ReservationControllerError(409, 'Reservation and Storage Unit allocation is invalid.');
+          const facility = await FacilityModel.findOne({ _id: current.facilityId, status: FacilityStatus.ACTIVE,
+            serviceTypes: FacilityServiceType.SELF_STORAGE, deletedAt: { $exists: false } }).session(session).exec();
+          if (!facility) throw new ReservationControllerError(409, 'Self Storage Facility is not active.');
+          const locked: any = StorageUnitModel;
+          const lockedUnit = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
+            bookingVersion: currentVersion(unit.bookingVersion) }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+          if (!lockedUnit) throw new ReservationControllerError(409, 'Storage Unit changed concurrently; reload and retry.');
+          activated = await (ReservationModel as any).findOneAndUpdate({ _id: current._id, status: ReservationStatus.CHECKIN_READY,
+            rentalPaymentFlow: 'FULL_UPFRONT_V1', inventoryVersion: current.inventoryVersion ?? 0 }, {
+            $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id,
+              handoverAt: now, paperContractVerifiedBy: contract.verifiedByStaff, paperContractVerifiedAt: contract.verifiedAt,
+              storageCondition: String(storageCondition) },
+            $unset: { accessPinCode: 1 },
+            $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
+              reason: 'Authorized Facility Staff confirmed identity and physical handover; credential provisioning unavailable', createdAt: now } },
+          }, { new: true, session, runValidators: true }).exec();
+          if (!activated) throw new ReservationControllerError(409, 'Reservation changed concurrently; reload and retry.');
+          const occupied = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
+            bookingVersion: currentVersion(unit.bookingVersion) + 1 }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { new: true, session }).exec();
+          if (!occupied) throw new ReservationControllerError(409, 'Storage Unit changed before handover could commit.');
+        }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+      } catch (error: any) {
+        if (error instanceof ReservationControllerError) return res.status(error.status).json({ success: false, message: error.message });
+        if (isTransactionConflict(error)) return res.status(409).json({ success: false, message: 'Reservation or Storage Unit changed concurrently; reload and retry.' });
+        throw error;
+      } finally { await session.endSession(); }
+      if (!activated) return res.status(503).json({ success: false, code: 'HANDOVER_OUTCOME_UNKNOWN', message: 'Không xác định được kết quả bàn giao; hãy tải lại trạng thái trước khi thử lại.' });
+      return res.json({ success: true, message: 'Đã ghi nhận bàn giao vật lý. Quyền truy cập số chưa được cấp.',
+        data: { reservation: activated, accessProvisioning: { status: 'UNAVAILABLE' } } });
+    }
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       return res.status(404).json({ success: false, message: 'Self-Storage handover is disabled in this environment pending payment verification.' });
     }
-    const reservationId = req.params.id;
     const reservation = await ReservationModel.findById(reservationId);
     if (!reservation) return res.status(404).json({ success: false, message: 'Reservation not found.' });
 

@@ -223,7 +223,7 @@ export function useManagedCellBooking(facilityId) {
     try {
       const owned = rows(await reservationApi.mineReal()); if (!validScope(key)) return; const found = owned.filter(r => !attempt.known.includes(r._id) && matchesCellReservation(r, attempt.payload, attempt.range));
 
-      if (found.length === 1) { basketRows = []; basketAttempt = null; setUncertain(null); setSelection([]); clearMapAvailability(); nav(`/portal/payments/${found[0]._id}`, { state: { startManagedDepositAfterBooking: true } }); return; }
+      if (found.length === 1) { basketRows = []; basketAttempt = null; setUncertain(null); setSelection([]); clearMapAvailability(); nav(`/portal/payments/${found[0]._id}`, { state: { startFullRentAfterBooking: true } }); return; }
 
       if (found.length > 1) throw Error('Multiple matching records were returned. Check My Storage before making another reservation.');
 
@@ -247,6 +247,13 @@ export function useManagedCellBooking(facilityId) {
 
       if (JSON.stringify(updated) !== JSON.stringify(review)) { setQuote({ key: rkey, data: updated }); setConfirmed(false); setError('The quote changed. Review the updated charges and confirm again.'); return; }
 
+      const latestTerms = record(await termsApi.current('MANAGED_INVENTORY'));
+      if (!validScope(key) || requestRef.current !== rkey) return;
+      if (!termsAccepted || latestTerms?.versionId !== terms.data?.versionId) {
+        setTermsAccepted(false); terms.retry();
+        throw Error('Điều khoản đã thay đổi hoặc chưa được xác nhận. Vui lòng xem và tích lại phiên bản hiện hành trước khi đặt thuê.');
+      }
+
       const owned = rows(await reservationApi.mineReal()); if (!validScope(key) || requestRef.current !== rkey) return;
 
       selectedPayload(facilityId, fresh, period.range, period.term);
@@ -256,13 +263,13 @@ export function useManagedCellBooking(facilityId) {
       const idempotencyKey = managedBookingIdempotencyKey(latest, owner);
       sent = true;
 
-      const result = managedCreation(await managedApi.create({ ...latest, termsAccepted: true, termsVersionId: terms.data.versionId }, { headers: { 'Idempotency-Key': idempotencyKey } })); if (!validScope(key)) return;
+      const result = managedCreation(await managedApi.create({ ...latest, termsAccepted, termsVersionId: latestTerms.versionId }, { headers: { 'Idempotency-Key': idempotencyKey } })); if (!validScope(key)) return;
 
       if (!matchesCellReservation(result.reservation, latest, period.range)) throw Error('The returned reservation did not match the selected Cells and period.');
 
       clearManagedBookingIdempotencyKey(latest, owner);
 
-      basketRows = []; basketAttempt = null; setSelection([]); clearMapAvailability(); nav(`/portal/payments/${result.reservation._id}`, { state: { startManagedDepositAfterBooking: true } });
+      basketRows = []; basketAttempt = null; setSelection([]); clearMapAvailability(); nav(`/portal/payments/${result.reservation._id}`, { state: { startFullRentAfterBooking: true } });
 
     } catch (e) {
       if (!validScope(key)) return; setConfirmed(false); setQuote(null); const status = e.response?.status;
@@ -405,8 +412,7 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
               {[
                 ["Đơn giá / m³", b.review.pricing.ratePerM3],
                 ["Tiền thuê dự kiến", b.review.pricing.estimatedRent],
-                ["Tiền đặt cọc", b.review.deposit.amount],
-                ["Tỷ lệ đặt cọc", b.review.deposit.percentage],
+                ["Thanh toán 100% tiền thuê", b.review.payment.amount],
                 ["Thuế", b.review.taxAmount],
                 ["Tiền tệ", b.review.pricing.currency],
                 ["Quy tắc giá", b.review.pricing.ruleId],
@@ -417,7 +423,7 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
                 </div>
               ))}
             </dl>
-            <ManagedFinancialSummary quote={b.review} />
+            {b.review.bookingFlowVersion === 2 && <ManagedFinancialSummary quote={b.review} />}
             <label className="flex cursor-pointer items-start gap-3 text-sm">
               <Checkbox
                 aria-label="Xác nhận đã xem kỳ thuê, các ô và chi phí"
