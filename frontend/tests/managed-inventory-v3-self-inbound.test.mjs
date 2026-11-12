@@ -19,6 +19,15 @@ test('Customer Self-Inbound uses real V3 preview, confirmation, stock and moveme
   assert.match(integration, /ManagedSelfInboundV3/);
 });
 
+test('A1 Self-Inbound sends explicit pose and explains unsupported multi-Cell placement', () => {
+  assert.match(component, /pose:\s*\{\s*xStartM:\s*Number\(pose\.xStartM\),\s*yStartM:\s*Number\(pose\.yStartM\),\s*rotationDeg:\s*Number\(pose\.rotationDeg\)/);
+  assert.match(component, /A1 tọa độ X mét/);
+  assert.match(component, /A1 tọa độ Y mét/);
+  assert.match(component, /A1 góc xoay/);
+  assert.match(component, /A1 nhiều Cell hiện chưa hỗ trợ vì thiếu chứng nhận load-sharing/);
+  assert.match(component, /poseBounds/);
+});
+
 test('Customer API preserves exact idempotent payload for retry and refuses changed pending request', () => {
   assert.match(adapter, /Idempotency-Key/);
   assert.match(adapter, /IDEMPOTENCY_PAYLOAD_MISMATCH/);

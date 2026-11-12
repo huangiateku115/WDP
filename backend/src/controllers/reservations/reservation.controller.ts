@@ -324,21 +324,84 @@ export const getMyReservations = async (req: Request, res: Response) => {
   }
 };
 
-export const getReservationsByFacility = async (req: Request, res: Response) => {
+
+export const getReservationsByFacility = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    const facilityId = req.params.facilityId as string;
-    if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(req.user!.role as UserRole) && req.user!.assignedFacilityId?.toString() !== facilityId.toLowerCase()) {
-      return res.status(403).json({ success: false, message: 'Facility is outside assigned scope' });
+    const facilityId = String(req.params.facilityId || '');
+
+    if (!mongoose.isValidObjectId(facilityId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Facility ID không hợp lệ',
+      });
     }
-    const reservations = await ReservationModel.find({ facilityId, serviceType: FacilityServiceType.SELF_STORAGE })
+
+    const role = req.user!.role as UserRole;
+    const assignedFacilityId =
+      req.user!.assignedFacilityId?.toString();
+
+    if (
+      [UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]
+        .includes(role) &&
+      assignedFacilityId?.toLowerCase() !==
+        facilityId.toLowerCase()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Facility is outside assigned scope',
+      });
+    }
+
+    const service = req.query.serviceType;
+
+    if (
+      service !== undefined &&
+      service !== FacilityServiceType.SELF_STORAGE &&
+      service !== FacilityServiceType.MANAGED_INVENTORY
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'serviceType không hợp lệ',
+      });
+    }
+
+    if (
+      service === FacilityServiceType.MANAGED_INVENTORY &&
+      role === UserRole.FACILITY_STAFF
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền xem Managed Inventory',
+      });
+    }
+
+    const filter = {
+      facilityId,
+      serviceType:
+        service || FacilityServiceType.SELF_STORAGE,
+    };
+
+    const reservations = await ReservationModel.find(filter)
       .populate('customerId', 'fullName email phone')
       .populate('storageUnitId', 'unitCode size status')
-      .sort({ createdAt: -1 });
-    return res.json({ success: true, data: reservations });
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return res.json({
+      success: true,
+      data: reservations,
+    });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
 
 export const getReservationById = async (req: Request, res: Response) => {
   try {

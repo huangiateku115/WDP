@@ -7,12 +7,14 @@ export interface ManagedV3Scope {
   facilityId: Types.ObjectId;
   revision: number;
 }
+export interface ManagedV3Pose { xStartM: number; yStartM: number; rotationDeg: 0 | 90 }
 
 export interface PhysicalUnitFields extends ManagedV3Scope {
   serial: string;
   weightKg: number;
   dimensionsM: { widthM: number; depthM: number; heightM: number };
   volumeM3: number;
+  currentPose?: ManagedV3Pose | null;
   state: 'PREPARED' | 'PLACED' | 'REMOVED' | 'QUARANTINED';
   sourceMovementId?: Types.ObjectId | null;
 }
@@ -28,6 +30,7 @@ export interface FootprintCell {
 export interface FootprintFields extends Omit<ManagedV3Scope, 'skuId'> {
   physicalUnitId: Types.ObjectId;
   cells: FootprintCell[];
+  pose?: ManagedV3Pose;
   topologyCertificationId: Types.ObjectId;
   topologyRevision: number;
   verifiedAt: Date;
@@ -56,7 +59,7 @@ export interface ManagedV3BatchProjectionLine {
   weightKg: number; volumeM3: number; heldQuantity: number; topologyCertificationId: Types.ObjectId | string; topologyRevision: number;
 }
 export interface ManagedV3PhysicalUnitProjection {
-  itemKind: 'A1_PHYSICAL_UNIT'; physicalUnitId: Types.ObjectId | string; quantity: 1; quantityUnit: string;
+  itemKind: 'A1_PHYSICAL_UNIT'; physicalUnitId: Types.ObjectId | string; quantity: 1; quantityUnit: string; pose?: ManagedV3Pose;
   weightKg: number; volumeM3: number; cellIds: Array<Types.ObjectId | string>;
 }
 export interface ManagedV3CellProjection { cellId: Types.ObjectId | string; quantity: number; physicalUnitCount: number; weightKg: number; volumeM3: number }

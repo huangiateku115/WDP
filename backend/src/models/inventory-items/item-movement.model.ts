@@ -33,6 +33,7 @@ const v3EffectLineSchema = new Schema({
   weightKg: { type: Number, required: true, min: Number.MIN_VALUE },
   volumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
   supportReactionKg: { type: Number, min: 0 }, occupiedVolumeM3: { type: Number, min: 0 },
+  pose: { type: new Schema({ xStartM: { type: Number, required: true }, yStartM: { type: Number, required: true }, rotationDeg: { type: Number, required: true, enum: [0, 90] } }, { _id: false, strict: 'throw', immutable: true }) },
 }, { _id: false, strict: 'throw', immutable: true });
 const v3EffectSchema = new Schema({
   action: { type: String, enum: ['ADD', 'REMOVE', 'MOVE'], required: true },
@@ -100,8 +101,10 @@ schema.pre('validate', function () {
     const validLine = (row: typeof lines[number]) => Number.isSafeInteger(row.quantity) && row.quantity > 0 && !!row.quantityUnit?.trim() &&
       [row.weightKg, row.volumeM3].every(value => Number.isFinite(value) && value > 0) &&
       (effect?.itemKind === 'A1_PHYSICAL_UNIT' ? !!row.physicalUnitId && row.quantity === 1 && Number.isFinite(row.supportReactionKg) &&
-        Number.isFinite(row.occupiedVolumeM3) && row.supportReactionKg! >= 0 && row.occupiedVolumeM3! >= 0 : !!row.batchId &&
+        Number.isFinite(row.occupiedVolumeM3) && row.supportReactionKg! >= 0 && row.occupiedVolumeM3! >= 0 && (row.pose == null || (Number.isFinite(row.pose.xStartM) &&
+        Number.isFinite(row.pose.yStartM) && [0, 90].includes(row.pose.rotationDeg))) : !!row.batchId && row.pose == null &&
         row.supportReactionKg == null && row.occupiedVolumeM3 == null);
+    const newA1HasPose = !this.isNew || effect?.itemKind !== 'A1_PHYSICAL_UNIT' || lines.every(row => !!row.pose);
     const validShape = !!effect && !!this.operationId && this.operationId === effect.operationId && this.idempotencyKey &&
       effect.requestHash && effect.accessSessionId && effect.topologyCertificationId &&
       (!this.batchLines || this.batchLines.length === 0) && this.arithmeticPolicy == null &&
@@ -114,7 +117,7 @@ schema.pre('validate', function () {
     const eventQuantity = effect?.itemKind === 'A1_PHYSICAL_UNIT' ? new Set(eventRows.map(row => String(row.physicalUnitId))).size : sum(eventRows, 'quantity');
     const totalsMatch = effect && Number.isSafeInteger(this.quantity) && this.quantity === eventQuantity &&
       near(this.actualTotalWeightKg, sum(eventRows, 'weightKg'), 0.001) && near(this.actualTotalVolumeM3, sum(eventRows, 'volumeM3'), 0.000001);
-    if (this.type !== expectedType || !validShape || !totalsMatch) this.invalidate('v3Effect', 'Schema v3 movement effect, placement lines, quantities and physical totals are invalid');
+    if (this.type !== expectedType || !validShape || !totalsMatch || !newA1HasPose) this.invalidate('v3Effect', 'Schema v3 movement effect, placement lines, quantities and physical totals are invalid');
     if (this.sourceCellId != null || this.destinationCellId != null || this.batchLines != null) this.invalidate('v3Effect', 'Schema v3 cannot use legacy single-Cell or batchLines placement fields');
   } else if (this.v3Effect != null || this.operationId != null) {
     this.invalidate('v3Effect', 'V3 effect fields require schema version 3');
