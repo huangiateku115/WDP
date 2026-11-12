@@ -616,6 +616,10 @@ export const initiateDeposit = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
 
+    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+      return res.status(409).json({ success: false, message: 'Managed Inventory V3 requires full-rent PayOS Hosted Checkout; Deposit is not available.' });
+    }
+
     if (reservation.status !== ReservationStatus.RESERVED) {
       return res.status(400).json({ success: false, message: 'Đơn không ở trạng thái chờ thanh toán cọc.' });
     }
@@ -655,25 +659,8 @@ export const confirmMockDeposit = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
 
-    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
-      if (process.env.NODE_ENV === 'production') {
-        return res.status(404).json({ success: false, message: 'Managed mock deposit confirmation is disabled in production.' });
-      }
-      if (reservation.bookingFlowVersion === 3) {
-        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
-      }
-      if (reservation.bookingFlowVersion === 2) {
-        return res.status(409).json({ success: false, message: 'Use the versioned Managed deposit confirmation endpoint.' });
-      }
-      const simulationEnvironment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-      if (!simulationEnvironment || process.env.MI_MOCK_PAYMENT_ENABLED !== 'true') {
-        return res.status(404).json({ success: false, message: 'Managed mock deposit confirmation is disabled.' });
-      }
-      const result = await confirmManagedLegacyMockDeposit(String(reservationId), req.user!._id);
-      return res.json({ success: true,
-        message: 'Managed v1 simulated deposit confirmed; no real provider settlement occurred.',
-        data: { reservation: result.reservation, payment: result.payment, contract: result.contract } });
-    }
+    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) return res.status(409).json({ success: false,
+      message: 'Managed Inventory V3 requires verified full-rent PayOS Hosted Checkout; mock Deposit is not available.' });
 
     // Self-Storage MOCK deposits are simulation-only. Do not let this generic
     // endpoint record an unverified MOCK payment as successful in production.
@@ -775,6 +762,10 @@ export const initiateBalance = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
 
+    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
+      return res.status(409).json({ success: false, message: 'Managed Inventory V3 does not use a separate Balance payment.' });
+    }
+
     // GATE BẢO VỆ: Hợp đồng phải có ảnh bằng chứng và status SIGNED
     const contract = await ContractModel.findOne({ reservationId: reservation._id });
     if (!contract || contract.status !== ContractStatus.SIGNED || !contract.signedProofUrl) {
@@ -827,19 +818,8 @@ export const confirmMockBalance = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Bạn không có đủ quyền truy cập!' });
     }
 
-    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
-      if (reservation.bookingFlowVersion === 3) {
-        return res.status(409).json({ success: false, message: 'Managed V3 requires the dedicated PayOS flow.' });
-      }
-      if (reservation.bookingFlowVersion === 2) {
-        return res.status(409).json({ success: false,
-          message: 'Use the versioned Managed balance confirmation endpoint for this reservation.' });
-      }
-      const result = await confirmManagedLegacyMockBalance(String(reservationId), req.user!._id);
-      return res.json({ success: true,
-        message: 'Thanh toán số dư (Balance) thành công. Đơn hàng đã sẵn sàng để Staff bàn giao kho.',
-        data: result });
-    }
+    if (reservation.serviceType === FacilityServiceType.MANAGED_INVENTORY) return res.status(409).json({ success: false,
+      message: 'Managed Inventory V3 requires verified full-rent PayOS Hosted Checkout; mock Balance is not available.' });
 
     // GATE BẢO VỆ
     const contract = await ContractModel.findOne({ reservationId: reservation._id });

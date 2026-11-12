@@ -3,6 +3,7 @@ export const facilityApiPages = {
   staff: [
     "tasks",
     "access",
+    "managed-access",
     "customers",
     "reservations",
     "check-ins",
@@ -23,6 +24,7 @@ export const facilityApiPages = {
     "operations",
     "tasks",
     "access",
+    "managed-access",
     "customers",
     "reservations",
     "work/CHECK_IN",

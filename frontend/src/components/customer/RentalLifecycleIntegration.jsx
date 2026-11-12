@@ -1,9 +1,6 @@
 import LoadState from './CustomerResourceState';
 import { PortalEmptyState } from './CustomerPortalUI';
 import ContractPrintAction from './ContractPrintAction';
-import ManagedContractReview from './inventory/ManagedContractReview';
-import CustomerBalancePayment from './CustomerBalancePayment';
-import CustomerDepositPayment from './CustomerDepositPayment';
 import { volumeText } from '@/lib/managedCellBooking';
 import { eligibleInventoryRegistration } from '@/lib/inventoryRegistration';
 import SelfStoragePayosCheckout from './SelfStoragePayosCheckout';
@@ -139,11 +136,8 @@ async function selfStoragePaymentContext(reservationId, config) {
 async function managedV3PaymentContext(reservationId, config) {
   const reservation = record(await managedReservationApi.detail(reservationId, config));
   if (recordId(reservation) !== normalizePayosReferenceId(reservationId) || reservation.serviceType !== MANAGED_INVENTORY || reservation.bookingFlowVersion !== 3) throw Error("The owned Managed V3 reservation could not be verified.");
-  const customerId = normalizePayosReferenceId(reservation.customerId);
-  const contract = reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1'
-    ? null
-    : await loadSelfStorageContract(reservationId, customerId, config);
-  return { contract, reservation };
+  if (reservation.rentalPaymentFlow !== 'FULL_UPFRONT_V1') throw Error('Managed V3 requires full-rent PayOS Hosted Checkout; legacy Deposit/Balance is disabled.');
+  return { contract: null, reservation };
 }
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
@@ -342,16 +336,14 @@ export function ReservationDetailIntegration() {
         <Message success={resource.data?.rentalPaymentFlow === "FULL_UPFRONT_V1" ? "Đã tạo Reservation Self Storage. Thanh toán 100% tiền thuê qua PayOS để tiếp tục hoàn tất hợp đồng." : "Self Storage booking confirmed. Continue with the existing payment step."} />
       )}
       {location.state?.managedCreated && (
-        <Message success={isManagedV2(resource.data) || isManagedV3(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Waiting for management approval." : undefined} />
+        <Message success={isManagedV2(resource.data) || isManagedV3(resource.data) ? reservationLifecycle(resource.data).description : isLegacyManaged(resource.data) ? "Luồng tạo Reservation Managed cũ đã đóng; hồ sơ này chỉ còn để xem lịch sử." : undefined} />
       )}
       {resource.data && (
         <>
           <RentalSummary item={resource.data} localizeManagedV2 />
-          {isManagedV2(resource.data) && <Card><CardContent><h2 className="text-xl font-bold">Reservation capacity usage</h2><Details values={[["Allocated capacity", typeof allocated === 'number' && Number.isFinite(allocated) && allocated >= 0 ? volumeText(allocated) : 'Not returned'], ["Used capacity", typeof used === 'number' && Number.isFinite(used) && used >= 0 ? volumeText(used) : 'Not returned'], ["Remaining capacity", capacityKnown ? volumeText(Math.max(0, allocated - used)) : 'Not available — capacity data is missing or invalid']]} /></CardContent></Card>}
-          {isManagedV2(resource.data) && <CustomerDepositPayment key={`deposit:${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(id, config).then(record)} onReservationRefresh={resource.retry} />}
-          {isManagedV2(resource.data) && <CustomerBalancePayment key={`${session.accessToken}:${id}`} reservation={resource.data} loadLatest={config => contractContext(id, config)} onReservationRefresh={resource.retry} />}
-          <ManagedCellSummary reservation={resource.data} />{isManagedV2(resource.data) && <div className="flex flex-wrap gap-3">{eligibleInventoryRegistration(resource.data) && <Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Register inventory item</Link></Button>}<Button asChild variant="outline"><Link to="/portal/inventory">View inventory items</Link></Button><Button asChild variant="outline"><Link to={`/portal/payments/${id}`}>Deposit and balance</Link></Button><Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review intake contract</Link></Button>{resource.data.status === 'RESERVED' && <p className="text-sm text-orange-700">Item registration becomes available after Backend confirms DEPOSIT_PAID.</p>}</div>}
-          {isManagedV3(resource.data) && <div className="flex flex-wrap gap-3">{['RESERVED', 'DEPOSIT_PAID'].includes(resource.data.status) && <Button asChild variant="orange"><Link to={`/portal/payments/${id}`}>{resource.data.rentalPaymentFlow === 'FULL_UPFRONT_V1' ? 'Thanh toán 100% qua PayOS' : resource.data.status === 'RESERVED' ? 'Thanh toán tiền thuê qua PayOS' : 'Review balance payment'}</Link></Button>}{['DEPOSIT_PAID', 'PAID', 'ACTIVE'].includes(resource.data.status) && <Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Review Managed V3 contract</Link></Button>}{resource.data.status === 'PAID' && <p role="status" className="text-sm text-orange-700">{resource.data.rentalPaymentFlow === 'FULL_UPFRONT_V1' ? 'Đã thanh toán — Chờ ký hợp đồng và bàn giao.' : 'Rent is settled. Facility Staff must record the Cell access handover before the rental becomes ACTIVE.'}</p>}{resource.data.status === 'ACTIVE' && <p role="status" className="text-sm text-emerald-700">Access handover is recorded. Physical inbound is tracked separately.</p>}</div>}
+          {isManagedV2(resource.data) && <div role="status" className="soft-panel p-4">Luồng Managed Inventory phiên bản cũ đã ngừng tạo giao dịch mới. Hồ sơ này chỉ còn ở chế độ xem; vui lòng liên hệ hỗ trợ nếu cần đối soát lịch sử.</div>}
+          <ManagedCellSummary reservation={resource.data} />
+          {isManagedV3(resource.data) && <div className="flex flex-wrap gap-3">{resource.data.status === 'RESERVED' && <Button asChild variant="orange"><Link to={`/portal/payments/${id}`}>Thanh toán 100% qua PayOS</Link></Button>}{['PAID', 'CHECKIN_READY', 'ACTIVE'].includes(resource.data.status) && <Button asChild variant="outline"><Link to={`/portal/contracts/${id}`}>Xem hợp đồng Managed V3</Link></Button>}{['CHECKIN_READY', 'ACTIVE'].includes(resource.data.status) && eligibleInventoryRegistration(resource.data) && <Button asChild variant="orange"><Link to={`/portal/inventory/register?reservationId=${id}`}>Chuẩn bị SKU hàng hóa</Link></Button>}{resource.data.status === 'CHECKIN_READY' && <p role="status" className="text-sm text-orange-700">Bạn có thể khai báo SKU trước. Hàng chỉ được ghi nhận sau khi hoàn tất bàn giao và quy trình nhập kho V3.</p>}{resource.data.status === 'ACTIVE' && <p role="status" className="text-sm text-emerald-700">Đã bàn giao. Quyền ghi nhận tồn kho chỉ được cấp qua phiên Access Session và nghiệp vụ V3.</p>}</div>}
           <p>
             {reservationLifecycle(resource.data).description}
           </p>
@@ -554,14 +546,15 @@ export function ContractDetailIntegration() {
   const contract = resource.data?.contract?.status === 'SIGNED' ? resource.data.contract : confirmedSignature?.id === reservationId && confirmedSignature?.token === session.accessToken ? confirmedSignature.contract : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
-  if (isManagedV2(reservation) && contract) return <BackendScreen title="Review rental contract" description="Review Backend content and sign during direct intake."><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2 /><ManagedContractReview customerView key={`${session.accessToken}:${JSON.stringify(contract)}`} contract={contract} reservation={reservation} loadLatest={() => contractContext(reservationId)} onRefresh={resource.retry} /><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>View reservation</Link></BackendScreen>;
+  if (isManagedV2(reservation) && contract) return <BackendScreen title="Hợp đồng Managed lịch sử" description="Luồng Managed phiên bản cũ đã đóng. Hợp đồng này chỉ đọc để tra cứu, không thể ký hoặc thay đổi."><LoadState resource={resource} /><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} v2 /><Details values={[["Mã hợp đồng", contract.contractCode], ["Trạng thái", contract.status], ["Phiên bản điều khoản", contract.termsVersion || '—'], ["Ngày tạo", contract.createdAt || '—']]} /><Link className="text-brand" to={`/portal/reservations/${reservationId}`}>Về Reservation</Link></BackendScreen>;
   if (isManagedV3(reservation) && contract) {
     const active = contract.contentVersions?.find(version => version.version === contract.currentContentVersion);
     const content = active?.content;
     const customerSigned = contract.signatures?.some(signature => signature.version === active?.version && signature.contentHash === active?.contentHash && signature.signerRole === 'CUSTOMER');
     const fullUpfront = reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1';
-    const canSignV3 = !fullUpfront && contract.status === 'DRAFT' && reservation.status === 'DEPOSIT_PAID' && !!active && content?.schemaVersion === 3 && /^[a-f\d]{64}$/i.test(active.contentHash || '') && !customerSigned;
-    return <BackendScreen title="Review Managed V3 contract" description="Review the Backend's Cell, capacity, dates, term and confirmed pricing snapshot."><LoadState resource={resource} /><Message error={signatureNotice} /><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} />{content?.reservation && <Card><CardContent><h2 className="text-xl font-bold">Thông tin hợp đồng đã chốt</h2>{content.facility?.address && <p className="mt-2 text-sm text-slate-600">Địa chỉ Facility: {content.facility.address}</p>}<Details values={[["Phiên bản tài liệu", active.version], ["Mã xác thực nội dung", active.contentHash], ["Facility ID", content.facility?.id || content.reservation.facilityId], ["Cell đã chọn", Array.isArray(content.reservation.cellIds) ? content.reservation.cellIds.join(', ') : 'Chưa có'], ["Dung lượng", typeof content.reservation.allocatedCapacityM3 === 'number' ? `${content.reservation.allocatedCapacityM3} m³` : 'Chưa có'], ["Thời hạn thuê", `${content.reservation.startDate || '—'} – ${content.reservation.endDate || '—'}`], ["Kỳ hạn", content.reservation.term ? JSON.stringify(content.reservation.term) : '—'], ["Tiền thuê", content.pricing?.estimatedRent], ...(fullUpfront ? [["Đã thanh toán 100%", content.pricing?.totalPaid ?? content.pricing?.amountBreakdown?.totalDue], ["Hạn ký", vietnamDateTime(reservation.signingDeadline)]] : [["Deposit", content.pricing?.depositAmount]]), ["Thuế", content.pricing?.taxAmount], ["Giảm giá", content.pricing?.discountAmount]]} /></CardContent></Card>}{canSignV3 && <ConfirmAction label="Xác nhận chữ ký Managed V3" onAction={async () => { const token = getAccessToken(), latest = await contractContext(reservationId); if (getAccessToken() !== token) return; if (recordId(latest.contract) !== recordId(contract) || !isManagedV3(latest.reservation) || latest.reservation.status !== 'DEPOSIT_PAID') throw Error('Reservation hoặc Contract đã thay đổi. Hãy tải lại trước khi ký.'); const current = latest.contract.contentVersions?.find(version => version.version === latest.contract.currentContentVersion); if (!current || current.version !== active.version || current.contentHash !== active.contentHash) throw Error('Phiên bản hợp đồng đã thay đổi.'); const signed = record(await contractApi.signReal(recordId(contract))); if (!signed.signatures?.some(signature => signature.version === active.version && signature.contentHash === active.contentHash && signature.signerRole === 'CUSTOMER')) throw Error('Backend chưa xác nhận chữ ký trên phiên bản hiện tại.'); setSignatureNotice('Đã ghi nhận chữ ký điện tử cho luồng Managed cũ.'); resource.retry(); }} />}{fullUpfront && contract.status === 'DRAFT' && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Đã thanh toán 100% — Chờ hoàn tất hợp đồng giấy tại cơ sở. Customer và đại diện Facility cần ký cùng một bản; Staff sẽ tải bằng chứng thực tế và xác minh. Chưa có chữ ký số từ nút trên trang.</p>}{contract.status === 'DRAFT' && !fullUpfront && !canSignV3 && <p className="mt-4 text-sm text-orange-700">{reservation.status !== 'DEPOSIT_PAID' ? 'Cần xác minh khoản thanh toán theo luồng cũ.' : customerSigned ? 'Chữ ký Customer đã lưu; cần đại diện Facility ký cùng phiên bản.' : 'Bản chụp hiện tại chưa đủ điều kiện ký.'}</p>}<Details values={[["Phiên bản Điều khoản", contract.termsVersion], ["Chữ ký Facility", contract.signedByFMAt || 'Đang chờ'], ["Chữ ký Customer", contract.signedByCustomerAt || 'Đang chờ']]} />{contract.status === 'SIGNED' && contract.verifiedAt && <p role="status" className="mt-3 text-emerald-800">Hợp đồng đã được xác minh — sẵn sàng thực hiện thủ tục nhận kho.</p>}<Link className="text-brand" to={`/portal/reservations/${reservationId}`}>Xem Reservation</Link></BackendScreen>;
+    if (!fullUpfront) return <BackendScreen title="Reservation Managed cần đối soát" description="Hồ sơ V3 không có cấu hình thanh toán toàn phần hợp lệ. Không thể tiếp tục theo luồng Deposit/Balance cũ."><LoadState resource={resource} /><Message error="Vui lòng liên hệ hỗ trợ để đối soát hồ sơ. Không thực hiện thanh toán hoặc ký trên trang này." /></BackendScreen>;
+    const canSignV3 = false;
+    return <BackendScreen title="Review Managed V3 contract" description="Review the Backend's Cell, capacity, dates, term and confirmed pricing snapshot."><LoadState resource={resource} /><Message error={signatureNotice} /><RentalStatus status={contract.status} /><ContractPrintAction contractId={recordId(contract)} reservationId={reservationId} />{content?.reservation && <Card><CardContent><h2 className="text-xl font-bold">Thông tin hợp đồng đã chốt</h2>{content.facility?.address && <p className="mt-2 text-sm text-slate-600">Địa chỉ Facility: {content.facility.address}</p>}<Details values={[["Phiên bản tài liệu", active.version], ["Mã xác thực nội dung", active.contentHash], ["Facility ID", content.facility?.id || content.reservation.facilityId], ["Cell đã chọn", Array.isArray(content.reservation.cellIds) ? content.reservation.cellIds.join(', ') : 'Chưa có'], ["Dung lượng", typeof content.reservation.allocatedCapacityM3 === 'number' ? `${content.reservation.allocatedCapacityM3} m³` : 'Chưa có'], ["Thời hạn thuê", `${content.reservation.startDate || '—'} – ${content.reservation.endDate || '—'}`], ["Kỳ hạn", content.reservation.term ? JSON.stringify(content.reservation.term) : '—'], ["Tiền thuê", content.pricing?.estimatedRent], ["Đã thanh toán 100%", content.pricing?.totalPaid ?? content.pricing?.amountBreakdown?.totalDue], ["Hạn ký", vietnamDateTime(reservation.signingDeadline)], ["Thuế", content.pricing?.taxAmount], ["Giảm giá", content.pricing?.discountAmount]]} /></CardContent></Card>}{contract.status === 'DRAFT' && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Đã thanh toán 100% — Chờ hoàn tất hợp đồng giấy tại cơ sở. Customer và đại diện Facility cần ký cùng một bản; Staff sẽ tải bằng chứng thực tế và xác minh. Trang này không tạo chữ ký giả.</p>}<Details values={[["Phiên bản Điều khoản", contract.termsVersion], ["Chữ ký Facility", contract.signedByFMAt || 'Đang chờ'], ["Chữ ký Customer", contract.signedByCustomerAt || 'Đang chờ']]} />{contract.status === 'SIGNED' && contract.verifiedAt && <p role="status" className="mt-3 text-emerald-800">Hợp đồng đã được xác minh — sẵn sàng thực hiện thủ tục nhận kho.</p>}<Link className="text-brand" to={`/portal/reservations/${reservationId}`}>Xem Reservation</Link></BackendScreen>;
   }
   return (
     <BackendScreen
@@ -746,8 +739,7 @@ export function ContractDetailIntegration() {
 }
 export function PaymentIntegration() {
   const session = useAuthSession();
-  const { reservationId } = useParams(),
-    now = useCurrentTime();
+  const { reservationId } = useParams();
   const resource = useBackend(
     (config) =>
       validId(reservationId)
@@ -760,76 +752,12 @@ export function PaymentIntegration() {
     [reservationId],
   );
   const managed = serviceType(resource.data) === MANAGED_INVENTORY;
-  const managedDeposit = isManagedV2(resource.data);
   const managedV3 = managed && resource.data?.bookingFlowVersion === 3;
-  const contracts = useBackend(
-    (config) =>
-      isLegacyManaged(resource.data) ? contractApi.mineReal(config).then(rows) : Promise.resolve([]),
-    [reservationId, managed, managedDeposit, resource.data?.status],
-  );
-  const contract = contracts.data?.find(
-    (c) => recordId(c.reservationId) === reservationId,
-  );
   if (resource.loading) return <BackendScreen title="Loading payment details" description="Loading your reservation from the Backend."><LoadState resource={resource} /></BackendScreen>;
   if (resource.error || !resource.data) return <BackendScreen title="Payment unavailable" description="A payment can only be shown for a verified reservation."><Message error="Không tải được thông tin đơn thuê. Vui lòng thử lại." /><Button variant="outline" onClick={resource.retry}>Retry reservation</Button></BackendScreen>;
   if (serviceType(resource.data) === SELF_STORAGE) return <SelfStoragePayosCheckout key={`${session.accessToken}:${reservationId}`} reservationId={reservationId} initialReservation={resource.data} loadContext={selfStoragePaymentContext} loadContract={loadSelfStorageContract} loadOverview={loadSelfStorageOverview} onReservationRefresh={resource.retry} />;
   if (managedV3) return <SelfStoragePayosCheckout key={`${session.accessToken}:${reservationId}:managed-v3`} reservationId={reservationId} initialReservation={resource.data} loadContext={managedV3PaymentContext} loadContract={loadSelfStorageContract} onReservationRefresh={resource.retry} />;
-  if (managedDeposit) return (
-    <BackendScreen title="Managed Inventory payments" description="The Backend confirms each payment stage. Deposit is advance rent credited toward the balance.">
-      <LoadState resource={resource} />
-      {resource.data && <>
-        <RentalSummary item={resource.data} localizeManagedV2 />
-        <CustomerDepositPayment key={`deposit:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config => reservationApi.detailForCustomer(reservationId, config).then(record)} onReservationRefresh={resource.retry} />
-        <CustomerBalancePayment key={`balance:${session.accessToken}:${reservationId}`} reservation={resource.data} loadLatest={config => contractContext(reservationId, config)} onReservationRefresh={resource.retry} />
-        <Button asChild variant="outline"><Link to={`/portal/reservations/${reservationId}`}>View reservation</Link></Button>
-      </>}
-    </BackendScreen>
-  );
-  if (!isLegacyManaged(resource.data)) return <BackendScreen title="Payment unavailable" description="Payment is not supported for this reservation type."><RentalSummary item={resource.data} /><Message error="Unsupported service. Payment is unavailable." /></BackendScreen>;
-  const enabled = managedMockEnabled(import.meta.env);
-  return (
-    <BackendScreen
-      title="Simulated Payment"
-      description="Demo payment via the backend mock-pay endpoint. This is not a real PayOS transaction."
-    >
-      <LoadState resource={resource} />
-      {resource.data && (
-        <>
-          <RentalSummary item={resource.data} />
-          {!hasLegacyRentalFlow(resource.data) ? null : resource.data.status === "PAID" ? (
-            <Message success="Backend reservation status: Đã thanh toán." />
-          ) : (
-            <p className="text-sm text-slate-500">
-              {managed
-                ? "Managed payment is simulated only. It requires a signed contract, a live hold, explicit frontend development opt-in and backend MI_MOCK_PAYMENT_ENABLED=true."
-                : "Demo payment is available for an owned Self Storage CONTRACTED reservation."}
-            </p>
-          )}
-          {isLegacyManaged(resource.data) && <LoadState resource={contracts} />}
-          {isLegacyManaged(resource.data) && !enabled && (
-            <p className="mt-4 text-sm text-orange-700">
-              Managed mock payment is unavailable in this environment. No
-              production payment API is provided.
-            </p>
-          )}
-          {isLegacyManaged(resource.data) &&
-            enabled &&
-            !canMockPay(resource.data, contract, enabled, now) && (
-              <p className="mt-4 text-sm text-orange-700">
-                Managed simulation unavailable: a signed contract and an
-                unexpired CONTRACTED hold are required.
-              </p>
-            )}
-          {!serviceType(resource.data) && (
-            <Message error="Unsupported service. Payment is unavailable." />
-          )}
-          <Button variant="outline" onClick={resource.retry}>
-            Refresh payment status
-          </Button>
-        </>
-      )}
-    </BackendScreen>
-  );
+  return <BackendScreen title="Thanh toán Managed lịch sử" description="Luồng thanh toán Managed cũ đã đóng. Hệ thống không tạo Deposit, Balance hoặc thanh toán giả cho hồ sơ này."><RentalSummary item={resource.data} /><Message error="Chỉ Reservation Managed V3 mới dùng PayOS Hosted Checkout. Hồ sơ cũ chỉ còn để tra cứu lịch sử." /><Button variant="outline" onClick={resource.retry}>Tải lại trạng thái</Button></BackendScreen>;
 }
 export function AccessIntegration() {
   const { id } = useParams(),

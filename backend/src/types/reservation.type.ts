@@ -24,6 +24,7 @@ export interface IStatusHistory {
 }
 
 export interface IReservation extends Document {
+  managedAccessRevision?: number;
   reservationCode: string;
   customerId: Types.ObjectId;
   facilityId: Types.ObjectId;

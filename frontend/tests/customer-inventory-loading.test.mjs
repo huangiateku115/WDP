@@ -37,7 +37,7 @@ for(const [name,resource] of [['initial loading',{loading:true,data:undefined}],
 });
 test('loaded Item mounts existing actions with valid data',()=>{
  state={loading:false,data:{_id:id,managedReservationId:rentalId,facilityId,itemCode:'FIXTURE',name:'Loaded item',status:'IN_STORAGE',quantity:1,quantityUnit:'box',images:[],currentCellId:null}};loads=0;children=[];
- assert.match(renderToStaticMarkup(React.createElement(Detail)),/FIXTURE/);assert.deepEqual(children,['preview','outbound','inbound']);
+ assert.match(renderToStaticMarkup(React.createElement(Detail)),/FIXTURE/);assert.deepEqual(children,['preview','outbound']);
 });
 test('canonical outbound ignores missing/invalid Item before any hooks or reads',()=>{
  const Component=compile('../src/components/customer/inventory/CanonicalCustomerOutbound.jsx',{

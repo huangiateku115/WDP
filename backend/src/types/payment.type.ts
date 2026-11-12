@@ -35,6 +35,7 @@ export enum ProviderSettlementStatus {
 }
 
 export interface IReservationPayment extends Document {
+  managedAccessRevision?: number;
   reservationId: Types.ObjectId;
   customerId: Types.ObjectId;
   facilityId: Types.ObjectId;

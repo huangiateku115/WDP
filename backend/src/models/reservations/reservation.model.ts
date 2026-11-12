@@ -35,6 +35,7 @@ const reservationSchema = new Schema<IReservation>({
   rentalPricingSnapshot: { type: Schema.Types.Mixed, immutable: true },
   storageUnitId: { type: Schema.Types.ObjectId, ref: 'StorageUnit' }, 
   allocatedCellIds: [{ type: Schema.Types.ObjectId, ref: 'WarehouseCell' }],
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   allocatedCapacity: { type: Number },
   usedCapacityM3: { type: Number, min: 0, default: 0 },
   inventoryVersion: { type: Number, min: 0, default: 0 },

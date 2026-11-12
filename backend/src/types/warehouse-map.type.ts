@@ -14,6 +14,7 @@ export enum CellAllocationStatus {
 }
 
 export interface ICellAllocation extends Document {
+  managedAccessRevision?: number;
   facilityId: Types.ObjectId;
   cellId: Types.ObjectId;
   reservationId: Types.ObjectId;

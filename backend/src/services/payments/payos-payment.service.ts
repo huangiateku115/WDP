@@ -721,8 +721,8 @@ export class PayosPaymentService {
           $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).session(session).exec();
         if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
         if (!serviceSupported(reservation)) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'PayOS supports Self Storage and Managed V3 reservations only');
-        if (isFullUpfrontBooking(reservation) && purpose !== PaymentPurpose.FULL_RENT) {
-          throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'New reservations require one full-rent payment; Deposit and Balance are unavailable');
+        if ((managedV3(reservation) || isFullUpfrontBooking(reservation)) && purpose !== PaymentPurpose.FULL_RENT) {
+          throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'Managed V3 reservations require one full-rent payment; Deposit and Balance are unavailable');
         }
         const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
         if (!managedV3(reservation) && !contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
