@@ -3,6 +3,7 @@ import api from '@/api/facilityHandoverApi';
 import {facilityReservationApi} from '@/api/facilityReviewApi';
 import storageApi from '@/api/storageApi';
 import {getAccessToken,useAuthSession} from '@/lib/authSession';
+import {handoverAccessMessage} from '@/lib/facilityAccess';
 import {fullUpfront,currentDocument,paperEvidence,canHandover,checkoutMessage} from '@/lib/facilityPaperContract';
 import useFacilityResource,{announceReviewChange} from '@/lib/useFacilityResource';
 import {apiRecord,recordId,objectId,reviewError} from '@/lib/facilityReview';
@@ -51,7 +52,7 @@ function HandoverContent({reservationId}) {
    if(recordId(response.reservation)!==reservationId||response.reservation.status!=='ACTIVE')throw Error("Chưa xác nhận bàn giao cho đơn này.");
    const updated=await load(),updatedUnit=apiRecord(await storageApi.unitDetail(unitId));
    if(updated.reservation.status!=='ACTIVE'||recordId(updatedUnit)!==unitId||updatedUnit.status!=='OCCUPIED')throw Error("Trạng thái đơn và kho chưa khớp. Tải lại để kiểm tra trước khi thực hiện thao tác tiếp theo.");
-   ensureSession();setConfirmed(false);setIdentityVerified(false);const pin=response?.pinCode||updated?.reservation?.accessPinCode;setFeedback({success:fullUpfront(updated)?"Đã ghi nhận bàn giao vật lý, đơn đang sử dụng. Hệ thống chưa cung cấp quyền truy cập số; không có mã PIN được cấp từ thao tác này.":"Bàn giao thành công! Đơn chuyển sang ACTIVE. Mã PIN cấp cho khách: "+(pin||"—")});
+   ensureSession();setConfirmed(false);setIdentityVerified(false);setFeedback({success:handoverAccessMessage(updated.reservation)});
   }else if(action==='reject'){
    if(!rejectEligible(fresh))throw Error("Đơn không ở trạng thái hợp lệ để từ chối nhận kho.");
    if(!rejectReason.trim())throw Error("Vui lòng nhập lý do từ chối nhận kho.");
@@ -83,7 +84,7 @@ function HandoverContent({reservationId}) {
  }catch(error){const message=reviewError(error);setFeedback({error:/cloud_name is disabled/i.test(message)?"Dịch vụ lưu hợp đồng Cloudinary đang bị vô hiệu hóa. Bằng chứng chưa được lưu. Liên hệ nhóm máy chủ để khôi phục dịch vụ.":message});resource.reload();}finally{busy.current=false;setSaving(false);}}
  if(!permitted)return <Panel title="Hợp đồng và bàn giao"><p>Cần tài khoản nhân viên hoặc quản lý đã được phân công cơ sở.</p></Panel>;
  return <Panel title="Hợp đồng giấy và bàn giao"><Message {...feedback}/><Message error={resource.error}/>{resource.loading&&<p role="status">Đang tải hợp đồng của đơn…</p>}<Button variant="outline" disabled={saving} onClick={resource.reload}>Tải lại hợp đồng</Button>
- {data&&<div className="mt-4 space-y-4"><Details values={ [["Mã hợp đồng",recordId(data.contract)],["Hợp đồng",data.contract.contractCode],["Trạng thái hợp đồng",<Status value={data.contract.status}/>],["Trạng thái đơn thuê",<Status value={data.reservation.status}/>],["Bằng chứng",data.contract.signedProofUrl?'Đã lưu':"Chưa có dữ liệu"], ...(data.reservation.status==='ACTIVE'?[["Mã PIN truy cập",data.reservation.accessPinCode||'—']]:[]), ...(data.reservation.actualCheckoutDate||data.reservation.status==='CHECKED_OUT'?[["Ngày trả kho",data.reservation.actualCheckoutDate?new Date(data.reservation.actualCheckoutDate).toLocaleString('vi-VN'):'—']]:[]), ...(data.reservation.status==='CANCELLED'?[["Lý do từ chối/hủy",data.reservation.cancellationReason||'—']]:[])]}/>
+ {data&&<div className="mt-4 space-y-4"><Details values={ [["Mã hợp đồng",recordId(data.contract)],["Hợp đồng",data.contract.contractCode],["Trạng thái hợp đồng",<Status value={data.contract.status}/>],["Trạng thái đơn thuê",<Status value={data.reservation.status}/>],["Bằng chứng",data.contract.signedProofUrl?'Đã lưu':"Chưa có dữ liệu"], ...(data.reservation.status==='ACTIVE'?[["PIN mô phỏng",data.reservation.accessPinCode?"Backend đã cấp mã":"Chưa được cấp"]]:[]), ...(data.reservation.actualCheckoutDate||data.reservation.status==='CHECKED_OUT'?[["Ngày trả kho",data.reservation.actualCheckoutDate?new Date(data.reservation.actualCheckoutDate).toLocaleString('vi-VN'):'—']]:[]), ...(data.reservation.status==='CANCELLED'?[["Lý do từ chối/hủy",data.reservation.cancellationReason||'—']]:[])]}/>
  <Button variant="outline" disabled={saving} onClick={()=>setAction('print')}>Xem dữ liệu in hợp đồng</Button>
  {paperEligible(data)&&<><Field label="Ảnh hoặc PDF hợp đồng giấy đã ký"><Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={e=>setFile(e.target.files?.[0]||null)}/></Field><Field label="Số hợp đồng giấy (không bắt buộc)"><Input maxLength={100} value={number} disabled={saving} onChange={e=>setNumber(e.target.value)}/></Field></>}
  {fullUpfront(data)&&paperEligible(data)&&<div className="space-y-3"><p>Phiên bản hợp đồng: {currentDocument(data.contract)?.version||'Chưa có dữ liệu'}. Nhập thời điểm ký thực tế theo giờ trên máy; không tự tạo chữ ký.</p><Field label="Thời điểm khách hàng ký"><Input aria-label="Thời điểm khách hàng ký" type="datetime-local" step="1" disabled={saving} value={customerSignedAt} onChange={e=>setCustomerSignedAt(e.target.value)}/></Field><Field label="Thời điểm đại diện cơ sở ký"><Input aria-label="Thời điểm đại diện cơ sở ký" type="datetime-local" step="1" disabled={saving} value={facilitySignedAt} onChange={e=>setFacilitySignedAt(e.target.value)}/></Field></div>}
@@ -101,7 +102,7 @@ function HandoverContent({reservationId}) {
  {data.reservation.status==='CHECKIN_READY'&&<p>{fullUpfront(data)?'Đã thanh toán đủ và xác minh hợp đồng. Có thể bàn giao khi thời gian thuê đã bắt đầu và kho sẵn sàng.':'Chờ khách thanh toán phần còn lại. Tải lại sau khi thanh toán.'}</p>}
  {fullUpfront(data)&&data.reservation.signingDeadline&&<p>Hạn ký hợp đồng: {new Date(data.reservation.signingDeadline).toLocaleString('vi-VN')}. {Date.parse(data.reservation.signingDeadline)<=Date.now()&&data.contract.status!=='SIGNED'?'Đã quá hạn ký. Cần quản lý xem xét; chưa có chức năng xác nhận hoàn tiền tại đây.':''}</p>}
  {fullUpfront(data)&&paperEligible(data)&&<p>Việc hủy và hoàn tiền cho đơn thanh toán 100% cần quy trình xử lý của backend; chưa thể ghi nhận chuyển tiền tại đây.</p>}
- {data.reservation.status==='ACTIVE'&&<p className="text-emerald-700 font-medium">{fullUpfront(data)?'Đã ghi nhận bàn giao vật lý. Quyền truy cập số chưa được cung cấp từ luồng này.':`Đã hoàn tất bàn giao kho. Mã PIN truy cập: ${data.reservation.accessPinCode||'—'}`}</p>}
+ {data.reservation.status==='ACTIVE'&&<p className="text-emerald-700 font-medium">{handoverAccessMessage(data.reservation)}</p>}
  {data.reservation.status==='CHECKED_OUT'&&<p className="text-emerald-700 font-medium">✅ Đơn thuê đã được nghiệm thu trả kho hoàn tất (CHECKED_OUT). Tình trạng cho thuê tiếp phụ thuộc kết quả kiểm tra và bảo trì.</p>}
  {data.reservation.status==='CANCELLED'&&<p className="text-rose-700 font-medium">Đơn thuê đã bị từ chối / hủy. Ô kho đã được giải phóng.</p>}
  </div>}

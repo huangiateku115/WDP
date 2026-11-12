@@ -63,7 +63,7 @@ export default function StockBalancePage() {
   const balance = result?.balance;
   return <Screen title="Tồn kho" description="Tồn hiện tại, lượng đang giữ và lô nhập trong cơ sở được phân công." notice="Tải lại tồn sau nhập, xuất hoặc di chuyển để xem số lượng mới nhất.">
     <Panel title="Tìm mặt hàng">
-      <form className="flex flex-wrap gap-3" onSubmit={load}>
+      <form className="facility-filter-row" onSubmit={load}>
         <Input aria-label="Mã mặt hàng" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
         <Button disabled={loading}>{loading ? "Đang tải…" : "Tải / cập nhật tồn kho"}</Button>
       </form>

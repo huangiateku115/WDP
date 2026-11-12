@@ -34,3 +34,8 @@ test('only a Backend-confirmed cancellation DTO is presented as cancelled',()=>{
   assert.notEqual(paymentStatusView({status:'CANCELLED',cancelVerifiedAt:null,providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED'}).key,'CANCELLED');
   assert.equal(paymentStatusView({status:'CANCELLED',cancelVerifiedAt:'2026-11-10T00:00:00Z',providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED'}).label,'Đã hủy thanh toán');
 });
+
+test('Self Storage full-rent cancel callback must reconcile the persisted READY intent', async () => {
+  const page = await readFile(new URL('../src/pages/customer/PayosPaymentReturnPage.jsx', import.meta.url), 'utf8');
+  assert.match(page, /if \(cancelReturn \|\| payment\?\.purpose !== "FULL_RENT"\) await reconcilePayosPayment/);
+});

@@ -1,4 +1,4 @@
-import {reservationAmount,reservationVietnamTime} from '@/lib/customerReservationDisplay';
+import {reservationAmount,reservationVietnamTime,reservationDateOnly} from '@/lib/customerReservationDisplay';
 import {
   serviceType,
   serviceLabel,
@@ -164,7 +164,16 @@ export function LoadState({ resource }) {
     </>
   );
 }
-export function RentalStatus({ status, reservation }) {
+const upfrontSelfStorageLabels = {
+  CONTRACTED: "Chờ thanh toán 100% tiền thuê",
+  PAID: "Đã thanh toán — Chờ hoàn tất hợp đồng",
+  CHECKIN_READY: "Chờ bàn giao kho",
+  ACTIVE: "Đang thuê",
+  CANCELLED: "Đã hủy đơn thuê",
+};
+export function RentalStatus({ status, reservation, localizeSelfStorage }) {
+  const upfrontLabel = localizeSelfStorage && reservation?.serviceType === SELF_STORAGE &&
+    reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && upfrontSelfStorageLabels[status];
   const selfStorageContracted = reservation?.serviceType === "SELF_STORAGE" && status === "CONTRACTED";
   return (
     <Badge
@@ -172,7 +181,7 @@ export function RentalStatus({ status, reservation }) {
         ["ACTIVE", "PAID", "CLOSED", "SIGNED", "VERIFIED"].includes(status) ? "green" : "orange"
       }
     >
-      {(selfStorageContracted ? "Booking confirmed — advance-rent Deposit pending" : reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
+      {upfrontLabel || (selfStorageContracted ? "Booking confirmed — advance-rent Deposit pending" : reservation && reservationLifecycle(reservation).label) || statusLabels[status] || status || "Status not returned"}
     </Badge>
   );
 }
@@ -186,7 +195,10 @@ export function addressText(value) {
           .join(", ")
       : undefined;
 }
-export function RentalSummary({ item, localizeManagedV2=false }) {
+export function RentalSummary({ item, localizeManagedV2=false, localizeSelfStorage=false }) {
+  const selfStorage = localizeSelfStorage && serviceType(item) === SELF_STORAGE;
+  const rentalDate = value => selfStorage && typeof value === "string"
+    ? reservationDateOnly(value.slice(0, 10)) : date(value);
   const localized=localizeManagedV2&&(isManagedV2(item)||isManagedV3(item)),date=value=>localized?reservationVietnamTime(value):value;
   const facility =
       typeof item.facilityId === "object" ? item.facilityId : item.facility,
@@ -195,9 +207,9 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
         ? item.storageUnitId
         : item.storageUnit;
   const values = [
-    ["Service", serviceLabel(item)],
-    ["Facility", facility?.name],
-    ["Address", addressText(facility?.address)],
+    [selfStorage ? "Dịch vụ" : "Service", serviceLabel(item)],
+    [selfStorage ? "Cơ sở" : "Facility", facility?.name],
+    [selfStorage ? "Địa chỉ" : "Address", addressText(facility?.address)],
     ...(serviceType(item) === MANAGED_INVENTORY
       ? [
           ["Allocated capacity (m³)", item.allocatedCapacity],
@@ -205,22 +217,22 @@ export function RentalSummary({ item, localizeManagedV2=false }) {
         ]
       : serviceType(item) === SELF_STORAGE
         ? [
-            ["Storage unit", unit?.unitCode],
-            ["Unit size", unit?.size],
-            ["Volume (m³)", unit?.volumeM3],
+            [selfStorage ? "Kho thuê" : "Storage unit", unit?.unitCode],
+            [selfStorage ? "Kích cỡ kho" : "Unit size", unit?.size],
+            [selfStorage ? "Thể tích (m³)" : "Volume (m³)", unit?.volumeM3],
           ]
         : []),
-    ["Start date", date(item.startDate)],
-    ["End date", date(item.endDate)],
+    [selfStorage ? "Ngày bắt đầu" : "Start date", rentalDate(item.startDate)],
+    [selfStorage ? "Ngày kết thúc" : "End date", rentalDate(item.endDate)],
     ...(item.actualCheckoutDate || item.status === 'CHECKED_OUT' ? [["Ngày trả kho", item.actualCheckoutDate ? new Date(item.actualCheckoutDate).toLocaleString('vi-VN') : 'Đã trả kho']] : []),
     ...(!isManagedV2(item) ? (serviceType(item) === SELF_STORAGE ? [["Tổng tiền thanh toán", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent, item.currency || "VND")]] : [["Estimated rent", item.estimatedRent == null ? item.estimatedRent : reservationAmount(item.estimatedRent, item.currency || "VND")], ["Deposit", item.depositAmount == null ? item.depositAmount : reservationAmount(item.depositAmount, item.currency || "VND")]]) : []),
-    ["Payment deadline", date(item.paymentDeadline || item.expiresAt)],
+    [selfStorage ? "Hạn thanh toán" : "Payment deadline", selfStorage ? reservationVietnamTime(item.paymentDeadline || item.expiresAt) : date(item.paymentDeadline || item.expiresAt)],
     ...(item.status === 'CANCELLED' && (item.cancellationReason || item.rejectReason) ? [["Lý do hủy/từ chối", item.cancellationReason || item.rejectReason]] : []),
   ];
   return (
     <Card>
       <CardContent>
-        <RentalStatus status={item.status} reservation={item} />
+        <RentalStatus status={item.status} reservation={item} localizeSelfStorage={selfStorage} />
         <div className="mt-5">
           {isManagedV2(item)&&<ManagedFinancialSummary reservation={item} localizeCurrency={localized}/>}
           <Details

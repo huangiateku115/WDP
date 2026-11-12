@@ -14,6 +14,8 @@ Khách tự khai báo nhập, xuất và di chuyển hàng trong luồng mới. 
 | Tồn hiện tại, lượng giữ và lô hàng theo mặt hàng | Xem | Xem | `/{role}/inventory/stock?itemId={id}` |
 | Lịch sử biến động hàng | Xem | Xem | `/{role}/inventory/items/{id}/history` |
 | Bản đồ kho | Xem | Xem | `/{role}/warehouse-map` |
+| Lịch khách đến và phiên truy cập | Xác minh, check-in, kết thúc và thu hồi phiên được giao | Phân công nhân viên, giám sát và thu hồi vì an toàn | `/{role}/managed-access` |
+| Giám sát nhập hàng tự quản V3 | Theo dõi biến động trong phiên được giao, không nhập thay khách | Xem tồn, vị trí lô, dung lượng và tình trạng đối soát | `/{role}/managed-inventory-v3` |
 | Khu vực, kệ, kích thước và tải trọng ô | Không ghi | Tạo khu vực/kệ, sửa khu vực/kệ/ô | `/manager/warehouse-settings` |
 | Kiểm tra điều kiện kết thúc đơn | Chưa được cấp API đọc | Xem báo cáo, không đóng đơn | `/manager/managed?tab=checkout` |
 | Hợp đồng giấy và bàn giao V3 thanh toán 100% | Chưa được cấp API đọc đơn Managed | Tạo hợp đồng sau thanh toán đủ, xác minh bản giấy và bàn giao từ CHECKIN_READY | `/manager/reservations/{id}?service=managed` |
@@ -39,15 +41,15 @@ Liên kết Điều kiện trả không gian tự điền ID đơn tại `/manag
 
 | Mục 10 yêu cầu | Hiện trạng |
 |---|---|
-| Lịch khách đến, phân công hộ tống, xác minh danh tính | Chưa có API lịch/phiên truy cập và phân công hộ tống chuyên biệt |
-| Bắt đầu, kết thúc hoặc thu hồi phiên truy cập | Chưa có API; mở khóa giả lập hiện hữu không thay thế quản lý phiên |
+| Lịch khách đến, phân công hộ tống, xác minh danh tính | Đã nối API `/access/managed-v3/visits`; chỉ đúng nhân viên được giao mới check-in |
+| Bắt đầu, kết thúc hoặc thu hồi phiên truy cập | Đã nối `/access/managed-v3/sessions`; kết thúc phiên không phải kết thúc hợp đồng |
 | Sự cố hàng hóa, ngoại lệ tồn, đối chiếu có phê duyệt | Chưa có API chuyên biệt; hỗ trợ/bảo trì không được coi là biên bản sự cố hàng hóa |
 | Nhóm ô liền kề và chứng nhận hình học/tải trọng | Chưa có API nhóm ô/chứng nhận |
 | Nhân viên xác nhận trả không gian, quản lý đóng đơn/giải phóng ô | Chưa có API xác nhận tương ứng; báo cáo điều kiện chỉ đọc không thực hiện giải phóng |
 | Nhân viên đọc chi tiết đơn Managed | Route hiện tại chưa cho quyền FACILITY_STAFF |
 | Danh sách đơn Managed theo cơ sở cho quản lý | Chưa có danh sách chuyên biệt; mở chi tiết bằng ID thật |
 
-Các tab lịch truy cập, sự cố và trả không gian giải thích rõ trạng thái chưa khả dụng, không hiển thị nút xác nhận giả hay tự sửa tồn. Không gọi các đường dẫn `/api/v2/managed/...` mới ở mức đề xuất.
+Tab lịch truy cập dẫn tới chức năng đã nối API. Sự cố chuyên biệt và xác nhận trả không gian vẫn chưa khả dụng, không hiển thị nút xác nhận giả hay tự sửa tồn. Không gọi các đường dẫn `/api/v2/managed/...` mới ở mức đề xuất. Nhập tự quản V3 hiện đã có API; xuất và di chuyển tự quản chưa được tính là hoàn tất.
 
 ## Cách kiểm tra trên giao diện
 
@@ -56,6 +58,9 @@ Các tab lịch truy cập, sự cố và trả không gian giải thích rõ tr
 3. Đăng nhập quản lý cùng cơ sở; mở `/manager/managed` để xem cùng dữ liệu hàng hóa.
 4. Mở `/manager/warehouse-settings`; xem khu vực/kệ/ô. Khi cần cấu hình thật, nhập kích thước, tải trọng và tọa độ thực tế, kiểm tra rồi xác nhận. Chỉ coi là hoàn tất khi đã đọc lại được kết quả từ backend.
 5. Mở tab Trả không gian, nhập ID đơn Managed thuộc cơ sở. Báo cáo thể hiện tồn, lượng giữ và các điều kiện chặn/chưa xác định; không có hành động tự đóng hoặc giải phóng ô.
-6. Các tab Lịch truy cập và Sự cố phải thông báo chưa khả dụng thay vì hiển thị dữ liệu mô phỏng.
+6. Customer tạo lịch ở `/portal/managed-access`. Manager mở `/manager/managed-access`, chọn lịch và phân công nhân viên cùng cơ sở, ghi lý do rồi xác nhận. Staff mở `/staff/managed-access`, trong giờ hẹn tích đủ ba xác nhận và nhập ghi chú an toàn để bắt đầu phiên. Backend kiểm tra điều kiện đơn/hợp đồng/thanh toán/ô được thuê.
+7. Customer nhập hàng V3 trong phiên hợp lệ. Staff và Manager xem tại `/{role}/managed-inventory-v3`. Staff không có nút xác nhận nhập thay; tồn chưa đối soát không được trình bày như số liệu đã xác nhận. Dung lượng ô chỉ là số liệu hiện tại, chưa khẳng định đối soát toàn bộ.
+8. Staff xác nhận khách rời kho để kết thúc phiên. Staff/Manager có thể thu hồi phiên đang hoạt động với lý do an toàn. Giao diện đọc lại phiên và lịch đến kho trước khi báo thành công; phiên hết hạn không còn nút thao tác. Hợp đồng thuê không bị kết thúc bởi thao tác này.
+9. Nếu kết quả check-in chưa rõ, thử lại giữ đúng nội dung và khóa yêu cầu theo từng tài khoản nhân viên. Nếu khách sửa lịch hoặc nhân viên đã bị thay đổi, tải lại và phân công lại; không ép xác nhận bằng dữ liệu cũ.
 
 Chưa thể tuyên bố hoàn tất toàn bộ mục 10: các phần cuối cần nhóm backend bổ sung API/quyền và kiểm thử tích hợp sau khi triển khai. Không sửa backend hay giao diện Customer/Admin/BOM trong đợt này.

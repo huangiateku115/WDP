@@ -72,6 +72,10 @@ export function assessPayosEligibility(reservation, contract, now = Date.now(), 
   if (reservation?.serviceType !== "SELF_STORAGE") {
     return { eligible: false, purpose: null, reason: "UNSUPPORTED_SERVICE" };
   }
+  if (fullUpfront && reservation.status !== "CONTRACTED") {
+    return { eligible: false, purpose: null, reason: ["PAID", "CHECKIN_READY", "ACTIVE"].includes(reservation.status)
+      ? "FULL_RENT_ALREADY_APPLIED" : "INVALID_RESERVATION_STATUS" };
+  }
   if (!["CONTRACTED", "CHECKIN_READY"].includes(reservation.status)) {
     return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_STATUS" };
   }

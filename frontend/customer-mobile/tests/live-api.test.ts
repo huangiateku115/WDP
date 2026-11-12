@@ -20,7 +20,7 @@ const {useLiveSession}=require('../src/state/useLiveSession') as typeof import('
 const {journal,newAttempt}=require('../src/state/attemptJournal') as typeof import('../src/state/attemptJournal');
 const {loadContractReview,submitReviewedContract}=require('../src/api/selfStorageContract') as typeof import('../src/api/selfStorageContract');
 const {paymentContext,openDeposit,openSelfStoragePayment}=require('../src/api/selfStoragePayment') as typeof import('../src/api/selfStoragePayment');
-const {checkoutLink,depositDecision}=require('../src/domain/livePayment') as typeof import('../src/domain/livePayment');
+const {checkoutLink,depositDecision,fullRentDecision}=require('../src/domain/livePayment') as typeof import('../src/domain/livePayment');
 
 const [owner,other,facilityId,unitId,pricingId,rentalId,contractId,paymentId]=['1','2','3','4','5','6','7','8'].map(i=>i.repeat(24)) as [string,string,string,string,string,string,string,string];
 const user={_id:owner,role:'CUSTOMER',displayName:'Khách kiểm thử',email:'example@example.invalid',isActive:true};
@@ -136,12 +136,12 @@ test('quote checks exact availability and sends only authoritative booking field
     }
     expect(c.url).toBe('/reservations');
     expect(c.headers.get('Idempotency-Key')).toBe('fixture-attempt');
-    expect(JSON.parse(c.data)).toEqual({facilityId,storageUnitId:unitId,pricingPolicyId:pricingId,startDate:reservation.startDate,endDate:reservation.endDate});
-    return envelope(reservation);
+    expect(JSON.parse(c.data)).toEqual({facilityId,storageUnitId:unitId,pricingPolicyId:pricingId,startDate:reservation.startDate,endDate:reservation.endDate,termsAccepted:true,termsVersionId:'FIXTURE@1'});
+    return envelope({...reservation,rentalPaymentFlow:'FULL_UPFRONT_V1'});
   });
   const quote=await mobileRepo.quote(facilityId,unitId,{start,end,value:'1',unit:'MONTH'});
   expect(quote.estimate.depositAmount).toBe(1000);
-  await expect(mobileRepo.book(quote.body,'fixture-attempt',owner)).resolves.toMatchObject({_id:rentalId});
+  await expect(mobileRepo.book({...quote.body,termsAccepted:true,termsVersionId:'FIXTURE@1'},'fixture-attempt',owner)).resolves.toMatchObject({_id:rentalId});
 });
 
 test('persisted attempts are scoped and only one concurrent submit can claim a key',async()=>{
@@ -586,4 +586,130 @@ test('older UNKNOWN Balance on a second history page blocks even the latest READ
   await openSelfStoragePayment(rentalId,owner,'BALANCE',()=>true,launch);
   expect(launch).not.toHaveBeenCalled();
   expect(adapter.mock.calls.every(([c])=>c.method==='get')).toBe(true);
+});
+
+test('upfront checkout only sends FULL_RENT and keeps transfer data on the same intent', async()=>{
+  configureApiSession('fixture-access');
+  const upfront={...reservation,rentalPaymentFlow:'FULL_UPFRONT_V1' as const};
+  const transferDetails={bin:'970436',accountNumber:'00001234',accountName:'TEST',description:'REF1'};
+  const adapter=fixture(c=>{
+    expect(c.url).toBe('/reservations/'+rentalId+'/payments/payos');
+    expect(c.method).toBe('post');
+    expect(c.headers.get('Idempotency-Key')).toBe('fixture-full-rent-key');
+    expect(JSON.parse(c.data)).toEqual({purpose:'FULL_RENT'});
+    return {...envelope({...payment,purpose:'FULL_RENT',qrCode:'fixture-qr',transferDetails}),outcome:'CREATED'};
+  });
+  await expect(mobileRepo.checkout(upfront,'fixture-full-rent-key',owner,'FULL_RENT')).resolves.toMatchObject({
+    id:paymentId,qrCode:'fixture-qr',checkoutUrl:payment.checkoutUrl,transferDetails
+  });
+  await expect(mobileRepo.checkout(upfront,'fixture-full-rent-key',owner,'DEPOSIT')).rejects.toThrow();
+  await expect(mobileRepo.checkout(upfront,'fixture-full-rent-key',owner,'BALANCE')).rejects.toThrow();
+  expect(adapter).toHaveBeenCalledTimes(1);
+});
+
+test('cancels an upfront reservation only on explicit Backend eligibility', async()=>{
+  configureApiSession('fixture-access');
+  const upfront={...reservation,rentalPaymentFlow:'FULL_UPFRONT_V1' as const,customerCancellationEligible:true};
+  const adapter=fixture(c=>{
+    expect(c.url).toBe('/reservations/'+rentalId+'/cancel');
+    expect(c.method).toBe('patch');
+    return envelope({...upfront,status:'CANCELLED'});
+  });
+  await expect(mobileRepo.cancelUpfrontRental({...upfront,customerCancellationEligible:false},owner)).rejects.toThrow();
+  await expect(mobileRepo.cancelUpfrontRental(upfront,other)).rejects.toThrow();
+  await expect(mobileRepo.cancelUpfrontRental(upfront,owner)).resolves.toMatchObject({status:'CANCELLED'});
+  expect(adapter).toHaveBeenCalledTimes(1);
+});
+
+test('full-rent recovery never exposes an unresolved or canceled link',()=>{
+  const upfront={...reservation,rentalPaymentFlow:'FULL_UPFRONT_V1' as const};
+  const ready={...payment,purpose:'FULL_RENT' as const};
+  const cancelled={...ready,status:'CANCELLED' as const,checkoutStatus:'CANCELLED' as const,
+    cancelVerifiedAt:'2099-01-02T00:00:00Z',retryAllowed:true};
+  expect(fullRentDecision(upfront,contract,[ready]).kind).toBe('READY');
+  expect(fullRentDecision(upfront,contract,[{...ready,checkoutStatus:'UNKNOWN'}]).kind).toBe('REVIEW');
+  expect(fullRentDecision(upfront,contract,[{...ready,checkoutUrl:'https://pay.payos.vn.evil.invalid/web/a'}]).kind).toBe('REVIEW');
+  expect(fullRentDecision(upfront,contract,[{...cancelled,cancelVerifiedAt:null}]).kind).toBe('REVIEW');
+  expect(fullRentDecision(upfront,contract,[cancelled],{resourceId:paymentId})).toEqual({kind:'CREATE',retry:true});
+  expect(fullRentDecision(upfront,contract,[cancelled],{}).kind).toBe('REVIEW');
+  expect(fullRentDecision(upfront,contract,[{...ready,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'}]).kind).toBe('APPLIED');
+  expect(fullRentDecision(upfront,contract,[{...ready,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'NOT_APPLIED'}]).kind).toBe('REVIEW');
+});
+
+test('full rent retry replaces only the journal entry it verified',async()=>{
+  const store=await journal('full-rent',owner,rentalId);
+  const prior={...newAttempt(),resourceId:paymentId};
+  await store.claim(prior);
+  const replacement=newAttempt();
+  expect(await Promise.all([store.claim(replacement,prior.key),store.claim(newAttempt(),prior.key)])).toEqual([true,false]);
+  expect(await store.read()).toEqual(replacement);
+  expect(await (await journal('full-rent',other,rentalId)).read()).toBeNull();
+});
+
+test('upfront contract reads owned Backend paper state without calling checkout or sign',async()=>{
+  configureApiSession('fixture-access');
+  for (const status of ['PAID','CHECKIN_READY','ACTIVE','CANCELLED'] as const) {
+    const upfront={...reservation,status,rentalPaymentFlow:'FULL_UPFRONT_V1' as const};
+    const current=status==='PAID'?contract:{...contract,status:'SIGNED',verifiedAt:'2026-11-12T00:00:00Z'};
+    const adapter=fixture(c=>{
+      expect(c.method).toBe('get');
+      return c.url==='/reservations/me' ? envelope([upfront]) : envelope(current);
+    });
+    const review=await loadContractReview(rentalId,owner);
+    expect(review.canSign).toBe(false);
+    expect(review.reservation.status).toBe(status);
+    await submitReviewedContract(review,owner,()=>true);
+    expect(adapter).toHaveBeenCalledTimes(2);
+  }
+});
+
+test('booking range conflict blocks estimate and reservation writes',async()=>{
+  configureApiSession('fixture-access');
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('get');
+    if(c.url==='/storage-units/'+unitId)return envelope({_id:unitId,facilityId,unitCode:'A-01',size:'SMALL',status:'OCCUPIED'});
+    if(c.url==='/pricing-rules/resolve')return envelope({});
+    expect(c.url).toBe('/storage-units/'+unitId+'/availability');
+    return envelope({storageUnitId:unitId,month:'2099-01',intervals:[],availabilityState:'VERIFIED',
+      rangeAvailability:'CONFLICT',requestedRange:{startDate:reservation.startDate,endDate:reservation.endDate},evaluatedAt:'2098-12-01T00:00:00Z'});
+  });
+  await expect(mobileRepo.quote(facilityId,unitId,{start,end,value:1,unit:'MONTH'})).rejects.toThrow('Kho không còn trống');
+  expect(adapter).toHaveBeenCalledTimes(3);
+});
+
+test('uncertain booking makes one request and can recover using its saved key and payload',async()=>{
+  configureApiSession('fixture-access');
+  const body={facilityId,storageUnitId:unitId,pricingPolicyId:pricingId,startDate:reservation.startDate,
+    endDate:reservation.endDate,termsAccepted:true as const,termsVersionId:'FIXTURE@1'};
+  const store=await journal('booking',owner,'fixture-range');
+  const attempt={...newAttempt(),bookingBody:body};
+  expect(await store.claim(attempt)).toBe(true);
+  let posts=0;
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('post');
+    expect(c.url).toBe('/reservations');
+    expect(c.headers.get('Idempotency-Key')).toBe(attempt.key);
+    expect(JSON.parse(c.data)).toEqual(body);
+    if (++posts===1) return httpError(c,503);
+    return envelope({...reservation,rentalPaymentFlow:'FULL_UPFRONT_V1'});
+  });
+  await expect(mobileRepo.book(body,attempt.key,owner)).rejects.toMatchObject({response:{status:503}});
+  expect(adapter).toHaveBeenCalledTimes(1);
+  const saved=await store.read();
+  await expect(mobileRepo.book(saved!.bookingBody!,saved!.key,owner)).resolves.toMatchObject({_id:rentalId,status:'CONTRACTED'});
+  expect(adapter).toHaveBeenCalledTimes(2);
+});
+
+test('reads published Self Storage terms and rejects a response without applicable text',async()=>{
+  const data={version:'2.1',versionId:'FIXTURE@2.1',status:'PUBLISHED',services:['SELF_STORAGE'],
+    groups:[{id:'P01',title:'Điều khoản fixture',appliesTo:['SELF_STORAGE'],sections:{SELF_STORAGE:['Văn bản fixture']}}]};
+  fixture(c=>{
+    expect(c.url).toBe('/public/terms/current');
+    expect(c.params).toEqual({serviceType:'SELF_STORAGE'});
+    expect(c.headers.has('Authorization')).toBe(false);
+    return envelope(data);
+  });
+  await expect(mobileRepo.bookingPolicy()).resolves.toMatchObject({versionId:data.versionId});
+  fixture(()=>envelope({...data,groups:[]}));
+  await expect(mobileRepo.bookingPolicy()).rejects.toThrow();
 });

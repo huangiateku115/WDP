@@ -2002,3 +2002,42 @@ test('checkout does not return 201 when the persisted link is not READY on readb
   }) } });
   await assert.rejects(service.createProviderLink(payment), { status: 503, code: 'PAYOS_CHECKOUT_OUTCOME_UNKNOWN' });
 });
+
+test('Self Storage FULL_RENT persists and exposes provider transfer details on the same READY intent', async t => {
+  setPayosCheckoutTestConfig();
+  const payment = { _id: oid(), reservationId: oid(), customerId: oid(), facilityId: oid(), serviceType: 'SELF_STORAGE',
+    provider: PaymentProvider.PAYOS, purpose: PaymentPurpose.FULL_RENT, amount: 100000, currency: 'VND',
+    providerReference: '1234567890', status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' };
+  const expiry = Math.floor(Date.now() / 1000) + 3600;
+  let calls = 0;
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_, update) => { Object.assign(payment, update.$set); return query(payment); });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
+    assert.equal(filter._id, payment._id);
+    assert.equal(filter.providerReference, payment.providerReference);
+    Object.assign(payment, update.$set);
+    return query({ matchedCount: 1 });
+  });
+  t.mock.method(ReservationPaymentModel, 'findById', () => query(payment));
+  const service = new PayosPaymentService({ gateway: { async create(request) {
+    calls++;
+    return { ...request, status: 'PENDING', currency: 'VND', paymentLinkId: 'fixture-link',
+      checkoutUrl: 'https://pay.example/fixture', qrCode: DEPOSIT_QR, bin: '970436',
+      accountNumber: '00001234', accountName: 'PAYOS FIXTURE', expiredAt: expiry };
+  } } });
+  t.mock.method(service, 'currentIntentIssue', async () => null);
+  t.mock.method(ReservationModel, 'findOne', () => query({}));
+  const result = await service.createProviderLink(payment);
+  assert.equal(result.id, String(payment._id));
+  assert.equal(result.checkoutStatus, 'READY');
+  assert.equal(result.qrCode, DEPOSIT_QR);
+  assert.equal(result.checkoutUrl, 'https://pay.example/fixture');
+  assert.equal(result.transferDetails.accountNumber, '00001234');
+  assert.equal(result.transferDetails.description, payment.transferDetails.description);
+  assert.equal(result.expiresAt, new Date(expiry * 1000).toISOString());
+  payment.checkoutExpiresAt = new Date(0);
+  const expired = await service.customerStatusDto(payment);
+  assert.equal(expired.checkoutUrl, null);
+  assert.equal(expired.qrCode, null);
+  assert.equal(expired.transferDetails, undefined);
+  assert.equal(calls, 1);
+});

@@ -31,7 +31,7 @@ const keyFor = (slot, payload) => {
 };
 const clearKey = slot => { try { globalThis.sessionStorage?.removeItem(slot); } catch { /* no-op */ } fallbackKeys.delete(slot); };
 const createSlot = 'managed-access:create-visit:pending';
-const checkInSlot = visitId => `managed-access:check-in:${visitId}:pending`;
+const checkInSlot = (visitId, actorId) => actorId ? `managed-access:check-in:${actorId}:${visitId}:pending` : `managed-access:check-in:${visitId}:pending`;
 export const managedAccessApi = {
   createVisit: async payload => { const response = await client.post('/access/managed-v3/visits', payload, { headers: { 'Idempotency-Key': keyFor(createSlot, payload) } }); clearKey(createSlot); return response; },
   pendingCreateKey: () => readPending(createSlot)?.key ?? null,
@@ -47,10 +47,10 @@ export const managedAccessApi = {
   facilityVisits: () => client.get('/access/managed-v3/visits/facility'),
   staff: () => client.get('/access/managed-v3/visits/facility/staff'),
   assign: (visitId, staffId, reason, revision) => client.put(`/access/managed-v3/visits/${id(visitId)}/assignment`, { staffId, reason }, { headers: { 'If-Match': String(revision) } }),
-  checkIn: async (visitId, attestation) => { const slot = checkInSlot(visitId); const response = await client.post(`/access/managed-v3/visits/${id(visitId)}/check-in`, attestation, { headers: { 'Idempotency-Key': keyFor(slot, attestation) } }); clearKey(slot); return response; },
-  pendingCheckInKey: visitId => readPending(checkInSlot(visitId))?.key ?? null,
-  pendingCheckIn: visitId => readPending(checkInSlot(visitId)),
-  clearPendingCheckInKey: visitId => clearKey(checkInSlot(visitId)),
+  checkIn: async (visitId, attestation, actorId) => { const slot = checkInSlot(visitId, actorId); const response = await client.post(`/access/managed-v3/visits/${id(visitId)}/check-in`, attestation, { headers: { 'Idempotency-Key': keyFor(slot, attestation) } }); clearKey(slot); return response; },
+  pendingCheckInKey: (visitId, actorId) => readPending(checkInSlot(visitId, actorId))?.key ?? null,
+  pendingCheckIn: (visitId, actorId) => readPending(checkInSlot(visitId, actorId)),
+  clearPendingCheckInKey: (visitId, actorId) => clearKey(checkInSlot(visitId, actorId)),
   facilitySessions: () => client.get('/access/managed-v3/sessions/facility'),
   checkOut: (sessionId, revision) => client.post(`/access/managed-v3/sessions/${id(sessionId)}/check-out`, {}, { headers: { 'If-Match': String(revision) } }),
   revoke: (sessionId, revision, reason) => client.post(`/access/managed-v3/sessions/${id(sessionId)}/revoke`, { reason }, { headers: { 'If-Match': String(revision) } }),

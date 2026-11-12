@@ -4,6 +4,7 @@ import {paperEvidence,canHandover,checkoutMessage} from '../src/lib/facilityPape
 import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import * as paperHelpers from '../src/lib/facilityPaperContract.js';
+import {handoverAccessMessage} from '../src/lib/facilityAccess.js';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 const now=Date.parse('2026-11-12T10:00:00Z');
@@ -66,6 +67,7 @@ test('actual Staff panel renders full-payment handover and preserves legacy bala
    '@/api/facilityHandoverApi':{default:{}},'@/api/facilityReviewApi':{facilityReservationApi:{}},'@/api/storageApi':{default:{}},
    '@/lib/authSession':{getAccessToken:()=> 'session',useAuthSession:()=>({accessToken:'session',user:{role:'FACILITY_STAFF',assignedFacilityId:'b'.repeat(24)}})},
    '@/lib/facilityPaperContract':paperHelpers,
+   '@/lib/facilityAccess':{handoverAccessMessage},
    '@/lib/useFacilityResource':{default:()=>({data,error:'',loading:false,reload(){}}),announceReviewChange(){}},
    '@/lib/facilityReview':{apiRecord:r=>r.data.data,recordId:r=>typeof r==='object'?r?._id:r,objectId:r=>/^[a-f\d]{24}$/.test(r||''),reviewError:String},
    '@/components/manager/ManagerUI':ui,

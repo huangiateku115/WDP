@@ -5,7 +5,7 @@ export function nativePaymentReturnPath(reservationId:unknown,paymentId:unknown,
      typeof paymentId!=='string'||!objectIdPattern.test(paymentId)||serviceType!=='SELF_STORAGE')return null;
   const params=new URLSearchParams({reservationId,paymentId,serviceType});
   if(cancel)params.set('cancel','true');
-  return `/payments/return?${params.toString()}`;
+  return `/payments/return?${params.toString()}` as const;
 }
 
 // Only restore the fixed payment callback path after sign-in; discard all other params.
