@@ -64,3 +64,11 @@ Tab lịch truy cập dẫn tới chức năng đã nối API. Sự cố chuyên
 9. Nếu kết quả check-in chưa rõ, thử lại giữ đúng nội dung và khóa yêu cầu theo từng tài khoản nhân viên. Nếu khách sửa lịch hoặc nhân viên đã bị thay đổi, tải lại và phân công lại; không ép xác nhận bằng dữ liệu cũ.
 
 Chưa thể tuyên bố hoàn tất toàn bộ mục 10: các phần cuối cần nhóm backend bổ sung API/quyền và kiểm thử tích hợp sau khi triển khai. Không sửa backend hay giao diện Customer/Admin/BOM trong đợt này.
+
+## Một điểm vào cho hàng hóa và tồn kho
+
+Menu Staff và Manager dùng **Hàng hóa và tồn kho** tại `/{role}/managed`. Các mục tồn theo lô, lịch sử và báo cáo tự quản không còn là menu ngang hàng gây nhầm lẫn. Báo cáo giám sát tự quản vẫn mở được từ danh sách hàng; các đường dẫn tra cứu trước đây được giữ.
+
+Bấm **Xem tồn và lịch sử** tại một mặt hàng để mở `/{role}/managed?itemId={id}`. Trang có ba phần **Tồn và vị trí**, **Lô và vật thể**, **Lịch sử biến động**. Giao diện tự chọn API theo `inventorySchemaVersion`, không cộng tồn giữa hai nguồn và không chuyển sang nguồn cũ nếu API tự quản lỗi. Mặt hàng không rõ phiên bản bị chặn thay vì suy đoán.
+
+Lịch sử tự quản phía Staff tiếp tục giới hạn theo phiên còn hiệu lực được giao. Tồn chưa đối soát không trình bày như số liệu đã xác nhận. Toàn bộ trang là chỉ đọc, không phục hồi thao tác nhập/xuất/di chuyển thay khách. Các URL tồn/lịch sử cũ tự đưa mặt hàng V3 về chi tiết chung sau khi kiểm tra cơ sở.

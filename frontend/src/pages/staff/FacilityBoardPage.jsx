@@ -36,7 +36,7 @@ export default function FacilityBoardPage({manager=false,assignments=false}) {
   const all=(resource.data?.rows||[]).filter(r=>!assignments||r.assignable),rows=boardDayRows(all,day,type,staff,search);
   const people=[...new Set(all.map(r=>r.assignee).filter(Boolean))].sort();
   const groups=[...new Set(rows.map(r=>r.assignable?r.assignee||'unassigned':'facility'))];
-  return <Screen title={assignments?"Phân công nhân viên":"Công việc hằng ngày"} notice="Dữ liệu trực tiếp của cơ sở. Tự tải lại mỗi phút, khi quay lại trang và sau cập nhật." action={<Button variant="outline" disabled={resource.loading} onClick={resource.reload}>Tải lại công việc</Button>}>
+  return <Screen title={assignments?"Phân công hỗ trợ và bảo trì":"Công việc hằng ngày"} notice="Dữ liệu trực tiếp của cơ sở. Tự tải lại mỗi phút, khi quay lại trang và sau cập nhật." action={<Button variant="outline" disabled={resource.loading} onClick={resource.reload}>Tải lại công việc</Button>}>
     {!permitted?<Panel title="Không có quyền hoặc chưa được phân công cơ sở"/>:<>
     <Panel title="Phạm vi công việc"><p>Ngày nhận và trả kho theo kỳ thuê. Biên bản và yêu cầu dùng ngày tạo. Bao gồm việc còn mở từ ngày trước. Phiếu bảo trì và hỗ trợ chưa có thời hạn cam kết xử lý.</p><p className="mt-2">Phiếu bảo trì và hỗ trợ có thể phân công nhân viên. Người lập biên bản không tự động là người được giao việc. Mở hồ sơ để phân công hoặc xử lý.</p></Panel>
     <Message error={resource.error}/>{resource.data?.errors.map(e=><Message key={e} error={'Incomplete data — '+e}/>)}

@@ -1,11 +1,12 @@
 import {useEffect, useRef, useState} from 'react';
-import {useSearchParams} from 'react-router-dom';
+import {useNavigate, useSearchParams} from 'react-router-dom';
 import inventoryApi from '@/api/inventoryApi';
 import {getAccessToken, useAuthSession} from '@/lib/authSession';
 import {inventoryId, validInventoryId} from '@/lib/inventoryRegistration';
 import {Screen, Panel, Details, Table, Button, Input, OpenLink, Message} from '@/components/manager/ManagerUI';
 
 export default function StockBalancePage() {
+  const navigate = useNavigate();
   const {user, accessToken} = useAuthSession();
   const workspace = user?.role === 'FACILITY_MANAGER' ? 'manager' : 'staff';
   const [params] = useSearchParams();
@@ -41,6 +42,8 @@ export default function StockBalancePage() {
           inventoryId(item.facilityId) !== inventoryId(user?.assignedFacilityId)) {
         throw Error('This Item is outside your assigned Facility.');
       }
+      if (currentRequest !== request.current || token !== getAccessToken()) return;
+      if (item.inventorySchemaVersion === 3) { navigate(`/${workspace}/managed?itemId=${itemId}`, {replace:true}); return; }
       const response = await inventoryApi.stockBalance(itemId);
       const balance = response.data?.data;
       if (response.data?.success !== true || inventoryId(balance?.itemId) !== itemId ||
@@ -61,7 +64,8 @@ export default function StockBalancePage() {
   }
 
   const balance = result?.balance;
-  return <Screen title="Tồn kho" description="Tồn hiện tại, lượng đang giữ và lô nhập trong cơ sở được phân công." notice="Tải lại tồn sau nhập, xuất hoặc di chuyển để xem số lượng mới nhất.">
+  return <Screen title="Tồn kho theo lô (luồng cũ)" description="Tra cứu tồn và lô hàng của luồng trước. Hàng hóa tự quản dùng trang Giám sát hàng hóa tự quản." notice="Tải lại tồn sau nhập, xuất hoặc di chuyển để xem số lượng mới nhất.">
+    <OpenLink to={`/${workspace}/managed`}>Về Hàng hóa và tồn kho</OpenLink>
     <Panel title="Tìm mặt hàng">
       <form className="facility-filter-row" onSubmit={load}>
         <Input aria-label="Mã mặt hàng" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
