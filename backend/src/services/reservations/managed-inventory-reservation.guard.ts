@@ -46,7 +46,7 @@ async function requireManagedInventoryReservation(
   return reservation;
 }
 
-/** Existing ACTIVE rentals plus version 2 reservations after their deposit may register items. */
+/** V3 customers may prepare SKU records after verified contract readiness or while active. */
 export function requireManagedInventoryReservationForRegistration(
   reservationId: string | Types.ObjectId,
   customerId: string | Types.ObjectId,
@@ -54,9 +54,10 @@ export function requireManagedInventoryReservationForRegistration(
   session?: ClientSession,
 ): Promise<IReservation> {
   return requireManagedInventoryReservation(reservationId, customerId, expectedFacilityId, session, {
+    bookingFlowVersion: 3,
     $or: [
-      { status: ReservationStatus.ACTIVE },
-      { status: ReservationStatus.DEPOSIT_PAID, bookingFlowVersion: 2, endDate: { $gt: new Date() } },
+      { status: ReservationStatus.CHECKIN_READY, endDate: { $gt: new Date() } },
+      { status: ReservationStatus.ACTIVE, startDate: { $lte: new Date() }, endDate: { $gt: new Date() } },
     ],
   });
 }

@@ -8,6 +8,7 @@ export enum ContractStatus {
 }
 
 export interface IContract extends Document {
+  managedAccessRevision?: number;
   contractCode: string;
   reservationId: Types.ObjectId;
   customerId: Types.ObjectId;

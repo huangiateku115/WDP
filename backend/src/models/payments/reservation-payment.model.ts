@@ -44,6 +44,7 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   }],
   providerSettlementStatus: { type: String, enum: Object.values(ProviderSettlementStatus), default: ProviderSettlementStatus.NOT_VERIFIED },
   applicationStatus: { type: String, enum: Object.values(PaymentApplicationStatus) },
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   status: { type: String, enum: Object.values(PaymentStatus), required: true, default: PaymentStatus.PENDING },
   succeededAt: { type: Date },
   failedAt: { type: Date },

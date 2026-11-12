@@ -33,6 +33,7 @@ export interface FacilityFields {
   deletedBy?: import('mongoose').Types.ObjectId;
 }
 export interface IFacility extends Document, FacilityFields {
+  managedAccessRevision?: number;
   createdAt: Date;
   updatedAt: Date;
 }

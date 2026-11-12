@@ -28,7 +28,6 @@ import {
   useInventoryBackend,
 } from "./InventoryBackendUI";
 import InventoryItemForm from "./InventoryItemForm";
-import RepeatedInboundRequests from './RepeatedInboundRequests';
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -183,7 +182,7 @@ export function InventoryRegisterIntegration() {
   return (
     <CustomerScreen
       title="Register inventory item"
-      description="Declare an item lot against an eligible Managed rental. V2 first registration requires DEPOSIT_PAID."
+      description="Declare a SKU against an eligible Managed V3 reservation. Registration records metadata only; it does not receive stock."
       notice={notice}
       action={
         <Button asChild variant="outline">
@@ -353,7 +352,7 @@ function Detail({ id }) {
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">
               Editing unavailable: only unplaced REGISTERED metadata linked to
-              an eligible ACTIVE Managed rental can be changed. Registration
+            an eligible CHECKIN_READY or in-term ACTIVE V3 Managed rental can be changed. Registration
               history remains readable.
             </p>
           )}
@@ -370,8 +369,7 @@ function Detail({ id }) {
             eligible={eligible}
           />
           <p className="text-sm text-slate-500">
-            Registration does not confirm physical stock. For Managed V2,
-            Request Inbound sends the item to Staff for receiving inspection.
+            Registration does not confirm physical stock or physical placement. Self-Inbound V3 is not yet released.
           </p>
           <CanonicalCustomerOutbound
             item={item}
@@ -379,7 +377,6 @@ function Detail({ id }) {
             loading={resource.loading || !!resource.error || rentals.loading}
             onRefresh={refresh}
           />
-          {item.managedReservationId && ['IN_STORAGE', 'CHECKED_OUT'].includes(item.status) && <RepeatedInboundRequests item={item} rental={rental} loading={rentals.loading||!!rentals.error}/>}
         </>
       )}
     </CustomerScreen>

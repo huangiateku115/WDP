@@ -8,7 +8,12 @@ async function start(): Promise<void> {
   const { default: app } = await import('./app');
   const { ManagedInventoryImageService } = await import('./services/upload/managed-inventory-image.service');
   const { ManagedReceivingEvidenceService } = await import('./services/upload/managed-receiving-evidence.service');
+  const { ManagedAccessService } = await import('./services/access/managed-access.service');
   const server = http.createServer(app);
+  const managedAccessExpiryTimer = setInterval(() => {
+    void ManagedAccessService.reconcileExpiredSessions().catch(() => console.error('Managed access session expiry reconciliation will retry on the next interval'));
+  }, 60 * 1000);
+  managedAccessExpiryTimer.unref();
   const imageCleanupTimer = setInterval(() => {
     void ManagedInventoryImageService.cleanupExpired().catch(() => console.error('Managed inventory image cleanup will retry on the next interval'));
     void ManagedReceivingEvidenceService.cleanupExpired().catch(() => console.error('Managed receiving evidence cleanup will retry on the next interval'));
@@ -20,6 +25,7 @@ async function start(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(imageCleanupTimer);
+    clearInterval(managedAccessExpiryTimer);
     const timeout = setTimeout(() => {
       console.error('Shutdown timed out');
       process.exit(1);
@@ -50,6 +56,8 @@ async function start(): Promise<void> {
   process.on('SIGTERM', () => { void shutdown(0); });
   try {
     await connectDatabase();
+    try { await ManagedAccessService.reconcileExpiredSessions(); }
+    catch { console.error('Managed access session expiry reconciliation will retry on the next interval'); }
     if (shuttingDown) return;
     await authKeycloakAdmin();
     if (shuttingDown) return;

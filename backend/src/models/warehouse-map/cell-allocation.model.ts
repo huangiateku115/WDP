@@ -9,6 +9,7 @@ const schema = new Schema<ICellAllocation>({
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
   status: { type: String, enum: Object.values(CellAllocationStatus), required: true },
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   holdExpiresAt: { type: Date },
 }, { timestamps: true });
 

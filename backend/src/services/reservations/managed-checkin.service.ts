@@ -257,33 +257,7 @@ export class ManagedCheckinService {
     const candidateId = id(reservationIdInput, 'reservationId');
     const candidate = await ReservationModel.findOne({ _id: candidateId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).select('_id bookingFlowVersion').lean().exec();
     if (candidate?.bookingFlowVersion === 3) return this.createV3Contract(candidateId, actor);
-    if (!enabled()) fail(404, 'Managed check-in flow is disabled');
-    const reservationId = candidateId;
-    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) fail(403, 'Assigned Facility representative required');
-    return tx(async session => {
-      const reservation = await loadV2Reservation(reservationId, session);
-      assertFacilityRepresentative(actor, reservation.facilityId);
-      await lockFacility(reservation.facilityId, session);
-      if (reservation.status !== ReservationStatus.DEPOSIT_PAID) fail(409, 'Initial Managed contract requires DEPOSIT_PAID reservation');
-      let contract = await ContractModel.findOne({ reservationId }).session(session).exec();
-      const snapshot = await currentContent(reservation, session);
-      if (!snapshot.ready) fail(409, 'Resolve all receiving discrepancies or rejected inspections and inspect at least one requested item before generating the contract');
-      const profile = await CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec();
-      const customer = await UserModel.findById(reservation.customerId).session(session).exec();
-      if (!profile || !customer) fail(409, 'Customer profile is unavailable for contract snapshot');
-      if (!contract) {
-        const content = snapshot.content;
-        const contentHash = hashContent(content);
-        const version = { version: 1, contentHash, content, createdBy: actor._id, createdAt: new Date() };
-        contract = new ContractModel({ contractCode: `CTR-${reservation.reservationCode}`, reservationId, customerId: reservation.customerId,
-          status: ContractStatus.DRAFT, customerSnapshot: { fullName: customer.displayName, email: customer.email, phone: customer.phone, address: profile.address },
-          pricingSnapshot: content.pricing, currentContentVersion: 1, contentVersions: [version], signatures: [], termsVersion: 'MI-V2-1' });
-        await contract.save({ session });
-      } else await ensureVersion(contract, reservation, actor._id, session);
-      await contract.save({ session });
-      await audit(reservation, actor, ManagedReservationAction.CONTRACT_VERSION_CREATED, { contractId: contract._id, version: contract.currentContentVersion }, session);
-      return contract;
-    });
+    fail(404, 'Only Managed Inventory V3 reservations can enter the current contract workflow');
   }
 
   private static async createV3Contract(reservationId: Types.ObjectId, actor: Actor) {

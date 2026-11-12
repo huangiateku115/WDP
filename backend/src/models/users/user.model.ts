@@ -36,6 +36,7 @@ const userSchema = new Schema<IUser>(
       ref: 'Facility',
       default: null
     },
+    managedAccessScheduleRevision: { type: Number, min: 0, default: 0, select: false },
     isActive: { 
       type: Boolean, 
       default: true 

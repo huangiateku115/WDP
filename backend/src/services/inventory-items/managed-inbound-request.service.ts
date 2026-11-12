@@ -266,6 +266,7 @@ async function lockReservationFence(scope: Scope, session: ClientSession, option
     serviceType: FacilityServiceType.MANAGED_INVENTORY };
   const current = await ReservationModel.findOne(identity as any).session(session).exec() as any;
   if (!current) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Managed reservation is missing or outside Item scope');
+  if (current.bookingFlowVersion === 3) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Managed V3 stock operations are unavailable until the V3 inbound workflow is enabled');
   if (options.rejectClosure && current.activeClosureRequestId) {
     return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_INELIGIBLE, 'Inbound changes are blocked while reservation closure is pending');
   }

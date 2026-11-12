@@ -1,0 +1,57 @@
+import client from './axiosClient';
+const id = value => encodeURIComponent(value);
+const fallbackKeys = new Map();
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+const fingerprint = payload => JSON.stringify(canonical(payload));
+const readPending = slot => {
+  let raw = fallbackKeys.get(slot);
+  try { raw = globalThis.sessionStorage?.getItem(slot) ?? raw; } catch { /* sessionStorage can be unavailable */ }
+  if (!raw) return null;
+  try { const parsed = JSON.parse(raw); if (parsed?.key) return parsed; } catch { /* accept a legacy key as unresolved */ }
+  return { key: raw, fingerprint: null, payload: null };
+};
+const savePending = (slot, entry) => {
+  const serialized = JSON.stringify(entry);
+  try { if (globalThis.sessionStorage) { globalThis.sessionStorage.setItem(slot, serialized); fallbackKeys.delete(slot); return; } } catch { /* keep an in-memory fallback for this page */ }
+  fallbackKeys.set(slot, serialized);
+};
+const keyFor = (slot, payload) => {
+  const requestFingerprint = fingerprint(payload), pending = readPending(slot);
+  if (pending) {
+    if (pending.fingerprint !== requestFingerprint) {
+      const error = new Error('Đang có yêu cầu trước chưa được đối soát. Hãy khôi phục đúng nội dung yêu cầu đó trước khi tạo thao tác khác.');
+      error.code = 'IDEMPOTENCY_PAYLOAD_MISMATCH'; throw error;
+    }
+    return pending.key;
+  }
+  const value = globalThis.crypto?.randomUUID?.() || `mi-access-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  savePending(slot, { key: value, fingerprint: requestFingerprint, payload: canonical(payload) });
+  return value;
+};
+const clearKey = slot => { try { globalThis.sessionStorage?.removeItem(slot); } catch { /* no-op */ } fallbackKeys.delete(slot); };
+const createSlot = 'managed-access:create-visit:pending';
+const checkInSlot = visitId => `managed-access:check-in:${visitId}:pending`;
+export const managedAccessApi = {
+  createVisit: async payload => { const response = await client.post('/access/managed-v3/visits', payload, { headers: { 'Idempotency-Key': keyFor(createSlot, payload) } }); clearKey(createSlot); return response; },
+  pendingCreateKey: () => readPending(createSlot)?.key ?? null,
+  pendingCreate: () => readPending(createSlot),
+  pendingCreateMatches: payload => readPending(createSlot)?.fingerprint === fingerprint(payload),
+  clearPendingCreateKey: () => clearKey(createSlot),
+  myVisits: () => client.get('/access/managed-v3/visits/me'),
+  visit: visitId => client.get(`/access/managed-v3/visits/${id(visitId)}`),
+  amendVisit: (visitId, payload, revision) => client.patch(`/access/managed-v3/visits/${id(visitId)}`, payload, { headers: { 'If-Match': String(revision) } }),
+  cancelVisit: (visitId, revision) => client.post(`/access/managed-v3/visits/${id(visitId)}/cancel`, {}, { headers: { 'If-Match': String(revision) } }),
+  mySessions: () => client.get('/access/managed-v3/sessions/me'),
+  session: sessionId => client.get(`/access/managed-v3/sessions/${id(sessionId)}`),
+  facilityVisits: () => client.get('/access/managed-v3/visits/facility'),
+  staff: () => client.get('/access/managed-v3/visits/facility/staff'),
+  assign: (visitId, staffId, reason, revision) => client.put(`/access/managed-v3/visits/${id(visitId)}/assignment`, { staffId, reason }, { headers: { 'If-Match': String(revision) } }),
+  checkIn: async (visitId, attestation) => { const slot = checkInSlot(visitId); const response = await client.post(`/access/managed-v3/visits/${id(visitId)}/check-in`, attestation, { headers: { 'Idempotency-Key': keyFor(slot, attestation) } }); clearKey(slot); return response; },
+  pendingCheckInKey: visitId => readPending(checkInSlot(visitId))?.key ?? null,
+  pendingCheckIn: visitId => readPending(checkInSlot(visitId)),
+  clearPendingCheckInKey: visitId => clearKey(checkInSlot(visitId)),
+  facilitySessions: () => client.get('/access/managed-v3/sessions/facility'),
+  checkOut: (sessionId, revision) => client.post(`/access/managed-v3/sessions/${id(sessionId)}/check-out`, {}, { headers: { 'If-Match': String(revision) } }),
+  revoke: (sessionId, revision, reason) => client.post(`/access/managed-v3/sessions/${id(sessionId)}/revoke`, { reason }, { headers: { 'If-Match': String(revision) } }),
+};

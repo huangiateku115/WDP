@@ -32,6 +32,12 @@ export const simulateUnlock = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Invalid Reservation' });
     }
 
+    // Managed V3 access is issued only through Staff-verified Access Sessions.
+    // Never let a V3 reservation fall back to the legacy simulated PIN route.
+    if (reservation.serviceType === 'MANAGED_INVENTORY' && reservation.bookingFlowVersion === 3) {
+      return res.status(409).json({ success: false, code: 'MANAGED_V3_ACCESS_SESSION_REQUIRED', message: 'Managed Inventory V3 requires an active, Staff-verified Access Session.' });
+    }
+
     // Kiểm tra quyền: nếu là Customer thì phải là chủ sở hữu của đơn
     if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Bạn không có quyền mở khóa cho đơn thuê này.' });
