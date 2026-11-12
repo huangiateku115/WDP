@@ -4,8 +4,13 @@ import contractApi from '@/api/contractApi';
 import { useAuthSession, getAccessToken } from '@/lib/authSession';
 import { apiRecord, objectId, recordId, reviewError } from '@/lib/facilityReview';
 import { Screen, Panel, Details, Message, Button, Select, Textarea } from '@/components/manager/ManagerUI';
+import ManagedPaperLifecyclePanel from './ManagedPaperLifecyclePanel';
 
 export default function ManagedV3LifecyclePanel({ reservation, onRefresh }) {
+  if (reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1') return <ManagedPaperLifecyclePanel reservation={reservation} onRefresh={onRefresh} />;
+  return <LegacyManagedV3LifecyclePanel reservation={reservation} onRefresh={onRefresh} />;
+}
+function LegacyManagedV3LifecyclePanel({ reservation, onRefresh }) {
   const { accessToken, user } = useAuthSession();
   const [contract, setContract] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [condition, setCondition] = useState('GOOD'), [notes, setNotes] = useState('');
@@ -56,8 +61,8 @@ export default function ManagedV3LifecyclePanel({ reservation, onRefresh }) {
     {!contract && reservation.status === 'DEPOSIT_PAID' && <Button disabled={busy} onClick={createContract}>{busy ? "Đang tạo…" : "Tạo bản chốt hợp đồng phiên bản 3"}</Button>}
     {contract?.status === 'DRAFT' && !contract.signatures?.some(s => s.version === active?.version && s.contentHash === active?.contentHash && s.signerRole === 'CUSTOMER') && <p>Cần chữ ký khách trên bản chốt hiện hành. Máy chủ từ chối chữ ký cho phiên bản đã thay đổi.</p>}
     {contract?.status === 'DRAFT' && contract.signatures?.some(s => s.version === active?.version && s.contentHash === active?.contentHash && s.signerRole === 'CUSTOMER') && <Button disabled={busy} onClick={signFacility}>{busy ? "Đang ký…" : "Ký hợp đồng hiện hành với tư cách đại diện cơ sở"}</Button>}
-    {reservation.status === 'PAID' && <div className="mt-4 space-y-3"><Select label="Tình trạng kho khi bàn giao quyền truy cập" value={condition} onChange={setCondition} options={[["GOOD","Good"],["MINOR_DAMAGE","Có hư hỏng nhẹ đã ghi nhận"],["UNSAFE","Không an toàn"]]}/><Textarea aria-label="Ghi chú bàn giao quyền truy cập" required maxLength={1000} value={notes} onChange={event=>setNotes(event.target.value)} placeholder="Ghi thông tin quyền truy cập hoặc ghi chú bàn giao"/><Button disabled={busy||!notes.trim()||contract?.status!=='SIGNED'} onClick={handover}>{busy ? "Đang ghi nhận…" : "Xác nhận bàn giao quyền truy cập"}</Button></div>}
-    {reservation.status === 'ACTIVE' && <p role="status">Đã ghi nhận bàn giao quyền truy cập lúc {reservation.handoverAt || '—'} by {recordId(reservation.handoverByStaffId) || '—'}. Nhập hàng thực tế lần đầu là bước riêng.</p>}
+    {reservation.status === 'PAID' && <div className="mt-4 space-y-3"><Select label="Tình trạng kho khi bàn giao quyền truy cập" value={condition} onChange={setCondition} options={[["GOOD","Tốt"],["MINOR_DAMAGE","Có hư hỏng nhẹ đã ghi nhận"],["UNSAFE","Không an toàn"]]}/><Textarea aria-label="Ghi chú bàn giao quyền truy cập" required maxLength={1000} value={notes} onChange={event=>setNotes(event.target.value)} placeholder="Ghi thông tin quyền truy cập hoặc ghi chú bàn giao"/><Button disabled={busy||!notes.trim()||contract?.status!=='SIGNED'} onClick={handover}>{busy ? "Đang ghi nhận…" : "Xác nhận bàn giao quyền truy cập"}</Button></div>}
+    {reservation.status === 'ACTIVE' && <p role="status">Đã ghi nhận bàn giao quyền truy cập lúc {reservation.handoverAt || '—'} bởi {recordId(reservation.handoverByStaffId) || '—'}. Nhập hàng thực tế lần đầu là bước riêng.</p>}
     <p className="mt-3 text-sm">Hợp đồng phiên bản 3 dùng bản chốt ô, dung lượng, ngày thuê, kỳ hạn và giá. Bàn giao kích hoạt đơn thuê ngay cả khi chưa có hàng.</p>
   </Panel>;
 }
