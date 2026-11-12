@@ -57,24 +57,16 @@ export function assessPayosEligibility(reservation, contract, now = Date.now(), 
   if (!reservationId) return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_ID" };
   const fullUpfront = reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1";
   if (reservation?.serviceType === "MANAGED_INVENTORY" && reservation?.bookingFlowVersion === 3) {
+    if (!fullUpfront) return { eligible: false, purpose: null, reason: "FULL_RENT_REQUIRED" };
     const owner = normalizePayosReferenceId(reservation.customerId);
     if (expectedCustomerId !== undefined && (!owner || owner !== normalizePayosReferenceId(expectedCustomerId))) return { eligible: false, purpose: null, reason: "CONTRACT_CUSTOMER_MISMATCH" };
     if (reservation.status === "RESERVED") {
       const expiry = Date.parse(reservation.expiresAt || "");
       return Number.isFinite(expiry) && expiry > now
-        ? { eligible: true, purpose: fullUpfront ? "FULL_RENT" : "DEPOSIT", reason: "ELIGIBLE" }
+        ? { eligible: true, purpose: "FULL_RENT", reason: "ELIGIBLE" }
         : { eligible: false, purpose: null, reason: "RESERVATION_HOLD_EXPIRED" };
     }
-    if (fullUpfront && reservation.status === "PAID") return { eligible: false, purpose: null, reason: "FULL_RENT_ALREADY_APPLIED" };
-    if (reservation.status === "DEPOSIT_PAID") {
-      if (!payosContractMatchesIdentity(contract, reservation, reservation.customerId)) return { eligible: false, purpose: null, reason: "CONTRACT_RESERVATION_MISMATCH" };
-      const version = contract.currentContentVersion;
-      const active = contract.contentVersions?.find(entry => entry.version === version);
-      const current = (contract.signatures || []).filter(signature => signature.version === version && signature.contentHash === active?.contentHash);
-      if (contract.status !== "SIGNED" || !active || !current.some(signature => signature.signerRole === "CUSTOMER") ||
-          !current.some(signature => ["FACILITY_STAFF", "FACILITY_MANAGER"].includes(signature.signerRole))) return { eligible: false, purpose: null, reason: "CONTRACT_NOT_SIGNED" };
-      return { eligible: true, purpose: "BALANCE", reason: "ELIGIBLE" };
-    }
+    if (reservation.status === "PAID") return { eligible: false, purpose: null, reason: "FULL_RENT_ALREADY_APPLIED" };
     return { eligible: false, purpose: null, reason: "INVALID_RESERVATION_STATUS" };
   }
   if (reservation?.serviceType !== "SELF_STORAGE") {

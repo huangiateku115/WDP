@@ -26,7 +26,14 @@ test('invalid IDs, suffixes and unconfirmed operation variants are not permitted
  for(const url of [`/inbound-requests/${id}/confirm/extra`,`/outbound-requests/${id}/confirm/extra`,`/inventory-items/${id}/relocate-canonical/extra`])assert.throws(()=>assertConfirmedRequest({method:'POST',url}),/not confirmed/);
 });
 test('existing Customer confirmed API entries remain allowed',()=>{
- for(const [method,url] of [['POST','/auth/login'],['GET','/users/me/'],['GET','/reservations/me'],['POST','/reservations'],['GET','/warehouse-map'],['GET',`/racks/${id}/detail-map`],['POST','/inventory-items/image-uploads'],['GET',`/inventory-items/${id}/movements`],['POST',`/inventory-items/${id}/inbound-request`],['POST',`/inventory-items/${id}/outbound-request`],['PATCH',`/contracts/${id}/sign`]])assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
+ for(const [method,url] of [['POST','/auth/login'],['GET','/users/me/'],['GET','/reservations/me'],['POST','/reservations'],['GET','/warehouse-map'],['GET',`/racks/${id}/detail-map`],['POST','/inventory-items/image-uploads'],['GET',`/inventory-items/${id}/movements`],['POST',`/inventory-items/${id}/outbound-request`],['PATCH',`/contracts/${id}/sign`]])assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
+ assert.throws(()=>assertConfirmedRequest({method:'POST',url:`/inventory-items/${id}/inbound-request`}),/not confirmed/);
+});
+test('Managed V3 Access Visit and Session paths are exact and preserve methods',()=>{
+ const rows=[['POST','access/managed-v3/visits'],['GET','access/managed-v3/visits/me'],['GET','access/managed-v3/visits/facility'],['GET','access/managed-v3/visits/facility/staff'],['GET',`access/managed-v3/visits/${id}`],['PATCH',`access/managed-v3/visits/${id}`],['POST',`access/managed-v3/visits/${id}/cancel`],['PUT',`access/managed-v3/visits/${id}/assignment`],['POST',`access/managed-v3/visits/${id}/check-in`],['GET','access/managed-v3/sessions/me'],['GET','access/managed-v3/sessions/facility'],['GET',`access/managed-v3/sessions/${id}`],['POST',`access/managed-v3/sessions/${id}/check-out`],['POST',`access/managed-v3/sessions/${id}/revoke`]];
+ for(const [method,path] of rows)assert.doesNotThrow(()=>assertConfirmedRequest({method,url:`/${path}`}));
+ for(const [method,path] of rows)assert.throws(()=>assertConfirmedRequest({method,url:`/${path}/extra`}),/not confirmed/);
+ assert.throws(()=>assertConfirmedRequest({method:'DELETE',url:`/access/managed-v3/sessions/${id}`}),/not confirmed/);
 });
 test('allowlist leaves operation/concurrency headers intact',()=>{
  const headers={'Idempotency-Key':'fixture-key','If-Match':'"3"'};

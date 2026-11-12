@@ -322,6 +322,8 @@ export class ManagedCanonicalRelocationService {
     const reservation = await ReservationModel.findOne({ _id: item.managedReservationId, customerId: item.customerId,
       facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, status: ReservationStatus.ACTIVE,
       startDate: { $lte: now }, endDate: { $gt: now } }).select('_id').lean().exec();
+    if ((item as any).inventorySchemaVersion === 3) return fail(409, ManagedStockErrorCode.CANONICAL_RELOCATION_INVALID,
+      'Managed V3 relocation is unavailable until the V3 relocation workflow is enabled');
     if (!reservation || item.status !== InventoryItemStatus.IN_STORAGE || !item.currentCellId) return fail(409,
       ManagedStockErrorCode.CANONICAL_RELOCATION_INVALID, 'Relocation requires an in-term ACTIVE Managed Inventory Item in storage');
     const [movements, balance, inbound, requests] = await Promise.all([

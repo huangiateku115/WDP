@@ -28,6 +28,7 @@ const facilitySchema = new Schema<IFacility>({
     },
   },
   status: { type: String, enum: Object.values(FacilityStatus), default: FacilityStatus.ACTIVE, index: true },
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   description: { type: String, trim: true },
   operatingHours: { type: String, trim: true },
   images: {

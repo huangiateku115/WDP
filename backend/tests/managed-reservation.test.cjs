@@ -452,11 +452,13 @@ test('VND rounding is explicit and deposit above total is rejected', () => {
   assert.throws(() => calculateRentalPaymentBreakdown({ rentAmount: 100, depositAmount: 101 }), { status: 409 });
 });
 
-test('Managed v2 routes are customer-only and the schema keeps flow version optional for legacy records', () => {
+test('Managed routes no longer expose approval, activation or legacy Deposit/Balance/mock paths', () => {
   const router = require('../dist/routes/reservation.routes').default;
   const rows = router.stack.filter(layer => layer.route).map(layer => `${Object.keys(layer.route.methods)[0].toUpperCase()} ${layer.route.path}`);
-  assert.ok(rows.includes('POST /managed/:id/deposit'));
-  assert.ok(rows.includes('POST /managed/:id/deposit/mock-confirm'));
+  for (const retired of ['PATCH /managed/:id/approve', 'PATCH /managed/:id/reject', 'PATCH /managed/:id/activate',
+    'POST /managed/:id/deposit', 'POST /managed/:id/deposit/mock-confirm', 'POST /managed/:id/balance',
+    'POST /managed/:id/balance/mock-confirm', 'POST /managed/:id/mock-pay']) assert.equal(rows.includes(retired), false, retired);
+  assert.ok(rows.includes('POST /managed/:id/payments/payos'));
   assert.equal(Reservation.schema.path('bookingFlowVersion').options.default, undefined);
   assert.deepEqual(Reservation.schema.path('bookingFlowVersion').enumValues, [2, 3]);
   assert.ok(Reservation.schema.path('status').enumValues.includes('DEPOSIT_PAID'));

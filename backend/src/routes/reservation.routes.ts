@@ -22,16 +22,8 @@ router.get('/managed/capacity/:facilityId', requireRole([UserRole.CUSTOMER, User
 router.put('/managed/capacity/:facilityId', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.configureCapacity);
 router.get('/managed/:id/closure-readiness', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.getClosureReadiness);
 router.get('/managed/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.get);
-router.patch('/managed/:id/approve', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.approve);
-router.patch('/managed/:id/reject', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.reject);
 router.patch('/managed/:id/cancel', requireRole([UserRole.CUSTOMER]), ManagedReservationController.cancel);
-router.post('/managed/:id/deposit', requireRole([UserRole.CUSTOMER]), ManagedReservationController.initiateDeposit);
-router.post('/managed/:id/deposit/mock-confirm', requireRole([UserRole.CUSTOMER]), ManagedReservationController.confirmMockDeposit);
 router.post('/managed/:id/contract', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedCheckinController.createContract);
-router.post('/managed/:id/balance', requireRole([UserRole.CUSTOMER]), ManagedCheckinController.initiateBalance);
-router.post('/managed/:id/balance/mock-confirm', requireRole([UserRole.CUSTOMER]), ManagedCheckinController.confirmMockBalance);
-router.post('/managed/:id/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.mockPay);
-router.patch('/managed/:id/activate', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ManagedReservationController.activate);
 router.post('/managed/:id/handover', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedReservationController.confirmHandover);
 router.post('/managed/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageCheckout);
 router.get('/managed/:id/payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.listSelfStoragePayments);

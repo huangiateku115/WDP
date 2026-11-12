@@ -9,6 +9,7 @@ const dimensionsSchema = new Schema({
 }, { _id: false });
 
 const schema = new Schema<IInventoryItem>({
+  inventorySchemaVersion: { type: Number, enum: [3], immutable: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   managedReservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },

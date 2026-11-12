@@ -1486,7 +1486,7 @@ test("unknown checkout outcome refreshes read-only history, displays the origina
   }
 });
 
-test("Mismatched contract blocks Deposit without hiding the Reservation; Managed Inventory remains separately routed", () => {
+test("Mismatched contract blocks payment; legacy Managed Inventory payment is read-only", () => {
   const mismatched = checkoutModule({
     contract: { ...draftContract, reservationId: facilityId },
   });
@@ -1510,7 +1510,8 @@ test("Mismatched contract blocks Deposit without hiding the Reservation; Managed
     },
   });
   const managedHtml = renderToStaticMarkup(component());
-  assert.match(managedHtml, /Managed Inventory payments/);
+  assert.match(managedHtml, /Thanh toán Managed lịch sử/);
+  assert.match(managedHtml, /Chỉ Reservation Managed V3 mới dùng PayOS Hosted Checkout/);
   assert.doesNotMatch(managedHtml, /payos-checkout/);
   assert.doesNotMatch(managedHtml, /Simulated Payment/);
 });

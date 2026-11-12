@@ -75,7 +75,7 @@ export function assertConfirmedRequest(config) {
   const inventoryCustomer =
     (method === "POST" &&
       (path === "inventory-items" ||
-        /^inventory-items\/[a-f\d]{24}\/(inbound-request|outbound-request)$/i.test(
+        /^inventory-items\/[a-f\d]{24}\/outbound-request$/i.test(
           path,
         ))) ||
     (method === "GET" &&
@@ -121,6 +121,19 @@ export function assertConfirmedRequest(config) {
       /^reservations\/managed\/[a-f\d]{24}\/contract$/i.test(path)) ||
     (method === "PATCH" &&
       /^contracts\/[a-f\d]{24}\/sign\/facility$/i.test(path));
+  const managedAccess =
+    (method === "POST" &&
+      (/^access\/managed-v3\/visits$/i.test(path) ||
+        /^access\/managed-v3\/visits\/[a-f\d]{24}\/(cancel|check-in)$/i.test(path) ||
+        /^access\/managed-v3\/sessions\/[a-f\d]{24}\/(check-out|revoke)$/i.test(path))) ||
+    (method === "GET" &&
+      (/^access\/managed-v3\/visits\/(me|facility|facility\/staff)$/i.test(path) ||
+        /^access\/managed-v3\/visits\/[a-f\d]{24}$/i.test(path) ||
+        /^access\/managed-v3\/sessions\/(me|facility)$/i.test(path) ||
+        /^access\/managed-v3\/sessions\/[a-f\d]{24}$/i.test(path))) ||
+    ((method === "PATCH" || method === "PUT") &&
+      (/^access\/managed-v3\/visits\/[a-f\d]{24}$/i.test(path) ||
+        /^access\/managed-v3\/visits\/[a-f\d]{24}\/assignment$/i.test(path)));
   const selfStoragePayment =
     method === "POST" &&
     (/^reservations\/[a-f\d]{24}\/(deposit|balance)$/i.test(path) ||
@@ -265,6 +278,7 @@ export function assertConfirmedRequest(config) {
   const allowed =
     facilityManagedReadiness ||
     selfStorageCheckoutAndRenew ||
+    managedAccess ||
     staffInventoryOperations ||
     customerInventoryRequests ||
     facilityHandover ||

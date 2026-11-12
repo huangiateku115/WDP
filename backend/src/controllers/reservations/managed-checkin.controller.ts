@@ -15,5 +15,3 @@ export const receivingContext = run(req => ManagedCheckinService.receivingContex
 export const uploadReceivingEvidence = run(req => ManagedReceivingEvidenceService.upload(req.params.itemId, req.file, req.get('Idempotency-Key'), req.user!), 201);
 export const createContract = run(req => ManagedCheckinService.createOrRefreshContract(req.params.id, req.user!), 201);
 export const signFacilityContract = run(req => ManagedCheckinService.signFacilityContract(req.params.id, req.user!));
-export const initiateBalance = run(req => ManagedCheckinService.initiateBalance(req.params.id, req.body, req.user!), 201);
-export const confirmMockBalance = run(req => ManagedCheckinService.confirmMockBalance(req.params.id, req.body, req.user!));
