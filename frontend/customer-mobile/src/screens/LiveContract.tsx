@@ -5,6 +5,9 @@ import {Linking} from 'react-native';
 import {useLocalSearchParams} from 'expo-router';
 import {apiIssue} from '../api/client';
 import {loadContractReview,submitReviewedContract} from '../api/selfStorageContract';
+import {hasPaperProof} from '../domain/livePayment';
+import {refId} from '../api/contracts/core';
+import {reservationProgress} from '../domain/reservationProgress';
 import {contractText,reviewDocument,reviewFingerprint} from '../domain/contractReview';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,StateCard} from '../components/ui';
@@ -25,6 +28,8 @@ function ContractReview({id,owner}:{id:string;owner:string}){
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const data=useResource(owner+':'+id+':'+revision,signal=>loadContractReview(id,owner,signal));
   const review=data.data,contract=review?.contract;
+  const rental = review?.reservation;
+  const upfront = rental?.serviceType === 'SELF_STORAGE' && rental.rentalPaymentFlow === 'FULL_UPFRONT_V1';
   const document=contract&&reviewDocument(contract);
   const reviewed=contract&&review?reviewFingerprint(contract,review.reservation):'';
   const needsPdf=!!document?.pdf&&!document.content&&!document.terms.length;
@@ -86,7 +91,17 @@ function ContractReview({id,owner}:{id:string;owner:string}){
       <AppText>Kỳ thuê: {dateLabel(review.reservation.startDate)} – {dateLabel(review.reservation.endDate)}</AppText>
       {typeof contract.pricingSnapshot?.estimatedRent==='number'&&Number.isFinite(contract.pricingSnapshot.estimatedRent)&&
         <AppText>Tiền thuê theo hợp đồng: {money(contract.pricingSnapshot.estimatedRent)}</AppText>}
-      {typeof contract.pricingSnapshot?.depositAmount==='number'&&Number.isFinite(contract.pricingSnapshot.depositAmount)&&
+      {upfront && rental && <>
+        <AppText>Cơ sở: {typeof rental.facilityId === 'object' ? contractText(rental.facilityId.name) ?? refId(rental.facilityId) : refId(rental.facilityId)}</AppText>
+        <AppText>Kho: {typeof rental.storageUnitId === 'object' && rental.storageUnitId ? contractText(rental.storageUnitId.unitCode) ?? refId(rental.storageUnitId) : rental.storageUnitId ?? 'Chưa có thông tin'}</AppText>
+        <AppText accessibilityLiveRegion="polite">{reservationProgress(rental)?.summary}</AppText>
+        {rental.status === 'PAID' && contract.status === 'DRAFT' && <>
+          <AppText>Vui lòng đến cơ sở ký hợp đồng giấy. Nhân viên sẽ xác minh bản đã ký.</AppText>
+          {rental.signingDeadline && <AppText>Hạn ký: {new Date(rental.signingDeadline).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}</AppText>}
+        </>}
+        {rental.status === 'CHECKIN_READY' && hasPaperProof(contract) && <AppText>Đã xác minh hợp đồng giấy. Vui lòng chờ nhân viên bàn giao kho.</AppText>}
+      </>}
+      {!upfront&&typeof contract.pricingSnapshot?.depositAmount==='number'&&Number.isFinite(contract.pricingSnapshot.depositAmount)&&
         <AppText>Tiền cọc theo hợp đồng: {money(contract.pricingSnapshot.depositAmount)}</AppText>}
       {signatureRecorded&&signedAt?<AppText>Thời điểm Customer ký: {dateLabel(signedAt)}</AppText>:null}
       {document?.content?<AppText selectable>{document.content}</AppText>:null}

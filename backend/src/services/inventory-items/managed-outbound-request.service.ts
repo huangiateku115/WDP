@@ -124,6 +124,7 @@ async function lockReservationFence(scope: Pick<Scope, 'reservationId' | 'custom
     facilityId: scope.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
   const current = await ReservationModel.findOne(identity).session(session).exec();
   const now = options.now ?? new Date();
+  if (current?.bookingFlowVersion === 3) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'Managed V3 stock operations are unavailable until the V3 outbound workflow is enabled');
   if (!current || (options.requireActiveTerm && (current.status !== ReservationStatus.ACTIVE ||
       current.startDate > now || current.endDate <= now))) {
     return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'An in-term ACTIVE Managed Inventory reservation is required');

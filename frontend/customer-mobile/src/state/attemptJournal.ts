@@ -10,7 +10,7 @@ const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$
 type Attempt=z.infer<typeof attemptSchema>;
 const claiming=new Set<string>();
 
-export async function journal(scope:'booking'|'deposit'|'balance',owner:string,identity:string) {
+export async function journal(scope:'booking'|'deposit'|'balance'|'full-rent',owner:string,identity:string) {
   const hash=await digestStringAsync(CryptoDigestAlgorithm.SHA256,JSON.stringify([apiBase,objectId.parse(owner),scope,identity]));
   const key='wdp.mobile.attempt.'+hash;
   const store={
@@ -27,11 +27,12 @@ export async function journal(scope:'booking'|'deposit'|'balance',owner:string,i
       if(Platform.OS==='web')globalThis.localStorage.removeItem(key);
       else await SecureStore.deleteItemAsync(key);
     },
-    async claim(value:Attempt){
+    async claim(value:Attempt, replaceKey?: string){
       if(claiming.has(key))return false;
       claiming.add(key);
       try{
-        if(await store.read())return false;
+        const previous = await store.read();
+        if (previous?.key !== replaceKey) return false;
         await store.write(value);
         return true;
       }finally{claiming.delete(key);}

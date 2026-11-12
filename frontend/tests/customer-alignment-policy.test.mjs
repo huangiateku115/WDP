@@ -5,7 +5,7 @@ import {inventoryLifecycleContext} from '../src/components/customer/inventory/cu
 import {selfStorageAlternatives} from '../src/components/customer/selfStorageSuggestions.js';
 import {reservationLifecycle} from '../src/lib/customerReservationService.js';
 
-const id='a'.repeat(24),rental={serviceType:'MANAGED_INVENTORY',status:'ACTIVE',inventoryVersion:3};
+const id='a'.repeat(24),rental={serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',inventoryVersion:3,startDate:new Date(Date.now()-1000).toISOString(),endDate:new Date(Date.now()+86400000).toISOString()};
 test('Customer closure policy rejects writes, carries real version and does not globally block outbound/cleanup',()=>{
  const context=inventoryLifecycleContext({...rental,activeClosureRequestId:id});assert.equal(context.mayAddOrEdit,false);assert.equal(context.inventoryVersion,3);assert.equal(context.status,'ACTIVE');assert.match(context.reason,/cancellation remain available/);assert.equal(inventoryLifecycleContext(null).known,false);assert.equal(inventoryLifecycleContext({...rental,inventoryVersion:'3'}).known,false);assert.equal(inventoryLifecycleContext(rental).mayAddOrEdit,true);
 });

@@ -11,6 +11,7 @@ const contractSchema = new Schema<IContract>({
     enum: Object.values(ContractStatus), 
     default: ContractStatus.DRAFT 
   },
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   
   customerSnapshot: { type: Schema.Types.Mixed, required: true },
   pricingSnapshot: { type: Schema.Types.Mixed, required: true },

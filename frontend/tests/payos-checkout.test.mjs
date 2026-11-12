@@ -229,7 +229,7 @@ test("new Self Storage and Managed V3 reservations select only one full-rent Pay
   const managed = { _id: reservationId, customerId, serviceType: "MANAGED_INVENTORY", bookingFlowVersion: 3,
     rentalPaymentFlow: "FULL_UPFRONT_V1", status: "RESERVED", expiresAt };
   assert.equal(assessPayosEligibility(managed, null, Date.now(), customerId).purpose, "FULL_RENT");
-  assert.equal(assessPayosEligibility({ ...managed, rentalPaymentFlow: undefined }, null, Date.now(), customerId).purpose, "DEPOSIT");
+  assert.equal(assessPayosEligibility({ ...managed, rentalPaymentFlow: undefined }, null, Date.now(), customerId).purpose, null);
 
   const calls = [];
   const payment = paymentRecord({ purpose: "FULL_RENT", amount: 1_200_000 });
@@ -786,19 +786,20 @@ test("Balance eligibility requires CHECKIN_READY and verified signed-paper proof
   );
 });
 
-test("Managed V3 Deposit and Balance eligibility follow V3 hold, current hash signatures, and ownership", () => {
+test("Managed V3 PayOS permits only full-rent checkout on an owned current hold", () => {
   const v3 = {
     _id: reservationId,
     customerId,
     facilityId: "507f1f77bcf86cd799439015",
     serviceType: "MANAGED_INVENTORY",
     bookingFlowVersion: 3,
+    rentalPaymentFlow: "FULL_UPFRONT_V1",
     status: "RESERVED",
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   };
   assert.equal(
     assessPayosEligibility(v3, null, Date.now(), customerId).purpose,
-    "DEPOSIT",
+    "FULL_RENT",
   );
   assert.equal(
     assessPayosEligibility(
@@ -809,36 +810,19 @@ test("Managed V3 Deposit and Balance eligibility follow V3 hold, current hash si
     ).purpose,
     null,
   );
-  const active = { version: 1, contentHash: "a".repeat(64) };
-  const contract = {
-    _id: contractId,
-    reservationId,
-    customerId,
-    status: "SIGNED",
-    currentContentVersion: 1,
-    contentVersions: [active],
-    signatures: [
-      { version: 1, contentHash: active.contentHash, signerRole: "CUSTOMER" },
-      {
-        version: 1,
-        contentHash: active.contentHash,
-        signerRole: "FACILITY_STAFF",
-      },
-    ],
-  };
   assert.equal(
     assessPayosEligibility(
       { ...v3, status: "DEPOSIT_PAID", expiresAt: undefined },
-      contract,
+      null,
       Date.now(),
       customerId,
     ).purpose,
-    "BALANCE",
+    null,
   );
   assert.equal(
     assessPayosEligibility(
-      { ...v3, status: "DEPOSIT_PAID" },
-      { ...contract, signatures: [contract.signatures[0]] },
+      { ...v3, status: "RESERVED", rentalPaymentFlow: undefined },
+      null,
       Date.now(),
       customerId,
     ).purpose,
@@ -1277,7 +1261,7 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
     "if (serviceType(resource.data) === SELF_STORAGE) return <SelfStoragePayosCheckout",
   );
   const managedBranchStart = integration.indexOf(
-    "if (managedDeposit)",
+    "if (managedV3)",
     selfStorageStart,
   );
   assert.ok(
@@ -1321,7 +1305,7 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
   );
   assert.match(
     integration,
-    /Complete the Backend-confirmed PayOS Deposit before signing/,
+    /Chỉ Reservation Managed V3 mới dùng PayOS Hosted Checkout/,
   );
   assert.doesNotMatch(envExample, /VITE_ENABLE_PAYOS_CHECKOUT/);
   assert.match(history, /mineReal/);
@@ -1361,7 +1345,7 @@ test("Self-Storage always uses PayOS and never has a Customer mock fallback", as
   assert.match(checkout, /Tiếp tục thanh toán qua PayOS/);
   assert.match(review, /Idempotency-Key/);
   assert.match(review, /readOrCreateSelfStorageBookingAttempt/);
-  assert.match(review, /startFullRentAfterBooking: response\.status === 201/);
+  assert.doesNotMatch(review, /startFullRentAfterBooking/);
   assert.match(checkout, /if \(automatic && attempt\) return/);
   assert.match(
     checkout,

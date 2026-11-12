@@ -42,6 +42,7 @@ import InventoryDetailPage from '@/pages/customer/InventoryDetailPage';
 import InventoryMovementRequestPage from '@/pages/customer/InventoryMovementRequestPage';
 import InventoryHistoryPage from '@/pages/customer/InventoryHistoryPage';
 import FinancialDetailPage from '@/pages/customer/FinancialDetailPage';
+import ManagedAccessVisitsPage from '@/pages/customer/ManagedAccessVisitsPage';
 import Placeholder from "@/components/common/Placeholder";
 const AdminRoutes = lazy(() => import('@/routes/AdminRoutes'));
 const BomRoutes = lazy(() => import('@/routes/BomRoutes'));
@@ -78,9 +79,9 @@ export default function AppRoutes() {
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="rentals/:id/extend" element={<RentalExtensionPage />} />
         <Route path="rentals/:id/access" element={<RentalAccessPage />} />
+        <Route path="managed-access" element={<ManagedAccessVisitsPage />} />
         <Route path="inventory/register" element={<InventoryRegisterPage />} />
         <Route path="inventory/:id" element={<InventoryDetailPage />} />
-        <Route path="inventory/:id/inbound" element={<InventoryMovementRequestPage type="INBOUND" />} />
         <Route path="inventory/:id/outbound" element={<InventoryMovementRequestPage type="OUTBOUND" />} />
         <Route path="inventory/:id/history" element={<InventoryHistoryPage />} />
         <Route path="refunds/:id" element={<FinancialDetailPage kind="refund" />} />

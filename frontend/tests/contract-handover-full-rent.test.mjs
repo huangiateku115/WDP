@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 
 test("Customer V3 full-upfront contract view requires paper evidence, not a signature button", async () => {
   const source = await readFile(new URL("../src/components/customer/RentalLifecycleIntegration.jsx", import.meta.url), "utf8");
-  assert.match(source, /const canSignV3 = !fullUpfront/);
+  assert.match(source, /if \(!fullUpfront\) return <BackendScreen title="Reservation Managed cần đối soát"/);
+  assert.match(source, /const canSignV3 = false/);
   assert.match(source, /Chờ hoàn tất hợp đồng giấy tại cơ sở/);
   assert.match(source, /Hợp đồng đã được xác minh — sẵn sàng thực hiện thủ tục nhận kho/);
 });

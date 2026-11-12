@@ -14,6 +14,7 @@ export enum CellAllocationStatus {
 }
 
 export interface ICellAllocation extends Document {
+  managedAccessRevision?: number;
   facilityId: Types.ObjectId;
   cellId: Types.ObjectId;
   reservationId: Types.ObjectId;
@@ -80,6 +81,7 @@ export interface WarehouseRackFields {
   operationalStatus: WarehouseOperationalStatus;
   /** Written transactionally to serialize concurrent capacity/layout changes. */
   layoutVersion: number;
+  managedInventoryRevision: number;
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;
 }
@@ -103,6 +105,7 @@ export interface WarehouseCellFields {
   usedVolumeM3: number;
   /** Write token serializing booking allocations for this cell. */
   allocationVersion: number;
+  managedInventoryRevision: number;
   operationalStatus: WarehouseOperationalStatus;
   deletedAt?: Date;
   deletedBy?: Types.ObjectId;

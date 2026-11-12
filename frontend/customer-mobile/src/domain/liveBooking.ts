@@ -9,8 +9,8 @@ export const utcToday=()=>new Date().toISOString().slice(0,10);
 export function unitSelection(status:unknown){
   switch(status){
     case 'AVAILABLE': return {label:'Còn trống',selectable:true};
-    case 'OCCUPIED': return {label:'Đã có người thuê',selectable:false};
-    case 'HELD': return {label:'Đang giữ chỗ',selectable:false};
+    case 'OCCUPIED': return {label:'Đang có người thuê · kiểm tra kỳ khác',selectable:true};
+    case 'HELD': return {label:'Đang giữ chỗ · kiểm tra kỳ khác',selectable:true};
     case 'INACTIVE': case 'MAINTENANCE': case 'BLOCKED':
       return {label:'Không khả dụng',selectable:false};
     default: return {label:'Chưa xác minh',selectable:false};

@@ -13,6 +13,7 @@ export async function managedInventoryReservation(id,config){
 
 // Read the existing Customer map APIs. A reservation is not evidence of current Cell availability.
 export async function verifiedPreferredCells(rental,config){
+  if(rental?.bookingFlowVersion!==3||rental?.serviceType!=='MANAGED_INVENTORY')throw Error('Cell preference requires a verified Managed V3 reservation.');
   const ids=rental.allocatedCellIds?.map(inventoryId);
   if(!Array.isArray(ids)||!ids.length||!ids.every(validInventoryId)||new Set(ids).size!==ids.length)throw Error('Allocated Cell data is unavailable. Refresh the reservation before choosing a preference.');
   const facilityId=inventoryId(rental.facilityId);

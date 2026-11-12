@@ -3369,3 +3369,80 @@ test("handover rejects missing or cross-Facility StorageUnit before Reservation 
   assert.equal(reservationWrites, 0);
   assert.equal(reservation.status, "PAID");
 });
+
+test('upfront customer cancellation guards payment and releases only the held interval', async t => {
+  const owner = new mongoose.Types.ObjectId();
+  const reservation = new ReservationModel({
+    customerId: owner, serviceType: 'SELF_STORAGE', rentalPaymentFlow: 'FULL_UPFRONT_V1',
+    status: 'CONTRACTED', bookingIdempotencyKey: 'test-key', storageUnitId: new mongoose.Types.ObjectId()
+  });
+  const session = { withTransaction: async fn => fn(), endSession: async () => {} };
+  const query = value => ({ session: actual => {
+    assert.equal(actual, session);
+    return { exec: async () => value };
+  } });
+  let blockingPayment = true;
+  let writes = 0;
+  t.mock.method(mongoose, 'startSession', async () => session);
+  t.mock.method(ReservationModel, 'findById', () => Object.assign(query(reservation), {
+    then: resolve => Promise.resolve(reservation).then(resolve)
+  }));
+  t.mock.method(ReservationPaymentModel, 'exists', filter => {
+    assert.equal(String(filter.reservationId), String(reservation._id));
+    assert.deepEqual(filter.$nor[0].$or.map(rule => rule.checkoutState), ['CANCELLED', 'FAILED']);
+    assert.ok(filter.$nor[0].$or[0].cancelVerifiedAt.$exists);
+    return query(blockingPayment ? { _id: new mongoose.Types.ObjectId() } : null);
+  });
+  t.mock.method(reservation, 'save', async options => { assert.equal(options.session, session); writes++; });
+  t.mock.method(StorageUnitModel, 'updateOne', async (filter, update, options) => {
+    assert.equal(filter._id, reservation.storageUnitId);
+    assert.deepEqual(update, { $inc: { bookingVersion: 1 } });
+    assert.equal(options.session, session);
+    writes++;
+  });
+  t.mock.method(ContractModel, 'updateOne', async (filter, update, options) => {
+    assert.equal(filter.reservationId, reservation._id);
+    assert.equal(update.$set.status, 'TERMINATED');
+    assert.equal(options.session, session);
+    writes++;
+  });
+
+  const request = id => ({ params: { id: String(reservation._id) }, user: { _id: id, role: UserRole.CUSTOMER } });
+  const foreign = mockResponse();
+  await ReservationController.cancelReservation(request(new mongoose.Types.ObjectId()), foreign);
+  assert.equal(foreign.statusCode, 403);
+  const blocked = mockResponse();
+  await ReservationController.cancelReservation(request(owner), blocked);
+  assert.equal(blocked.statusCode, 409);
+  assert.equal(writes, 0);
+  assert.equal(reservation.status, 'CONTRACTED');
+  blockingPayment = false;
+  const success = mockResponse();
+  await ReservationController.cancelReservation(request(owner), success);
+  assert.equal(reservation.status, 'CANCELLED');
+  assert.equal(reservation.bookingIdempotencyKey, undefined);
+  assert.equal(writes, 3);
+  assert.equal(ReservationService.buildOverlapFilter(new Date('2099-01-01'), new Date('2099-01-02'))
+    .$or.some(entry => entry.status === 'CANCELLED' || entry.status?.$in?.includes('CANCELLED')), false);
+});
+
+test('owned reservation list reports cancellation eligibility only for eligible upfront bookings', async t => {
+  const customerId = new mongoose.Types.ObjectId();
+  const make = status => new ReservationModel({
+    customerId, serviceType: 'SELF_STORAGE', rentalPaymentFlow: 'FULL_UPFRONT_V1', status
+  });
+  const eligible = make('CONTRACTED'), blocked = make('CONTRACTED'), paid = make('PAID');
+  t.mock.method(ReservationModel, 'find', filter => {
+    assert.equal(filter.customerId, customerId);
+    return { populate() { return this; }, sort: async () => [eligible, blocked, paid] };
+  });
+  t.mock.method(ReservationPaymentModel, 'distinct', async (field, filter) => {
+    assert.equal(field, 'reservationId');
+    assert.deepEqual(filter.reservationId.$in, [eligible._id, blocked._id]);
+    return [blocked._id];
+  });
+  const res = mockResponse();
+  await ReservationController.getMyReservations({ user: { _id: customerId } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body.data.map(row => row.customerCancellationEligible), [true, false, undefined]);
+});

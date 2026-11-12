@@ -12,6 +12,7 @@ export enum InventoryItemStatus {
 
 export enum ReceivingCustodyStatus { NONE = 'NONE', IN_CUSTODY = 'IN_CUSTODY', RETURNED = 'RETURNED' }
 export enum ReceivingInspectionDecision { ACCEPTED = 'ACCEPTED', DISCREPANCY = 'DISCREPANCY', REJECTED = 'REJECTED' }
+export enum ManagedInventorySchemaVersion { V3 = 3 }
 
 export interface InventoryItemDimensionsM {
   widthM: number;
@@ -20,6 +21,9 @@ export interface InventoryItemDimensionsM {
 }
 
 export interface InventoryItemFields {
+  /** V3 SKU identity marker; absent means a historical V1/V2 inventory record. */
+  inventorySchemaVersion?: ManagedInventorySchemaVersion;
+  managedV3Revision?: number;
   facilityId: Types.ObjectId;
   customerId: Types.ObjectId;
   managedReservationId: Types.ObjectId;

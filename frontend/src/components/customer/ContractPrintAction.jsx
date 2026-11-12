@@ -2,7 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import {Printer} from 'lucide-react';
 import contractApi from '@/api/contractApi';
 import {getAccessToken,useAuthSession} from '@/lib/authSession';
-import {contractPrintModel} from '@/lib/contractPrint';
+import {termsApi} from '@/api/termsApi';
+import {contractPrintModel,verifySelfStoragePrintTerms} from '@/lib/contractPrint';
 import {Button} from '@/components/ui/button';
 import {Dialog} from '@/components/ui/dialog';
 import ContractPrintDocument from './ContractPrintDocument';
@@ -17,7 +18,7 @@ function printError(error){
   return 'Không thể xác minh dữ liệu hợp đồng để in. Vui lòng tải lại hợp đồng.';
 }
 
-export default function ContractPrintAction({contractId,reservationId,v2=false}){
+export default function ContractPrintAction({contractId,reservationId,v2=false,expectUpfrontSelfStorage=false}){
   const {accessToken,user}=useAuthSession(),[document,setDocument]=useState(null),[pending,setPending]=useState(false),[error,setError]=useState('');
   const request=useRef(null),busy=useRef(false),mounted=useRef(false);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;request.current?.abort();};},[]);
@@ -34,7 +35,18 @@ export default function ContractPrintAction({contractId,reservationId,v2=false})
       const response=await contractApi.detailReal(contractId,{signal:controller.signal});
       if(!current())return;
       if(response?.data?.success!==true)throw Error('Invalid contract response');
-      const model=contractPrintModel(response.data.data,{contractId,reservationId,customerId:id(user),v2});
+      const contract = response.data.data;
+      const identity = {contractId,reservationId,customerId:id(user),v2,expectUpfrontSelfStorage};
+      let model = contractPrintModel(contract, identity);
+      if (model.termsAcceptance?.serviceType === 'SELF_STORAGE' && model.termsAcceptance.versionId) {
+        const version = await termsApi.version('SELF_STORAGE', model.termsAcceptance.versionId, {signal:controller.signal})
+          .catch(() => null);
+        if (!current()) return;
+        const verifiedTerms = version?.data?.success === true
+          ? await verifySelfStoragePrintTerms(model.termsAcceptance, version.data.data).catch(() => [])
+          : [];
+        if (verifiedTerms.length) model = contractPrintModel(contract, {...identity,verifiedTerms});
+      }
       const {renderToStaticMarkup}=await import('react-dom/server');
       if(!current())return;
       const markup=renderToStaticMarkup(<ContractPrintDocument model={model}/>);

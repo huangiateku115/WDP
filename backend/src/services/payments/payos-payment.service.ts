@@ -108,6 +108,7 @@ export class PayosPaymentError extends Error {
 export interface PayosGateway {
   create(data: { orderCode: number; amount: number; description: string; cancelUrl: string; returnUrl: string }): Promise<{
     orderCode: number; amount: number; currency: string; paymentLinkId: string; checkoutUrl: string; qrCode?: string; status: string;
+    bin?: string; accountNumber?: string; accountName?: string; description?: string; expiredAt?: number;
   }>;
   get(orderCode: number, options?: { requireSignature: true }): Promise<{ id?: string; orderCode: number; amount: number; amountPaid: number; status: string; transactions?: Array<{ reference: string; amount: number }> }>;
   verify(webhook: Webhook): Promise<{
@@ -329,6 +330,13 @@ function logCheckoutDiagnostic(payment: any, category: string, stage: string, pr
     } : {}),
   });
 }
+function logWebhookDiagnostic(stage: string, outcome: string, payment?: any, attributes: Record<string, string | number | boolean> = {}): void {
+  // Deliberately allowlist fields; never log webhook bodies, bank data, tokens or provider error objects.
+  const allowed = ['serviceType', 'purpose', 'httpStatus', 'errorCode'] as const;
+  const safeAttributes = Object.fromEntries(allowed.flatMap(key => attributes[key] === undefined ? [] : [[key, attributes[key]]]));
+  console.info('PAYOS_WEBHOOK_DIAGNOSTIC', { stage, outcome,
+    ...(payment ? { correlationId: checkoutCorrelationId(payment) } : {}), ...safeAttributes });
+}
 function isDocumentedRegistrationProbe(event: {
   orderCode: number; amount: number; currency: string; paymentLinkId: string; reference: string;
   description?: string; transactionDateTime: string; code: string; desc: string;
@@ -377,9 +385,16 @@ function statusDto(payment: any, currentIntentEligible = false, retryAllowed = f
   const canPresentCheckout = currentIntentEligible && payment.provider === PaymentProvider.PAYOS &&
     payment.status === PaymentStatus.PENDING && payment.checkoutState === 'READY' &&
     isSafePayosCheckoutUrl(payment.checkoutUrl) && payment.applicationStatus !== PaymentApplicationStatus.MANUAL_REVIEW &&
-    payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED;
+    payment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
+    (!payment.checkoutExpiresAt || payment.checkoutExpiresAt > new Date());
   const orderCode = parseOrderCode(payment.providerReference);
+  const transferDetails = payment.transferDetails;
   return {
+    ...(canPresentCheckout && transferDetails ? { transferDetails: {
+      bin: transferDetails.bin, accountNumber: transferDetails.accountNumber,
+      accountName: transferDetails.accountName, description: transferDetails.description,
+    } } : {}),
+    ...(payment.checkoutExpiresAt instanceof Date ? { expiresAt: payment.checkoutExpiresAt.toISOString() } : {}),
     ...(canPresentCheckout && orderCode !== null &&
       typeof payment.providerPaymentLinkId === 'string' && payment.providerPaymentLinkId.trim()
       ? { orderCode, paymentLinkId: payment.providerPaymentLinkId } : {}),
@@ -721,8 +736,8 @@ export class PayosPaymentService {
           $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).session(session).exec();
         if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
         if (!serviceSupported(reservation)) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'PayOS supports Self Storage and Managed V3 reservations only');
-        if (isFullUpfrontBooking(reservation) && purpose !== PaymentPurpose.FULL_RENT) {
-          throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'New reservations require one full-rent payment; Deposit and Balance are unavailable');
+        if ((managedV3(reservation) || isFullUpfrontBooking(reservation)) && purpose !== PaymentPurpose.FULL_RENT) {
+          throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'Managed V3 reservations require one full-rent payment; Deposit and Balance are unavailable');
         }
         const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
         if (!managedV3(reservation) && !contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
@@ -884,6 +899,20 @@ export class PayosPaymentService {
       const checkoutFields: Record<string, unknown> = { checkoutState: 'READY', checkoutUrl: response.checkoutUrl,
         providerPaymentLinkId: response.paymentLinkId, providerCurrency: response.currency };
       if (isValidPayosQrPayload(response.qrCode)) checkoutFields.qrCode = response.qrCode;
+      if (payment.serviceType === FacilityServiceType.SELF_STORAGE && purpose === PaymentPurpose.FULL_RENT) {
+        if (typeof response.bin === 'string' && /^\d{6}$/.test(response.bin) &&
+            typeof response.accountNumber === 'string' && /^\d{4,34}$/.test(response.accountNumber) &&
+            typeof response.accountName === 'string' && response.accountName.trim() &&
+            response.accountName.length <= 120 && !/[\x00-\x1f\x7f]/.test(response.accountName) &&
+            response.description === description) {
+          checkoutFields.transferDetails = { bin: response.bin, accountNumber: response.accountNumber,
+            accountName: response.accountName.trim(), description: response.description };
+        }
+        const expiresAt = response.expiredAt;
+        if (typeof expiresAt === 'number' && Number.isSafeInteger(expiresAt) && expiresAt > 0 && expiresAt <= 253402300799) {
+          checkoutFields.checkoutExpiresAt = new Date(expiresAt * 1000);
+        }
+      }
       stage = 'PERSIST_CHECKOUT_LINK';
       const persisted = await Payments.updateOne(identityFilter, {
         $set: checkoutFields,
@@ -893,7 +922,9 @@ export class PayosPaymentService {
       const refreshed = await Payments.findById(payment._id).exec();
       if (refreshed?.checkoutState !== 'READY' || refreshed.checkoutUrl !== response.checkoutUrl ||
           refreshed.providerPaymentLinkId !== response.paymentLinkId ||
-          (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode)) {
+          (isValidPayosQrPayload(response.qrCode) && refreshed.qrCode !== response.qrCode) ||
+          (checkoutFields.transferDetails && Object.entries(checkoutFields.transferDetails).some(([key, value]) => refreshed.transferDetails?.[key] !== value)) ||
+          (checkoutFields.checkoutExpiresAt instanceof Date && refreshed.checkoutExpiresAt?.getTime() !== checkoutFields.checkoutExpiresAt.getTime())) {
         throw new Error('Persisted PayOS checkout identity could not be verified');
       }
       persistenceConfirmed = true;
@@ -920,14 +951,20 @@ export class PayosPaymentService {
 
   private async reconcileCheckoutState(payment: any) {
     const orderCode = numericOrderCode(payment.providerReference);
+    const selfStorageFullRent = payment.serviceType === FacilityServiceType.SELF_STORAGE && payment.purpose === PaymentPurpose.FULL_RENT;
     let link: Awaited<ReturnType<PayosGateway['get']>>;
     try {
-      link = await this.gateway.get(orderCode);
+      // Reconciliation decisions (including cancellation) must use the SDK-verified
+      // response signature. An unsigned link status is not settlement evidence.
+      link = await this.gateway.get(orderCode, { requireSignature: true });
     } catch {
       logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_FAILED', 'LOOKUP_BY_ORIGINAL_ORDER_CODE', null, false, null);
       throw new Error('PayOS lookup failed for the original payment order code');
     }
-    if (!link || link.orderCode !== orderCode || link.amount !== payment.amount ||
+    const providerCurrency = (link as { currency?: string } | null)?.currency;
+    if (!link || (selfStorageFullRent && (payment.currency !== 'VND' ||
+        (providerCurrency !== undefined && providerCurrency !== payment.currency) ||
+        (payment.checkoutUrl && !payment.providerPaymentLinkId))) || link.orderCode !== orderCode || link.amount !== payment.amount ||
         !Number.isSafeInteger(link.amountPaid) || link.amountPaid < 0 || !PAYOS_PAYMENT_LINK_STATUSES.has(link.status) ||
         typeof link.id !== 'string' || !link.id.trim() ||
         (payment.providerPaymentLinkId && link.id !== payment.providerPaymentLinkId)) {
@@ -935,6 +972,14 @@ export class PayosPaymentService {
         $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS lookup identity mismatch' },
       }).exec();
       logCheckoutDiagnostic(payment, 'PROVIDER_LOOKUP_IDENTITY_MISMATCH', 'VALIDATE_LOOKUP_RESPONSE', null, true, false);
+      return;
+    }
+    if (selfStorageFullRent && ['PENDING', 'PROCESSING'].includes(link.status) &&
+        (link.amountPaid !== 0 || (link.transactions ?? []).length > 0)) {
+      await Payments.updateOne({ _id: payment._id, status: PaymentStatus.PENDING,
+        providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED }, applicationStatus: PaymentApplicationStatus.NOT_APPLIED }, {
+        $set: { checkoutState: 'RECONCILIATION_REQUIRED', reconciliationReason: 'PayOS reports funds awaiting verified settlement' },
+      }).exec();
       return;
     }
     if (link.status === 'PENDING' && payment.checkoutUrl) {
@@ -958,6 +1003,8 @@ export class PayosPaymentService {
           const updated = await Payments.findOneAndUpdate({ _id: payment._id, reservationId: payment.reservationId,
             customerId: payment.customerId, facilityId: payment.facilityId, serviceType: payment.serviceType,
             provider: PaymentProvider.PAYOS, purpose: payment.purpose, providerReference: String(orderCode),
+            ...(selfStorageFullRent ? { amount: payment.amount, currency: payment.currency,
+              ...(payment.providerPaymentLinkId ? { providerPaymentLinkId: link.id } : {}) } : {}),
             status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] },
             providerSettlementStatus: { $ne: ProviderSettlementStatus.VERIFIED },
             applicationStatus: PaymentApplicationStatus.NOT_APPLIED,
@@ -1133,13 +1180,16 @@ export class PayosPaymentService {
   }
 
   async handleWebhook(input: unknown) {
+    logWebhookDiagnostic('RECEIVED', 'UNVERIFIED');
     let verified: Awaited<ReturnType<PayosGateway['verify']>>;
     try {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('invalid webhook shape');
       verified = await this.gateway.verify(input as Webhook);
     } catch {
+      logWebhookDiagnostic('SIGNATURE_VERIFICATION', 'INVALID');
       throw new PayosPaymentError(400, 'PAYOS_WEBHOOK_SIGNATURE_INVALID', 'PayOS webhook signature is invalid');
     }
+    logWebhookDiagnostic('SIGNATURE_VERIFICATION', 'VALID');
     if (!verified || !Number.isSafeInteger(verified.orderCode) || !verified.reference ||
         !Number.isSafeInteger(verified.amount) || typeof verified.currency !== 'string' ||
         typeof verified.paymentLinkId !== 'string' || typeof verified.transactionDateTime !== 'string' ||
@@ -1149,6 +1199,7 @@ export class PayosPaymentService {
     const payment = await Payments.findOne({ provider: PaymentProvider.PAYOS,
       providerReference: String(verified.orderCode) }).exec();
     if (!payment) {
+      logWebhookDiagnostic('PAYMENT_MATCH', 'NOT_FOUND');
       if (isDocumentedRegistrationProbe(verified)) {
         // PayOS confirms webhook URLs by sending this signed sample transaction.
         // Acknowledge delivery only; this is deliberately not a WDP settlement.
@@ -1156,12 +1207,17 @@ export class PayosPaymentService {
       }
       throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment intent not found');
     }
+    logWebhookDiagnostic('PAYMENT_MATCH', 'FOUND', payment);
     if (verified.code !== '00') {
-      return this.recordNonSuccessOutcome(payment._id, verified);
+      logWebhookDiagnostic('PROVIDER_OUTCOME', 'NON_SUCCESS', payment, { serviceType: payment.serviceType, purpose: payment.purpose });
+      const result = await this.recordNonSuccessOutcome(payment._id, verified);
+      logWebhookDiagnostic('TRANSACTION_RESULT', result.duplicate ? 'DUPLICATE_EVENT' : 'RECORDED_NON_SUCCESS', payment);
+      return result;
     }
     const event = { ...verified, eventHash: captureHash(verified) };
     const session = await this.createSession();
     let result: any;
+    logWebhookDiagnostic('TRANSACTION', 'STARTED', payment);
     try {
       await session.withTransaction(async () => {
         result = undefined;
@@ -1170,6 +1226,7 @@ export class PayosPaymentService {
         if (!currentPayment) throw new PayosPaymentError(404, 'PAYMENT_NOT_FOUND', 'Payment intent not found');
         if ((currentPayment.providerCaptures ?? []).some((entry: any) => entry.eventHash === event.eventHash)) {
           result = { duplicate: true, paymentId: currentPayment._id };
+          logWebhookDiagnostic('TRANSACTION_RESULT', 'DUPLICATE_EVENT', currentPayment);
           return;
         }
 
@@ -1412,8 +1469,12 @@ export class PayosPaymentService {
         result = { applied: true, paymentId: currentPayment._id };
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       if (!result) throw new PayosPaymentError(503, 'WEBHOOK_OUTCOME_UNKNOWN', 'Webhook processing outcome is uncertain');
+      logWebhookDiagnostic('TRANSACTION_RESULT', result.duplicate ? 'DUPLICATE_EVENT' : result.applied ? 'APPLIED' : 'MANUAL_REVIEW', payment,
+        { serviceType: payment.serviceType, purpose: payment.purpose });
       return { success: true, duplicate: result.duplicate === true, reconciled: result.reconciled === true };
     } catch (error: any) {
+      logWebhookDiagnostic('TRANSACTION', 'ROLLED_BACK_OR_UNCERTAIN', payment,
+        { errorCode: error instanceof PayosPaymentError ? error.code : 'INTERNAL' });
       if (error instanceof PayosPaymentError) throw error;
       if (errorHasLabel(error, 'UnknownTransactionCommitResult')) {
         const durable = await Payments.findById(payment._id).exec().catch(() => null);

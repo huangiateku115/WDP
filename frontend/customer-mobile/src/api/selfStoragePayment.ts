@@ -3,7 +3,7 @@ import {apiIssue,MobileInputError} from './client';
 import type {ReservationDto} from './contracts/customer';
 import {assertOwner,objectId} from './contracts/core';
 import {mobileRepo} from './mobileRepository';
-import {balanceDecision,checkoutLink,depositDecision,type PaymentPurpose} from '../domain/livePayment';
+import {balanceDecision,checkoutLink,depositDecision,fullRentDecision,type PaymentPurpose} from '../domain/livePayment';
 import {journal,newAttempt} from '../state/attemptJournal';
 
 const requests={
@@ -58,11 +58,12 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
   assertOwner(reservation,owner);
   const id=reservation._id;
   if(reservation.serviceType!=='SELF_STORAGE')throw new MobileInputError('PayOS hiện chỉ hỗ trợ kho tự quản.');
+  const upfront = reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1';
   const [contract,history,attemptStore,balanceStore]=await Promise.all([
     atStep('contract',()=>mobileRepo.contract(reservation,owner,signal)),
     atStep('history',()=>mobileRepo.payments(reservation,owner,signal)),
-    journal('deposit',owner,id),
-    refreshBalance?journal('balance',owner,id):null,
+    journal(upfront?'full-rent':'deposit',owner,id),
+    refreshBalance&&!upfront?journal('balance',owner,id):null,
   ]);
   const [attempt,balanceAttempt]=await Promise.all([attemptStore.read(),balanceStore?.read()]);
   const payments=[...history].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
@@ -72,8 +73,13 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
     if(targets.has(paymentId)&&targets.get(paymentId)!==purpose)throw new MobileInputError('Giao dịch không khớp mục đích thanh toán.');
     targets.set(paymentId,purpose);
   }
-  addTarget(payments.find(p=>p.purpose==='DEPOSIT')?.id??attempt?.resourceId,'DEPOSIT');
-  if(refreshBalance){
+  if (upfront) {
+    addTarget(payments.find(p=>p.purpose==='FULL_RENT')?.id??attempt?.resourceId,'FULL_RENT');
+    addTarget(attempt?.resourceId,'FULL_RENT');
+  } else {
+    addTarget(payments.find(p=>p.purpose==='DEPOSIT')?.id??attempt?.resourceId,'DEPOSIT');
+  }
+  if(refreshBalance&&!upfront){
     addTarget(payments.find(p=>p.purpose==='BALANCE')?.id??balanceAttempt?.resourceId,'BALANCE');
     if(reservation.status==='CHECKIN_READY'&&typeof reservation.depositPaymentId==='string'){
       addTarget(reservation.depositPaymentId,'DEPOSIT');
@@ -92,6 +98,7 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
     if(!payments.some(row=>row.id===payment.id))verifiedPayments.push(payment);
   }
   return {reservation,contract,payments:verifiedPayments,attempt,attemptStore,balanceStore,balanceAttemptExists:!!balanceAttempt,
+    fullRentDecision:upfront?fullRentDecision(reservation,contract,verifiedPayments,attempt):null,
     decision:depositDecision(reservation,contract,verifiedPayments,!!attempt),
     balanceDecision:balanceDecision(reservation,contract,verifiedPayments,!!balanceAttempt)};
 }
@@ -102,6 +109,7 @@ export async function openDeposit(id:string,owner:string,isCurrent:()=>boolean,o
 
 export async function openSelfStoragePayment(id:string,owner:string,purpose:PaymentPurpose,isCurrent:()=>boolean,openUrl:(url:string)=>Promise<unknown>){
   const context=await paymentContext(id,owner,undefined,purpose==='BALANCE');
+  if (purpose === 'FULL_RENT' || context.reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1') return;
   const decision=purpose==='BALANCE'?context.balanceDecision:context.decision;
   const store=purpose==='BALANCE'?context.balanceStore:context.attemptStore;
   if(!isCurrent())return;
@@ -115,4 +123,14 @@ export async function openSelfStoragePayment(id:string,owner:string,purpose:Paym
     const url=checkoutLink(payment,id,purpose);
     if(url&&isCurrent())await openUrl(url);
   }
+}
+
+export async function createFullRentIntent(id: string, owner: string, isCurrent: () => boolean) {
+  const context = await paymentContext(id, owner);
+  if (!isCurrent() || context.fullRentDecision?.kind !== 'CREATE') return;
+  const attempt = newAttempt();
+  if (!await context.attemptStore.claim(attempt, context.attempt?.key) || !isCurrent()) return;
+  const payment = await atStep('checkout', () => mobileRepo.checkout(context.reservation, attempt.key, owner, 'FULL_RENT'));
+  await context.attemptStore.write({...attempt, resourceId:payment.id});
+  return payment;
 }

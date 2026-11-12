@@ -15,6 +15,8 @@ export interface IUser extends Document {
   phone?: string;
   role: UserRole;
   assignedFacilityId?: Types.ObjectId | null;
+  /** Write fence serializing concurrent Managed V3 escort schedule assignments. */
+  managedAccessScheduleRevision?: number;
   isActive: boolean;
   lastLoginAt?: Date;
   createdAt: Date;

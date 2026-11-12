@@ -35,6 +35,7 @@ export enum ProviderSettlementStatus {
 }
 
 export interface IReservationPayment extends Document {
+  managedAccessRevision?: number;
   reservationId: Types.ObjectId;
   customerId: Types.ObjectId;
   facilityId: Types.ObjectId;
@@ -49,6 +50,8 @@ export interface IReservationPayment extends Document {
   cancelVerifiedAt?: Date;
   checkoutUrl?: string;
   qrCode?: string;
+  transferDetails?: { bin: string; accountNumber: string; accountName: string; description: string };
+  checkoutExpiresAt?: Date;
   providerPaymentLinkId?: string;
   providerCurrency?: string;
   providerCaptures?: Array<{

@@ -130,6 +130,7 @@ async function lockRequestReservation(request: IInventoryInboundRequest, session
     facilityId: request.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY };
   const current = await ReservationModel.findOne(identity).session(session).exec();
   if (!current) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Managed reservation is missing or outside request scope');
+  if (current.bookingFlowVersion === 3) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Managed V3 stock operations are unavailable until the V3 inbound workflow is enabled');
   const now = new Date();
   if (options.requireActiveTerm && (current.status !== ReservationStatus.ACTIVE || current.startDate > now || current.endDate <= now)) {
     fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'An in-term ACTIVE Managed Inventory reservation is required');

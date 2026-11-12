@@ -38,17 +38,19 @@ test('Staff repeated receiving page uses the real Facility-scoped API and saves 
   assert.match(source, /evidenceUploadIds/);
   assert.match(source, /ACCEPTED_PENDING_CONFIRMATION/);
   assert.match(source, /RETURN_PENDING/);
-  assert.match(routes, /path="inventory\/inbound" element=\{<InboundQueue \/>\}/);
+  assert.match(routes, /path="inventory\/inbound" element=\{<Navigate to="\/staff\/managed-inventory-v3" replace \/>\}/);
   assert.doesNotMatch(routes, /\['inventory\/inbound',\s*'INBOUND'\]/);
   assert.match(source, /token !== getAccessToken\(\)/);
 });
 
-test('Staff inventory routes render the actual receiving, outbound and relocation pages', async () => {
+test('Staff legacy inventory routes redirect to V3 supervision without stock mutation pages', async () => {
   const [routes, workspace] = await Promise.all([readFile(routesPath, 'utf8'), readFile(workspacePath, 'utf8')]);
-  assert.match(routes, /path="inventory\/inbound" element=\{<InboundQueue \/>\}/);
-  assert.match(routes, /path="inventory\/outbound" element=\{<CanonicalOutboundQueuePage \/>\}/);
-  assert.match(routes, /path="inventory\/relocation" element=\{<CanonicalRelocationPage \/>\}/);
-  for (const route of ['inventory/inbound', 'inventory/outbound', 'inventory/relocation']) assert.ok(workspace.includes(`"${route}"`));
+  for (const route of ['inventory/inbound', 'inventory/outbound', 'inventory/relocation']) {
+    const target = route === 'inventory/inbound' ? '/staff/managed-inventory-v3' : '/staff/managed';
+    assert.ok(routes.includes(`path="${route}" element={<Navigate to="${target}" replace />}`));
+    assert.ok(!workspace.includes(`"${route}"`));
+  }
+  assert.match(routes, /path="managed" element=\{<ManagedFacilityPage \/>\}/);
 });
 
 test('Customer canonical outbound is separate from legacy action and uses authoritative balance plus lifecycle APIs', async () => {
@@ -109,6 +111,6 @@ test('Canonical Staff pages retain authenticated role gating and explicit empty,
   assert.match(outlet, /FacilitySessionGate role=\{role\}/);
   assert.match(facilityGate, /<Navigate to="\/login"/);
   assert.match(facilityGate, /expected=role==='staff'\?'FACILITY_STAFF'/);
-  assert.match(workspace, /"inventory\/outbound"/);
-  assert.match(workspace, /"inventory\/relocation"/);
+  assert.match(workspace, /"managed"/);
+  assert.doesNotMatch(workspace, /"inventory\/(outbound|relocation)"/);
 });

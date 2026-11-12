@@ -28,7 +28,7 @@ import {
   useInventoryBackend,
 } from "./InventoryBackendUI";
 import InventoryItemForm from "./InventoryItemForm";
-import RepeatedInboundRequests from './RepeatedInboundRequests';
+import ManagedSelfInboundV3 from "./ManagedSelfInboundV3";
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -131,10 +131,10 @@ export function InventoryListIntegration() {
                     ],
                     ["Registered at", item.createdAt],
                     [
-                      "Current Cell",
-                      item.currentCellId === null
-                        ? "Not assigned"
-                        : inventoryId(item.currentCellId),
+                      "Placement",
+                      item.inventorySchemaVersion === 3
+                        ? "Xem phân bổ nhiều Cell trong phần Tồn kho V3 bên dưới"
+                        : item.currentCellId === null ? "Not assigned" : inventoryId(item.currentCellId),
                     ],
                   ]}
                 />
@@ -183,7 +183,7 @@ export function InventoryRegisterIntegration() {
   return (
     <CustomerScreen
       title="Register inventory item"
-      description="Declare an item lot against an eligible Managed rental. V2 first registration requires DEPOSIT_PAID."
+      description="Declare a SKU against an eligible Managed V3 reservation. Registration records metadata only; it does not receive stock."
       notice={notice}
       action={
         <Button asChild variant="outline">
@@ -291,10 +291,10 @@ function Detail({ id }) {
                       inventoryId(item.preferredCellId) || "No preference",
                     ],
                     [
-                      "Current Cell (Backend location)",
-                      item.currentCellId === null
-                        ? "Not assigned"
-                        : inventoryId(item.currentCellId),
+                      "Placement",
+                      item.inventorySchemaVersion === 3
+                        ? "Vị trí V3 có thể gồm nhiều Cell; xem phân bổ bên dưới"
+                        : item.currentCellId === null ? "Not assigned" : inventoryId(item.currentCellId),
                     ],
                     ["Description", item.description],
                     ["Registered at", item.createdAt],
@@ -320,13 +320,6 @@ function Detail({ id }) {
             {['IN_STORAGE','CHECKED_OUT'].includes(item.status)&&<Button asChild variant="outline"><Link to={`/portal/inventory/${id}/outbound`}>Outbound requests</Link></Button>}
             </div>
             <div className="inventory-action-group flex flex-wrap gap-2">
-            {rental?.bookingFlowVersion === 2 && (
-              <Button asChild variant="orange">
-                <Link to={`/portal/inventory/${id}/inbound`}>
-                  Request Inbound
-                </Link>
-              </Button>
-            )}
             <Button asChild variant="outline">
               <Link
                 to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}
@@ -353,7 +346,7 @@ function Detail({ id }) {
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">
               Editing unavailable: only unplaced REGISTERED metadata linked to
-              an eligible ACTIVE Managed rental can be changed. Registration
+            an eligible CHECKIN_READY or in-term ACTIVE V3 Managed rental can be changed. Registration
               history remains readable.
             </p>
           )}
@@ -369,9 +362,11 @@ function Detail({ id }) {
             item={item}
             eligible={eligible}
           />
+          {item.inventorySchemaVersion === 3 && eligible && (
+            <ManagedSelfInboundV3 item={item} rental={rental} onRefresh={refresh} />
+          )}
           <p className="text-sm text-slate-500">
-            Registration does not confirm physical stock. For Managed V2,
-            Request Inbound sends the item to Staff for receiving inspection.
+            Registration records the SKU only. Physical stock changes only after Customer Self-Inbound V3 is confirmed in an active Access Session.
           </p>
           <CanonicalCustomerOutbound
             item={item}
@@ -379,7 +374,6 @@ function Detail({ id }) {
             loading={resource.loading || !!resource.error || rentals.loading}
             onRefresh={refresh}
           />
-          {item.managedReservationId && ['IN_STORAGE', 'CHECKED_OUT'].includes(item.status) && <RepeatedInboundRequests item={item} rental={rental} loading={rentals.loading||!!rentals.error}/>}
         </>
       )}
     </CustomerScreen>

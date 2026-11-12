@@ -206,7 +206,7 @@ function Review({ draft, session }) {
         // The booking is already saved. Its original key still protects a replay.
       }
       nav("/portal/payments/" + createdReservationId, {
-        state: { selfStorageCreated: true, startFullRentAfterBooking: response.status === 201 },
+        state: { selfStorageCreated: true },
       });
       updateRentalDraft({
         facility: null,

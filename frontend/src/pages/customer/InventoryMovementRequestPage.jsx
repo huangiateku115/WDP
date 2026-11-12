@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 export default function InventoryMovementRequestPage({type}){
  const {id}=useParams();
  if(type==='OUTBOUND')return <CustomerOutboundPage id={id} outboundAction={CanonicalCustomerOutbound}/>;
- if(type==='INBOUND'&&validInventoryId(id))return <CustomerScreen title="Request inbound" description="Managed Inventory V2 receiving request."><ManagedInboundRequest id={id}/></CustomerScreen>;
+ if(type==='INBOUND'&&validInventoryId(id))return <CustomerScreen title="Tự nhập hàng" description="Self-Inbound V3 sẽ được mở sau khi hoàn tất kiểm soát truy cập và ghi sổ tồn kho."><ManagedInboundRequest id={id}/></CustomerScreen>;
  return <DemoMovementRequest type={type}/>;
 }
 function DemoMovementRequest({type}){

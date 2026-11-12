@@ -23,6 +23,33 @@ const batchLineSchema = new Schema({
   actualTotalVolumeM3: { type: Number, required: true, min: Number.MIN_VALUE, immutable: true },
 }, { _id: false, strict: 'throw' });
 
+const v3EffectLineSchema = new Schema({
+  cellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', required: true },
+  topologyCertificationId: { type: Schema.Types.ObjectId, required: true }, topologyRevision: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+  batchId: { type: String, trim: true, maxlength: 128 },
+  physicalUnitId: { type: Schema.Types.ObjectId, ref: 'ManagedV3PhysicalUnit' },
+  quantity: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+  quantityUnit: { type: String, required: true, trim: true, maxlength: 32 },
+  weightKg: { type: Number, required: true, min: Number.MIN_VALUE },
+  volumeM3: { type: Number, required: true, min: Number.MIN_VALUE },
+  supportReactionKg: { type: Number, min: 0 }, occupiedVolumeM3: { type: Number, min: 0 },
+  pose: { type: new Schema({ xStartM: { type: Number, required: true }, yStartM: { type: Number, required: true }, rotationDeg: { type: Number, required: true, enum: [0, 90] } }, { _id: false, strict: 'throw', immutable: true }) },
+}, { _id: false, strict: 'throw', immutable: true });
+const v3EffectSchema = new Schema({
+  action: { type: String, enum: ['ADD', 'REMOVE', 'MOVE'], required: true },
+  itemKind: { type: String, enum: ['A1_PHYSICAL_UNIT', 'A2_BATCH'], required: true },
+  operationId: { type: String, required: true, trim: true, maxlength: 160 },
+  requestHash: { type: String, required: true, match: /^[a-f\d]{64}$/i },
+  accessSessionId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessSession', required: true },
+  inventoryRevision: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+  ledgerRevision: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
+  topologyCertificationId: { type: Schema.Types.ObjectId, required: true },
+  topologyRevision: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
+  correlationId: { type: String, required: true, trim: true, maxlength: 160 },
+  source: { type: [v3EffectLineSchema] }, destination: { type: [v3EffectLineSchema] },
+  evidenceIds: [{ type: Schema.Types.ObjectId }],
+}, { _id: false, strict: 'throw', immutable: true });
+
 const schema = new Schema<IItemMovement>({
   itemId: { type: Schema.Types.ObjectId, ref: 'InventoryItem', required: true, immutable: true },
   managedReservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, immutable: true },
@@ -50,9 +77,11 @@ const schema = new Schema<IItemMovement>({
   physicalPackingConfirmed: { type: Boolean, immutable: true },
   idempotencyKey: { type: String, required: true, trim: true, maxlength: 128, immutable: true },
   // Missing version is intentionally treated as v1 for existing records.
-  schemaVersion: { type: Number, enum: [1, 2], default: 1, immutable: true },
+  schemaVersion: { type: Number, enum: [1, 2, 3], default: 1, immutable: true },
   arithmeticPolicy: { type: String, enum: ['CANONICAL_V1'], immutable: true },
   batchLines: { type: [batchLineSchema], default: undefined, immutable: true },
+  operationId: { type: String, trim: true, maxlength: 160, immutable: true },
+  v3Effect: { type: v3EffectSchema, immutable: true },
 }, { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw', versionKey: false });
 
 schema.pre('validate', function () {
@@ -62,15 +91,46 @@ schema.pre('validate', function () {
   if (this.isNew && this.schemaVersion === 2 && this.arithmeticPolicy == null) {
     this.invalidate('arithmeticPolicy', 'New schema v2 movements require CANONICAL_V1 arithmetic');
   }
-  if (this.type === ItemMovementType.INBOUND) {
+  if (this.schemaVersion === 3) {
+    const effect = this.v3Effect;
+    const expectedType = effect?.action === 'ADD' ? ItemMovementType.INBOUND : effect?.action === 'REMOVE' ? ItemMovementType.OUTBOUND : ItemMovementType.RELOCATION;
+    const source = effect?.source ?? [], destination = effect?.destination ?? [];
+    const lines = effect?.action === 'ADD' ? destination : effect?.action === 'REMOVE' ? source : [...source, ...destination];
+    const sum = (rows: typeof lines, key: 'quantity' | 'weightKg' | 'volumeM3') => rows.reduce((total, row) => total + Number(row[key]), 0);
+    const uniquePlacementKeys = (rows: typeof lines) => rows.map(row => `${row.batchId ?? row.physicalUnitId}:${row.cellId}`);
+    const validLine = (row: typeof lines[number]) => Number.isSafeInteger(row.quantity) && row.quantity > 0 && !!row.quantityUnit?.trim() &&
+      [row.weightKg, row.volumeM3].every(value => Number.isFinite(value) && value > 0) &&
+      (effect?.itemKind === 'A1_PHYSICAL_UNIT' ? !!row.physicalUnitId && row.quantity === 1 && Number.isFinite(row.supportReactionKg) &&
+        Number.isFinite(row.occupiedVolumeM3) && row.supportReactionKg! >= 0 && row.occupiedVolumeM3! >= 0 && (row.pose == null || (Number.isFinite(row.pose.xStartM) &&
+        Number.isFinite(row.pose.yStartM) && [0, 90].includes(row.pose.rotationDeg))) : !!row.batchId && row.pose == null &&
+        row.supportReactionKg == null && row.occupiedVolumeM3 == null);
+    const newA1HasPose = !this.isNew || effect?.itemKind !== 'A1_PHYSICAL_UNIT' || lines.every(row => !!row.pose);
+    const validShape = !!effect && !!this.operationId && this.operationId === effect.operationId && this.idempotencyKey &&
+      effect.requestHash && effect.accessSessionId && effect.topologyCertificationId &&
+      (!this.batchLines || this.batchLines.length === 0) && this.arithmeticPolicy == null &&
+      (effect.action === 'ADD' ? source.length === 0 && destination.length > 0 : effect.action === 'REMOVE' ? source.length > 0 && destination.length === 0 : source.length > 0 && destination.length > 0) &&
+      [source, destination].every(rows => new Set(uniquePlacementKeys(rows)).size === rows.length && rows.every(validLine)) &&
+      (effect.itemKind !== 'A1_PHYSICAL_UNIT' || (effect.action === 'MOVE'
+        ? new Set(source.map(row => String(row.physicalUnitId))).size === new Set(destination.map(row => String(row.physicalUnitId))).size
+        : new Set(lines.map(row => String(row.physicalUnitId))).size === 1));
+    const eventRows = effect?.action === 'MOVE' ? source : lines;
+    const eventQuantity = effect?.itemKind === 'A1_PHYSICAL_UNIT' ? new Set(eventRows.map(row => String(row.physicalUnitId))).size : sum(eventRows, 'quantity');
+    const totalsMatch = effect && Number.isSafeInteger(this.quantity) && this.quantity === eventQuantity &&
+      near(this.actualTotalWeightKg, sum(eventRows, 'weightKg'), 0.001) && near(this.actualTotalVolumeM3, sum(eventRows, 'volumeM3'), 0.000001);
+    if (this.type !== expectedType || !validShape || !totalsMatch || !newA1HasPose) this.invalidate('v3Effect', 'Schema v3 movement effect, placement lines, quantities and physical totals are invalid');
+    if (this.sourceCellId != null || this.destinationCellId != null || this.batchLines != null) this.invalidate('v3Effect', 'Schema v3 cannot use legacy single-Cell or batchLines placement fields');
+  } else if (this.v3Effect != null || this.operationId != null) {
+    this.invalidate('v3Effect', 'V3 effect fields require schema version 3');
+  }
+  if (this.schemaVersion !== 3 && this.type === ItemMovementType.INBOUND) {
     if (!this.destinationCellId || this.sourceCellId != null || !this.inspectionNote) {
       this.invalidate('destinationCellId', 'INBOUND must move from outside to a destination Cell');
     }
-  } else if (this.type === ItemMovementType.OUTBOUND) {
+  } else if (this.schemaVersion !== 3 && this.type === ItemMovementType.OUTBOUND) {
     if (!this.sourceCellId || this.destinationCellId != null || !this.handoverNote) {
       this.invalidate('sourceCellId', 'OUTBOUND must move from a source Cell to outside');
     }
-  } else if (this.type === ItemMovementType.RELOCATION) {
+  } else if (this.schemaVersion !== 3 && this.type === ItemMovementType.RELOCATION) {
     if (!this.sourceCellId || !this.destinationCellId || this.sourceCellId.equals(this.destinationCellId) ||
         !this.previousPlacementMovementId || !this.relocationNote ||
         (this.quantity > 1 && this.physicalPackingConfirmed !== true)) {
@@ -133,6 +193,7 @@ schema.index({ itemId: 1, performedAt: -1, _id: -1 });
 schema.index({ facilityId: 1, performedAt: -1 });
 schema.index({ managedReservationId: 1, performedAt: -1 });
 schema.index({ itemId: 1, idempotencyKey: 1 }, { unique: true });
+schema.index({ operationId: 1 }, { unique: true, partialFilterExpression: { operationId: { $type: 'string' } } });
 
 schema.pre(['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'deleteOne', 'deleteMany'], function () {
   throw new Error('ItemMovement records are append-only');

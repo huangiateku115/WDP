@@ -6,6 +6,7 @@ process.env.MONGO_URL ||= 'mongodb://localhost:27017/wdp_test';
 process.env.KEYCLOAK_BASE_URL ||= 'http://localhost:8081';
 process.env.KEYCLOAK_CLIENT_SECRET ||= 'test-only';
 const Upload = require('../dist/models/inventory-items/inventory-image-upload.model').default;
+const ReservationModel = require('../dist/models/reservations/reservation.model').default;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
 const { CloudinaryService } = require('../dist/services/upload/cloudinary.service');
 const { ManagedInventoryImageService: service } = require('../dist/services/upload/managed-inventory-image.service');
@@ -168,11 +169,17 @@ test('concurrent attachment attempts cannot claim one upload for two Items', asy
 
 test('create persists uploaded URL and ATTACHED metadata inside the same transaction session', async t => {
   const reservationGuard = require('../dist/services/reservations/managed-inventory-reservation.guard');
-  const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId() };
+  const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId(), customerId, serviceType: 'MANAGED_INVENTORY',
+    status: 'CHECKIN_READY', bookingFlowVersion: 3, endDate: new Date('2030-01-01T00:00:00.000Z'), inventoryVersion: 0 };
   const upload = existingUpload();
   const transaction = { withTransaction: async work => work(), endSession: async () => {} };
   t.mock.method(mongoose, 'startSession', async () => transaction);
   t.mock.method(reservationGuard, 'requireManagedInventoryReservationForRegistration', async (_id, _customer, _facility, usedSession) => { assert.equal(usedSession, transaction); return reservation; });
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update, options) => {
+    assert.equal(String(filter._id), String(reservationId)); assert.equal(String(filter.customerId), String(customerId));
+    assert.equal(filter.bookingFlowVersion, 3); assert.equal(filter.status, 'CHECKIN_READY'); assert.equal(options.session, transaction);
+    assert.equal(update.$inc.inventoryVersion, 1); return new Query({ ...reservation, inventoryVersion: 1 });
+  });
   t.mock.method(Upload, 'findOne', filter => { assert.equal(filter.secureUrl, upload.secureUrl); return { session: value => { assert.equal(value, transaction); return new Query(upload); } }; });
   t.mock.method(Upload, 'updateOne', (_filter, update, options) => { assert.equal(options.session, transaction); assert.equal(update.$set.status, 'ATTACHED'); return new Query({ modifiedCount: 1 }); });
   t.mock.method(Item.prototype, 'save', async function(options) { assert.equal(options.session, transaction); });
@@ -185,11 +192,13 @@ test('create persists uploaded URL and ATTACHED metadata inside the same transac
 
 test('item save failure aborts the mocked transaction and leaves upload unattached', async t => {
   const reservationGuard = require('../dist/services/reservations/managed-inventory-reservation.guard');
-  const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId() };
+  const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId(), customerId, serviceType: 'MANAGED_INVENTORY',
+    status: 'CHECKIN_READY', bookingFlowVersion: 3, endDate: new Date('2030-01-01T00:00:00.000Z'), inventoryVersion: 0 };
   const upload = existingUpload(); let status = 'UNATTACHED';
   const transaction = { withTransaction: async work => { try { await work(); } catch (error) { status = 'UNATTACHED'; throw error; } }, endSession: async () => {} };
   t.mock.method(mongoose, 'startSession', async () => transaction);
   t.mock.method(reservationGuard, 'requireManagedInventoryReservationForRegistration', async () => reservation);
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (_filter, _update, options) => { assert.equal(options.session, transaction); return new Query({ ...reservation, inventoryVersion: 1 }); });
   t.mock.method(Upload, 'findOne', () => ({ session: value => { assert.equal(value, transaction); return new Query({ ...upload, get status(){return status;} }); } }));
   t.mock.method(Upload, 'updateOne', (_filter, update, options) => { assert.equal(options.session, transaction); status = update.$set.status; return new Query({ modifiedCount: 1 }); });
   t.mock.method(Item.prototype, 'save', async function(options) { assert.equal(options.session, transaction); throw Error('simulated item write failure'); });

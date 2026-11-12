@@ -19,6 +19,15 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   checkoutUrl: { type: String, maxlength: 2048 },
   // Raw provider-generated EMV QR payload. It is never synthesized by WDP.
   qrCode: { type: String, maxlength: 4096, match: /^000201[\x20-\x7E]+$/ },
+  transferDetails: {
+    type: new Schema({
+      bin: { type: String, required: true },
+      accountNumber: { type: String, required: true },
+      accountName: { type: String, required: true },
+      description: { type: String, required: true },
+    }, { _id: false }),
+  },
+  checkoutExpiresAt: { type: Date },
   providerPaymentLinkId: { type: String, maxlength: 200 },
   providerCurrency: { type: String, maxlength: 3 },
   providerCaptures: [{
@@ -44,6 +53,7 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   }],
   providerSettlementStatus: { type: String, enum: Object.values(ProviderSettlementStatus), default: ProviderSettlementStatus.NOT_VERIFIED },
   applicationStatus: { type: String, enum: Object.values(PaymentApplicationStatus) },
+  managedAccessRevision: { type: Number, min: 0, default: 0 },
   status: { type: String, enum: Object.values(PaymentStatus), required: true, default: PaymentStatus.PENDING },
   succeededAt: { type: Date },
   failedAt: { type: Date },

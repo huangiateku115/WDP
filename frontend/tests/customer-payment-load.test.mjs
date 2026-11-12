@@ -386,6 +386,7 @@ function checkoutModule({
       isPayosPaymentPollable: () => false,
       pollPayosPaymentStatuses: async () => {},
     },
+    "./SelfStorageTransferDetails": { default: () => null },
     "./RentalBackendUI": {
       Details: details,
       LoadState: ({ resource }) =>
@@ -697,7 +698,7 @@ test("Review submits one Reservation and hands off a saved booking without calli
   assert.equal(saved.idempotencyKey, bookingKey);
   assert.equal(createdStatus, "CONTRACTED");
   assert.deepEqual(destination, ["/portal/payments/" + reservationId, {
-    state: { selfStorageCreated: true, startFullRentAfterBooking: true },
+    state: { selfStorageCreated: true },
   }]);
   assert.equal(clearedDraft.facility, null);
   assert.equal(reservationId.length, 24);
@@ -1485,7 +1486,7 @@ test("unknown checkout outcome refreshes read-only history, displays the origina
   }
 });
 
-test("Mismatched contract blocks Deposit without hiding the Reservation; Managed Inventory remains separately routed", () => {
+test("Mismatched contract blocks payment; legacy Managed Inventory payment is read-only", () => {
   const mismatched = checkoutModule({
     contract: { ...draftContract, reservationId: facilityId },
   });
@@ -1509,7 +1510,8 @@ test("Mismatched contract blocks Deposit without hiding the Reservation; Managed
     },
   });
   const managedHtml = renderToStaticMarkup(component());
-  assert.match(managedHtml, /Managed Inventory payments/);
+  assert.match(managedHtml, /Thanh toán Managed lịch sử/);
+  assert.match(managedHtml, /Chỉ Reservation Managed V3 mới dùng PayOS Hosted Checkout/);
   assert.doesNotMatch(managedHtml, /payos-checkout/);
   assert.doesNotMatch(managedHtml, /Simulated Payment/);
 });
