@@ -27,7 +27,7 @@ test.each(['CUSTOMER','FACILITY_STAFF','FACILITY_MANAGER'])('Managed contract si
     '@/lib/managedIntake':{currentManagedContract:()=>({version:1,hash:'hash',status:'DRAFT',content:{}}),maySignManaged:()=>true,contractFingerprint:()=> 'same'},
     '@/api/managedIntakeApi':{managedIntakeApi:api},'../RentalBackendUI':UI,'@/components/ui/checkbox':UI,
     '@/lib/customerManagedContractState':{customerManagedContractState:()=>({kind:'DRAFT',canSign:true,progress:{version:1,hash:'hash',status:'DRAFT'}})},
-    './CustomerContractSnapshot':{default:pass},'@/lib/customerReservationDisplay':{reservationVietnamTime:String},
+    '@/lib/facilityLabels':{facilityLabel:String},'./CustomerContractSnapshot':{default:pass},'@/lib/customerReservationDisplay':{reservationVietnamTime:String},
   }).default;
   const props={contract:{_id:iid},reservation:{_id:rid},loadLatest:jest.fn(),onRefresh:refresh,customerView:role==='CUSTOMER'};
   h.render(()=>Component(props));h.values[1]=true;
@@ -41,7 +41,7 @@ test.each(['CUSTOMER','FACILITY_STAFF','FACILITY_MANAGER'])('Managed contract si
 
 test('Inventory409 refreshes both contexts without resetting the Customer form or retrying create',async()=>{
  const h=hooks(),retry=jest.fn(),contextRetry=jest.fn();let reads=0;
- const rental={_id:rid,facilityId:fid,serviceType:'MANAGED_INVENTORY',status:'ACTIVE',allocatedCapacity:1,_facility:{name:'Facility'}};
+ const rental={_id:rid,facilityId:fid,serviceType:'MANAGED_INVENTORY',status:'ACTIVE',bookingFlowVersion:3,startDate:'2020-01-01T00:00:00Z',endDate:'2099-01-01T00:00:00Z',allocatedCapacity:1,_facility:{name:'Facility'}};
  const payload={managedReservationId:rid,itemCode:'TEST',name:'Customer input',category:'box',quantity:1,quantityUnit:'box',unitWeightKg:1,widthM:1,depthM:1,heightM:1,description:'keep me',images:'',preferredCellId:''};
  const create=jest.fn(async()=>{throw {response:{status:409,data:{message:'Closure pending'}}};});
  const Component=compile('components/customer/inventory/InventoryItemForm.jsx',{

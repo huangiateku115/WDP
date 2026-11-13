@@ -15,9 +15,9 @@ export function ScreenHeading({title,eyebrow,subtitle,accessory}:{
 }){
   return <View style={styles.heading}>
     <View style={styles.copy}>
-      {eyebrow&&<AppText variant="label" style={styles.eyebrow}>{eyebrow}</AppText>}
+      {!!eyebrow&&<AppText variant="label" style={styles.eyebrow}>{eyebrow}</AppText>}
       <AppText variant="title" accessibilityRole="header">{title}</AppText>
-      {subtitle&&<AppText style={styles.muted}>{subtitle}</AppText>}
+      {!!subtitle&&<AppText style={styles.muted}>{subtitle}</AppText>}
     </View>
     {accessory}
   </View>;
@@ -28,7 +28,7 @@ export function CardHeading({icon,title,subtitle,tone='green'}:{icon:IconName;ti
     <IconBadge name={icon} tone={tone}/>
     <View style={styles.copy}>
       <AppText variant="card" accessibilityRole="header">{title}</AppText>
-      {subtitle&&<AppText variant="caption" style={styles.muted}>{subtitle}</AppText>}
+      {!!subtitle&&<AppText variant="caption" style={styles.muted}>{subtitle}</AppText>}
     </View>
   </View>;
 }

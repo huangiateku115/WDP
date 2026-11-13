@@ -35,7 +35,7 @@ export function Login(){
       <Input label="Mật khẩu" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" editable={!pending}/>
       <Button label="Đăng nhập" loading={pending} onPress={()=>void submit()}/>
     </Card>
-    {error&&<StateCard kind="error" title="Đăng nhập chưa thành công" description={error}/>}
+    {!!error&&<StateCard kind="error" title="Đăng nhập chưa thành công" description={error}/>}
     {restoreFailed&&<StateCard kind="error" title="Chưa xác minh được phiên đã lưu" onRetry={()=>void restore()}/>}
     <Button label="Tạo tài khoản" variant="quiet" onPress={()=>router.push('/(auth)/register')}/>
   </LiveScreen>;
@@ -64,7 +64,7 @@ export function Register(){
       <Input label="Xác nhận mật khẩu" value={confirmation} onChangeText={setConfirmation} secureTextEntry editable={!pending}/>
       <Button label="Tạo tài khoản" loading={pending} onPress={()=>void submit()}/>
     </Card>}
-    {error&&<StateCard kind="error" title="Chưa thể tạo tài khoản" description={error}/>}
+    {!!error&&<StateCard kind="error" title="Chưa thể tạo tài khoản" description={error}/>}
     <Button label="Về đăng nhập" variant="outline" onPress={()=>router.replace('/(auth)/login')}/>
   </LiveScreen>;
 }
@@ -200,7 +200,7 @@ export function Notifications(){
   }
   return <LiveScreen title="Thông báo" eyebrow="HỘP THƯ" subtitle="Cập nhật về đơn thuê, thanh toán và hàng hóa." onRefresh={data.reload} refreshing={data.loading}>
     <ResourceState {...data}/>{data.data?.items.length===0&&<StateCard title="Chưa có thông báo"/>}
-    {error&&<StateCard kind="error" title="Chưa cập nhật được thông báo" description={error}/>}
+    {!!error&&<StateCard kind="error" title="Chưa cập nhật được thông báo" description={error}/>}
     {data.data?.items.map(item=><Card key={item._id}><CardHeading icon={item.isRead?"mail-open-outline":"mail-unread-outline"} title={item.title}/>
       <AppText>{item.content}</AppText><AppText variant="caption">{dateLabel(item.createdAt)}</AppText>
       {!item.isRead&&<Button label="Đánh dấu đã đọc" variant="quiet" disabled={busy} onPress={()=>void mark(item._id)}/>}</Card>)}
@@ -237,7 +237,7 @@ export function Movements(){
     {data.data?.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
     {data.data?.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
       <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
-      {move.inspectionNote&&<AppText>{move.inspectionNote}</AppText>}</Card>)}
+      {!!move.inspectionNote&&<AppText>{move.inspectionNote}</AppText>}</Card>)}
   </LiveScreen>;
 }
 export function Detail(){

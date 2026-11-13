@@ -16,7 +16,7 @@ export function InventoryMovementCard({movement}: {movement: InventoryMovement})
       {!!m.note && <AppText>{m.note}</AppText>}
       {m.schemaVersion != null && <Value label="Phiên bản bản ghi mẫu" value={String(m.schemaVersion)}/>}
       <Value label="Chính sách tính được ghi nhận" value={m.arithmeticPolicy === 'SUM_BATCH_QUANTITIES' ? 'Tổng số lượng theo lô (dữ liệu mẫu khai báo)' : m.arithmeticPolicy ?? 'Chưa có thông tin; không tự suy diễn'}/>
-      {m.evidence && <Value label="Tham chiếu chứng từ mẫu" value={m.evidence}/>}
+      {!!m.evidence && <Value label="Tham chiếu chứng từ mẫu" value={m.evidence}/>}
       {canonical ? <><AppText variant="medium">Chi tiết từng lô · không thay số đo cho toàn sự kiện</AppText>{m.batchLines!.map((batch, i) => <BatchDetails key={i} batch={batch} expectedUnit={m.unit}/>)}</> : <AppText>Không có chi tiết lô trong bản ghi này. Không suy ra mã lô hoặc số đo bị thiếu.</AppText>}
     </View>}
   </Card>;

@@ -24,8 +24,8 @@ export function StockBalance({item, detail}: {item: InventoryItem; detail: Inven
 }
 export function BatchDetails({batch, expectedUnit}: {batch: StockBatch; expectedUnit: string | null}) {
   return <View style={{gap: 8, padding: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 12}}>
-    <AppText variant="medium">{batch.reference ? 'Lô ' + batch.reference : 'Chưa có mã lô'}</AppText><AppText>{quantityText(batch.quantity, batch.unit)}</AppText>{expectedUnit && batch.unit && expectedUnit !== batch.unit && <AppText variant="caption" style={{color: colors.danger}}>Đơn vị lô khác đơn vị sự kiện; không cộng gộp.</AppText>}
-    {batch.receipt && <Value label="Tham chiếu biên nhận mẫu" value={batch.receipt}/>}<Value label="Ô lưu trữ của lô" value={batch.cell ?? 'Chưa có vị trí lô'}/><Value label="Số đo đơn vị của riêng lô này" value={measurementText(batch.measurements)}/>
+    <AppText variant="medium">{batch.reference ? 'Lô ' + batch.reference : 'Chưa có mã lô'}</AppText><AppText>{quantityText(batch.quantity, batch.unit)}</AppText>{!!expectedUnit && !!batch.unit && expectedUnit !== batch.unit && <AppText variant="caption" style={{color: colors.danger}}>Đơn vị lô khác đơn vị sự kiện; không cộng gộp.</AppText>}
+    {!!batch.receipt && <Value label="Tham chiếu biên nhận mẫu" value={batch.receipt}/>}<Value label="Ô lưu trữ của lô" value={batch.cell ?? 'Chưa có vị trí lô'}/><Value label="Số đo đơn vị của riêng lô này" value={measurementText(batch.measurements)}/>
   </View>;
 }
 export function BatchOverview({batches, unit}: {batches: StockBatch[]; unit: string}) {

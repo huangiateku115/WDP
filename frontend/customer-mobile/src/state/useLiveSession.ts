@@ -72,7 +72,23 @@ export const useLiveSession = create<Session>((set,get) => {
     },
     async login(values) {
       const current = ++revision;
-      const result = mapLogin(await wire('POST','/auth/login',{anonymous:true,body:loginBody.parse(values)}));
+      const parsed = loginBody.safeParse(values);
+      if (!parsed.success) throw new MobileInputError('Vui lòng nhập email hợp lệ và mật khẩu.');
+      let response: unknown;
+      try {
+        response = await wire('POST','/auth/login',{anonymous:true,body:parsed.data});
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          const message = error.response.data?.message;
+          if (['Sai email hoặc mật khẩu','Tài khoản đã bị khóa','Tài khoản chưa được đăng ký trong hệ thống nội bộ'].includes(message))
+            throw new MobileInputError(message);
+          throw new MobileInputError('Máy chủ từ chối đăng nhập. Hãy kiểm tra tài khoản hoặc thử lại sau.');
+        }
+        throw error;
+      }
+      let result: ReturnType<typeof mapLogin>;
+      try { result = mapLogin(response); }
+      catch { throw new MobileInputError('Phản hồi đăng nhập không xác nhận được tài khoản Customer đang hoạt động.'); }
       const next = {accessToken:result.accessToken, refreshToken:result.refreshToken};
       if (/\s/.test(next.accessToken + next.refreshToken)) throw new MobileInputError('Thông tin phiên không hợp lệ.');
       const user = mapCurrentUser(await wire('GET','/users/me',{token:next.accessToken}));

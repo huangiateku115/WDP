@@ -1,3 +1,4 @@
+import {Platform} from 'react-native';
 import axios, {AxiosError, AxiosHeaders} from 'axios';
 
 export function resolveApiBase(value: string | undefined, development: boolean) {
@@ -14,7 +15,13 @@ export function resolveApiBase(value: string | undefined, development: boolean) 
   }
 }
 
-export const apiBase = resolveApiBase(process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://wdp-m4ns.onrender.com/api/v1", __DEV__);
+export function configuredApiBase(value: string | undefined, development: boolean, platform: string) {
+  const localDefault = development && platform === 'web' ? 'http://localhost:5000/api/v1'
+    : development && platform === 'android' ? 'http://10.0.2.2:5000/api/v1' : undefined;
+  return resolveApiBase(value ?? localDefault, development);
+}
+
+export const apiBase = configuredApiBase(process.env.EXPO_PUBLIC_API_BASE_URL, __DEV__, Platform.OS);
 let activeToken: string | undefined;
 let onExpired: (() => void) | undefined;
 

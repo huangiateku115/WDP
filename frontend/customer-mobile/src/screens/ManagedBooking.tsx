@@ -55,7 +55,7 @@ function ManagedBooking({facilityId,owner}:{facilityId:string;owner:string}){
           <View style={ui.wrap}>{terms.data?.map(value=><Filter key={termKey(value)} label={value.value+' '+termLabels[value.unit].toLowerCase()}
             selected={termKey(value)===selected} onPress={()=>setSelected(termKey(value))}/>)}</View>
         </>}
-        {end&&<AppText>Ngày kết thúc: {bookingDateLabel(end)}</AppText>}
+        {!!end&&<AppText>Ngày kết thúc: {bookingDateLabel(end)}</AppText>}
         {range&&<ResourceState {...capacity}/>}
         {capacity.data&&<TintedPanel><AppText variant="label">Dung tích còn khả dụng tại cơ sở trong kỳ thuê</AppText><AppText variant="heading">{capacity.data.availableCapacityM3} m³</AppText></TintedPanel>}
       </Card>

@@ -56,7 +56,7 @@ export default function PayosPaymentReturn(){
       <Card>
         <AppText accessibilityLiveRegion="polite">{pending?'Đang xác minh giao dịch với máy chủ…':confirmedCancel?'Đã hủy thanh toán':applied?'Thanh toán đã được xác minh và ghi nhận.':cancel?'Chưa xác minh được trạng thái hủy. Thông tin từ đường dẫn không xác nhận giao dịch.':'Chưa xác minh được kết quả thanh toán. Hãy kiểm tra lại trạng thái.'}</AppText>
         {payment&&<AppText>{payment.purpose==='FULL_RENT'?'100% tiền thuê':payment.purpose==='DEPOSIT'?'Tiền đặt cọc':'Tiền thuê còn lại'} · {money(payment.amount)}</AppText>}
-        {error&&<StateCard kind="error" title="Chưa thể kiểm tra giao dịch" description={error}/>}
+        {!!error&&<StateCard kind="error" title="Chưa thể kiểm tra giao dịch" description={error}/>}
         {!confirmedCancel&&!applied&&<Button label={pending?'Đang kiểm tra…':'Kiểm tra lại trạng thái'} disabled={pending} onPress={()=>{requestKey.current='';void verify();}}/>}
         <Button label={applied && payment?.purpose==='FULL_RENT' ? 'Xem hợp đồng' : 'Mở chi tiết thanh toán'} variant="outline" onPress={()=>applied && payment?.purpose==='FULL_RENT' ? router.replace({pathname:'/rentals/[id]/contract',params:{id:reservationId}}) : router.replace(detail)}/>
       </Card>}
