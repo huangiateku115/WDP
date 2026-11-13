@@ -22,6 +22,7 @@ import {
 import SelfStorageTransferDetails from "./SelfStorageTransferDetails";
 import { canOpenPayosCheckout } from "@/api/payosPaymentClient";
 import { isPayosPaymentPollable, pollPayosPaymentStatuses } from "@/lib/selfStoragePayosPolling";
+import { reservationVietnamTime } from "@/lib/customerReservationDisplay";
 import {
   LoadState,
   Message,
@@ -95,7 +96,7 @@ async function loadCompletePayosHistory(reservationId, serviceType = "SELF_STORA
   return { items, nextCursor: null };
 }
 
-function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refreshing, purpose, reservationId, dualPayment, paymentAllowed, expiresAt }) {
+function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refreshing, purpose, reservationId, dualPayment, paymentAllowed, expiresAt, managedInventory = false }) {
   const view = paymentStatusView(payment);
   const identityMatches = payment.reservationId === reservationId && payment.purpose === purpose;
   const canContinue = identityMatches && (!dualPayment || paymentAllowed && expiresAt > Date.now() && payment.applicationStatus === "NOT_APPLIED" && payment.providerSettlementStatus === "NOT_VERIFIED") && canOpenPayosCheckout(payment);
@@ -120,6 +121,7 @@ function PaymentPanel({ payment, onRefresh, onContinue, onRetry, retrying, refre
         <div className="text-center">
           <p className="text-sm font-medium text-slate-500">{purpose === "FULL_RENT" ? "Thanh toán 100% tiền thuê" : purpose === "BALANCE" ? "Tiền thuê còn lại" : "Tổng tiền thanh toán"}</p>
           <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl" aria-label="Số tiền thanh toán">{formatPayosVnd(payment.amount)} ₫</p>
+          {managedInventory && Number.isFinite(expiresAt) && <p className="mt-2 text-sm text-slate-600">Hạn thanh toán: {reservationVietnamTime(new Date(expiresAt).toISOString())}</p>}
         </div>
         <p className={view.tone === "warning" ? "mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-900" : applied ? "mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center text-sm text-emerald-900" : "mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-700"} role="status" aria-live="polite">{message}</p>
         {dualPayment && canContinue && <SelfStorageTransferDetails payment={payment} expiresAt={expiresAt} />}
@@ -140,6 +142,7 @@ export default function SelfStoragePayosCheckout({
   loadContext,
   loadContract,
   onReservationRefresh,
+  managedInventory = false,
 }) {
   const session = useAuthSession();
   const location = useLocation();
@@ -661,7 +664,7 @@ export default function SelfStoragePayosCheckout({
         {pending === "checkout" && <p className="mt-3 text-sm text-slate-600" role="status">Đang chuẩn bị thanh toán PayOS…</p>}
         {returnedFromCancel && <p className="mt-3 text-sm text-slate-600" role="status">Bạn đã quay lại từ trang hủy PayOS. Trạng thái bên dưới được xác nhận từ Backend.</p>}
         {contractRequired && <div className="mt-5">{contractResource.loading && <p className="text-sm text-slate-600" role="status">Đang xác minh hợp đồng…</p>}{(contractResource.error || contractResource.data === null && !contractResource.loading) && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>{eligibilityText(contractLoadReason)}</p><Button className="mt-3" variant="outline" onClick={contractResource.retry}>Thử tải lại hợp đồng</Button></div>}</div>}
-        {visiblePayment && <div className="mt-6"><PaymentPanel payment={visiblePayment} reservationId={reservationId} purpose={purpose || visiblePayment.purpose} dualPayment={dualPayment} paymentAllowed={paymentAllowed} expiresAt={checkoutEnd} onRefresh={payment => refreshPayment(payment, dualPayment && payment.status === "PENDING")} onContinue={continueExistingCheckout} onRetry={() => void pay()} retrying={pending === "checkout"} refreshing={pending === ("status:" + visiblePayment.id)} /></div>}
+        {visiblePayment && <div className="mt-6"><PaymentPanel payment={visiblePayment} reservationId={reservationId} purpose={purpose || visiblePayment.purpose} dualPayment={dualPayment} paymentAllowed={paymentAllowed} expiresAt={checkoutEnd} managedInventory={managedInventory} onRefresh={payment => refreshPayment(payment, dualPayment && payment.status === "PENDING")} onContinue={continueExistingCheckout} onRetry={() => void pay()} retrying={pending === "checkout"} refreshing={pending === ("status:" + visiblePayment.id)} /></div>}
         {!visiblePayment && purpose && !checkoutRecoveryNeeded && (
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm sm:p-7">
             <p className="text-sm leading-6 text-slate-600">

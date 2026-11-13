@@ -1,4 +1,4 @@
-import {reservationVietnamTime} from './customerReservationDisplay.js';
+import {reservationAmount,reservationVietnamTime} from './customerReservationDisplay.js';
 
 const id=value=>typeof value==='string'?value:value?._id||value?.id;
 const validId=value=>typeof value==='string'&&/^[a-f\d]{24}$/i.test(value);
@@ -62,7 +62,7 @@ export function contractPrintModel(contract,{contractId,reservationId,customerId
   const facility = active && !selfStorage ? object(content.facility) : object(live.facilityId);
   const facilityId = id(r.facilityId) || id(live.facilityId);
   const currency=firstText(object(p.pricingRule).currency,p.currency);
-  const money=value=>typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat('vi-VN',{maximumSignificantDigits:21}).format(value)+(currency?(selfStorage && currency === 'VND' ? ' ₫' : ' '+currency):' (chưa có đơn vị tiền tệ)'):'Chưa được cung cấp';
+  const money=value=>typeof value==='number'&&Number.isFinite(value)?currency?reservationAmount(value,currency):`${new Intl.NumberFormat('vi-VN',{maximumSignificantDigits:21}).format(value)} (chưa có đơn vị tiền tệ)`:'Chưa được cung cấp';
   const validSignature=s=>s&&s.version===active?.version&&s.contentHash===active?.contentHash&&validId(id(s.signerId))&&typeof s.signedAt==='string'&&Number.isFinite(Date.parse(s.signedAt));
   const signatures=Array.isArray(contract.signatures)?contract.signatures:[],current=active?signatures.filter(validSignature):[];
   const customerSignature=current.find(s=>s.signerRole==='CUSTOMER'&&id(s.signerId)===customerId),facilitySignature=current.find(s=>['FACILITY_STAFF','FACILITY_MANAGER'].includes(s.signerRole));

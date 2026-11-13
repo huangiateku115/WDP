@@ -84,6 +84,15 @@ function vietnamDateTime(value) {
     ? date.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })
     : undefined;
 }
+function managedMoney(value, currency) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Chưa có thông tin";
+  return typeof currency === "string" ? reservationAmount(value, currency) : "Chưa xác định tiền tệ";
+}
+function managedTermLabel(term) {
+  if (!term || !Number.isFinite(Number(term.value))) return "Chưa có thông tin";
+  const unit = ({ DAY: "ngày", MONTH: "tháng", YEAR: "năm" })[term.unit];
+  return unit ? `${Number(term.value).toLocaleString("vi-VN")} ${unit}` : "Chưa có thông tin";
+}
 function useCurrentTime() {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -1198,7 +1207,7 @@ export function ContractDetailIntegration() {
             ["Mã hợp đồng", contract.contractCode],
             ["Trạng thái", contract.status],
             ["Phiên bản điều khoản", contract.termsVersion || "—"],
-            ["Ngày tạo", contract.createdAt || "—"],
+            ["Ngày tạo", vietnamDateTime(contract.createdAt) || "—"],
           ]}
         />
         <Link
@@ -1214,6 +1223,7 @@ export function ContractDetailIntegration() {
       (version) => version.version === contract.currentContentVersion,
     );
     const content = active?.content;
+    const managedCurrency = content?.pricing?.pricingRule?.currency || contract.pricingSnapshot?.pricingRule?.currency;
     const customerSigned = contract.signatures?.some(
       (signature) =>
         signature.version === active?.version &&
@@ -1234,8 +1244,8 @@ export function ContractDetailIntegration() {
     const canSignV3 = false;
     return (
       <BackendScreen
-        title="Review Managed V3 contract"
-        description="Review the Backend's Cell, capacity, dates, term and confirmed pricing snapshot."
+        title="Xem hợp đồng Managed V3"
+        description="Thông tin ô lưu trữ, thời hạn và giá đã chốt theo bản ghi của hệ thống."
       >
         <LoadState resource={resource} />
         <div className="flex justify-end"><Button variant="outline" onClick={resource.retry}><RefreshCw size={16} />Làm mới hợp đồng</Button></div>
@@ -1276,23 +1286,20 @@ export function ContractDetailIntegration() {
                   ],
                   [
                     "Thời hạn thuê",
-                    `${content.reservation.startDate || "—"} – ${content.reservation.endDate || "—"}`,
+                    `${reservationVietnamTime(content.reservation.startDate) || "Chưa có thông tin"} – ${reservationVietnamTime(content.reservation.endDate) || "Chưa có thông tin"}`,
                   ],
                   [
                     "Kỳ hạn",
-                    content.reservation.term
-                      ? JSON.stringify(content.reservation.term)
-                      : "—",
+                    managedTermLabel(content.reservation.term),
                   ],
-                  ["Tiền thuê", content.pricing?.estimatedRent],
+                  ["Tiền thuê", managedMoney(content.pricing?.estimatedRent, managedCurrency)],
                   [
                     "Đã thanh toán 100%",
-                    content.pricing?.totalPaid ??
-                    content.pricing?.amountBreakdown?.totalDue,
+                    managedMoney(content.pricing?.totalPaid ?? content.pricing?.amountBreakdown?.totalDue, managedCurrency),
                   ],
                   ["Hạn ký", vietnamDateTime(reservation.signingDeadline)],
-                  ["Thuế", content.pricing?.taxAmount],
-                  ["Giảm giá", content.pricing?.discountAmount],
+                  ["Thuế", managedMoney(content.pricing?.taxAmount, managedCurrency)],
+                  ["Giảm giá", managedMoney(content.pricing?.discountAmount, managedCurrency)],
                 ]}
               />
             </CardContent>
@@ -1311,8 +1318,8 @@ export function ContractDetailIntegration() {
         <Details
           values={[
             ["Phiên bản Điều khoản", contract.termsVersion],
-            ["Chữ ký Facility", contract.signedByFMAt || "Đang chờ"],
-            ["Chữ ký Customer", contract.signedByCustomerAt || "Đang chờ"],
+            ["Chữ ký cơ sở", contract.signedByFMAt ? vietnamDateTime(contract.signedByFMAt) : "Đang chờ"],
+            ["Chữ ký khách hàng", contract.signedByCustomerAt ? vietnamDateTime(contract.signedByCustomerAt) : "Đang chờ"],
           ]}
         />
         <SignedPaperProof contract={contract} />
@@ -1407,9 +1414,9 @@ export function ContractDetailIntegration() {
                             : []),
                         ]
                         : [
-                          ["Estimated rent", amounts.estimatedRent],
-                          ["Deposit", amounts.depositAmount],
-                          ["Total due", amounts.totalDue],
+                          ["Tiền thuê", amounts.estimatedRent == null ? undefined : managedMoney(amounts.estimatedRent, reservation.currency || reservation.managedPricingSnapshot?.pricingRule?.currency)],
+                          ["Tiền đặt cọc", amounts.depositAmount == null ? undefined : managedMoney(amounts.depositAmount, reservation.currency || reservation.managedPricingSnapshot?.pricingRule?.currency)],
+                          ["Tổng tiền", amounts.totalDue == null ? undefined : managedMoney(amounts.totalDue, reservation.currency || reservation.managedPricingSnapshot?.pricingRule?.currency)],
                         ]
                       : []),
                     [
@@ -1743,6 +1750,7 @@ export function PaymentIntegration() {
         loadContext={managedV3PaymentContext}
         loadContract={loadSelfStorageContract}
         onReservationRefresh={resource.retry}
+        managedInventory
       />
     );
   return (
@@ -1750,7 +1758,7 @@ export function PaymentIntegration() {
       title="Thanh toán Managed lịch sử"
       description="Luồng thanh toán Managed cũ đã đóng. Hệ thống không tạo Deposit, Balance hoặc thanh toán giả cho hồ sơ này."
     >
-      <RentalSummary item={resource.data} />
+      <RentalSummary item={resource.data} localizeManagedV2 />
       <Message error="Chỉ Reservation Managed V3 mới dùng PayOS Hosted Checkout. Hồ sơ cũ chỉ còn để tra cứu lịch sử." />
       <Button variant="outline" onClick={resource.retry}>
         Tải lại trạng thái
