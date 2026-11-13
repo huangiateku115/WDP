@@ -45,7 +45,7 @@ export function FullRentCheckout({payment, url}: {payment: z.infer<typeof paymen
       <AppText selectable>Số tài khoản: {payment.transferDetails.accountNumber}</AppText>
       <AppText selectable>Nội dung: {payment.transferDetails.description}</AppText>
     </>}
-    {safeUrl && <Button label="Mở trang PayOS" onPress={() => void open()}/>}
-    {error && <AppText accessibilityRole="alert">{error}</AppText>}
+    {!!safeUrl && <Button label="Mở trang PayOS" onPress={() => void open()}/>}
+    {!!error && <AppText accessibilityRole="alert">{error}</AppText>}
   </>;
 }

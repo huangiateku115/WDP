@@ -97,7 +97,7 @@ function ContractReview({id,owner}:{id:string;owner:string}){
         <AppText accessibilityLiveRegion="polite">{reservationProgress(rental)?.summary}</AppText>
         {rental.status === 'PAID' && contract.status === 'DRAFT' && <>
           <AppText>Vui lòng đến cơ sở ký hợp đồng giấy. Nhân viên sẽ xác minh bản đã ký.</AppText>
-          {rental.signingDeadline && <AppText>Hạn ký: {new Date(rental.signingDeadline).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}</AppText>}
+          {!!rental.signingDeadline && <AppText>Hạn ký: {new Date(rental.signingDeadline).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}</AppText>}
         </>}
         {rental.status === 'CHECKIN_READY' && hasPaperProof(contract) && <AppText>Đã xác minh hợp đồng giấy. Vui lòng chờ nhân viên bàn giao kho.</AppText>}
       </>}
@@ -106,7 +106,7 @@ function ContractReview({id,owner}:{id:string;owner:string}){
       {signatureRecorded&&signedAt?<AppText>Thời điểm Customer ký: {dateLabel(signedAt)}</AppText>:null}
       {document?.content?<AppText selectable>{document.content}</AppText>:null}
       {document?.terms.map((term,index)=><AppText selectable key={index}>{index+1}. {term}</AppText>)}
-      {document?.pdf&&<Button label="Mở tài liệu hợp đồng" variant="outline" disabled={pending} onPress={()=>void openPdf(document.pdf!)}/>}
+      {!!document?.pdf&&<Button label="Mở tài liệu hợp đồng" variant="outline" disabled={pending} onPress={()=>void openPdf(document.pdf!)}/>}
       {!document?.available&&<AppText>Backend chỉ cung cấp bản tóm tắt, chưa có nội dung điều khoản hoặc tài liệu để đọc.</AppText>}
       {review.reason?<AppText>{review.reason}</AppText>:null}
       {canSign&&!confirming&&<Button label="Ký hợp đồng" disabled={!canConfirm||pending} onPress={()=>{setConfirmation(reviewed);setError('');}}/>}

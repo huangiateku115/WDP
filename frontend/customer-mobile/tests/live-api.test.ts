@@ -713,3 +713,74 @@ test('reads published Self Storage terms and rejects a response without applicab
   fixture(()=>envelope({...data,groups:[]}));
   await expect(mobileRepo.bookingPolicy()).rejects.toThrow();
 });
+
+test('local defaults follow platform and release requires explicit HTTPS',()=>{
+  const {configuredApiBase}=require('../src/api/client') as typeof import('../src/api/client');
+  expect(configuredApiBase(undefined,true,'web')).toBe('http://localhost:5000/api/v1');
+  expect(configuredApiBase(undefined,true,'android')).toBe('http://10.0.2.2:5000/api/v1');
+  expect(configuredApiBase(undefined,false,'android')).toBeUndefined();
+  expect(configuredApiBase('http://192.168.1.3:5000/api/v1',true,'android')).toBe('http://192.168.1.3:5000/api/v1');
+  expect(configuredApiBase('http://192.168.1.3:5000/api/v1',false,'android')).toBeUndefined();
+});
+
+test('login sends the Customer DTO and surfaces the confirmed 401 without a session',async()=>{
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('post');
+    expect(c.url).toBe('/auth/login');
+    expect(JSON.parse(c.data)).toEqual({email:user.email,password:'fixture-only'});
+    throw new AxiosError('fixture','ERR_BAD_RESPONSE',c,undefined,{data:{message:'Sai email hoặc mật khẩu'},status:401,statusText:'Unauthorized',headers:{},config:c});
+  });
+  await expect(useLiveSession.getState().login({email:user.email,password:'fixture-only'})).rejects.toThrow('Sai email hoặc mật khẩu');
+  expect(useLiveSession.getState().user).toBeNull();
+  expect(adapter).toHaveBeenCalledTimes(1);
+});
+
+test('mixed Self Storage and Managed versions preserve owned rental lookup and reject invalid lists',async()=>{
+  configureApiSession('fixture-access');
+  const v2={...reservation,_id:pricingId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:2};
+  const v3={...reservation,_id:unitId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3};
+  fixture(()=>envelope([v2,v3,reservation]));
+  await expect(mobileRepo.rental(rentalId,owner)).resolves.toMatchObject({_id:rentalId,serviceType:'SELF_STORAGE'});
+  await expect(mobileRepo.rental(unitId,owner)).resolves.toMatchObject({bookingFlowVersion:3});
+  fixture(()=>envelope([reservation,{...v3,customerId:other}]));
+  await expect(mobileRepo.rental(rentalId,owner)).rejects.toThrow();
+  fixture(()=>envelope([reservation,{...v3,bookingFlowVersion:4}]));
+  await expect(mobileRepo.rental(rentalId,owner)).rejects.toThrow();
+});
+
+test('Customer checkout sends only note, confirms PENDING and preserves Backend CHECKED_OUT',async()=>{
+  configureApiSession('fixture-access');
+  const active={...reservation,status:'ACTIVE' as const};
+  const checkoutRequest={status:'PENDING' as const,requestedAt:'2099-01-01T00:00:00Z',note:'Kiểm tra kho'};
+  const adapter=fixture(c=>{
+    if(c.method==='get')return envelope([{...active,status:'CHECKED_OUT',checkoutRequest:{...checkoutRequest,status:'COMPLETED'}}]);
+    expect(c.url).toBe('/reservations/'+rentalId+'/checkout-request');
+    expect(JSON.parse(c.data)).toEqual({note:'Kiểm tra kho'});
+    return envelope({...active,checkoutRequest});
+  });
+  await expect(mobileRepo.requestSelfStorageCheckout(active,'  Kiểm tra kho ',owner)).resolves.toMatchObject({status:'ACTIVE',checkoutRequest});
+  await expect(mobileRepo.requestSelfStorageCheckout({...active,checkoutRequest},'',owner)).rejects.toThrow();
+  await expect(mobileRepo.requestSelfStorageCheckout(active,'',other)).rejects.toThrow();
+  await expect(mobileRepo.rental(rentalId,owner)).resolves.toMatchObject({status:'CHECKED_OUT',checkoutRequest:{status:'COMPLETED'}});
+  expect(adapter).toHaveBeenCalledTimes(2);
+});
+
+test('a pricing rule for a different Facility blocks estimate and booking',async()=>{
+  configureApiSession('fixture-access');
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('get');
+    if(c.url==='/storage-units/'+unitId)return envelope({_id:unitId,facilityId,unitCode:'A-01',size:'SMALL',status:'AVAILABLE'});
+    if(c.url==='/pricing-rules/resolve')return envelope({_id:pricingId,facilityId:other,serviceType:'SELF_STORAGE',unitSize:'SMALL',
+      term:{value:1,unit:'MONTH'},currency:'VND',price:2000,isActive:true,effectiveFrom:'2098-01-01T00:00:00Z'});
+    return envelope({storageUnitId:unitId,month:'2099-01',intervals:[],availabilityState:'VERIFIED',rangeAvailability:'AVAILABLE',
+      requestedRange:{startDate:reservation.startDate,endDate:reservation.endDate},evaluatedAt:'2098-12-01T00:00:00Z'});
+  });
+  await expect(mobileRepo.quote(facilityId,unitId,{start,end,value:1,unit:'MONTH'})).rejects.toThrow('Bảng giá không khớp');
+  expect(adapter).toHaveBeenCalledTimes(3);
+});
+
+test('payment detail rejects a mismatched Payment ID in an otherwise owned response',async()=>{
+  configureApiSession('fixture-access');
+  fixture(()=>envelope({...payment,id:other}));
+  await expect(mobileRepo.payment(reservation,paymentId,owner)).rejects.toThrow('Giao dịch không khớp');
+});

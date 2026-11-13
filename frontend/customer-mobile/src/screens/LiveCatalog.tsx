@@ -43,7 +43,7 @@ export function FacilityDetail({id}:{id:string}){
   return <LiveScreen title="Thông tin cơ sở" eyebrow="VAULTSPACE · CƠ SỞ LƯU TRỮ" subtitle="Xem địa chỉ và các dịch vụ được cung cấp tại cơ sở." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
     {data.data&&<Card>{data.data.serviceTypes.includes("SELF_STORAGE")?<FacilityImage uri={data.data.images?.[0]} height={156}/>:<WarehouseArt height={156}/>}<AppText variant="card">{data.data.name}</AppText>{data.data.serviceTypes.includes("SELF_STORAGE")&&<Chip label="Đang hoạt động" tone="green"/>}
       <AppText>{[data.data.address.line1??data.data.address.street,data.data.address.district,data.data.address.city].filter(Boolean).join(', ')}</AppText>
-      {data.data.description&&<AppText>{data.data.description}</AppText>}
+      {!!data.data.description&&<AppText>{data.data.description}</AppText>}
       <View style={ui.wrap}>{data.data.serviceTypes.map(value=><Chip key={value} label={serviceLabel(value)}/>)}</View>
       {data.data.serviceTypes.includes('SELF_STORAGE')&&<Button label="Chọn kho tự quản" onPress={()=>router.push({pathname:'/booking/[facilityId]/units',params:{facilityId:id}})}/>}
       {data.data.serviceTypes.includes('MANAGED_INVENTORY')&&<Button label="Khám phá kho ký gửi" variant="outline"
