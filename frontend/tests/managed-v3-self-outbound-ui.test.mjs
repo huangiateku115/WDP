@@ -12,9 +12,10 @@ test('V3 SKU uses Customer Self-Outbound component and does not mount V2 outboun
   assert.match(source, /<ManagedSelfOutboundV3/);
 });
 
-test('Customer V3 outbound UI exposes FIFO, held/available stock, OUTBOUND scheduling and physical attestation', async () => {
+test('Customer V3 outbound UI presents server stock plan, OUTBOUND scheduling and physical attestation', async () => {
   const source = await read('../src/components/customer/inventory/ManagedSelfOutboundV3.jsx');
-  for (const expected of ['Tồn thực tế', 'Đang giữ', 'Khả dụng', 'FIFO', 'Đặt lịch đến kho để xuất hàng', 'purpose=OUTBOUND', 'Session OUTBOUND', 'Tôi đã thực tế lấy đúng hàng', 'Xác nhận xuất hàng']) assert.ok(source.includes(expected), `missing ${expected}`);
+  for (const expected of ['Tồn thực tế', 'Đang giữ', 'Có thể yêu cầu xuất', 'Lô hàng', 'Đặt lịch đến kho để xuất hàng', 'purpose=OUTBOUND', 'Session OUTBOUND', 'Tôi đã thực tế lấy đúng hàng', 'Xác nhận đã lấy hàng']) assert.ok(source.includes(expected), `missing ${expected}`);
+  assert.match(source, /outboundPlan\.quantity/);
   assert.match(source, /managedInventoryV3OutboundApi\.preview/);
   assert.match(source, /managedInventoryV3OutboundApi\.confirm/);
   assert.match(source, /pendingConfirm/);

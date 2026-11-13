@@ -211,7 +211,7 @@ export function Notifications(){
 
 export {ManagedDashboard as Inventory} from './ManagedDashboard';
 
-function ItemDetail({id}:{id:string}){
+function ItemDetail({id,accessSessionId}:{id:string;accessSessionId?:string}){
   const owner=useOwner(),router=useRouter();
   const item=useResource(owner+':'+id,signal=>mobileRepo.item(id,owner,signal));
   const stock=useResource(owner+':'+id,async signal=>mobileRepo.inventoryStock(await mobileRepo.item(id,owner,signal),owner,signal));
@@ -223,7 +223,7 @@ function ItemDetail({id}:{id:string}){
       <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
       <AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
-    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}}/>}
+    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}} accessSessionId={accessSessionId}/>}
     <ResourceState {...stock}/>
     {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Sổ tồn kho V3"/>
       {stock.data.stock.reconciliationStatus==='RECONCILED'?<>
@@ -262,9 +262,9 @@ export function Movements(){
   </LiveScreen>;
 }
 export function Detail(){
-  const {kind,id}=useLocalSearchParams<{kind:string;id:string}>();
+  const {kind,id,accessSessionId}=useLocalSearchParams<{kind:string;id:string;accessSessionId?:string|string[]}>();
   if(kind==='facility')return <FacilityDetail key={id} id={id}/>;
   if(kind==='rental')return <RentalDetail key={id} id={id}/>;
-  if(kind==='inventory'||kind==='item')return <ItemDetail key={id} id={id}/>;
+  if(kind==='inventory'||kind==='item')return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId}/>;
   return <UnavailableScreen/>;
 }

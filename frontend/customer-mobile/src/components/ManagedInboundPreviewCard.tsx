@@ -11,9 +11,9 @@ import {AppText,Button,Card,Filter,Input} from './ui';
 import {ResourceState,useResource} from './liveUI';
 
 type Item=Awaited<ReturnType<typeof mobileRepo.item>>;
-export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void}){
-  const [open,setOpen]=useState(false),[kind,setKind]=useState<'A1_PHYSICAL_UNIT'|'A2_BATCH'>('A2_BATCH');
-  const [sessionId,setSession]=useState(''),[unitId,setUnit]=useState(''),[cellId,setCell]=useState('');
+export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessionId}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void;initialSessionId?:string}){
+  const [open,setOpen]=useState(!!initialSessionId),[kind,setKind]=useState<'A1_PHYSICAL_UNIT'|'A2_BATCH'>('A2_BATCH');
+  const [sessionId,setSession]=useState(initialSessionId??''),[unitId,setUnit]=useState(''),[cellId,setCell]=useState('');
   const [counts,setCounts]=useState<Record<string,string>>({});
   const [rotation,setRotation]=useState<0|90>(0);
   const [fields,setFields]=useState({serial:'',weight:String(item.unitWeightKg),width:String(item.unitDimensionsM.widthM),
@@ -22,12 +22,13 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;
   const [error,setError]=useState(''),[pending,setPending]=useState(false);
   const lock=useRef(false),mounted=useRef(false);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{if(initialSessionId){setSession(initialSessionId);setOpen(true);}},[initialSessionId]);
   const scope=owner+':'+item._id;
   const [committed,setCommitted]=useState('');
   const attempts=useResource(scope,()=>journal('managed-v3-inbound',owner,item._id).then(store=>store.read()));
   const units=useResource(open?scope:'',signal=>open?managedInboundPreview.units(item,r,owner,signal):Promise.resolve(null));
   const sessions=useResource(open?scope:'',signal=>open?managedReservationReads.sessions(r,owner,signal):Promise.resolve(null));
-  const usable=sessions.data?.filter(session=>eligibleInboundCells(r,session).length>0)??[];
+  const usable=sessions.data?.filter(session=>eligibleInboundCells(r,session).length>0&&(!initialSessionId||session._id===initialSessionId))??[];
   const session=usable.find(row=>row._id===sessionId);
   const cells=session?eligibleInboundCells(r,session):[];
   const number=(value:string)=>value.trim()?Number(value.replace(',','.')):NaN;

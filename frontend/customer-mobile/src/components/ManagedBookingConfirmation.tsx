@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import axios from 'axios';
 import {useRouter} from 'expo-router';
 import {apiIssue,MobileInputError} from '../api/client';
-import {createManagedBooking,managedBookingPolicy,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
+import {createManagedBooking,managedBookingPolicy,managedCreationPriceReview,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
 import {managedInventory,type ManagedQuote} from '../api/managedInventory';
 import {journal,newAttempt} from '../state/attemptJournal';
 import {useLiveSession} from '../state/useLiveSession';
@@ -48,7 +48,7 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
           setAccepted('');policy.reload();onReviewChanged();
           throw new MobileInputError('Báo giá hoặc điều khoản đã thay đổi. Hãy xem lại trước khi đặt kho.');
         }
-        saved={...newAttempt(),managedBooking:{body:{...input,termsAccepted:true,termsVersionId:versionId},endDate:review.endDate}};
+        saved={...newAttempt(),managedBooking:{body:{...input,termsAccepted:true,termsVersionId:versionId},endDate:review.endDate,quotedAmount:review.payment.amount}};
         if(!await store.claim(saved))throw new MobileInputError('Yêu cầu tạo đơn đang được xử lý.');
       }
       if(!saved?.managedBooking||!current()||(!recover&&activeScope.current!==scope))return;
@@ -68,8 +68,15 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
         }
       }
       if(!current())return;
-      verifyManagedCreation(await managedInventory.rental(resourceId,owner,body.facilityId),body,endDate);
+      const authoritative=verifyManagedCreation(await managedInventory.rental(resourceId,owner,body.facilityId),body,endDate);
       if(!current())return;
+      const quotedAmount=saved.managedBooking.quotedAmount;
+      const priceReview=quotedAmount===undefined?undefined:managedCreationPriceReview(quotedAmount,authoritative);
+      if(priceReview){
+        const priceStore=await journal('managed-v3-price-consent',owner,resourceId);
+        const existing=await priceStore.read();
+        if(!existing?.priceReview)await priceStore.write({...newAttempt(),resourceId,priceReview});
+      }
       await store.clear();
       if(current())router.replace({pathname:'/managed/[facilityId]/confirmation',params:{facilityId:body.facilityId,reservationId:resourceId}});
     }catch(cause){
