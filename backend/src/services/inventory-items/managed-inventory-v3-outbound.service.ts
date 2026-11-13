@@ -19,7 +19,7 @@ import ManagedAccessSessionModelRaw from '../../models/access/managed-access-ses
 import ManagedAccessVisitModelRaw from '../../models/access/managed-access-visit.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
 import { replayManagedInventoryV3, canonicalA2RemovalAmounts } from './managed-inventory-v3-ledger.service';
-import { allocateManagedV3Fifo, currentManagedV3A1Footprint, reconcileManagedV3OutboundHolds, ManagedV3OutboundDomainError } from './managed-v3-outbound-domain';
+import { allocateManagedV3Fifo, assertManagedV3A1OutboundFootprints, currentManagedV3A1Footprint, reconcileManagedV3A1PhysicalUnits, reconcileManagedV3OutboundHolds, staffCanReadManagedV3OutboundRequest, ManagedV3OutboundDomainError } from './managed-v3-outbound-domain';
 import { reconcileManagedItemStock } from './managed-stock-ledger.service';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
@@ -69,44 +69,54 @@ async function readState(item: Plain, session?: ClientSession) {
   try { replay = replayManagedInventoryV3(item, movements); } catch (error: any) { fail(409, error.code ?? 'V3_LEDGER_UNKNOWN', 'Stock ledger V3 không thể đối soát an toàn.'); }
   const projectionQuery = Projection.findOne({ skuId: item._id, reservationId: item.managedReservationId, customerId: item.customerId, facilityId: item.facilityId }); if (session) projectionQuery.session(session);
   const projection = await projectionQuery.lean().exec();
-  if (!projection || stable(projectionComparable(projection)) !== stable(projectionComparable(replay))) fail(409, 'V3_PROJECTION_MISMATCH', 'Stock projection chưa khớp replay canonical V3.');
   const batchQuery = BatchPlacement.find({ skuId: item._id }); if (session) batchQuery.session(session);
   const unitQuery = PhysicalUnit.find({ skuId: item._id }); if (session) unitQuery.session(session);
   const [batchRows, unitRows] = await Promise.all([batchQuery.lean().exec(), unitQuery.lean().exec()]);
   const unitIds = (unitRows as Plain[]).map(row => row._id);
   const footprintQuery = Footprint.find({ physicalUnitId: { $in: unitIds } }); if (session) footprintQuery.session(session);
   const footprintRows = await footprintQuery.lean().exec();
+  const requestQuery = Request.find({ skuId: item._id }).sort({ createdAt: 1, _id: 1 }); if (session) requestQuery.session(session);
+  const eventQuery = Event.find({ skuId: item._id }).sort({ occurredAt: 1, _id: 1 }); if (session) eventQuery.session(session);
+  const [requests, events] = await Promise.all([requestQuery.lean().exec(), eventQuery.lean().exec()]);
+  const pristineEmptyRegistration = movements.length === 0 && !projection && item.status === 'REGISTERED' && item.currentCellId == null &&
+    !item.currentPlacementMovementId && !item.inboundMovementId && (batchRows as Plain[]).length === 0 &&
+    (unitRows as Plain[]).every(row => row.state === 'PREPARED') && (footprintRows as Plain[]).length === 0 && requests.length === 0 && events.length === 0;
+  if (!projection && !pristineEmptyRegistration || projection && stable(projectionComparable(projection)) !== stable(projectionComparable(replay))) {
+    fail(409, 'V3_PROJECTION_MISMATCH', 'Stock projection chưa khớp replay canonical V3.');
+  }
   const activeBatchRows = (batchRows as Plain[]).filter(row => row.state === 'ACTIVE');
   const expectedBatchRows = replay.byBatch as Plain[];
   const batchComparable = (rows: Plain[]) => rows.map(row => ({ batchId: String(row.batchId), cellId: String(row.cellId), quantity: row.quantity,
     quantityUnit: row.quantityUnit, weightKg: row.weightKg, volumeM3: row.volumeM3, receiptMovementId: String(row.receiptMovementId),
     topologyCertificationId: String(row.topologyCertificationId), topologyRevision: row.topologyRevision })).sort((a, b) => a.batchId.localeCompare(b.batchId) || a.cellId.localeCompare(b.cellId));
-  if ((batchRows as Plain[]).some(row => row.state === 'DEPLETED' && (row.quantity !== 0 || row.weightKg !== 0 || row.volumeM3 !== 0)) ||
+  const batchScopesValid = (batchRows as Plain[]).every(row => String(row.skuId) === String(item._id) && String(row.reservationId) === String(item.managedReservationId) &&
+    String(row.customerId) === String(item.customerId) && String(row.facilityId) === String(item.facilityId));
+  if (!batchScopesValid || (batchRows as Plain[]).some(row => row.state === 'DEPLETED' && (row.quantity !== 0 || row.weightKg !== 0 || row.volumeM3 !== 0)) ||
       stable(batchComparable(activeBatchRows)) !== stable(batchComparable(expectedBatchRows))) fail(409, 'V3_PLACEMENT_RECONCILIATION_UNKNOWN', 'BatchPlacement không khớp canonical V3 ledger.');
   const activeUnitRows = (unitRows as Plain[]).filter(row => row.state === 'PLACED');
   const expectedUnitRows = replay.byPhysicalUnit as Plain[];
-  const unitComparable = (rows: Plain[]) => rows.map(row => ({ physicalUnitId: String(row.physicalUnitId ?? row._id), sourceMovementId: String(row.sourceMovementId),
-    weightKg: row.weightKg, volumeM3: row.volumeM3, cellIds: (row.cellIds ?? []).map(String).sort(), pose: row.pose ?? row.currentPose ?? null }))
-    .sort((a, b) => a.physicalUnitId.localeCompare(b.physicalUnitId));
-  if ((unitRows as Plain[]).filter(row => ['REMOVED', 'QUARANTINED'].includes(row.state)).some(row => expectedUnitRows.some(expected => String(expected.physicalUnitId) === String(row._id))) ||
-      activeUnitRows.length !== expectedUnitRows.length || activeUnitRows.some(row => !row.currentPose) ||
-      stable(unitComparable(activeUnitRows)) !== stable(unitComparable(expectedUnitRows))) fail(409, 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit không khớp canonical V3 ledger.');
+  try { reconcileManagedV3A1PhysicalUnits({ item, physicalUnits: unitRows as Plain[], movements, replay }); }
+  catch (error: any) { fail(409, error.code ?? 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit identity hoặc physical facts không khớp canonical V3 ledger.'); }
+  if ((unitRows as Plain[]).some(row => ['REMOVED', 'QUARANTINED'].includes(row.state) && expectedUnitRows.some(expected => String(expected.physicalUnitId) === String(row._id))) ||
+      activeUnitRows.length !== expectedUnitRows.length || activeUnitRows.some(row => !row.currentPose)) fail(409, 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit không khớp canonical V3 ledger.');
   const activeFootprints = (footprintRows as Plain[]).filter(row => row.state === 'ACTIVE');
-  const footprintComparable = (rows: Plain[]) => rows.map(row => ({ physicalUnitId: String(row.physicalUnitId), cells: (row.cells ?? []).map((cell: Plain) => ({ cellId: String(cell.cellId),
+  const footprintComparable = (rows: Plain[]) => rows.map(row => ({ physicalUnitId: String(row.physicalUnitId), sourceMovementId: String(row.sourceMovementId), cells: (row.cells ?? []).map((cell: Plain) => ({ cellId: String(cell.cellId),
     topologyCertificationId: String(cell.topologyCertificationId), supportReactionKg: cell.supportReactionKg, occupiedVolumeM3: cell.occupiedVolumeM3, topologyRevision: cell.topologyRevision }))
       .sort((a: Plain, b: Plain) => a.cellId.localeCompare(b.cellId)), pose: row.pose, topologyCertificationId: String(row.topologyCertificationId), topologyRevision: row.topologyRevision }))
     .sort((a, b) => a.physicalUnitId.localeCompare(b.physicalUnitId));
   const expectedFootprints = expectedUnitRows.map((unit: Plain) => {
     let lines: Plain[] = []; try { lines = currentManagedV3A1Footprint(movements, String(unit.physicalUnitId)); }
     catch { fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'A1 footprint hiện tại không thể dựng lại từ ledger history.'); }
+    const latestMovement = [...movements].reverse().find((movement: Plain) => [...(movement.v3Effect?.source ?? []), ...(movement.v3Effect?.destination ?? [])]
+      .some((line: Plain) => String(line.physicalUnitId) === String(unit.physicalUnitId)));
+    if (!latestMovement || latestMovement.v3Effect?.action === 'REMOVE') fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'Không xác định được Movement tạo footprint hiện tại.');
     return { physicalUnitId: unit.physicalUnitId, cells: lines.map((line: Plain) => ({ cellId: line.cellId, topologyCertificationId: line.topologyCertificationId,
-      supportReactionKg: line.supportReactionKg, occupiedVolumeM3: line.occupiedVolumeM3, topologyRevision: line.topologyRevision })), pose: lines[0]!.pose,
+      supportReactionKg: line.supportReactionKg, occupiedVolumeM3: line.occupiedVolumeM3, topologyRevision: line.topologyRevision })), pose: lines[0]!.pose, sourceMovementId: latestMovement._id,
       topologyCertificationId: lines[0]!.topologyCertificationId, topologyRevision: lines[0]!.topologyRevision };
   });
-  if (stable(footprintComparable(activeFootprints)) !== stable(footprintComparable(expectedFootprints))) fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'Footprint không khớp canonical V3 ledger.');
-  const requestQuery = Request.find({ skuId: item._id }).sort({ createdAt: 1, _id: 1 }); if (session) requestQuery.session(session);
-  const eventQuery = Event.find({ skuId: item._id }).sort({ occurredAt: 1, _id: 1 }); if (session) eventQuery.session(session);
-  const [requests, events] = await Promise.all([requestQuery.lean().exec(), eventQuery.lean().exec()]);
+  const footprintScopesValid = activeFootprints.every(row => String(row.reservationId) === String(item.managedReservationId) &&
+    String(row.customerId) === String(item.customerId) && String(row.facilityId) === String(item.facilityId));
+  if (!footprintScopesValid || stable(footprintComparable(activeFootprints)) !== stable(footprintComparable(expectedFootprints))) fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'Footprint identity, scope or cells do not match canonical V3 ledger.');
   let holds: Plain = { heldByPlacement: new Map(), pendingRequestIds: [], allocations: [] };
   try { holds = reconcileManagedV3OutboundHolds(events, requests); } catch (error: any) { fail(409, error.code ?? 'OUTBOUND_HOLDS_UNKNOWN', 'Outbound holds không thể tái dựng an toàn.'); }
   const batchByKey = new Map<string, Plain>((replay.byBatch ?? []).map((row: Plain) => [`B:${row.batchId}:${String(row.cellId)}`, row]));
@@ -191,13 +201,36 @@ async function assertFacilityCapacityReconciled(facilityId: Types.ObjectId, targ
   return { cells: cellMap, reservationVolumeM3: expectedReservationVolume };
 }
 async function ownedItem(itemId: unknown, actor: Actor, session?: ClientSession) {
-  const query = Item.findOne({ _id: oid(itemId, 'skuId'), customerId: actor._id, inventorySchemaVersion: 3, deletedAt: { $exists: false } }); if (session) query.session(session);
+  const id = itemId instanceof Types.ObjectId ? itemId : oid(itemId, 'skuId');
+  const query = Item.findOne({ _id: id, customerId: actor._id, inventorySchemaVersion: 3, deletedAt: { $exists: false } }); if (session) query.session(session);
   const item = await query.exec(); if (!item) fail(404, 'INVENTORY_ITEM_NOT_FOUND', 'Không tìm thấy SKU.'); return item;
 }
 function requestSnapshot(request: Plain) { return { requestId: String(request._id), skuId: String(request.skuId), reservationId: String(request.reservationId), facilityId: String(request.facilityId),
   itemKind: request.itemKind, requestedQuantity: request.requestedQuantity, quantityUnit: request.quantityUnit, allocations: request.allocations, sourceCellIds: [...new Set((request.allocations ?? []).map((x: Plain) => String(x.cellId)))].sort(),
   state: request.state, version: request.version, createdAt: request.createdAt, ...(request.cancelledAt ? { cancelledAt: request.cancelledAt } : {}),
   ...(request.confirmedAt ? { confirmedAt: request.confirmedAt, confirmedMovementId: String(request.confirmedMovementId), confirmedBy: String(request.confirmedBy) } : {}) };
+}
+async function staffVisitScope(actor: Actor) {
+  const now = new Date();
+  const [currentVisits, sessions] = await Promise.all([
+    Visit.find({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, purpose: 'OUTBOUND', status: { $in: ['SCHEDULED', 'CHECKED_IN'] }, endsAt: { $gte: now } })
+      .select('_id reservationId customerId facilityId purpose startsAt endsAt status assignedStaffId').limit(1001).lean().exec(),
+    AccessSession.find({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, allowedPurposes: 'OUTBOUND' })
+      .select('_id visitId reservationId customerId facilityId assignedStaffId allowedCellIds allowedPurposes status').limit(1001).lean().exec(),
+  ]);
+  if (currentVisits.length > 1000 || sessions.length > 1000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Phạm vi Visit/Session của Staff vượt giới hạn truy vấn an toàn.');
+  const visitIds = [...new Set((sessions as Plain[]).map(row => String(row.visitId)))].map(value => new Types.ObjectId(value));
+  const historicalVisits = visitIds.length ? await Visit.find({ _id: { $in: visitIds }, facilityId: actor.assignedFacilityId, purpose: 'OUTBOUND', status: { $in: ['CHECKED_IN', 'COMPLETED'] } })
+    .select('_id reservationId customerId facilityId purpose startsAt endsAt status assignedStaffId').limit(1001).lean().exec() : [];
+  if (historicalVisits.length > 1000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Lịch sử Visit của Staff vượt giới hạn truy vấn an toàn.');
+  const visitsById = new Map([...(currentVisits as Plain[]), ...(historicalVisits as Plain[])].map(row => [String(row._id), row]));
+  const scopedSessions = (sessions as Plain[]).filter(row => visitsById.has(String(row.visitId)));
+  return { visits: [...visitsById.values()], sessions: scopedSessions, now };
+}
+async function staffCanReadRequest(request: Plain, actor: Actor) {
+  const scope = await staffVisitScope(actor), movement = request.confirmedMovementId ? await Movement.findOne({ _id: request.confirmedMovementId, facilityId: actor.assignedFacilityId,
+    itemId: request.skuId, schemaVersion: 3, 'v3Effect.action': 'REMOVE' }).lean().exec() : null;
+  return staffCanReadManagedV3OutboundRequest({ request, ...scope, movements: movement ? [movement] : [], actorId: String(actor._id), facilityId: String(actor.assignedFacilityId) });
 }
 
 export class ManagedInventoryV3OutboundService {
@@ -211,7 +244,7 @@ export class ManagedInventoryV3OutboundService {
     return { sku: { id: String(item._id), itemCode: item.itemCode, name: item.name, category: item.category, images: item.images ?? [], quantityUnit: item.quantityUnit },
       reservation: { id: String(reservation._id), reservationCode: reservation.reservationCode, facilityId: String(reservation.facilityId), status: reservation.status },
       stock: state.customerProjection, pendingRequestIds: state.holds.pendingRequestIds, ledgerRevision: state.replay.ledgerRevision,
-      inventoryRevision: item.managedV3Revision ?? 0, reconciliation: 'RECONCILED_TO_SKU_LEDGER_AND_PROJECTION' };
+      inventoryRevision: item.managedV3Revision ?? 0, reconciliation: state.projection ? 'RECONCILED_TO_SKU_LEDGER_AND_PROJECTION' : 'NO_PHYSICAL_INBOUND' };
   }
   static async create(itemIdInput: unknown, body: unknown, idempotencyKeyInput: unknown, actor: Actor) {
     requireCustomer(actor); const itemId = oid(itemIdInput, 'skuId'), keyValue = key(idempotencyKeyInput);
@@ -232,9 +265,10 @@ export class ManagedInventoryV3OutboundService {
         if (!locked) fail(409, 'STALE_INVENTORY_REVISION', 'SKU vừa thay đổi; tải lại tồn kho rồi thử lại.');
         await reservationFor(locked, actor, session); await facilityFor(locked, session);
         const state = await readState(locked, session);
-        await assertFacilityCapacityReconciled(locked.facilityId, locked.managedReservationId, session);
         if (state.holds.pendingRequestIds.length) fail(409, 'OUTBOUND_REQUEST_PENDING', 'SKU đã có một yêu cầu xuất đang giữ hàng. Hãy hoàn tất hoặc hủy yêu cầu đó trước.');
-        if (input.requestedQuantity > state.replay.onHandQuantity) fail(409, 'OUTBOUND_QUANTITY_UNAVAILABLE', 'Số lượng yêu cầu vượt tồn thực tế.');
+        if (state.replay.onHandQuantity === 0 || state.customerProjection.availableQuantity === 0) fail(409, 'OUTBOUND_NO_PHYSICAL_STOCK', 'SKU chưa có tồn vật lý đã đối soát. Hãy hoàn tất Self-Inbound trước khi tạo yêu cầu xuất.');
+        if (input.requestedQuantity > state.customerProjection.availableQuantity) fail(409, 'OUTBOUND_QUANTITY_UNAVAILABLE', 'Số lượng yêu cầu vượt tồn khả dụng thực tế.');
+        await assertFacilityCapacityReconciled(locked.facilityId, locked.managedReservationId, session);
         let allocations: ManagedV3OutboundAllocation[];
         if (input.itemKind === 'A2_BATCH') allocations = allocateManagedV3Fifo(state.replay, input.requestedQuantity);
         else {
@@ -242,11 +276,14 @@ export class ManagedInventoryV3OutboundService {
           const units = [...state.replay.byPhysicalUnit].sort((a: Plain, b: Plain) => new Date(a.receivedAt ?? 0).getTime() - new Date(b.receivedAt ?? 0).getTime() || String(a.sourceMovementId ?? a.physicalUnitId).localeCompare(String(b.sourceMovementId ?? b.physicalUnitId)) || String(a.physicalUnitId).localeCompare(String(b.physicalUnitId))).slice(0, input.requestedQuantity);
           allocations = [];
           for (const unit of units as Plain[]) {
+            if (unit.cellIds.length !== 1) fail(409, 'A1_LOAD_SHARING_UNCERTIFIED', 'A1 nhiều Cell đang bị khóa vì mô hình topology hiện không lưu chứng nhận load-sharing có thể xác minh.');
             const receipt = await Movement.findOne({ _id: unit.sourceMovementId, itemId, schemaVersion: 3, 'v3Effect.action': 'ADD', 'v3Effect.itemKind': 'A1_PHYSICAL_UNIT' }).session(session).lean().exec();
             if (!receipt) fail(409, 'A1_FOOTPRINT_UNKNOWN', 'Không thể chứng minh receipt và footprint của PhysicalUnit.');
             const currentFootprint = currentManagedV3A1Footprint(state.movements, String(unit.physicalUnitId));
             for (const line of currentFootprint) allocations.push({ ...line, itemKind: 'A1_PHYSICAL_UNIT', receiptMovementId: receipt._id } as ManagedV3OutboundAllocation);
           }
+          try { assertManagedV3A1OutboundFootprints(allocations as Plain[]); }
+          catch (error: any) { fail(409, error.code ?? 'A1_FOOTPRINT_UNKNOWN', 'Footprint A1 chưa đủ bằng chứng để xuất an toàn.'); }
         }
         const reservation: any = await reservationFor(locked, actor, session);
         const cellIds = [...new Set(allocations.map(row => String(row.cellId)))].map(id => new Types.ObjectId(id));
@@ -254,6 +291,12 @@ export class ManagedInventoryV3OutboundService {
           if (!(reservation.allocatedCellIds ?? []).some((id: Types.ObjectId) => same(id, cellId))) fail(409, 'SOURCE_CELL_NOT_ALLOCATED', 'Nguồn hàng không nằm trong Cell được Reservation cấp.');
           const allocationRow = await Allocation.findOne({ cellId, reservationId: reservation._id, facilityId: locked.facilityId, customerId: actor._id, status: CellAllocationStatus.OCCUPIED }).session(session).lean().exec();
           if (!allocationRow) fail(409, 'SOURCE_CELL_NOT_OWNED', 'Cell nguồn không còn được Reservation này chiếm dụng.');
+        }
+        if (input.itemKind === 'A1_PHYSICAL_UNIT') for (const line of allocations) {
+          const certificate = await Topology.findOne({ _id: line.topologyCertificationId, facilityId: locked.facilityId, certificationState: 'CERTIFIED', revision: line.topologyRevision,
+            provenance: 'FACILITY_SURVEY', supportSurfaceId: { $exists: true, $ne: '' }, certifiedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() },
+            'cells.cellId': line.cellId }).session(session).lean().exec();
+          if (!certificate) fail(409, 'A1_TOPOLOGY_UNCERTIFIED', 'A1 source Cell không có topology certification Facility còn hiệu lực.');
         }
         const request = new Request({ skuId: itemId, reservationId: locked.managedReservationId, customerId: actor._id, facilityId: locked.facilityId,
           itemKind: input.itemKind, requestedQuantity: input.requestedQuantity, quantityUnit: allocations[0]?.quantityUnit, allocations,
@@ -276,7 +319,8 @@ export class ManagedInventoryV3OutboundService {
         if (event) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key hoặc request đang hoạt động đã xung đột.');
         fail(409, 'OUTBOUND_REQUEST_PENDING', 'SKU đã có yêu cầu xuất PENDING hoặc khóa duy nhất đang tranh chấp. Tải lại lịch sử trước khi thử lại.');
       }
-      if (error instanceof ManagedV3OutboundError || error instanceof ManagedV3OutboundDomainError) throw error;
+      if (error instanceof ManagedV3OutboundError) throw error;
+      if (error instanceof ManagedV3OutboundDomainError) fail(409, error.code, error.message);
       if (error instanceof ManagedAccessError) fail(error.status, error.code, error.message);
       if (errorLabel(error, 'UnknownTransactionCommitResult')) fail(503, 'OUTBOUND_REQUEST_OUTCOME_UNKNOWN', 'Kết quả tạo yêu cầu chưa xác định; tra cứu lại bằng Idempotency-Key, không tạo key mới.');
       throw error;
@@ -380,6 +424,10 @@ export class ManagedInventoryV3OutboundService {
         const currentRequest = await Request.findOne({ _id: requestId, customerId: actor._id, skuId: lockedItem._id }).session(session).exec();
         if (!currentRequest || currentRequest.state !== ManagedV3OutboundState.PENDING) fail(409, 'OUTBOUND_REQUEST_NOT_PENDING', 'Yêu cầu đã được xử lý hoặc hủy.');
         if (currentRequest.version !== expectedVersion) fail(412, 'STALE_OUTBOUND_REQUEST', 'Revision yêu cầu xuất đã thay đổi; tải lại và preview lại.');
+        if (currentRequest.itemKind === 'A1_PHYSICAL_UNIT') {
+          try { assertManagedV3A1OutboundFootprints(currentRequest.allocations as Plain[]); }
+          catch (error: any) { fail(409, error.code ?? 'A1_FOOTPRINT_UNKNOWN', 'Footprint A1 chưa đủ bằng chứng để xác nhận xuất an toàn.'); }
+        }
         const state = await readState(lockedItem, session);
         if (state.holds.pendingRequestIds.length !== 1 || state.holds.pendingRequestIds[0] !== String(requestId)) fail(409, 'OUTBOUND_HOLDS_UNKNOWN', 'Hold của yêu cầu không khớp nguồn authoritative.');
         const cellIds = [...new Set((currentRequest.allocations as Plain[]).map(row => String(row.cellId)))].map(value => new Types.ObjectId(value));
@@ -394,11 +442,12 @@ export class ManagedInventoryV3OutboundService {
           const owned = (reservation.allocatedCellIds ?? []).some((id: Types.ObjectId) => same(id, line.cellId));
           const allocation = await Allocation.findOne({ cellId: line.cellId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, status: CellAllocationStatus.OCCUPIED }).session(session).lean().exec();
           if (!owned || !allocation) fail(409, 'SOURCE_CELL_NOT_OWNED', 'Cell nguồn không còn được Reservation này cấp và chiếm dụng.');
-          const certificate = await Topology.findOne({ _id: line.topologyCertificationId, facilityId: reservation.facilityId, certificationState: 'CERTIFIED', revision: line.topologyRevision, certifiedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() } }).session(session).lean().exec();
+          const certificate = await Topology.findOne({ _id: line.topologyCertificationId, facilityId: reservation.facilityId, certificationState: 'CERTIFIED', revision: line.topologyRevision,
+            certifiedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() }, ...(line.itemKind === 'A1_PHYSICAL_UNIT' ? { provenance: 'FACILITY_SURVEY', supportSurfaceId: { $exists: true, $ne: '' }, 'cells.cellId': line.cellId } : {}) }).session(session).lean().exec();
           if (!certificate) fail(409, 'SOURCE_TOPOLOGY_UNCERTIFIED', 'Chứng nhận topology nguồn không còn hiệu lực; cần kiểm tra Facility.');
         }
         const now = new Date(), movementId = new Types.ObjectId();
-        const source: Plain[] = (currentRequest.allocations as Plain[]).map(row => ({ ...row, cellId: row.cellId, physicalUnitId: row.physicalUnitId ?? undefined,
+        const source: Plain[] = (currentRequest.allocations as Plain[]).map(row => ({ ...(typeof row.toObject === 'function' ? row.toObject() : row), cellId: row.cellId, physicalUnitId: row.physicalUnitId ?? undefined,
           batchId: row.batchId ?? undefined, receiptMovementId: row.receiptMovementId ?? undefined }));
         if (!source.length) fail(409, 'OUTBOUND_ALLOCATION_UNKNOWN', 'Yêu cầu không có phân bổ nguồn hàng đã đối soát.');
         const totalWeightKg = money(source.reduce((n, row) => n + row.weightKg, 0), 3), totalVolumeM3 = money(source.reduce((n, row) => n + row.volumeM3, 0), 6);
@@ -430,7 +479,7 @@ export class ManagedInventoryV3OutboundService {
         if (currentRequest.itemKind === 'A1_PHYSICAL_UNIT') {
           const unitIds = [...new Set(source.map(row => String(row.physicalUnitId)))].map(value => new Types.ObjectId(value));
           for (const unitId of unitIds) {
-            const footprint = await Footprint.findOne({ physicalUnitId: unitId, skuId: lockedItem._id, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, state: 'ACTIVE' }).session(session).exec();
+            const footprint = await Footprint.findOne({ physicalUnitId: unitId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, state: 'ACTIVE' }).session(session).exec();
             const unit = await PhysicalUnit.findOne({ _id: unitId, skuId: lockedItem._id, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, state: 'PLACED' }).session(session).exec();
             if (!footprint || !unit || stable(footprint.cells.map((x: Plain) => String(x.cellId)).sort()) !== stable(source.filter(row => String(row.physicalUnitId) === String(unitId)).map(row => String(row.cellId)).sort())) fail(409, 'A1_FOOTPRINT_MISMATCH', 'PhysicalUnit phải được xuất nguyên vẹn cùng toàn bộ Footprint.');
             footprint.state = 'RELEASED'; footprint.revision += 1; await footprint.save({ session });
@@ -501,14 +550,25 @@ export class ManagedInventoryV3OutboundService {
     const page = raw.page === undefined ? 1 : Number(raw.page), limit = raw.limit === undefined ? 20 : Number(raw.limit);
     if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail(400, 'INVALID_PAGINATION', 'Phân trang không hợp lệ.');
     const filter: Plain = { facilityId: actor.assignedFacilityId }; if (raw.state) { if (!Object.values(ManagedV3OutboundState).includes(raw.state)) fail(400, 'INVALID_FILTER', 'Trạng thái không hợp lệ.'); filter.state = raw.state; }
-    if (actor.role === UserRole.FACILITY_STAFF) {
-      const visits = await Visit.find({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, purpose: 'OUTBOUND' }).select('reservationId').limit(500).lean().exec();
-      const reservationIds = [...new Set((visits as Plain[]).map((row: Plain) => String(row.reservationId)))].map((value: string) => new Types.ObjectId(value));
-      if (!reservationIds.length) return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } };
-      filter.reservationId = { $in: reservationIds };
-    }
     if (raw.dateFrom || raw.dateTo) { filter.createdAt = {}; if (raw.dateFrom) filter.createdAt.$gte = new Date(String(raw.dateFrom)); if (raw.dateTo) filter.createdAt.$lte = new Date(String(raw.dateTo)); if ((Object.values(filter.createdAt) as Date[]).some((d: Date) => !Number.isFinite(d.getTime()))) fail(400, 'INVALID_FILTER', 'Ngày lọc không hợp lệ.'); }
-    const [rows, total] = await Promise.all([Request.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(), Request.countDocuments(filter).exec()]);
+    let rows: Plain[], total: number;
+    if (actor.role === UserRole.FACILITY_MANAGER) {
+      [rows, total] = await Promise.all([Request.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(), Request.countDocuments(filter).exec()]);
+    } else {
+      const scope = await staffVisitScope(actor);
+      const reservationIds = [...new Set(scope.visits.map((row: Plain) => String(row.reservationId)))].map((value: string) => new Types.ObjectId(value));
+      if (!reservationIds.length) return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } };
+      const states = raw.state ? [raw.state] : [ManagedV3OutboundState.PENDING, ManagedV3OutboundState.CONFIRMED];
+      const candidates = await Request.find({ ...filter, reservationId: { $in: reservationIds }, state: { $in: states } }).sort({ createdAt: -1, _id: -1 }).limit(5001).lean().exec();
+      if (candidates.length > 5000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Danh sách Outbound vượt giới hạn đối soát quyền Staff.');
+      const movementIds = candidates.map((row: Plain) => row.confirmedMovementId).filter(Boolean);
+      const sessionIds = scope.sessions.map((row: Plain) => row._id);
+      const scopedMovements = movementIds.length && sessionIds.length ? await Movement.find({ _id: { $in: movementIds }, facilityId: actor.assignedFacilityId,
+        schemaVersion: 3, 'v3Effect.action': 'REMOVE', 'v3Effect.accessSessionId': { $in: sessionIds } }).lean().exec() : [];
+      const visible = candidates.filter((request: Plain) => staffCanReadManagedV3OutboundRequest({ request, ...scope, movements: scopedMovements,
+        actorId: String(actor._id), facilityId: String(actor.assignedFacilityId) }));
+      rows = visible.slice((page - 1) * limit, page * limit); total = visible.length;
+    }
     const itemIds = [...new Set((rows as Plain[]).map((r: Plain) => String(r.skuId)))].map((id: string) => new Types.ObjectId(id));
     const items = await Item.find({ _id: { $in: itemIds }, facilityId: actor.assignedFacilityId }).select('_id itemCode name images category').lean().exec();
     const itemMap = new Map(items.map((row: Plain) => [String(row._id), row]));
@@ -519,7 +579,7 @@ export class ManagedInventoryV3OutboundService {
     if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role) || !actor.assignedFacilityId) fail(403, 'ROLE_DENIED', 'Staff/Manager cần Facility assignment.');
     const request = await Request.findOne({ _id: oid(requestIdInput, 'requestId'), facilityId: actor.assignedFacilityId }).lean().exec();
     if (!request) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu tại Facility.');
-    if (actor.role === UserRole.FACILITY_STAFF && !await Visit.exists({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, reservationId: request.reservationId, purpose: 'OUTBOUND' })) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu trong phạm vi Visit được phân công.');
+    if (actor.role === UserRole.FACILITY_STAFF && !await staffCanReadRequest(request, actor)) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu trong phạm vi Visit/Session OUTBOUND được phân công.');
     const [item, customer, movements, events] = await Promise.all([
       Item.findOne({ _id: request.skuId, facilityId: actor.assignedFacilityId }).select('_id itemCode name images category quantityUnit').lean().exec(),
       (await import('../../models/users/user.model')).default.findById(request.customerId).select('_id displayName').lean().exec(),
