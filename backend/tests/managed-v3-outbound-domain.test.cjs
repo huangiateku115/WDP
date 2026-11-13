@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Types } = require('mongoose');
-const { allocateManagedV3Fifo, currentManagedV3A1Footprint, reconcileManagedV3OutboundHolds } = require('../dist/services/inventory-items/managed-v3-outbound-domain');
+const { allocateManagedV3Fifo, currentManagedV3A1Footprint, reconcileManagedV3A1PhysicalUnits, staffCanReadManagedV3OutboundRequest, reconcileManagedV3OutboundHolds } = require('../dist/services/inventory-items/managed-v3-outbound-domain');
 const OutboundRequest = require('../dist/models/inventory-items/managed-v3-outbound-request.model').default;
 const OutboundEvent = require('../dist/models/inventory-items/managed-v3-outbound-event.model').default;
 const { ManagedInventoryV3OutboundService, ManagedV3OutboundError } = require('../dist/services/inventory-items/managed-inventory-v3-outbound.service');
@@ -103,4 +103,42 @@ test('V3 outbound service rejects role, malformed DTO and missing Session before
     error => error instanceof ManagedV3OutboundError && error.status === 422 && error.code === 'INVALID_OUTBOUND_PREVIEW');
   await assert.rejects(ManagedInventoryV3OutboundService.confirm(requestId, { physicalRemovalConfirmed: true }, 'outbound-key-0002', '"0"', staff),
     error => error instanceof ManagedV3OutboundError && error.status === 403 && error.code === 'ROLE_DENIED');
+});
+
+test('A1 reconciliation compares PhysicalUnit facts to receipt and Footprint Cell set to canonical history without assuming a cellIds model field', () => {
+  const item = { _id: new Types.ObjectId(), managedReservationId: new Types.ObjectId(), customerId: new Types.ObjectId(), facilityId: new Types.ObjectId() };
+  const unitId = new Types.ObjectId(), sourceMovementId = new Types.ObjectId();
+  const pose = { xStartM: 0.1, yStartM: 0.2, rotationDeg: 90 };
+  const dimensionsM = { widthM: 0.4, depthM: 0.3, heightM: 0.2 };
+  const unit = { _id: unitId, ...{ skuId: item._id, reservationId: item.managedReservationId, customerId: item.customerId, facilityId: item.facilityId },
+    serial: 'PU-1', state: 'PLACED', sourceMovementId, weightKg: 5, volumeM3: 0.024, dimensionsM, currentPose: pose };
+  const receipt = { _id: sourceMovementId, itemId: item._id, managedReservationId: item.managedReservationId, customerId: item.customerId, facilityId: item.facilityId,
+    actualUnitWeightKg: 5, actualTotalVolumeM3: 0.024, actualUnitDimensionsM: dimensionsM,
+    v3Effect: { action: 'ADD', itemKind: 'A1_PHYSICAL_UNIT', destination: [{ physicalUnitId: unitId }] } };
+  const expected = { byPhysicalUnit: [{ physicalUnitId: String(unitId), sourceMovementId: String(sourceMovementId), quantity: 1, pose, weightKg: 5, volumeM3: 0.024 }] };
+  assert.equal(reconcileManagedV3A1PhysicalUnits({ item, physicalUnits: [unit], movements: [receipt], replay: expected }), true);
+  const withWrongPose = { ...unit, currentPose: { ...pose, xStartM: 0.5 } };
+  assert.throws(() => reconcileManagedV3A1PhysicalUnits({ item, physicalUnits: [withWrongPose], movements: [receipt], replay: expected }), { code: 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN' });
+  assert.throws(() => reconcileManagedV3A1PhysicalUnits({ item, physicalUnits: [{ ...unit, dimensionsM: { ...dimensionsM, widthM: 0.9 } }], movements: [receipt], replay: expected }), { code: 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN' });
+});
+
+test('Staff outbound visibility is tied to an assigned current/history Visit and the exact Session Movement', () => {
+  const facilityId = new Types.ObjectId(), otherFacility = new Types.ObjectId(), staffId = new Types.ObjectId(), oldStaff = new Types.ObjectId();
+  const reservationId = new Types.ObjectId(), customerId = new Types.ObjectId(), cellId = new Types.ObjectId();
+  const visitId = new Types.ObjectId(), sessionId = new Types.ObjectId(), movementId = new Types.ObjectId();
+  const now = new Date('2026-11-13T12:00:00Z');
+  const visit = { _id: visitId, reservationId, customerId, facilityId, purpose: 'OUTBOUND', status: 'COMPLETED', assignedStaffId: oldStaff,
+    startsAt: new Date('2026-11-13T10:00:00Z'), endsAt: new Date('2026-11-13T11:00:00Z') };
+  const session = { _id: sessionId, visitId, reservationId, customerId, facilityId, assignedStaffId: staffId, allowedPurposes: ['OUTBOUND'], allowedCellIds: [cellId], status: 'CHECKED_OUT' };
+  const movement = { _id: movementId, v3Effect: { action: 'REMOVE', operationId: `outbound:${new Types.ObjectId()}`, accessSessionId: sessionId } };
+  const requestId = movement.v3Effect.operationId.slice('outbound:'.length);
+  const request = { _id: new Types.ObjectId(requestId), reservationId, customerId, facilityId, state: 'CONFIRMED', confirmedMovementId: movementId,
+    allocations: [{ cellId }] };
+  movement.v3Effect.operationId = `outbound:${request._id}`;
+  assert.equal(staffCanReadManagedV3OutboundRequest({ request, visits: [visit], sessions: [session], movements: [movement], actorId: String(staffId), facilityId: String(facilityId), now }), true);
+  assert.equal(staffCanReadManagedV3OutboundRequest({ request, visits: [visit], sessions: [session], movements: [movement], actorId: String(oldStaff), facilityId: String(facilityId), now }), false);
+  assert.equal(staffCanReadManagedV3OutboundRequest({ request, visits: [visit], sessions: [session], movements: [movement], actorId: String(staffId), facilityId: String(otherFacility), now }), false);
+  const laterRequest = { ...request, _id: new Types.ObjectId(), state: 'PENDING', createdAt: new Date('2026-11-13T12:01:00Z'), confirmedMovementId: undefined };
+  assert.equal(staffCanReadManagedV3OutboundRequest({ request: laterRequest, visits: [visit], sessions: [session], movements: [], actorId: String(staffId), facilityId: String(facilityId), now }), false);
+  assert.equal(staffCanReadManagedV3OutboundRequest({ request: laterRequest, visits: [{ ...visit, status: 'CANCELLED' }], sessions: [], movements: [], actorId: String(staffId), facilityId: String(facilityId), now }), false);
 });

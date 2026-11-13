@@ -79,3 +79,74 @@ export function currentManagedV3A1Footprint(movementsInput: Row[], physicalUnitI
   if (!footprint.length || new Set(footprint.map((line: Row) => id(line.cellId))).size !== footprint.length) invalid('A1_FOOTPRINT_UNKNOWN', 'Latest A1 footprint is missing or duplicated');
   return footprint;
 }
+
+/** Validate the persisted PhysicalUnit projection against its immutable ADD receipt and current ledger projection. */
+export function reconcileManagedV3A1PhysicalUnits(input: { item: Row; physicalUnits: Row[]; movements: Row[]; replay: Row[] | Row }) {
+  const { item, physicalUnits, movements } = input;
+  const expected = Array.isArray(input.replay) ? input.replay : (input.replay as Row).byPhysicalUnit;
+  if (!Array.isArray(physicalUnits) || !Array.isArray(movements) || !Array.isArray(expected)) invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit evidence is incomplete');
+  const scope = (row: Row) => id(row.skuId) === id(item._id) && id(row.reservationId) === id(item.managedReservationId) &&
+    id(row.customerId) === id(item.customerId) && id(row.facilityId) === id(item.facilityId);
+  if (physicalUnits.some(row => !scope(row))) invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit scope differs from its SKU ownership');
+  const active = physicalUnits.filter(row => row.state === 'PLACED');
+  if (active.length !== expected.length) invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'Placed PhysicalUnit count differs from canonical ledger');
+  const byId = new Map(physicalUnits.map(row => [id(row._id), row]));
+  const movementById = new Map(movements.map(row => [id(row._id), row]));
+  const close = (a: unknown, b: unknown, tolerance = 0.000001) => Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Math.abs(Number(a) - Number(b)) <= tolerance;
+  const samePose = (a: Row | null | undefined, b: Row | null | undefined) => !!a && !!b && a.xStartM === b.xStartM && a.yStartM === b.yStartM && a.rotationDeg === b.rotationDeg;
+  for (const current of expected as Row[]) {
+    const unit = byId.get(id(current.physicalUnitId));
+    if (!unit) return invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit document is missing');
+    if (unit.state !== 'PLACED' || !scope(unit) || !unit.serial?.trim() ||
+        id(unit.sourceMovementId) !== id(current.sourceMovementId) || !samePose(unit.currentPose, current.pose) ||
+        !close(unit.weightKg, current.weightKg, 0.001) || !close(unit.volumeM3, current.volumeM3, 0.000001)) {
+      invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit identity, state, physical measurements, pose or source Movement differs from ledger');
+    }
+    const receipt = movementById.get(id(current.sourceMovementId));
+    const receiptLine = receipt?.v3Effect?.action === 'ADD' && receipt?.v3Effect?.itemKind === 'A1_PHYSICAL_UNIT' ?
+      (receipt.v3Effect.destination ?? []).find((line: Row) => id(line.physicalUnitId) === id(current.physicalUnitId)) : null;
+    const dimensions = receipt?.actualUnitDimensionsM;
+    if (!receipt || id(receipt.itemId) !== id(item._id) || id(receipt.managedReservationId) !== id(item.managedReservationId) ||
+        id(receipt.customerId) !== id(item.customerId) || id(receipt.facilityId) !== id(item.facilityId) || !receiptLine ||
+        !dimensions || !unit.dimensionsM || !['widthM', 'depthM', 'heightM'].every(key => close(unit.dimensionsM[key], dimensions[key], 0.000001)) ||
+        !close(unit.weightKg, receipt.actualUnitWeightKg, 0.001) || !close(unit.volumeM3, receipt.actualTotalVolumeM3, 0.000001)) {
+      invalid('V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit measurements do not match its scoped canonical ADD receipt');
+    }
+  }
+  return true;
+}
+
+/** Current topology schema has no certified load-sharing proof, so only one-Cell A1 units are outbound eligible. */
+export function assertManagedV3A1OutboundFootprints(allocations: Row[]) {
+  if (!Array.isArray(allocations) || !allocations.length || allocations.some(row => !row.physicalUnitId || row.itemKind !== 'A1_PHYSICAL_UNIT' || !row.cellId)) {
+    invalid('A1_FOOTPRINT_UNKNOWN', 'A1 outbound requires complete PhysicalUnit and Cell identities');
+  }
+  const cellsByUnit = new Map<string, Set<string>>();
+  for (const row of allocations) { const cells = cellsByUnit.get(id(row.physicalUnitId)) ?? new Set<string>(); cells.add(id(row.cellId)); cellsByUnit.set(id(row.physicalUnitId), cells); }
+  if ([...cellsByUnit.values()].some(cells => cells.size !== 1)) invalid('A1_LOAD_SHARING_UNCERTIFIED', 'Multi-Cell A1 outbound requires a certified load-sharing proof');
+  return true;
+}
+
+/** Staff reads are tied to an assigned visit or the exact session that produced a confirmed Movement. */
+export function staffCanReadManagedV3OutboundRequest(input: { request: Row; visits: Row[]; sessions: Row[]; movements: Row[]; actorId: string; facilityId: string; now?: Date }) {
+  const { request, visits, sessions, movements } = input, now = input.now ?? new Date();
+  if (id(request.facilityId) !== id(input.facilityId) || !Array.isArray(request.allocations) || !request.allocations.length) return false;
+  const cellIds = [...new Set(request.allocations.map((line: Row) => id(line.cellId)))];
+  const coversCells = (session: Row) => Array.isArray(session.allowedCellIds) && cellIds.every(cell => session.allowedCellIds.some((allowed: unknown) => id(allowed) === cell));
+  const visitForSession = (session: Row) => visits.find(visit => id(visit._id) === id(session.visitId) && id(visit.reservationId) === id(request.reservationId) &&
+    id(visit.customerId) === id(request.customerId) && id(visit.facilityId) === id(input.facilityId) && visit.purpose === 'OUTBOUND' && ['CHECKED_IN', 'COMPLETED'].includes(visit.status));
+  if (request.state === 'PENDING') {
+    const createdAt = new Date(request.createdAt).getTime();
+    return visits.some(visit => id(visit.reservationId) === id(request.reservationId) && id(visit.customerId) === id(request.customerId) &&
+      id(visit.facilityId) === id(input.facilityId) && visit.purpose === 'OUTBOUND' &&
+      (visit.status === 'SCHEDULED' && id(visit.assignedStaffId) === id(input.actorId) && new Date(visit.endsAt).getTime() >= now.getTime() && createdAt <= new Date(visit.startsAt).getTime() ||
+       ['CHECKED_IN', 'COMPLETED'].includes(visit.status) && sessions.some(session => id(session.visitId) === id(visit._id) && id(session.assignedStaffId) === id(input.actorId) &&
+         id(session.customerId) === id(request.customerId) && id(session.reservationId) === id(request.reservationId) && id(session.facilityId) === id(input.facilityId) &&
+         (session.allowedPurposes ?? []).includes('OUTBOUND') && coversCells(session) && createdAt <= new Date(visit.endsAt).getTime())));
+  }
+  if (request.state !== 'CONFIRMED' || !request.confirmedMovementId) return false;
+  return sessions.some(session => id(session.assignedStaffId) === id(input.actorId) && id(session.customerId) === id(request.customerId) &&
+    id(session.reservationId) === id(request.reservationId) && id(session.facilityId) === id(input.facilityId) && (session.allowedPurposes ?? []).includes('OUTBOUND') &&
+    coversCells(session) && !!visitForSession(session) && movements.some(movement => id(movement._id) === id(request.confirmedMovementId) &&
+      id(movement.v3Effect?.accessSessionId) === id(session._id) && movement.v3Effect?.action === 'REMOVE' && movement.v3Effect?.operationId === `outbound:${id(request._id)}`));
+}
