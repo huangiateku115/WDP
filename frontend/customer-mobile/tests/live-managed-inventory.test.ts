@@ -144,3 +144,34 @@ test('ambiguous or missing rack coordinates stay visible as a read-only fallback
   expect(warehouseRackLayout([{levelNumber:1,cells:[{...cell,cellNumber:3}]}],2)).toBeNull();
   expect(warehouseRackLayout([])?.rows).toEqual([]);
 });
+
+test('V3 quotes verify the exact Cell set at the wire boundary',async()=>{
+  const v3={...quote,bookingFlowVersion:3,payment:{purpose:'FULL_RENT',amount:24000,currency:'VND'}};
+  const adapter=fixture(c=>{
+    expect(c.url).toBe('/reservations/managed/quote');
+    return env(v3);
+  });
+  await expect(managedInventory.quote(body,range)).resolves.toMatchObject({bookingFlowVersion:3});
+  expect(adapter).toHaveBeenCalledTimes(1);
+  fixture(()=>env({...v3,cellIds:[other]}));
+  await expect(managedInventory.quote(body,range)).rejects.toThrow();
+});
+
+test('V3 inventory readers select canonical routes without falling back after a rejection',async()=>{
+  const item={_id:cellId,customerId:owner,managedReservationId:reservationId,facilityId,itemCode:'MI-01',name:'Fixture',
+    category:'Box',quantity:2,quantityUnit:'box',unitWeightKg:1,unitDimensionsM:{widthM:1,depthM:1,heightM:1},status:'IN_STORAGE'};
+  const rental={_id:reservationId,customerId:owner,facilityId,reservationCode:'MIR-FIXTURE',
+    serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate,endDate};
+  const adapter=fixture(c=>{
+    if(c.url==='/reservations/me')return env([rental]);
+    if(c.url==='/inventory-items/'+cellId+'/v3/movements')return env([]);
+    if(c.url==='/inventory-items/'+cellId+'/v3/stock')return http(c,403);
+    throw Error('Unexpected request '+c.url);
+  });
+  const sku=await mobileRepo.inventoryMovements(item as Parameters<typeof mobileRepo.inventoryMovements>[0],owner);
+  expect(sku).toEqual({kind:'V3',rows:[]});
+  await expect(mobileRepo.inventoryStock(item as Parameters<typeof mobileRepo.inventoryStock>[0],owner)).rejects.toMatchObject({response:{status:403}});
+  expect(adapter.mock.calls.map(([config])=>config.url)).toEqual([
+    '/reservations/me','/inventory-items/'+cellId+'/v3/movements','/reservations/me','/inventory-items/'+cellId+'/v3/stock',
+  ]);
+});

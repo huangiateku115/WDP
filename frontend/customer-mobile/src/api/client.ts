@@ -49,14 +49,15 @@ apiClient.interceptors.response.use(response => response, (error: unknown) => {
 });
 
 export async function wire(method: 'GET'|'POST'|'PATCH'|'PUT', url: string, options: {
-  anonymous?: boolean; token?: string; body?: unknown; params?: Record<string, unknown>; key?: string; clientPlatform?: 'MOBILE'; signal?: AbortSignal;
+  anonymous?: boolean; token?: string; body?: unknown; params?: Record<string, unknown>; key?: string; clientPlatform?: 'MOBILE'; ifMatch?: number; signal?: AbortSignal;
 } = {}) {
   const token = options.anonymous ? undefined : options.token ?? activeToken;
   if (!options.anonymous && !token) throw new AxiosError('Vui lòng đăng nhập lại.', 'AUTH_REQUIRED');
   const response = await apiClient.request<unknown>({
     method, url, data: options.body, params: options.params, signal: options.signal,
     headers: {...(token ? {Authorization: 'Bearer ' + token} : {}), ...(options.key ? {'Idempotency-Key': options.key} : {}),
-      ...(options.clientPlatform ? {'X-WDP-Payment-Client': options.clientPlatform} : {})},
+      ...(options.clientPlatform ? {'X-WDP-Payment-Client': options.clientPlatform} : {}),
+      ...(options.ifMatch!==undefined ? {'If-Match': String(options.ifMatch)} : {})},
   });
   if (token && !options.token && token !== activeToken) throw new AxiosError('Phiên đăng nhập đã thay đổi.', 'SESSION_CHANGED');
   return response.data;

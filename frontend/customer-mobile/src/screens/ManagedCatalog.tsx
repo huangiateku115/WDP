@@ -1,3 +1,6 @@
+import {ManagedSkuEditor} from '../components/ManagedSkuEditor';
+import {ManagedReservationOperations} from '../components/ManagedReservationOperations';
+import {ManagedPaymentCard} from '../components/ManagedPaymentCard';
 import {CardHeading} from '../components/livePresentation';
 import {useState} from 'react';
 import {useLocalSearchParams,useRouter} from 'expo-router';
@@ -6,7 +9,7 @@ import {managedInventory} from '../api/managedInventory';
 import {lifecycle} from '../api/contracts/customer';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,Input,StateCard,ui} from '../components/ui';
-import {dateLabel,LiveScreen,ResourceState,useResource} from '../components/liveUI';
+import {dateLabel,money,LiveScreen,ResourceState,useResource} from '../components/liveUI';
 
 export function ManagedFacilities(){
   const router=useRouter();
@@ -51,11 +54,18 @@ export function ManagedRentalDetail(){
       <AppText>{facility.data?.name??'Cơ sở kho ký gửi'}</AppText>
       <AppText>{state===r.status?({CANCELLED:'Đã hủy',OVERDUE:'Quá hạn',CLOSED:'Đã đóng',CHECKED_OUT:'Đã trả kho'}[r.status as string]??'Đang cập nhật'):state}</AppText>
       <AppText>{dateLabel(r.startDate)} – {dateLabel(r.endDate)}</AppText>
-      {r.bookingFlowVersion!==2&&<AppText>Đơn thuộc luồng kho ký gửi trước V2.</AppText>}
+      {r.bookingFlowVersion===3?<AppText>Kho ký gửi V3 · Thanh toán toàn bộ tiền thuê</AppText>:r.bookingFlowVersion!==2?<AppText>Đơn thuộc luồng kho ký gửi trước V2.</AppText>:null}
       {r.allocatedCapacity!==undefined&&<AppText>Dung tích được cấp: {r.allocatedCapacity} m³</AppText>}
       {r.usedCapacityM3!==undefined&&<AppText>Dung tích đã dùng: {r.usedCapacityM3} m³</AppText>}
       {r.allocatedCellIds&&<AppText>Số ô được cấp: {r.allocatedCellIds.length}</AppText>}
+      {r.bookingFlowVersion===3&&typeof r.estimatedRent==='number'&&Number.isFinite(r.estimatedRent)&&
+        <AppText>Tiền thuê dự kiến: {money(r.estimatedRent)}</AppText>}
+      {r.bookingFlowVersion===3&&!!r.signingDeadline&&<AppText>Hạn ký: {dateLabel(r.signingDeadline)}</AppText>}
+      {r.bookingFlowVersion===3&&<Button label="Xem hợp đồng" variant="outline" onPress={()=>router.push({pathname:'/rentals/[id]/contract',params:{id:r._id}})}/>}
       <Button label="Xem sơ đồ kho" variant="outline" onPress={()=>router.push({pathname:'/managed/[facilityId]/map',params:{facilityId}})}/>
     </Card>}
+    {r?.bookingFlowVersion===3&&r.rentalPaymentFlow==='FULL_UPFRONT_V1'&&<ManagedPaymentCard key={owner+':'+r._id} r={r} owner={owner} reload={data.reload}/>}
+    {r?.bookingFlowVersion===3&&<ManagedReservationOperations key={'ops:'+owner+':'+r._id} r={r} owner={owner}/>}
+    {r?.bookingFlowVersion===3&&<ManagedSkuEditor key={'sku:'+owner+':'+r._id} r={r} owner={owner} onSaved={item=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id}})}/>}
   </LiveScreen>;
 }

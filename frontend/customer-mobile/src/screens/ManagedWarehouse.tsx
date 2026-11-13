@@ -1,3 +1,4 @@
+import {ManagedBookingConfirmation} from '../components/ManagedBookingConfirmation';
 import {CardHeading,TintedPanel} from '../components/livePresentation';
 import {useState} from 'react';
 import {View} from 'react-native';
@@ -104,16 +105,22 @@ export function ManagedMapPanel({facilityId,range,term}:{facilityId:string;range
         onPress={()=>{setRequest(requestScope);quote.reload();}}/>
       {quoteEnabled&&<ResourceState {...quote}/>}
       {quoteEnabled&&quote.data&&<TintedPanel>
-        <AppText variant="card">Báo giá kho ký gửi V2</AppText>
+        <AppText variant="card">Báo giá kho ký gửi V{quote.data.bookingFlowVersion}</AppText>
         <AppText>Dung tích thuê: {quote.data.allocatedCapacityM3} m³</AppText>
         <AppText>Tiền thuê dự kiến: {money(quote.data.pricing.estimatedRent)}</AppText>
-        <AppText>Tiền thuê trả trước: {money(quote.data.deposit.amount)}</AppText>
         <AppText>Thuế: {money(quote.data.taxAmount)}</AppText>
-        <AppText>Tổng tiền dự kiến: {money(quote.data.paymentBreakdown.totalDue)}</AppText>
-        <AppText>Phần còn lại: {money(quote.data.paymentBreakdown.balanceDue)}</AppText>
+        {quote.data.bookingFlowVersion===3
+          ? <AppText>Thanh toán 100% tiền thuê: {money(quote.data.payment.amount)}</AppText>
+          : <>
+            <AppText>Tiền thuê trả trước: {money(quote.data.deposit.amount)}</AppText>
+            <AppText>Tổng tiền dự kiến: {money(quote.data.paymentBreakdown.totalDue)}</AppText>
+            <AppText>Phần còn lại: {money(quote.data.paymentBreakdown.balanceDue)}</AppText>
+          </>}
       </TintedPanel>}
-      <Button label="Xác nhận tạo đơn thuê" disabled onPress={()=>{}}/>
-      <AppText>Máy chủ chưa bảo đảm tạo riêng đơn V2 từ báo giá này. Bạn có thể kiểm tra giá và chọn vị trí.</AppText>
+
+      {!!owner&&<ManagedBookingConfirmation key={owner} owner={owner}
+        review={quoteEnabled&&quote.data?.bookingFlowVersion===3?quote.data:undefined}
+        onReviewChanged={quote.reload}/>}
     </Card>}
   </>;
 }

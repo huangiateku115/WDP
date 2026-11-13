@@ -1,3 +1,5 @@
+import {ManagedSkuEdit} from '../components/ManagedSkuEditor';
+import {ManagedOperationLookup} from '../components/ManagedOperationLookup';
 import {useRef,useState} from 'react';
 import {useLocalSearchParams,useRouter,type Href} from 'expo-router';
 import {View} from 'react-native';
@@ -212,7 +214,7 @@ export {ManagedDashboard as Inventory} from './ManagedDashboard';
 function ItemDetail({id}:{id:string}){
   const owner=useOwner(),router=useRouter();
   const item=useResource(owner+':'+id,signal=>mobileRepo.item(id,owner,signal));
-  const stock=useResource(owner+':'+id,async signal=>mobileRepo.stock(await mobileRepo.item(id,owner,signal),owner,signal));
+  const stock=useResource(owner+':'+id,async signal=>mobileRepo.inventoryStock(await mobileRepo.item(id,owner,signal),owner,signal));
   return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký và tồn kho của mặt hàng." onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
     <ResourceState {...item}/>
     {item.data&&<Card><CardHeading icon="cube-outline" title={item.data.name}/><AppText>Mã hàng {item.data.itemCode}</AppText>
@@ -221,21 +223,40 @@ function ItemDetail({id}:{id:string}){
       <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
       <AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
+    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}}/>}
     <ResourceState {...stock}/>
-    {stock.data&&<Card><CardHeading icon="layers-outline" title="Tồn kho"/>
-      <AppText variant="caption">{stock.data.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu tồn kho đã đối chiếu từ dữ liệu cũ'}</AppText><AppText>Đang lưu {stock.data.onHandQuantity} {stock.data.quantityUnit}</AppText>
-      <AppText>Đang giữ {stock.data.heldQuantity} {stock.data.quantityUnit}</AppText>
-      <AppText>Có thể xuất {stock.data.availableQuantity??'Chưa có xác nhận'}</AppText>
-      {stock.data.batches.map(batch=><AppText key={batch.batchId}>Lô {batch.batchId} · {batch.quantity} {batch.quantityUnit}</AppText>)}</Card>}
+    {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Sổ tồn kho V3"/>
+      {stock.data.stock.reconciliationStatus==='RECONCILED'?<>
+        <AppText>Đang lưu: {stock.data.stock.onHandQuantity}</AppText>
+        <AppText>Đang giữ: {stock.data.stock.heldQuantity}</AppText>
+        <AppText>{stock.data.stock.totalWeightKg} kg · {stock.data.stock.totalVolumeM3} m³</AppText>
+        {stock.data.stock.byCell.map(row=><AppText key={row.cellId}>Ô {row.cellId} · {row.quantity} theo lô · {row.physicalUnitCount} kiện riêng</AppText>)}
+        {stock.data.stock.byBatch.map(row=><AppText key={row.batchId+':'+row.cellId}>Lô {row.batchId} · {row.quantity} {row.quantityUnit} · Ô {row.cellId}</AppText>)}
+        {stock.data.stock.byPhysicalUnit.map(row=><AppText key={row.physicalUnitId}>Kiện {row.physicalUnitId} · Ô {row.cellIds.join(', ')}</AppText>)}
+      </>:<AppText>Tồn kho chưa được xác minh. Cần đối soát sổ kho.</AppText>}
+    </Card>}
+    {stock.data?.kind==='V3'&&item.data&&<ManagedOperationLookup key={owner+':'+id} item={item.data} owner={owner}/>}
+    {stock.data?.kind==='LEGACY'&&<Card><CardHeading icon="layers-outline" title="Tồn kho"/>
+      <AppText variant="caption">{stock.data.stock.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu tồn kho đã đối chiếu từ dữ liệu cũ'}</AppText><AppText>Đang lưu {stock.data.stock.onHandQuantity} {stock.data.stock.quantityUnit}</AppText>
+      <AppText>Đang giữ {stock.data.stock.heldQuantity} {stock.data.stock.quantityUnit}</AppText>
+      <AppText>Có thể xuất {stock.data.stock.availableQuantity??'Chưa có xác nhận'}</AppText>
+      {stock.data.stock.batches.map(batch=><AppText key={batch.batchId}>Lô {batch.batchId} · {batch.quantity} {batch.quantityUnit}</AppText>)}</Card>}
   </LiveScreen>;
 }
 export function Movements(){
   const {id}=useLocalSearchParams<{id:string}>();
   const owner=useOwner();
-  const data=useResource(owner+':'+id,async signal=>mobileRepo.movements(await mobileRepo.item(id,owner,signal),owner,signal));
+  const data=useResource(owner+':'+id,async signal=>mobileRepo.inventoryMovements(await mobileRepo.item(id,owner,signal),owner,signal));
   return <LiveScreen title="Lịch sử di chuyển" eyebrow="KHO KÝ GỬI" subtitle="Các lần nhập, xuất và di chuyển đã ghi nhận." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
-    {data.data?.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
-    {data.data?.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
+    {data.data?.rows.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
+    {data.data?.kind==='V3'&&data.data.rows.map(move=><Card key={move._id}>
+      <AppText variant="card">{{ADD:'Nhập kho',MOVE:'Chuyển ô',REMOVE:'Xuất kho'}[move.v3Effect.action]}</AppText>
+      <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
+      <AppText>Thao tác {move.operationId}</AppText>
+      {move.v3Effect.source?.map(row=>row.cellId).join(', ') ? <AppText>Ô nguồn: {move.v3Effect.source.map(row=>row.cellId).join(', ')}</AppText>:null}
+      {move.v3Effect.destination?.map(row=>row.cellId).join(', ') ? <AppText>Ô đích: {move.v3Effect.destination.map(row=>row.cellId).join(', ')}</AppText>:null}
+    </Card>)}
+    {data.data?.kind==='LEGACY'&&data.data.rows.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
       <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
       {!!move.inspectionNote&&<AppText>{move.inspectionNote}</AppText>}</Card>)}
   </LiveScreen>;

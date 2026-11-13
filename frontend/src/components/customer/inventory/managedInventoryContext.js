@@ -31,3 +31,16 @@ export async function verifiedPreferredCells(rental,config){
   if(new Set(found.map(c=>c.id)).size!==found.length)throw Error('Ambiguous allocated Cell response.');
   return found;
 }
+
+// Resolve backend Cell identifiers to their customer-facing topology labels for display only.
+export async function inventoryCellLabels(rental,extraIds=[],config){
+  const ids=[...new Set([...(rental?.allocatedCellIds||[]).map(inventoryId),...extraIds.map(inventoryId)].filter(validInventoryId))];
+  if(!ids.length||!validInventoryId(inventoryId(rental?.facilityId)))return {};
+  const facilityId=inventoryId(rental.facilityId),map=validateWarehouseMap(record(await warehouseMapApi.getWarehouseMap(facilityId,config)),facilityId),labels={};
+  for(const zone of map.zones)for(const aisle of zone.aisles)for(const rack of aisle.racks){
+    const detail=validateRackDetail(record(await warehouseMapApi.getRackDetailMap(rack._id,config)),facilityId,rack._id);
+    for(const level of detail.levels)for(const cell of level.cells)if(ids.includes(inventoryId(cell)))labels[inventoryId(cell)]=`${zone.code} · ${rack.rackCode} · ${cell.code||`Ô ${cell.cellNumber}`} · Tầng ${level.levelNumber}`;
+    if(ids.every(id=>labels[id]))return labels;
+  }
+  return labels;
+}
