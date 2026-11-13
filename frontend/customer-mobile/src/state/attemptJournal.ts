@@ -6,11 +6,11 @@ import {apiBase} from '../api/client';
 import {objectId} from '../api/contracts/core';
 import {managedCreateBody,selfBody,utc} from '../api/contracts/booking';
 
-const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$/i),resourceId:objectId.optional(),bookingBody:selfBody.optional(),managedBooking: z.object({body:managedCreateBody,endDate:utc}).optional()});
+const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$/i),resourceId:objectId.optional(),inboundBody:z.record(z.string(),z.unknown()).optional(),bookingBody:selfBody.optional(),managedBooking: z.object({body:managedCreateBody,endDate:utc}).optional()});
 type Attempt=z.infer<typeof attemptSchema>;
 const claiming=new Set<string>();
 
-export async function journal(scope:'managed-v3-full-rent'|'managed-v3-booking'|'booking'|'deposit'|'balance'|'full-rent',owner:string,identity:string) {
+export async function journal(scope:'managed-v3-inbound'|'managed-v3-full-rent'|'managed-v3-booking'|'booking'|'deposit'|'balance'|'full-rent',owner:string,identity:string) {
   const hash=await digestStringAsync(CryptoDigestAlgorithm.SHA256,JSON.stringify([apiBase,objectId.parse(owner),scope,identity]));
   const key='wdp.mobile.attempt.'+hash;
   const store={

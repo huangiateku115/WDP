@@ -63,5 +63,5 @@ export function ManagedSkuEditor({r,item,owner,onSaved}:{r:ReservationDto;item?:
 
 export function ManagedSkuEdit({item,owner,onSaved}:{item:Item;owner:string;onSaved:(row:Item)=>void}){
   const r=useResource(owner+':'+item._id,signal=>managedInventory.rental(refId(item.managedReservationId),owner,refId(item.facilityId),signal));
-  return <><ResourceState {...r}/>{r.data&&<><ManagedSkuEditor r={r.data} item={item} owner={owner} onSaved={onSaved}/><ManagedInboundPreviewCard item={item} r={r.data} owner={owner}/></>}</>;
+  return <><ResourceState {...r}/>{r.data&&<><ManagedSkuEditor r={r.data} item={item} owner={owner} onSaved={onSaved}/><ManagedInboundPreviewCard item={item} r={r.data} owner={owner} onCommitted={()=>onSaved(item)}/></>}</>;
 }

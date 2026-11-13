@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {mapV3Movements} from './contracts/managedV3Ledger';
 import {wire,MobileInputError} from './client';
 import {assertOwner,instant,nonnegative,objectId,positive,readData,refId,whole} from './contracts/core';
 import type {ReservationDto} from './contracts/customer';
@@ -61,6 +62,17 @@ export const managedInboundPreview={
     if(unit.serial!==body.serial||unit.state!=='PREPARED')throw new MobileInputError('Chưa xác minh được kiện đã chuẩn bị.');
     return unit;
   },
+  async confirm(item:Item,r:ReservationDto,owner:string,body:Record<string,unknown>,key:string){
+    const path=scope(item,r,owner);
+    await wire('POST',path+'inbound',{body,key});
+  },
+  async operation(item:Item,r:ReservationDto,owner:string,key:string){
+    const path=scope(item,r,owner);
+    const result=readData(z.object({status:z.literal('COMMITTED'),movement:z.object({
+      idempotencyKey:z.literal(key),v3Effect:z.object({action:z.literal('ADD')}).passthrough(),
+    }).passthrough()}),await wire('GET',path+'operations',{params:{key}}));
+    return mapV3Movements({success:true,data:[result.movement]},item,owner)[0]!;
+  },
   async preview(item:Item,r:ReservationDto,owner:string,session:Session,input:unknown){
     const path=scope(item,r,owner),body=previewBody.parse(input);
     const allowed=eligibleInboundCells(r,session);
@@ -81,6 +93,6 @@ export const managedInboundPreview={
       (body.itemKind==='A1_PHYSICAL_UNIT'?proof.itemKind!=='A1_PHYSICAL_UNIT'||proof.physicalUnitId!==body.physicalUnitId||proof.quantity!==1:proof.quantity!==body.quantity)){
       throw new MobileInputError('Không thể xác minh kết quả kiểm tra vị trí.');
     }
-    return proof;
+    return {...proof,request:body};
   },
 };

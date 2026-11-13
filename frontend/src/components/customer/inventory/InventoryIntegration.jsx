@@ -30,6 +30,8 @@ import {
 import InventoryItemForm from "./InventoryItemForm";
 import ManagedSelfInboundV3 from "./ManagedSelfInboundV3";
 import ManagedSelfOutboundV3 from "./ManagedSelfOutboundV3";
+import { inventoryCellLabels } from "./managedInventoryContext";
+import { formatInventoryDateTime } from "./inventoryUiFormat";
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -75,7 +77,7 @@ function InventoryImages({ item }) {
 }
 import PlacementPreview from "./PlacementPreview";
 const notice =
-  "Backend inventory registrations · A preferred Cell is a preference only. Registration and preview do not allocate Cells, receive stock or change warehouse usage.";
+  "Thông tin đăng ký mặt hàng · Ô kệ ưu tiên chỉ là đề xuất. Đăng ký hoặc xem trước không xếp hàng vào kho, không nhận hàng và không làm thay đổi sức chứa.";
 export function InventoryListIntegration() {
   const [page, setPage] = useState(1),
     resource = useInventoryBackend(
@@ -87,12 +89,12 @@ export function InventoryListIntegration() {
     );
   return (
     <CustomerScreen
-      title="My Inventory"
-      description="Your owned Managed Inventory item registrations."
+      title="Hàng hóa của tôi"
+      description="Danh sách hàng hóa bạn đã đăng ký cho kho quản lý."
       notice={notice}
       action={
         <Button asChild variant="orange">
-          <Link to="/portal/inventory/register">Register new item</Link>
+          <Link to="/portal/inventory/register">Đăng ký mặt hàng</Link>
         </Button>
       }
     >
@@ -100,10 +102,9 @@ export function InventoryListIntegration() {
       {resource.data?.items.length === 0 && (
         <Card>
           <CardContent>
-            <h2 className="text-xl font-bold">No inventory registrations</h2>
+            <h2 className="text-xl font-bold">Chưa có mặt hàng nào được đăng ký</h2>
             <p className="mt-3">
-              Register a lot against an activated Managed rental. Closed rentals
-              retain their registration history.
+              Đăng ký hàng trong một đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng ký vẫn được lưu khi đơn thuê kết thúc.
             </p>
           </CardContent>
         </Card>
@@ -118,31 +119,31 @@ export function InventoryListIntegration() {
                 <InventoryStatus status={item.status} />
                 <Details
                   values={[
-                    ["Category", item.category],
-                    ["Quantity", `${item.quantity} ${item.quantityUnit}`],
+                    ["Danh mục", item.category],
+                    ["Số lượng", `${item.quantity.toLocaleString('vi-VN')} ${item.quantityUnit}`],
                     [
-                      "Managed Reservation",
-                      inventoryId(item.managedReservationId),
+                      "Đơn thuê kho quản lý",
+                      item.managedReservationId?.reservationCode || "Đơn thuê đã liên kết",
                     ],
                     [
                       "Facility",
                       typeof item.facilityId === "object"
-                        ? item.facilityId.name || inventoryId(item.facilityId)
-                        : item.facilityId,
+                        ? item.facilityId.name || "Cơ sở đã liên kết"
+                        : "Cơ sở đã liên kết",
                     ],
-                    ["Registered at", item.createdAt],
+                    ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
                     [
-                      "Placement",
+                      "Vị trí lưu kho",
                       item.inventorySchemaVersion === 3
                         ? "Xem phân bổ nhiều Cell trong phần Tồn kho V3 bên dưới"
-                        : item.currentCellId === null ? "Not assigned" : inventoryId(item.currentCellId),
+                        : item.currentCellId === null ? "Chưa được xếp vào kho" : "Vị trí đang cập nhật",
                     ],
                   ]}
                 />
               </div>
               <Button asChild variant="outline" className="mt-5">
                 <Link to={`/portal/inventory/${inventoryId(item)}`}>
-                  View item
+                  Xem mặt hàng
                 </Link>
               </Button>
             </CardContent>
@@ -156,11 +157,11 @@ export function InventoryListIntegration() {
             disabled={resource.loading || page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            Previous items
+            Trang trước
           </Button>
           <span>
-            Page {resource.data.pagination.page} ·{" "}
-            {resource.data.pagination.total} registrations
+            Trang {resource.data.pagination.page} ·{" "}
+            {resource.data.pagination.total.toLocaleString('vi-VN')} mặt hàng
           </span>
           <Button
             variant="outline"
@@ -169,10 +170,10 @@ export function InventoryListIntegration() {
             }
             onClick={() => setPage((p) => p + 1)}
           >
-            Next items
+            Trang sau
           </Button>
           <Button variant="outline" onClick={resource.retry}>
-            Refresh inventory
+            Làm mới danh sách
           </Button>
         </div>
       )}
@@ -183,12 +184,12 @@ export function InventoryRegisterIntegration() {
   const session = useAuthSession();
   return (
     <CustomerScreen
-      title="Register inventory item"
-      description="Declare a SKU against an eligible Managed V3 reservation. Registration records metadata only; it does not receive stock."
+      title="Đăng ký mặt hàng"
+      description="Khai báo mặt hàng cho một đơn thuê kho quản lý V3 đủ điều kiện. Bước này chỉ lưu thông tin, chưa ghi nhận hàng trong kho."
       notice={notice}
       action={
         <Button asChild variant="outline">
-          <Link to="/portal/inventory">My Inventory</Link>
+          <Link to="/portal/inventory">Hàng hóa của tôi</Link>
         </Button>
       }
     >
@@ -234,6 +235,10 @@ function Detail({ id }) {
     eligible =
       eligibleInventoryRental(rental) &&
       inventoryId(rental.facilityId) === inventoryId(item?.facilityId);
+  const cellLabels = useInventoryBackend(
+    (config) => rental && item ? inventoryCellLabels(rental, [item.preferredCellId, item.currentCellId], config) : Promise.resolve({}),
+    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId)],
+  );
   const refresh = () => {
     setEditing(false);
     resource.retry();
@@ -241,12 +246,12 @@ function Detail({ id }) {
   };
   return (
     <CustomerScreen
-      title={item?.name || "Inventory item"}
-      description="Owned registration details and advisory placement information."
+      title={item?.name || "Mặt hàng"}
+      description="Thông tin đăng ký và vị trí lưu kho dự kiến của mặt hàng."
       notice={notice}
       action={
         <Button asChild variant="outline">
-          <Link to="/portal/inventory">My Inventory</Link>
+          <Link to="/portal/inventory">Hàng hóa của tôi</Link>
         </Button>
       }
     >
@@ -255,8 +260,7 @@ function Detail({ id }) {
         <>
           {location.state?.inventoryCreated && (
             <p role="status" className="soft-panel p-4">
-              Backend confirmed item registration. Physical location remains
-              unassigned.
+            Đã đăng ký mặt hàng. Hàng chưa được xếp vào vị trí lưu kho.
             </p>
           )}
           <Card>
@@ -269,37 +273,37 @@ function Detail({ id }) {
               <div className="inventory-detail-metadata mt-5">
                 <Details
                   values={[
-                    ["Item name", item.name],
-                    ["Category", item.category],
-                    ["Registered quantity (metadata)", `${item.quantity} ${item.quantityUnit}`],
-                    ["Unit weight (kg)", item.unitWeightKg],
-                    ["Width (m)", item.unitDimensionsM?.widthM],
-                    ["Depth (m)", item.unitDimensionsM?.depthM],
-                    ["Height (m)", item.unitDimensionsM?.heightM],
-                    ["Unit volume (m³)", item.unitVolumeM3],
-                    ["Total weight (kg)", item.totalWeightKg],
-                    ["Total volume (m³)", item.totalVolumeM3],
+                    ["Tên mặt hàng", item.name],
+                    ["Danh mục", item.category],
+                    ["Số lượng đã đăng ký", `${item.quantity} ${item.quantityUnit}`],
+                    ["Khối lượng mỗi món (kg)", item.unitWeightKg],
+                    ["Chiều rộng (m)", item.unitDimensionsM?.widthM],
+                    ["Chiều sâu (m)", item.unitDimensionsM?.depthM],
+                    ["Chiều cao (m)", item.unitDimensionsM?.heightM],
+                    ["Thể tích mỗi món (m³)", item.unitVolumeM3],
+                    ["Tổng khối lượng (kg)", item.totalWeightKg],
+                    ["Tổng thể tích (m³)", item.totalVolumeM3],
                     [
-                      "Managed Reservation",
-                      inventoryId(item.managedReservationId),
+                      "Đơn thuê Managed",
+                      rental?.reservationCode || "Thông tin đơn thuê đã liên kết",
                     ],
                     [
-                      "Facility",
-                      rental?._facility?.name || inventoryId(item.facilityId),
+                      "Cơ sở",
+                      rental?._facility?.name || "Cơ sở đã liên kết",
                     ],
                     [
-                      "Preferred Cell (preference only)",
-                      inventoryId(item.preferredCellId) || "No preference",
+                      "Ô kệ ưu tiên (chỉ là đề xuất)",
+                      item.preferredCellId ? cellLabels.data?.[inventoryId(item.preferredCellId)] || "Ô kệ ưu tiên (đang tải tên vị trí)" : "Chưa chọn",
                     ],
                     [
-                      "Placement",
+                      "Vị trí lưu kho",
                       item.inventorySchemaVersion === 3
-                        ? "Vị trí V3 có thể gồm nhiều Cell; xem phân bổ bên dưới"
-                        : item.currentCellId === null ? "Not assigned" : inventoryId(item.currentCellId),
+                        ? "Có thể gồm nhiều ô kệ; xem thông tin nhập/xuất bên dưới"
+                        : item.currentCellId === null ? "Chưa được xếp vào kho" : cellLabels.data?.[inventoryId(item.currentCellId)] || "Vị trí đang được cập nhật",
                     ],
-                    ["Description", item.description],
-                    ["Registered at", item.createdAt],
-                    ["Updated at", item.updatedAt],
+                    ["Mô tả", item.description],
+                    ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
+                    ["Cập nhật lần cuối", formatInventoryDateTime(item.updatedAt)],
                   ].filter(([, value]) => value != null)}
                 />
               </div>
@@ -311,26 +315,26 @@ function Detail({ id }) {
           <div className="inventory-actions flex flex-wrap gap-3" role="group" aria-label="Item actions">
             <div className="inventory-action-group flex flex-wrap gap-2">
             <Button variant="outline" onClick={refresh}>
-              Refresh item
+              Làm mới thông tin
             </Button>
             <Button asChild variant="outline">
               <Link to={`/portal/inventory/${id}/history`}>
-                View Movement History
+                Xem lịch sử nhập/xuất
               </Link>
             </Button>
-            {['IN_STORAGE','CHECKED_OUT'].includes(item.status)&&<Button asChild variant="outline"><Link to={`/portal/inventory/${id}/outbound`}>Outbound requests</Link></Button>}
+            {['IN_STORAGE','CHECKED_OUT'].includes(item.status)&&<Button asChild variant="outline"><Link to={`/portal/inventory/${id}/outbound`}>Yêu cầu xuất kho</Link></Button>}
             </div>
             <div className="inventory-action-group flex flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link
                 to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}
               >
-                View Managed Reservation
+                Xem đơn thuê Managed
               </Link>
             </Button>
             {editable && !editing && (
               <Button variant="orange" onClick={() => setEditing(true)}>
-                Edit item
+                Chỉnh sửa mặt hàng
               </Button>
             )}
             <Button asChild variant="outline">
@@ -338,17 +342,15 @@ function Detail({ id }) {
                 to={`/portal/warehouse-map/${inventoryId(item.facilityId)}${eligible ? `?inventoryItem=${inventoryId(item)}` : ""}`}
               >
                 {editable
-                  ? "Choose preferred Cell on map"
-                  : "View Warehouse Map"}
+                  ? "Chọn ô kệ ưu tiên trên sơ đồ"
+                  : "Xem sơ đồ kho"}
               </Link>
             </Button>
             </div>
           </div>
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">
-              Editing unavailable: only unplaced REGISTERED metadata linked to
-            an eligible CHECKIN_READY or in-term ACTIVE V3 Managed rental can be changed. Registration
-              history remains readable.
+              Chỉ có thể chỉnh sửa mặt hàng đã đăng ký nhưng chưa được xếp vào kho, khi đơn thuê V3 sẵn sàng nhận kho hoặc đang hoạt động trong kỳ thuê. Lịch sử đăng ký vẫn được giữ.
             </p>
           )}
           {editing && editable && (
@@ -361,15 +363,17 @@ function Detail({ id }) {
           <PlacementPreview
             key={JSON.stringify(item)}
             item={item}
+            rental={rental}
+            cellLabels={cellLabels.data || {}}
             eligible={eligible}
           />
           {item.inventorySchemaVersion === 3 && eligible && (
-            <ManagedSelfInboundV3 item={item} rental={rental} onRefresh={refresh} />
+            <ManagedSelfInboundV3 item={item} rental={rental} cellLabels={cellLabels.data || {}} onRefresh={refresh} />
           )}
           <p className="text-sm text-slate-500">
-            Registration records the SKU only. Physical stock changes only after Customer Self-Inbound V3 is confirmed in an active Access Session.
+            Đăng ký chỉ lưu thông tin mặt hàng. Tồn kho thực tế chỉ thay đổi sau khi bạn xác nhận nhập hàng trong phiên đến kho còn hiệu lực.
           </p>
-          {item.inventorySchemaVersion === 3 ? <ManagedSelfOutboundV3 item={item} rental={rental} onRefresh={refresh} /> :
+          {item.inventorySchemaVersion === 3 ? <ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data || {}} onRefresh={refresh} /> :
             <CanonicalCustomerOutbound item={item} rental={rental} loading={resource.loading || !!resource.error || rentals.loading} onRefresh={refresh} />}
         </>
       )}

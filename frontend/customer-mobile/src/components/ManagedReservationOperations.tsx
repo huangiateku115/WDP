@@ -1,6 +1,6 @@
 import {apiIssue} from '../api/client';
 import {useLiveSession} from '../state/useLiveSession';
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {ReservationDto} from '../api/contracts/customer';
 import {managedReservationReads} from '../api/managedReservationReads';
 import {AppText,Button,Card} from './ui';
@@ -16,6 +16,8 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
   const [open,setOpen]=useState(false),[showReadiness,setShowReadiness]=useState(false);
   const [cancel,setCancel]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState('');
   const busy=useRef(false);
+  const [now,setNow]=useState(Date.now());
+  useEffect(()=>{if(!open)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[open]);
   const scope=owner+':'+r._id;
   const visits=useResource(open?scope:'',signal=>open?managedReservationReads.visits(r,owner,signal):Promise.resolve(null));
   const sessions=useResource(open?scope:'',signal=>open?managedReservationReads.sessions(r,owner,signal):Promise.resolve(null));
@@ -52,8 +54,12 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
         <ResourceState {...sessions}/>
         {sessions.data?.length===0&&<AppText>Chưa có phiên truy cập cho đơn thuê.</AppText>}
         {sessions.data?.map(session=><Card key={'session:'+session._id}>
-          <AppText>{sessionState[session.status==='ACTIVE'&&Date.parse(session.expiresAt)<=Date.now()?'EXPIRED':session.status]}</AppText>
+          <AppText>{sessionState[session.status==='ACTIVE'&&Date.parse(session.expiresAt)<=now?'EXPIRED':session.status]}</AppText>
           <AppText>{session.allowedPurposes.map(value=>purpose[value]).join(', ')}</AppText>
+          <AppText>Đơn {r.reservationCode} · Lịch {typeof session.visitId==='string'?session.visitId:session.visitId._id}</AppText>
+          <AppText>Phiên {session._id} · Nhân viên {typeof session.assignedStaffId==='string'?session.assignedStaffId:session.assignedStaffId._id}</AppText>
+          <AppText>Bắt đầu: {time.format(new Date(session.startedAt))}</AppText>
+          {session.status==='ACTIVE'&&Date.parse(session.expiresAt)>now&&<AppText>Còn {Math.ceil((Date.parse(session.expiresAt)-now)/1000)} giây</AppText>}
           <AppText>Hết hạn: {time.format(new Date(session.expiresAt))}</AppText>
         </Card>)}
       </>}

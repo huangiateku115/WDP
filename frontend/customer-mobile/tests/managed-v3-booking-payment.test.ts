@@ -160,3 +160,28 @@ test('visit cancellation sends the server revision and verifies the returned vis
   await expect(managedReservationReads.cancelVisit(rental,owner,visit)).resolves.toMatchObject({status:'CANCELLED',revision:3});
   await expect(managedReservationReads.cancelVisit(rental,cellId,visit)).rejects.toThrow();
 });
+
+test('inbound confirm and committed lookup use the same key and reject mismatched operation evidence',async()=>{
+  const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3,
+    itemCode:'BOX',name:'Box',category:'Boxes',quantity:2,quantityUnit:'box',unitWeightKg:1,
+    unitDimensionsM:{widthM:1,depthM:1,heightM:1},status:'REGISTERED' as const};
+  const key='fixture-inbound';
+  let returnedKey=key;
+  apiClient.defaults.adapter=async config=>{
+    if(config.method==='post'){
+      expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound');
+      expect(config.headers.get('Idempotency-Key')).toBe(key);
+      return {config,status:201,statusText:'OK',headers:{},data:{success:true}};
+    }
+    expect(config.params).toEqual({key});
+    return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{status:'COMMITTED',movement:{
+      _id:paymentId,itemId:cellId,managedReservationId:id,facilityId,customerId:owner,schemaVersion:3,
+      idempotencyKey:returnedKey,operationId:'fixture-op',performedAt:startDate,quantity:1,quantityUnit:'box',
+      v3Effect:{action:'ADD',itemKind:'A1_PHYSICAL_UNIT'},
+    }}}};
+  };
+  await managedInboundPreview.confirm(item,rental,owner,{previewRevision:1},key);
+  await expect(managedInboundPreview.operation(item,rental,owner,key)).resolves.toMatchObject({operationId:'fixture-op'});
+  returnedKey='different';
+  await expect(managedInboundPreview.operation(item,rental,owner,key)).rejects.toThrow();
+});

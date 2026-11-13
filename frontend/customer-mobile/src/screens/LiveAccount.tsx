@@ -223,7 +223,7 @@ function ItemDetail({id}:{id:string}){
       <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
       <AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
-    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>item.reload()}/>}
+    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}}/>}
     <ResourceState {...stock}/>
     {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Sổ tồn kho V3"/>
       {stock.data.stock.reconciliationStatus==='RECONCILED'?<>
