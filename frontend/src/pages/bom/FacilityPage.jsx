@@ -6,20 +6,20 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilitiesIncludingDeleted, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
-  BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData,
+  BOM_SERVICE_TYPES, facilityFromDto, facilityForm, facilityBody, responseData, serviceLabel,
 } from "@/lib/bomMappers";
 import { COUNTRIES, CUSTOM_WARD, citiesFor, wardsFor } from "@/lib/addressData";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 const EMPTY_FORM = {
   code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
-  openingHours: "", allDay: false,
+  openingHours: "", allDay: false, contactPhone: "", contactEmail: "",
   description: "", serviceTypes: ["SELF_STORAGE"], images: [], status: "ACTIVE",
   visitScheduleEnabled: false,
   visitScheduleDraft: { slotDurationMinutes: 60, weeklyHours: Array.from({ length: 7 }, (_, weekday) => ({ weekday, enabled: false, opensAt: "09:00", closesAt: "18:00" })) },
@@ -78,8 +78,7 @@ function FacilityList({ basePath }) {
   return (
     <Screen
       title="Facilities"
-      description="Live facility records from the backend. Create, edit, activate, deactivate or delete cross-facility resources."
-      notice={LIVE_NOTICE}
+      description="Create, edit, activate, deactivate or delete facilities."
       action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Create facility</Link></Button>}
     >
       <Panel title="Facility filters">
@@ -93,7 +92,7 @@ function FacilityList({ basePath }) {
           <Field label="City">
             <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
           </Field>
-          <Field label="Records" hint="Soft deleted facilities can only be listed by ADMIN/BOM.">
+            <Field label="Records" hint="Only administrators and business operations can list deleted facilities.">
             <Select
               label="Record filter"
               value={showDeleted ? "deleted" : "live"}
@@ -179,8 +178,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
   return (
     <Screen
       title="Facility detail"
-      description="Live facility record from the backend."
-      notice={LIVE_NOTICE}
+      description="Facility details and status."
       action={<Button asChild variant="outline"><Link to={backTo}>{backLabel}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(facility) => {
@@ -212,7 +210,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Description", facility.description],
               ]} />
               <p className="bom-warning mt-5">
-                Deactivation only blocks new reservations. Existing active rentals are preserved by the backend contract.
+                Deactivation only blocks new reservations. Existing active rentals are preserved.
               </p>
               <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
@@ -224,10 +222,10 @@ function FacilityDetail({ basePath, oversightRoot }) {
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");
               return (
-                <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones → aisles → racks → cells).">
+                <Panel title="Warehouse structure" subtitle="Zones → aisles → racks → cells.">
                   {!available && (
                     <p className="bom-warning mb-5">
-                      The warehouse map does not apply to this facility: {reason || "it is not an ACTIVE Managed Inventory facility"}.
+                      The warehouse map does not apply to this facility: {reason || "this facility does not offer Managed Inventory"}.
                       Storage units are the storage model that applies here.
                     </p>
                   )}
@@ -291,7 +289,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  The facility <b>{facility.name}</b> will be set to <b>{nextStatus}</b> on the backend.
+                  The facility <b>{facility.name}</b> will be set to <b>{nextStatus}</b>.
                 </p>
               </ConfirmDialog>
             )}
@@ -308,7 +306,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
               >
                 <p className="text-sm text-slate-500">
                   <b>{facility.name}</b> is soft deleted: it leaves every list, the warehouse map and the rent wizard, and only
-                  ADMIN/BOM can list and restore it again. The backend refuses the delete while storage units or warehouse zones still
+                  ADMIN/BOM can list and restore it again. The delete is blocked while storage units or warehouse zones still
                   reference the facility.
                 </p>
               </ConfirmDialog>
@@ -374,6 +372,9 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       if (!form.ward.trim()) throw new Error("Select or enter a ward / commune.");
       if (!form.district.trim()) throw new Error("Enter the street / area.");
       if (!form.line1.trim()) throw new Error("Enter the address / house number.");
+      if (form.contactEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail.trim())) {
+        throw new Error("Enter a valid contact email address.");
+      }
       const hours = form.allDay ? "" : form.openingHours.trim();
       if (hours) {
         const message = hoursError(hours);
@@ -412,8 +413,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   return (
     <Screen
       title={isEdit ? "Edit facility" : "Create facility"}
-      description="Facility fields confirmed by the backend contract. Code is required on create and is immutable afterwards."
-      notice={LIVE_NOTICE}
+      description="Code is required on create and is immutable afterwards."
     >
       <AsyncBoundary
         state={isEdit ? state : { loading: false, data: null, error: "" }}
@@ -519,12 +519,18 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               <Field label="Business status">
                 <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
               </Field>
+              <Field label="Contact phone" hint="Optional. Sent as contact.phone.">
+                <Input aria-label="Contact phone" value={form.contactPhone || ""} onChange={(e) => change("contactPhone", e.target.value)} />
+              </Field>
+              <Field label="Contact email" hint="Optional. Sent as contact.email and must be a valid address.">
+                <Input aria-label="Contact email" type="email" value={form.contactEmail || ""} onChange={(e) => change("contactEmail", e.target.value)} />
+              </Field>
               <Field label="Service models" hint="At least one service model is required.">
                 <div className="flex flex-wrap gap-4 py-2">
                   {BOM_SERVICE_TYPES.map((service) => (
                     <label key={service} className="flex items-center gap-2 text-sm">
                       <Checkbox aria-label={service} checked={form.serviceTypes.includes(service)} onCheckedChange={() => toggleService(service)} />
-                      {service.replaceAll("_", " ")}
+                      {serviceLabel(service)}
                     </label>
                   ))}
                 </div>
@@ -556,8 +562,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   <Textarea aria-label="Description" value={form.description} onChange={(e) => change("description", e.target.value)} />
                 </Field>
                 {form.status === "INACTIVE" && (
-                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>
-                )}
+                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>                )}
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>

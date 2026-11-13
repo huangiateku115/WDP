@@ -1,6 +1,6 @@
 import {facilityLabel} from '@/lib/facilityLabels';
 import {useEffect,useId,useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useLocation} from 'react-router-dom';
 import {ArrowUpRight,X} from 'lucide-react';
 import {Card,CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';

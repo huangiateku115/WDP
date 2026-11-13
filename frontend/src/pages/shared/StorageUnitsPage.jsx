@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -42,7 +42,7 @@ export default function StorageUnitsPage() {
   function removeUnit(unit) {
     setConfirm({
       title: `Delete unit ${unit.code}?`,
-      summary: "Units are soft deleted: HELD and OCCUPIED units are rejected with 409. Deleted units disappear from every list, so they cannot be restored from this console.",
+      summary: "Units are soft deleted: held and occupied units cannot be deleted. Deleted units disappear from every list and cannot be restored from this console.",
       label: "Delete unit",
       run: async () => { await bomUnitApi.remove(unit.id); units.reload(); },
     });
@@ -51,8 +51,7 @@ export default function StorageUnitsPage() {
   return (
     <Screen
       title="Storage units"
-      description="Private storage units per facility. Creation, editing, status changes and deletion all run through the confirmed storage-unit API."
-      notice={LIVE_NOTICE}
+      description="Private storage units per facility. Create, edit, change status or delete the units of a facility."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);
@@ -61,7 +60,7 @@ export default function StorageUnitsPage() {
         return (
           <>
             <Kpis items={[
-              ["Facilities", facilities.length, "Backend facility collection"],
+              ["Facilities", facilities.length, "Across all facilities"],
               ["Units loaded", units.data?.total ?? "—", "Matches the current filters"],
               ["Available", countBy(rows, "status", "AVAILABLE"), "Ready to rent"],
               ["Registered volume", m3(sumBy(rows, "volumeM3")), "Derived from unit dimensions"],
@@ -69,7 +68,7 @@ export default function StorageUnitsPage() {
 
             <Panel
               title="Unit scope"
-              subtitle="Reads work for any facility; creating units additionally requires ACTIVE + SELF_STORAGE on the backend."
+              subtitle="Creating units requires an active facility that offers Self Storage."
             >
               <div className="manager-filters">
                 <Field label="Facility">
@@ -102,7 +101,7 @@ export default function StorageUnitsPage() {
               </div>
               {facility && !canWrite && (
                 <p className="bom-warning mt-5">
-                  {facility.name} is {facility.status} and does not offer SELF_STORAGE, so the backend rejects unit creation with 409.
+                  {facility.name} is {facility.status} and does not offer SELF_STORAGE, so unit creation is disabled.
                 </p>
               )}
             </Panel>

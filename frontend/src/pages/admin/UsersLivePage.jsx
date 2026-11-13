@@ -10,6 +10,7 @@ import {
   assignAdminUserFacility, unassignAdminUserFacility,
 } from "@/lib/adminUsers";
 import { apiErrorMessage } from "@/lib/apiError";
+import { ROLE_LABELS } from "@/lib/roles";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities } from "@/lib/bomApiData";
 
@@ -41,23 +42,23 @@ function UserDirectory({ state }) {
     { key: "identity", label: "User ID", render: (r) => userId(r.source) || "ID not returned" },
     ...fields.map(([key, label]) => ({
       key, label,
-      render: (r) => (key === "role" ? <Status value={r.source[key]} /> : r.source[key] ?? "Not returned"),
+        render: (r) => (key === "role" ? <Status value={ROLE_LABELS[r.source[key]] || r.source[key]} /> : r.source[key] ?? "Not returned"),
     })),
     ...(hasStatus ? [{ key: "status", label: "Status", render: (r) => (userStatus(r.source) ? <Status value={userStatus(r.source)} /> : "Not returned") }] : []),
-    { key: "detail", label: "Action", render: (r) => (userId(r.source) ? <OpenLink to={`/admin/users/${encodeURIComponent(userId(r.source))}`}>View user</OpenLink> : "Detail unavailable without a backend ID") },
+    { key: "detail", label: "Action", render: (r) => (userId(r.source) ? <OpenLink to={`/admin/users/${encodeURIComponent(userId(r.source))}`}>View user</OpenLink> : "Detail unavailable") },
   ];
 
   return (
     <AdminScreen
-      title="Backend users"
-      description="Search and manage accounts returned by the confirmed User API."
+      title="Users"
+      description="Search and manage user accounts."
       action={<Button asChild variant="orange"><Link to="/admin/users/new">Create user</Link></Button>}
     >
       <UserApiState state={state} />
       {state.status === "ready" && state.sessionToken && (
         <Panel
           title="User directory"
-          subtitle="This collection contains backend records only."
+          subtitle="Accounts you can manage."
           action={<Button variant="outline" onClick={() => loadAdminUsers(true)}>Refresh users</Button>}
         >
           <div className="manager-filters">
@@ -65,7 +66,7 @@ function UserDirectory({ state }) {
               <Input aria-label="User search" value={search} onChange={(e) => setSearch(e.target.value)} />
             </Field>
             <Field label="Role">
-              <Select label="User role filter" value={role} onChange={setRole} options={[["", "All returned roles"], ...state.roles]} />
+              <Select label="User role filter" value={role} onChange={setRole} options={[["", "All roles"], ...state.roles.map((r) => [r, ROLE_LABELS[r] || r])]} />
             </Field>
             {hasStatus && (
               <Field label="Status">
@@ -73,7 +74,7 @@ function UserDirectory({ state }) {
               </Field>
             )}
           </div>
-          <Table label="Backend users" rows={rows} columns={columns} />
+          <Table label="Users" rows={rows} columns={columns} />
         </Panel>
       )}
     </AdminScreen>
@@ -85,18 +86,18 @@ function UserDetail({ state, id }) {
   const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
-      <AdminScreen title="Backend user detail" description="Details are resolved from the confirmed user collection, never a user-detail endpoint.">
+      <AdminScreen title="User detail" description="Details are resolved from the loaded account list.">
         <UserApiState state={state} />
       </AdminScreen>
     );
 
   if (!row)
     return (
-      <AdminScreen title="User unavailable in the loaded collection" description="No user-detail endpoint is confirmed. Reload the backend collection or return to the directory.">
+      <AdminScreen title="User unavailable" description="This account is not in the loaded list. Reload the directory or return to it.">
         <UserApiState state={state} />
         <Panel title="Account unavailable">
           <div className="flex flex-wrap gap-3">
-            <Button onClick={() => loadAdminUsers(true)}>Reload user collection</Button>
+            <Button onClick={() => loadAdminUsers(true)}>Reload accounts</Button>
             <Button asChild variant="outline"><Link to="/admin/users">Back to users</Link></Button>
           </div>
         </Panel>
@@ -115,7 +116,7 @@ function UserDetail({ state, id }) {
   ];
 
   return (
-    <AdminScreen title={row.displayName || row.email || "Backend user"} description="Identity and supported account actions from the loaded backend user collection.">
+    <AdminScreen title={row.displayName || row.email || "Account"} description="Identity and supported account actions.">
       <UserApiState state={state} />
       <Panel title="Account identity" action={<Button asChild variant="outline"><Link to="/admin/users">Back to users</Link></Button>}>
         <Details values={values} />
@@ -129,18 +130,18 @@ function UserDetail({ state, id }) {
 
       <FacilityScope row={row} id={id} facilities={facilities.data || []} />
 
-      <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded backend data." : "This account is active according to the loaded backend data."}>
+      <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded data." : "This account is active according to the loaded data."}>
         {inactive
           ? <ApiConfirmation
               label="Reactivate account"
               title="Confirm account reactivation"
-              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Reactivate (PATCH /users/:id/reactivate)"]]} />}
+              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Reactivate"]]} />}
               run={() => reactivateAdminUser(id)}
             />
           : <ApiConfirmation
               label="Deactivate account"
               title="Confirm account deactivation"
-              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Deactivate (DELETE /users/:id)"]]} />}
+              summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Deactivate"]]} />}
               run={() => deactivateAdminUser(id)}
             />}
       </Panel>
@@ -159,7 +160,7 @@ function FacilityScope({ row, id, facilities }) {
       </Panel>
     );
   return (
-    <Panel title="Facility scope" subtitle="PATCH/DELETE /users/:id/facility-assignment.">
+        <Panel title="Facility scope" subtitle="Assign or clear the facility this account is scoped to.">
       <Field label="Assigned facility">
         <Select
           label="Assigned facility"
@@ -210,7 +211,7 @@ function EditAccount({ row, id }) {
     setSuccess("");
     try {
       await updateAdminUser(id, form);
-      setSuccess("User profile updated through the backend API.");
+      setSuccess("User profile updated.");
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to update the account."));
     } finally {
@@ -220,7 +221,7 @@ function EditAccount({ row, id }) {
   }
 
   return (
-    <Panel title="Edit account" subtitle="Sends displayName, phone and email through the confirmed Admin User API.">
+    <Panel title="Edit account" subtitle="Update the display name, phone and email.">
       <form className="admin-form" onSubmit={submit}>
         <Field label="Display name"><Input aria-label="Edit display name" required value={form.displayName} onChange={(e) => change("displayName", e.target.value)} disabled={pending} /></Field>
         <Field label="Email"><Input aria-label="Edit email" type="email" required value={form.email} onChange={(e) => change("email", e.target.value)} disabled={pending} /></Field>
@@ -238,15 +239,15 @@ function RoleChange({ row, id, roles }) {
   const [selected, setSelected] = useState("");
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-500">Only Postman-confirmed roles or role values observed in this backend collection are selectable.</p>
+      <p className="text-sm text-slate-500">Only supported roles, or roles already in use, are selectable.</p>
       <Field label="New account role">
-        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select confirmed role"], ...roles]} />
+        <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select role"], ...roles.map((r) => [r, ROLE_LABELS[r] || r])]} />
       </Field>
       <ApiConfirmation
         label="Review role change"
         title="Confirm role change"
         disabled={!selected || selected === row.role}
-        summary={<Details values={[["Account", row.email || userId(row)], ["Current role", <Status value={row.role} />], ["New role", <Status value={selected} />]]} />}
+        summary={<Details values={[["Account", row.email || userId(row)], ["Current role", <Status value={ROLE_LABELS[row.role] || row.role} />], ["New role", <Status value={ROLE_LABELS[selected] || selected} />]]} />}
         run={() => changeAdminUserRole(id, selected)}
       />
     </div>
@@ -283,7 +284,7 @@ function CreateUser({ state }) {
   }
 
   return (
-    <AdminScreen title="Create backend user" description="Create an account using the confirmed Admin User API. The backend validates identity, password and role permissions.">
+    <AdminScreen title="Create user" description="Create an account. Identity, password and role are validated on submit.">
       {!state.sessionToken && <UserApiState state={state} />}
       <Panel title="New account">
         <form onSubmit={submit} className="admin-form">
@@ -291,9 +292,9 @@ function CreateUser({ state }) {
           <Field label="Password"><Input aria-label="New user password" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={pending} /></Field>
           <Field label="Display name"><Input aria-label="New user display name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={pending} /></Field>
           <Field label="Phone"><Input aria-label="New user phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} disabled={pending} /></Field>
-          <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles} disabled={pending} /></Field>
+          <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles.map((r) => [r, ROLE_LABELS[r] || r])} disabled={pending} /></Field>
           <div className="admin-wide space-y-4">
-            <p className="text-xs text-slate-500">Role options are confirmed Postman examples plus values observed in the loaded backend data. Passwords are cleared immediately after submission and never stored.</p>
+            <p className="text-xs text-slate-500">Role choices are the supported roles plus any role already present in the loaded data. Passwords are cleared immediately after submission.</p>
             <Message error={error} />
             <div className="flex flex-wrap gap-3">
               <Button type="submit" variant="orange" disabled={pending}>{pending ? "Creating…" : "Create user"}</Button>

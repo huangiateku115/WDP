@@ -17,6 +17,12 @@ export const BOM_POLICY_TYPES = [
 ];
 export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
 
+// Display labels for backend enum values rendered in the console (never show raw codes).
+export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Self Storage", MANAGED_INVENTORY: "Managed Inventory" };
+export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Promotional", LOYALTY: "Loyalty", FEE_WAIVER: "Fee waiver" };
+export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Percentage", FIXED: "Fixed amount", UNDEFINED: "Not defined" };
+export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
+
 export const responseData = (response) => response?.data?.data ?? response?.data ?? null;
 export function responseList(response) {
   const body = response?.data;
@@ -28,6 +34,11 @@ export function bomFutureDate(days = 1) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
+}
+// A rule/policy whose effectiveFrom already passed is immutable except for a prospective
+// effectiveTo, so the edit form must not send the scope, price or config fields.
+export function isEffectiveRecord(record) {
+  return Boolean(record?.effectiveFrom) && record.effectiveFrom <= new Date().toISOString().slice(0, 10);
 }
 export function toInstant(dateStr) {
   return dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : undefined;
@@ -196,11 +207,13 @@ export function facilityFromDto(d) {
     name: d?.name || "",
     line1: a.line1 || "",
     ward: a.ward || "",
-    district: a.district || a.city || "",
+    district: a.district || "",
     city: a.city || "",
     country: a.country || "",
     address: [a.line1, a.ward, a.district, a.city, a.country].filter(Boolean).join(", "),
     contact: d?.contact || {},
+    contactPhone: d?.contact?.phone || "",
+    contactEmail: d?.contact?.email || "",
     openingHours: d?.operatingHours || "",
     description: d?.description || "",
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
@@ -225,6 +238,8 @@ export function facilityForm(d) {
     district: f.district,
     city: f.city,
     country: f.country || "Vietnam",
+    contactPhone: f.contactPhone,
+    contactEmail: f.contactEmail,
     openingHours: f.openingHours,
     description: f.description,
     serviceTypes: f.serviceTypes.length ? f.serviceTypes : ["SELF_STORAGE"],
@@ -248,6 +263,12 @@ export function facilityBody(form, { includeCode = false } = {}) {
     serviceTypes: form.serviceTypes?.length ? form.serviceTypes : ["SELF_STORAGE"],
     status: form.status || "ACTIVE",
   };
+  // phone/email are optional but individually validated; an empty contact object is rejected,
+  // so the group is only sent when at least one value is present.
+  const contact = {};
+  if (form.contactPhone?.trim()) contact.phone = form.contactPhone.trim();
+  if (form.contactEmail?.trim()) contact.email = form.contactEmail.trim();
+  if (Object.keys(contact).length) body.contact = contact;
   if (includeCode) body.code = (form.code || "").trim().toUpperCase();
   if (form.openingHours?.trim()) body.operatingHours = form.openingHours.trim();
   if (form.description?.trim()) body.description = form.description.trim();
@@ -298,13 +319,17 @@ export function pricingBody(form) {
     isActive: form.status === "ACTIVE",
   };
   if (form.service === "SELF_STORAGE") body.unitSize = form.unitSize;
+  // scope() forces billingBasis for Managed rules, so the create body must carry it.
+  if (form.service === "MANAGED_INVENTORY") body.billingBasis = "PER_M3";
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
-export function pricingUpdateBody(form) {
+// PATCH /pricing-rules/:id only accepts effectiveFrom, effectiveTo, price and currency.
+export function pricingUpdateBody(form, { effective = false } = {}) {
+  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
   const body = {
     price: Number(form.rate),
-    currency: form.currency || BOM_CURRENCY,
+    currency: (form.currency || BOM_CURRENCY).trim().toUpperCase(),
     effectiveFrom: toInstant(form.effectiveFrom),
   };
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
@@ -338,6 +363,16 @@ export function policyBody(form) {
     isActive: form.status === "ACTIVE",
   };
   if (form.service) body.serviceType = form.service;
+  return body;
+}
+// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
+export function policyUpdateBody(form, { effective = false } = {}) {
+  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
+  const body = {
+    config: { description: (form.description || "").trim(), rule: (form.rule || "").trim() },
+    effectiveFrom: toInstant(form.effectiveFrom),
+  };
+  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
 
@@ -389,23 +424,57 @@ export function discountBody(form) {
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
+// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
+export function discountUpdateBody(form, { effective = false } = {}) {
+  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
+  const body = {
+    config: {
+      name: (form.name || "").trim(),
+      kind: form.kind,
+      valueType: form.valueType,
+      value: form.valueType === "UNDEFINED" ? null : Number(form.value),
+      conditions: (form.conditions || "").trim(),
+    },
+    effectiveFrom: toInstant(form.effectiveFrom),
+  };
+  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
+  return body;
+}
 
 /* --------------------- Item categories (Policy CATEGORY) ---------------- */
+// The backend CATEGORY policy stores only { allowedCategories[], blockedCategories[] } and
+// requires serviceType MANAGED_INVENTORY, so the console edits those two lists directly.
 export const BOM_CATEGORY_TYPES = ["CATEGORY"];
-export const BOM_CATEGORY_STATUS = ["ALLOWED", "PROHIBITED"];
+
+const asCategoryList = (value) => (Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : []);
+// Accepts comma, semicolon or newline separated input, trims, uppercases and de-duplicates
+// (the backend rejects duplicates and stores categories uppercased).
+export function splitCategoryInput(value) {
+  const seen = new Set();
+  return String(value || "")
+    .split(/[,\n;]/)
+    .map((entry) => entry.trim().toUpperCase())
+    .filter((entry) => {
+      if (!entry || entry.length > 80 || seen.has(entry)) return false;
+      seen.add(entry);
+      return true;
+    });
+}
 
 export function categoryFromDto(d) {
   const config = d?.config || {};
+  const allowed = asCategoryList(config.allowedCategories);
+  const blocked = asCategoryList(config.blockedCategories);
   return {
     id: d?._id,
     facilityId: d?.facilityId,
     service: d?.serviceType || "",
     type: d?.type,
-    name: config.name || "Item category",
-    description: config.description || "",
-    allowedStatus: config.allowedStatus || "ALLOWED",
-    handlingNotes: config.handlingNotes || "",
-    restrictions: config.restrictions || "",
+    name: allowed.length ? allowed.join(", ") : "Item category",
+    allowedCategories: allowed.join("\n"),
+    blockedCategories: blocked.join("\n"),
+    allowedCount: allowed.length,
+    blockedCount: blocked.length,
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
@@ -413,21 +482,28 @@ export function categoryFromDto(d) {
     config,
   };
 }
+function categoryConfig(form) {
+  const allowed = splitCategoryInput(form.allowedCategories);
+  const blocked = splitCategoryInput(form.blockedCategories).filter((entry) => !allowed.includes(entry));
+  return { allowedCategories: allowed, blockedCategories: blocked };
+}
 export function categoryBody(form) {
   const body = {
     facilityId: form.facilityId,
     type: "CATEGORY",
-    config: {
-      name: (form.name || "").trim(),
-      description: (form.description || "").trim(),
-      allowedStatus: form.allowedStatus,
-      handlingNotes: (form.handlingNotes || "").trim(),
-      restrictions: (form.restrictions || "").trim(),
-    },
+    // CATEGORY policies are Managed Inventory only; any other service model is rejected.
+    serviceType: "MANAGED_INVENTORY",
+    config: categoryConfig(form),
     effectiveFrom: toInstant(form.effectiveFrom),
     isActive: form.status === "ACTIVE",
   };
-  if (form.service) body.serviceType = form.service;
+  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
+  return body;
+}
+// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
+export function categoryUpdateBody(form, { effective = false } = {}) {
+  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
+  const body = { config: categoryConfig(form), effectiveFrom: toInstant(form.effectiveFrom) };
   if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
   return body;
 }
