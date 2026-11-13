@@ -29,6 +29,7 @@ const modules={
  './InventoryBackendUI':{inventoryApi:{get:()=>{throw Error('Unexpected request during render');}},inventoryRentals:()=>[],useInventoryBackend:()=>loads++===0?state:{data:[],loading:false}},
  './InventoryItemForm':{default:()=>null},
  './ManagedSelfInboundV3':{default:()=>null},
+ './ManagedSelfOutboundV3':{default:()=>null},
  './RepeatedInboundRequests':{default:({item})=>{assert(item._id);children.push('inbound');return null;}},
  './PlacementPreview':{default:({item})=>{assert(item._id);children.push('preview');return null;}},
 };

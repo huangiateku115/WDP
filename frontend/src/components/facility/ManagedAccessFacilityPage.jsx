@@ -8,6 +8,12 @@ import {Screen, Panel, Button, Field, Input, Select, Textarea, Message, Details,
 
 const time = value => value ? new Date(value).toLocaleString('vi-VN') : 'Chưa có';
 const person = value => value?.displayName || value?.email || recordId(value) || 'Chưa phân công';
+const VN_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' });
+const dayInVietnam = value => value ? VN_DAY.format(new Date(value)) : '';
+const sessionRemaining = (expiresAt, now) => {
+  const seconds = Math.max(0, Math.floor((Date.parse(expiresAt) - now) / 1000));
+  return seconds ? `${Math.floor(seconds / 60)} phút ${seconds % 60} giây` : 'Đã hết hạn';
+};
 export default function ManagedAccessFacilityPage({role}) {
   const auth = useAuthSession();
   return <AccessContent key={`${role}:${auth.user?.id}:${auth.user?.assignedFacilityId}:${auth.accessToken}`} role={role} />;
@@ -17,7 +23,7 @@ function AccessContent({role}) {
   const permitted=!!accessToken && user?.role===(manager?'FACILITY_MANAGER':'FACILITY_STAFF') && objectId(user.assignedFacilityId) && objectId(recordId(user));
   const [action,setAction]=useState(null),[staffId,setStaffId]=useState(''),[reason,setReason]=useState('');
   const [checks,setChecks]=useState({identityVerified:false,customerPresent:false,safetyReviewed:false}),[notes,setNotes]=useState('');
-  const [busy,setBusy]=useState(false),[feedback,setFeedback]=useState({}),[filter,setFilter]=useState(''),[search,setSearch]=useState(''),[now,setNow]=useState(Date.now());
+  const [busy,setBusy]=useState(false),[feedback,setFeedback]=useState({}),[filter,setFilter]=useState(''),[search,setSearch]=useState(''),[visitDate,setVisitDate]=useState(VN_DAY.format(new Date())),[now,setNow]=useState(Date.now());
   const lock=useRef(false);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[]);
   const load=useCallback(async()=>{
@@ -92,21 +98,21 @@ function AccessContent({role}) {
     }finally{lock.current=false;setBusy(false);}
   }
   const pending=action?.kind==='checkIn'?api.pendingCheckIn(recordId(action.row),recordId(user)):null;
-  const visits=(data?.visits||[]).filter(row=>(!filter||row.status===filter)&&`${person(row.customerId)} ${recordId(row.reservationId)} ${recordId(row)}`.toLowerCase().includes(search.toLowerCase()));
+  const visits=(data?.visits||[]).filter(row=>(!manager||dayInVietnam(row.startsAt)===visitDate)&&(!filter||row.status===filter)&&`${person(row.customerId)} ${recordId(row.reservationId)} ${recordId(row)}`.toLowerCase().includes(search.toLowerCase()));
   const sessions=data?.sessions||[];
   return <Screen title={manager?'Điều phối lịch đến kho':'Tiếp nhận khách lưu trữ hàng hóa'} notice="Lượt đến kho và phiên truy cập dành cho Managed Inventory. Kết thúc phiên là khách rời kho sau một lượt đến, không phải trả kho hay kết thúc hợp đồng." action={<Button variant="outline" disabled={busy} onClick={()=>{if(!busy){setAction(null);setFeedback({});resource.reload();}}}>Tải lại</Button>}>
     {!permitted?<Panel title="Chưa có quyền truy cập"><p>Cần đúng vai trò và cơ sở được phân công.</p></Panel>:<>
       <Message {...feedback}/><Message error={resource.error}/>{resource.loading&&<p role="status">Đang tải lịch và phiên truy cập…</p>}
       <Panel title="Các bước thực hiện"><p>{manager?'Khách đặt lịch → quản lý phân công nhân viên cùng cơ sở → nhân viên xác minh khách đến → theo dõi phiên và thu hồi khi cần.':'Xem lịch được giao → xác minh trực tiếp khách, danh tính và an toàn → bắt đầu phiên → hỗ trợ giám sát → xác nhận khách rời kho.'}</p><div className="mt-3 flex flex-wrap gap-4"><OpenLink to={`/${role}/managed-inventory-v3`}>Giám sát nhập hàng V3</OpenLink><OpenLink to={`/${role}/managed`}>Hồ sơ hàng hóa</OpenLink></div></Panel>
-      {data&&!resource.error&&<><Panel title={manager?'Lịch khách đến cơ sở':'Lịch được phân công'}><div className="mb-4 grid items-end gap-3 sm:grid-cols-2"><Field label="Tìm khách hoặc mã định danh"><Input value={search} onChange={event=>setSearch(event.target.value)}/></Field><Field label="Trạng thái lượt đến"><Select label="Lọc trạng thái lượt đến" value={filter} onChange={setFilter} options={[["",'Tất cả'],...['SCHEDULED','CHECKED_IN','COMPLETED','CANCELLED'].map(value=>[value,accessLabel(value)])]}/></Field></div>
+      {data&&!resource.error&&<><Panel title={manager?'Lịch khách đến cơ sở':'Lịch được phân công'}><div className="mb-4 grid items-end gap-3 sm:grid-cols-2"><Field label="Tìm khách hoặc mã định danh"><Input value={search} onChange={event=>setSearch(event.target.value)}/></Field><Field label="Trạng thái lượt đến"><Select label="Lọc trạng thái lượt đến" value={filter} onChange={setFilter} options={[["",'Tất cả'],...['SCHEDULED','CHECKED_IN','COMPLETED','CANCELLED'].map(value=>[value,accessLabel(value)])]}/></Field>{manager&&<Field label="Ngày đến (giờ Việt Nam)"><Input aria-label="Ngày đến (giờ Việt Nam)" type="date" value={visitDate} onChange={event=>setVisitDate(event.target.value)}/></Field>}</div>
         {manager&&!data.staff.length&&<p className="mb-3">Chưa có nhân viên hoạt động tại cơ sở để phân công.</p>}
         {visits.length===0?<p>Không có lịch phù hợp.</p>:<div className="space-y-4">{visits.map(visit=><article key={recordId(visit)} className="rounded-xl border p-4"><h3 className="font-bold">{person(visit.customerId)} · {accessLabel(visit.purpose)}</h3><Details values={[["Trạng thái",accessLabel(visit.status)],["Thời gian",`${time(visit.startsAt)} – ${time(visit.endsAt)}`],["Nhân viên hộ tống",person(visit.assignedStaffId)],["Đơn thuê",recordId(visit.reservationId)],["Ghi chú khách",visit.note||'Không có']]} />
           <div className="mt-3 flex flex-wrap gap-3">{manager&&visit.status==='SCHEDULED'&&Date.parse(visit.endsAt)>now&&<Button disabled={busy||!data.staff.length} onClick={()=>open('assign',visit)}>Phân công hộ tống</Button>}{!manager&&visit.status==='SCHEDULED'&&<Button disabled={busy||(!visitInWindow(visit,now)&&!api.pendingCheckIn(recordId(visit),recordId(user)))} onClick={()=>open('checkIn',visit)}>Xác minh khách đến</Button>}</div>
           {!manager&&visit.status==='SCHEDULED'&&!visitInWindow(visit,now)&&<p className="mt-2 text-sm">Chỉ xác nhận trong khung giờ đã đặt.</p>}
           <AccessHistory entries={visit.assignmentHistory} assignment/><AccessHistory entries={visit.audit}/>
         </article>)}</div>}
-      </Panel><Panel title="Phiên truy cập và lịch sử"><p className="mb-3">Đang hoạt động: {sessions.filter(session=>sessionStatus(session,now)==='ACTIVE').length}. Thời hạn tối đa 60 phút, giới hạn thêm theo lịch đến và hợp đồng.</p>
-        {!sessions.length?<p>Chưa có phiên truy cập trong phạm vi được phép.</p>:<div className="space-y-4">{sessions.map(session=>{const status=sessionStatus(session,now);return <article key={recordId(session)} className="rounded-xl border p-4"><Details values={[["Khách",person(session.customerId)],["Trạng thái",accessLabel(status)],["Bắt đầu",time(session.startedAt)],["Hết hạn",time(session.expiresAt)],["Đã kết thúc",time(session.endedAt)],["Các ô được phép",session.allowedCellIds.map(recordId).join(', ')],["Lý do thu hồi",session.revokeReason||'Không có']]} /><div className="mt-3 flex flex-wrap gap-3">{status==='ACTIVE'&&<>{!manager&&<Button disabled={busy} onClick={()=>open('checkOut',session)}>Xác nhận khách rời kho</Button>}<Button variant="outline" disabled={busy} onClick={()=>open('revoke',session)}>Thu hồi vì an toàn</Button></>}</div><AccessHistory entries={session.audit}/></article>;})}</div>}
+      </Panel><Panel title="Phiên truy cập và lịch sử"><p className="mb-3">Đang hoạt động: {sessions.filter(session=>sessionStatus(session,now)==='ACTIVE').length}. Session bắt đầu tại Check-in và hết hạn theo thời điểm sớm nhất trong các giới hạn: tối đa 60 phút, kết thúc Visit hoặc hết kỳ thuê. Không tự gia hạn.</p>
+        {!sessions.length?<p>Chưa có phiên truy cập trong phạm vi được phép.</p>:<div className="space-y-4">{sessions.map(session=>{const status=sessionStatus(session,now);return <article key={recordId(session)} className="rounded-xl border p-4"><Details values={[["Khách",person(session.customerId)],["Trạng thái",accessLabel(status)],["Bắt đầu",time(session.startedAt)],["Còn lại",status==='ACTIVE'?sessionRemaining(session.expiresAt,now):'—'],["Hết hạn",time(session.expiresAt)],["Đã kết thúc",time(session.endedAt)],["Các ô được phép",session.allowedCellIds.map(recordId).join(', ')],["Lý do thu hồi",session.revokeReason||'Không có']]} /><div className="mt-3 flex flex-wrap gap-3">{status==='ACTIVE'&&<>{!manager&&<Button disabled={busy} onClick={()=>open('checkOut',session)}>Xác nhận khách rời kho</Button>}<Button variant="outline" disabled={busy} onClick={()=>open('revoke',session)}>Thu hồi vì an toàn</Button></>}</div><AccessHistory entries={session.audit}/></article>;})}</div>}
       </Panel></>}
     </>}
     {action&&<Dialog title={{assign:'Xác nhận phân công hộ tống',checkIn:'Xác minh khách đến kho',checkOut:'Kết thúc lượt truy cập',revoke:'Thu hồi phiên truy cập'}[action.kind]} onClose={()=>{if(!lock.current)setAction(null);}}><form onSubmit={run} className="space-y-4">

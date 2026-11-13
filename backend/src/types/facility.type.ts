@@ -19,6 +19,11 @@ export interface FacilityContact {
   phone?: string;
   email?: string;
 }
+export interface ManagedVisitSchedule {
+  timeZone: 'Asia/Ho_Chi_Minh';
+  slotDurationMinutes: number;
+  weeklyHours: Array<{ weekday: number; opensAt: string; closesAt: string }>;
+}
 export interface FacilityFields {
   code: string;
   name: string;
@@ -28,6 +33,7 @@ export interface FacilityFields {
   status: FacilityStatus;
   description?: string;
   operatingHours?: string;
+  managedVisitSchedule?: ManagedVisitSchedule;
   images?: string[];
   deletedAt?: Date;
   deletedBy?: import('mongoose').Types.ObjectId;

@@ -47,9 +47,21 @@ export function managedTerms(rules,facilityId,start) {
   }
   return [...terms.values()].sort((a,b)=>['DAY','MONTH','YEAR'].indexOf(a.unit)-['DAY','MONTH','YEAR'].indexOf(b.unit)||a.value-b.value);
 }
-export function managedRequest({facilityId,allocatedCapacityM3,startDate,term,cellIds}) {
+export function managedVietnamDate(value=Date.now()) {
+  const date=value instanceof Date?value:new Date(value);
+  if(!Number.isFinite(date.getTime()))throw Error('Invalid current date.');
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+  const part=name=>parts.find(entry=>entry.type===name)?.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+export function managedBookingDateAllowed(startDate,now=Date.now()) {
+  if(typeof startDate!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(startDate)||!Number.isFinite(Date.parse(startDate)))return false;
+  const dateKey=startDate.slice(0,10);
+  return dateKey>=managedVietnamDate(now);
+}
+export function managedRequest({facilityId,allocatedCapacityM3,startDate,term,cellIds,now=Date.now()}) {
   if(!/^[a-f\d]{24}$/i.test(facilityId||'')||typeof allocatedCapacityM3!=='number'||!Number.isFinite(allocatedCapacityM3)||allocatedCapacityM3<=0||!term||!Number.isSafeInteger(term.value)||term.value<=0||!['DAY','MONTH','YEAR'].includes(term.unit))throw Error('Invalid Managed facility, quota or rental term.');
-  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(startDate||'')||!Number.isFinite(Date.parse(startDate))||new Date(startDate).toISOString()!==startDate.replace(/Z$/,startDate.includes('.')?'Z':'.000Z')||Date.parse(startDate)<=Date.now())throw Error('Managed start date must be a valid future ISO UTC timestamp.');
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(startDate||'')||!Number.isFinite(Date.parse(startDate))||new Date(startDate).toISOString()!==startDate.replace(/Z$/,startDate.includes('.')?'Z':'.000Z')||!managedBookingDateAllowed(startDate,now))throw Error('Managed start date must be today or a future ISO UTC date in Asia/Ho_Chi_Minh.');
   if(cellIds!==undefined&&(!Array.isArray(cellIds)||cellIds.length<1||cellIds.length>100||!cellIds.every(v=>typeof v==='string'&&/^[a-f\d]{24}$/i.test(v))||new Set(cellIds.map(v=>v.toLowerCase())).size!==cellIds.length))throw Error('Select 1–100 unique valid Cell IDs.');
   return {facilityId,allocatedCapacityM3,startDate,term:{value:term.value,unit:term.unit},...(cellIds===undefined?{}:{cellIds:cellIds.map(v=>v.toLowerCase())})};
 }

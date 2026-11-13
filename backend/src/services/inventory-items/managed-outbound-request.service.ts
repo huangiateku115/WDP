@@ -144,7 +144,8 @@ async function lockActiveReservation(scope: Scope, session: ClientSession, now: 
   // Outbound is intentionally allowed during closure while existing rental-term checks pass.
   return lockReservationFence(scope, session, { now, requireActiveTerm: true });
 }
-async function preflightOwnedItem(itemId: Types.ObjectId, actorId: Types.ObjectId): Promise<Scope> {  const item = await InventoryItemModel.findOne({ _id: itemId, customerId: actorId, ...live })    .select('_id customerId managedReservationId facilityId currentCellId __v').lean().exec();
+async function preflightOwnedItem(itemId: Types.ObjectId, actorId: Types.ObjectId): Promise<Scope> {  const item = await InventoryItemModel.findOne({ _id: itemId, customerId: actorId, ...live })    .select('_id customerId managedReservationId facilityId currentCellId inventorySchemaVersion __v').lean().exec();
+  if (item?.inventorySchemaVersion === 3) return fail(409, ManagedStockErrorCode.OUTBOUND_REQUEST_INVALID, 'V3 inventory must use the Customer Self-Outbound V3 request workflow');
   if (!item || !item.currentCellId) return fail(404, ManagedStockErrorCode.OUTBOUND_REQUEST_NOT_FOUND, 'Eligible inventory item not found');
   return { itemId, customerId: actorId, reservationId: item.managedReservationId, facilityId: item.facilityId,    cellId: item.currentCellId, itemVersion: Number.isSafeInteger(item.__v) && item.__v >= 0 ? item.__v : null };
 }
