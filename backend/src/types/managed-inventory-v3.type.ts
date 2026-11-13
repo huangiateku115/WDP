@@ -55,11 +55,11 @@ export interface BatchPlacementFields extends ManagedV3Scope {
 export interface IManagedV3BatchPlacement extends Document, BatchPlacementFields {}
 
 export interface ManagedV3BatchProjectionLine {
-  itemKind: 'A2_BATCH'; batchId: string; quantityUnit: string; cellId: Types.ObjectId | string; quantity: number;
+  itemKind: 'A2_BATCH'; batchId: string; receiptMovementId?: Types.ObjectId | string; receivedAt?: Date | string; quantityUnit: string; cellId: Types.ObjectId | string; quantity: number;
   weightKg: number; volumeM3: number; heldQuantity: number; topologyCertificationId: Types.ObjectId | string; topologyRevision: number;
 }
 export interface ManagedV3PhysicalUnitProjection {
-  itemKind: 'A1_PHYSICAL_UNIT'; physicalUnitId: Types.ObjectId | string; quantity: 1; quantityUnit: string; pose?: ManagedV3Pose;
+  itemKind: 'A1_PHYSICAL_UNIT'; physicalUnitId: Types.ObjectId | string; sourceMovementId?: Types.ObjectId | string; receivedAt?: Date | string; quantity: 1; quantityUnit: string; pose?: ManagedV3Pose;
   weightKg: number; volumeM3: number; cellIds: Array<Types.ObjectId | string>;
 }
 export interface ManagedV3CellProjection { cellId: Types.ObjectId | string; quantity: number; physicalUnitCount: number; weightKg: number; volumeM3: number }

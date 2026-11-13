@@ -27,6 +27,7 @@ import { pricingRevisionAt, projectPricingRevision } from '../pricing-policy/pri
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { captureTermsAcceptance } from '../terms/terms.catalog';
 import { managedSigningDeadline } from '../../utils/managed-signing-deadline';
+import { isManagedBookingDateAllowed } from '../../utils/managed-booking-date';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const occupying = [ReservationStatus.RESERVED, ReservationStatus.DEPOSIT_PAID, ReservationStatus.CHECKIN_READY, ReservationStatus.CONTRACTED, ReservationStatus.PAID, ReservationStatus.ACTIVE, ReservationStatus.OVERDUE];
@@ -331,7 +332,7 @@ function publicQuote(input: ReturnType<typeof parseRequest>, result: Awaited<Ret
 export class ManagedReservationService {
   static async quote(body: unknown) {
     const input = parseRequest(body);
-    if (input.startDate <= new Date()) fail(400, 'startDate must be in the future');
+    if (!isManagedBookingDateAllowed(input.startDate, new Date())) fail(400, 'startDate must be today or a future date in Asia/Ho_Chi_Minh');
     // Service-level compatibility for historical quota-only tests and internal reads.
     // The V3 HTTP controller requires selected Cells.
     if (!input.cellIds?.length) return publicQuote(input, await effectiveQuote(input));
@@ -392,7 +393,7 @@ export class ManagedReservationService {
           message === 'TERMS_VERSION_STALE' ? 'Terms have changed. Review and accept the current version before continuing' : message === 'NO_EFFECTIVE_TERMS' ? 'No effective Terms are configured for this service' : 'Customer acceptance of the current Terms is required');
       }
       const now = new Date();
-      if (input.startDate <= now) fail(400, 'startDate must be in the future');
+      if (!isManagedBookingDateAllowed(input.startDate, now)) fail(400, 'startDate must be today or a future date in Asia/Ho_Chi_Minh');
       const profile = await CustomerProfileModel.findOne({ userId: actor._id }).session(session).exec();
       if (!profile || profile.verificationStatus !== VerificationStatus.VERIFIED) fail(403, 'Verified Customer Profile required');
       const capacity = await lockCapacity(input.facilityId, session);

@@ -206,11 +206,17 @@ export function facilityFromDto(d) {
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
     images: Array.isArray(d?.images) ? d.images : [],
     status: d?.status || "ACTIVE",
+    managedVisitSchedule: d?.managedVisitSchedule || null,
     deleted: Boolean(d?.deletedAt),
   };
 }
 export function facilityForm(d) {
   const f = facilityFromDto(d);
+  const schedule = f.managedVisitSchedule;
+  const weeklyHours = Array.from({ length: 7 }, (_, weekday) => {
+    const configured = schedule?.weeklyHours?.find((entry) => entry.weekday === weekday);
+    return { weekday, enabled: Boolean(configured), opensAt: configured?.opensAt || "09:00", closesAt: configured?.closesAt || "18:00" };
+  });
   return {
     code: f.code,
     name: f.name,
@@ -224,6 +230,8 @@ export function facilityForm(d) {
     serviceTypes: f.serviceTypes.length ? f.serviceTypes : ["SELF_STORAGE"],
     images: f.images,
     status: f.status,
+    visitScheduleEnabled: Boolean(schedule),
+    visitScheduleDraft: { slotDurationMinutes: schedule?.slotDurationMinutes || 60, weeklyHours },
   };
 }
 export function facilityBody(form, { includeCode = false } = {}) {
@@ -243,6 +251,14 @@ export function facilityBody(form, { includeCode = false } = {}) {
   if (includeCode) body.code = (form.code || "").trim().toUpperCase();
   if (form.openingHours?.trim()) body.operatingHours = form.openingHours.trim();
   if (form.description?.trim()) body.description = form.description.trim();
+  if ("visitScheduleEnabled" in form && form.serviceTypes?.includes("MANAGED_INVENTORY")) {
+    body.managedVisitSchedule = form.visitScheduleEnabled ? {
+      timeZone: "Asia/Ho_Chi_Minh",
+      slotDurationMinutes: Number(form.visitScheduleDraft?.slotDurationMinutes),
+      weeklyHours: (form.visitScheduleDraft?.weeklyHours || []).filter((entry) => entry.enabled)
+        .map(({ weekday, opensAt, closesAt }) => ({ weekday, opensAt, closesAt })),
+    } : null;
+  }
   if (Array.isArray(form.images)) {
     body.images = form.images.map((url) => String(url).trim()).filter(Boolean);
   }

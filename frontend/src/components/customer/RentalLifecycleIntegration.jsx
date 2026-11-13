@@ -53,6 +53,8 @@ import {
   Plus,
   Warehouse,
   RefreshCw,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { CustomerScreen } from "@/components/common/CustomerScreen";
 import {
@@ -90,6 +92,39 @@ function useCurrentTime() {
   }, []);
   return now;
 }
+function SignedPaperProof({ contract }) {
+  if (contract?.status !== "SIGNED") return null;
+  const rawUrl = contract.signedProofUrl;
+  let safeUrl = "";
+  try {
+    const parsed = new URL(rawUrl || "");
+    if (parsed.protocol === "https:" && parsed.hostname === "res.cloudinary.com" && !parsed.username && !parsed.password) safeUrl = parsed.toString();
+  } catch { /* invalid or missing signed proof URL */ }
+  const verified = !!contract.verifiedAt && !!contract.signedProofPublicId;
+  const isPdf = /\.pdf$/i.test(safeUrl ? new URL(safeUrl).pathname : "");
+  return (
+    <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5" aria-label="Bản hợp đồng giấy đã xác minh">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-emerald-950">Hợp đồng giấy đã xác nhận</h3>
+          <p className="mt-1 text-sm text-emerald-900">{verified ? "Facility đã ghi nhận và xác minh bằng chứng hợp đồng." : "Trạng thái hợp đồng đã ký nhưng thiếu thông tin xác minh hoặc tệp bằng chứng."}</p>
+          {contract.paperContractNumber && <p className="mt-2 text-sm text-slate-700">Số hợp đồng giấy: {contract.paperContractNumber}</p>}
+          {contract.verifiedAt && <p className="mt-1 text-sm text-slate-700">Ngày xác minh: {vietnamDateTime(contract.verifiedAt)}</p>}
+          {verified && <p className="mt-1 text-sm text-slate-700">Người xác minh: {contract.verifiedByStaff?.displayName || contract.verifiedByStaff?.fullName || "Đại diện cơ sở"}</p>}
+        </div>
+        {safeUrl && verified && <div className="flex flex-wrap gap-2">
+          <a className="inline-flex items-center gap-2 rounded-lg bg-emerald-900 px-3 py-2 text-sm font-semibold text-white" href={safeUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />Xem hợp đồng đã ký</a>
+          <a className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-950" href={safeUrl} download><Download size={16} />Tải tệp</a>
+        </div>}
+      </div>
+      {safeUrl && verified && (isPdf
+        ? <iframe className="mt-4 h-[65vh] min-h-96 w-full rounded-xl border border-emerald-200 bg-white" title="Bản hợp đồng giấy đã ký PDF" src={safeUrl} />
+        : /\.(?:png|jpe?g|webp)$/i.test(new URL(safeUrl).pathname)
+          ? <img className="mt-4 max-h-[70vh] w-full rounded-xl border border-emerald-200 bg-white object-contain" src={safeUrl} alt="Ảnh bản hợp đồng giấy đã ký" loading="lazy" referrerPolicy="no-referrer" />
+          : <p className="mt-3 text-sm text-amber-900">Định dạng tệp chưa được hỗ trợ xem trước. Hãy dùng nút mở tệp ở trên.</p>)}
+    </section>
+  );
+}
 async function contractContext(reservationId, config) {
   if (!validId(reservationId)) throw Error("Invalid reservation ID.");
   const reservation = record(
@@ -114,7 +149,7 @@ async function loadSelfStorageReservation(reservationId, config) {
   );
   if (
     normalizePayosReferenceId(reservation) !==
-      normalizePayosReferenceId(reservationId) ||
+    normalizePayosReferenceId(reservationId) ||
     serviceType(reservation) !== SELF_STORAGE
   ) {
     throw Error("The owned Self Storage reservation could not be verified.");
@@ -137,7 +172,7 @@ async function loadSelfStorageContract(reservationId, customerId, config) {
     if (
       !normalizePayosReferenceId(customerId) ||
       normalizePayosReferenceId(contract.customerId) !==
-        normalizePayosReferenceId(customerId)
+      normalizePayosReferenceId(customerId)
     ) {
       throw Error(
         "Contract ownership could not be verified. Payment is unavailable.",
@@ -222,8 +257,8 @@ async function managedV3PaymentContext(reservationId, config) {
 }
 export function RentalsIntegration() {
   const resource = useBackend((config) =>
-      reservationApi.mineReal(config).then(rows),
-    ),
+    reservationApi.mineReal(config).then(rows),
+  ),
     [filter, setFilter] = useState(""),
     [service, setService] = useState("");
   const records =
@@ -447,44 +482,44 @@ function MyStorageReservationCard({ item }) {
   };
   const values = managed
     ? [
-        ["Kỳ thuê", `${date(item.startDate)} – ${date(item.endDate)}`],
-        ...(typeof item.allocatedCapacityM3 === "number" &&
+      ["Kỳ thuê", `${date(item.startDate)} – ${date(item.endDate)}`],
+      ...(typeof item.allocatedCapacityM3 === "number" &&
         Number.isFinite(item.allocatedCapacityM3)
-          ? [["Sức chứa", `${item.allocatedCapacityM3} m³`]]
-          : []),
-        ...((item.totalRentPayable ?? item.totalRent ?? item.estimatedRent) !=
+        ? [["Sức chứa", `${item.allocatedCapacityM3} m³`]]
+        : []),
+      ...((item.totalRentPayable ?? item.totalRent ?? item.estimatedRent) !=
         null
-          ? [
-              [
-                "Tổng tiền thuê",
-                reservationAmount(
-                  item.totalRentPayable ?? item.totalRent ?? item.estimatedRent,
-                  item.currency || "VND",
-                ),
-              ],
-            ]
-          : []),
-      ]
+        ? [
+          [
+            "Tổng tiền thuê",
+            reservationAmount(
+              item.totalRentPayable ?? item.totalRent ?? item.estimatedRent,
+              item.currency || "VND",
+            ),
+          ],
+        ]
+        : []),
+    ]
     : [
-        ["Mã kho", unit?.unitCode],
-        ["Kích thước", unit?.size],
-        [
-          "Thể tích",
-          typeof unit?.volumeM3 === "number"
-            ? `${unit.volumeM3} m³`
-            : unit?.volumeM3,
-        ],
-        ["Ngày bắt đầu", date(item.startDate)],
-        ["Ngày kết thúc", date(item.endDate)],
-        ...(item.estimatedRent != null
-          ? [
-              [
-                "Tổng tiền thanh toán",
-                reservationAmount(item.estimatedRent, item.currency || "VND"),
-              ],
-            ]
-          : []),
-      ];
+      ["Mã kho", unit?.unitCode],
+      ["Kích thước", unit?.size],
+      [
+        "Thể tích",
+        typeof unit?.volumeM3 === "number"
+          ? `${unit.volumeM3} m³`
+          : unit?.volumeM3,
+      ],
+      ["Ngày bắt đầu", date(item.startDate)],
+      ["Ngày kết thúc", date(item.endDate)],
+      ...(item.estimatedRent != null
+        ? [
+          [
+            "Tổng tiền thanh toán",
+            reservationAmount(item.estimatedRent, item.currency || "VND"),
+          ],
+        ]
+        : []),
+    ];
   const Icon = managed ? Package : Warehouse;
   return (
     <Card className="my-storage-card">
@@ -589,7 +624,7 @@ export function ReservationDetailIntegration() {
       if (getAccessToken() === token) {
         setCancelError(
           error.response?.data?.message ||
-            "Chưa xác nhận được kết quả hủy. Hãy kiểm tra trạng thái đơn thuê.",
+          "Chưa xác nhận được kết quả hủy. Hãy kiểm tra trạng thái đơn thuê.",
         );
       }
     } finally {
@@ -718,12 +753,12 @@ export function ReservationDetailIntegration() {
               {["PAID", "CHECKIN_READY", "ACTIVE"].includes(
                 resource.data.status,
               ) && (
-                <Button asChild variant="outline">
-                  <Link to={`/portal/contracts/${id}`}>
-                    Xem hợp đồng Managed V3
-                  </Link>
-                </Button>
-              )}
+                  <Button asChild variant="outline">
+                    <Link to={`/portal/contracts/${id}`}>
+                      Xem hợp đồng Managed V3
+                    </Link>
+                  </Button>
+                )}
               {["CHECKIN_READY", "ACTIVE"].includes(resource.data.status) &&
                 eligibleInventoryRegistration(resource.data) && (
                   <Button asChild variant="orange">
@@ -1136,12 +1171,12 @@ export function ContractDetailIntegration() {
     setConfirmedSignature(null);
   }, [reservationId, session.accessToken]);
   const contract =
-      resource.data?.contract?.status === "SIGNED"
-        ? resource.data.contract
-        : confirmedSignature?.id === reservationId &&
-            confirmedSignature?.token === session.accessToken
-          ? confirmedSignature.contract
-          : resource.data?.contract,
+    resource.data?.contract?.status === "SIGNED"
+      ? resource.data.contract
+      : confirmedSignature?.id === reservationId &&
+        confirmedSignature?.token === session.accessToken
+        ? confirmedSignature.contract
+        : resource.data?.contract,
     reservation = resource.data?.reservation,
     amounts = contractAmounts(contract, reservation);
   const paperProgress = selfStoragePaperProgress(reservation, contract);
@@ -1203,6 +1238,7 @@ export function ContractDetailIntegration() {
         description="Review the Backend's Cell, capacity, dates, term and confirmed pricing snapshot."
       >
         <LoadState resource={resource} />
+        <div className="flex justify-end"><Button variant="outline" onClick={resource.retry}><RefreshCw size={16} />Làm mới hợp đồng</Button></div>
         <Message error={signatureNotice} />
         <RentalStatus status={contract.status} />
         <ContractPrintAction
@@ -1215,7 +1251,7 @@ export function ContractDetailIntegration() {
               <h2 className="text-xl font-bold">Thông tin hợp đồng đã chốt</h2>
               {content.facility?.address && (
                 <p className="mt-2 text-sm text-slate-600">
-                  Địa chỉ Facility: {content.facility.address}
+                  Địa chỉ Facility: {addressText(content.facility.address)}
                 </p>
               )}
               <Details
@@ -1252,7 +1288,7 @@ export function ContractDetailIntegration() {
                   [
                     "Đã thanh toán 100%",
                     content.pricing?.totalPaid ??
-                      content.pricing?.amountBreakdown?.totalDue,
+                    content.pricing?.amountBreakdown?.totalDue,
                   ],
                   ["Hạn ký", vietnamDateTime(reservation.signingDeadline)],
                   ["Thuế", content.pricing?.taxAmount],
@@ -1279,6 +1315,7 @@ export function ContractDetailIntegration() {
             ["Chữ ký Customer", contract.signedByCustomerAt || "Đang chờ"],
           ]}
         />
+        <SignedPaperProof contract={contract} />
         {contract.status === "SIGNED" && contract.verifiedAt && (
           <p role="status" className="mt-3 text-emerald-800">
             Hợp đồng đã được xác minh — sẵn sàng thực hiện thủ tục nhận kho.
@@ -1299,6 +1336,7 @@ export function ContractDetailIntegration() {
       description="Rà soát thông tin đặt thuê, nội dung và trạng thái hợp đồng trước khi thực hiện bước tiếp theo."
     >
       <LoadState resource={resource} />
+      <div className="flex justify-end"><Button variant="outline" onClick={resource.retry}><RefreshCw size={16} />Làm mới hợp đồng</Button></div>
       <Message error={signatureNotice} />
       {contract ? (
         <Card className="overflow-hidden border-slate-200 shadow-sm">
@@ -1331,6 +1369,7 @@ export function ContractDetailIntegration() {
                 reservationId={reservationId}
                 expectUpfrontSelfStorage={Boolean(paperProgress)}
               />
+              <SignedPaperProof contract={contract} />
               {isManagedV2(reservation) && (
                 <ManagedFinancialSummary reservation={reservation} />
               )}
@@ -1351,27 +1390,27 @@ export function ContractDetailIntegration() {
                     ...(!isManagedV2(reservation)
                       ? serviceType(reservation) === SELF_STORAGE
                         ? [
-                            [
-                              "Tổng tiền thanh toán",
-                              amounts.estimatedRent == null
-                                ? undefined
-                                : reservationAmount(
-                                    amounts.estimatedRent,
-                                    reservation.currency || "VND",
-                                  ),
-                            ],
-                            ...(!paperProgress && amounts.depositAmount != null
-                              ? [["Tiền đặt cọc", amounts.depositAmount]]
-                              : []),
-                            ...(!paperProgress && amounts.balanceDue != null
-                              ? [["Số tiền còn lại", amounts.balanceDue]]
-                              : []),
-                          ]
+                          [
+                            "Tổng tiền thanh toán",
+                            amounts.estimatedRent == null
+                              ? undefined
+                              : reservationAmount(
+                                amounts.estimatedRent,
+                                reservation.currency || "VND",
+                              ),
+                          ],
+                          ...(!paperProgress && amounts.depositAmount != null
+                            ? [["Tiền đặt cọc", amounts.depositAmount]]
+                            : []),
+                          ...(!paperProgress && amounts.balanceDue != null
+                            ? [["Số tiền còn lại", amounts.balanceDue]]
+                            : []),
+                        ]
                         : [
-                            ["Estimated rent", amounts.estimatedRent],
-                            ["Deposit", amounts.depositAmount],
-                            ["Total due", amounts.totalDue],
-                          ]
+                          ["Estimated rent", amounts.estimatedRent],
+                          ["Deposit", amounts.depositAmount],
+                          ["Total due", amounts.totalDue],
+                        ]
                       : []),
                     [
                       "Tiền tệ",
@@ -1388,13 +1427,13 @@ export function ContractDetailIntegration() {
                     [
                       "Cơ sở",
                       reservation?.facilityId?.name ||
-                        reservation?.facility?.name,
+                      reservation?.facility?.name,
                     ],
                     [
                       "Địa chỉ cơ sở",
                       addressText(
                         reservation?.facilityId?.address ||
-                          reservation?.facility?.address,
+                        reservation?.facility?.address,
                       ),
                     ],
                     [
@@ -1408,11 +1447,11 @@ export function ContractDetailIntegration() {
                       : []),
                     ...(paperProgress?.visitFacility
                       ? [
-                          [
-                            "Hạn ký",
-                            vietnamDateTime(reservation.signingDeadline),
-                          ],
-                        ]
+                        [
+                          "Hạn ký",
+                          vietnamDateTime(reservation.signingDeadline),
+                        ],
+                      ]
                       : []),
                     ["Phiên bản điều khoản", contract.termsVersion],
                   ].filter(([, value]) => value != null)}
@@ -1446,7 +1485,7 @@ export function ContractDetailIntegration() {
                     <p className="mt-3 text-sm text-slate-700">
                       Vui lòng đến cơ sở để ký hợp đồng giấy
                       {reservation.signingDeadline &&
-                      vietnamDateTime(reservation.signingDeadline)
+                        vietnamDateTime(reservation.signingDeadline)
                         ? ` trước ${vietnamDateTime(reservation.signingDeadline)}`
                         : ""}
                       . Nhân viên cơ sở sẽ kiểm tra và xác minh hợp đồng đã ký.
@@ -1556,7 +1595,7 @@ export function ContractDetailIntegration() {
                         {isManagedV2(reservation)
                           ? "Chức năng ký hợp đồng trực tuyến hiện chưa khả dụng đối với đơn thuê này."
                           : serviceType(reservation) === SELF_STORAGE &&
-                              reservation?.status === "CONTRACTED"
+                            reservation?.status === "CONTRACTED"
                             ? "Vui lòng hoàn tất thanh toán trước khi tiếp tục thủ tục ký hợp đồng."
                             : "Hiện chưa đủ điều kiện ký hợp đồng. Vui lòng kiểm tra trạng thái đơn thuê hoặc thời hạn giữ chỗ."}
                       </p>
@@ -1647,16 +1686,16 @@ export function PaymentIntegration() {
     (config) =>
       validId(reservationId)
         ? reservationApi
-            .detailForCustomer(reservationId, config)
-            .then((response) => {
-              const reservation = record(response);
-              if (
-                normalizePayosReferenceId(reservation) !==
-                normalizePayosReferenceId(reservationId)
-              )
-                throw Error("Reservation does not match this payment route.");
-              return reservation;
-            })
+          .detailForCustomer(reservationId, config)
+          .then((response) => {
+            const reservation = record(response);
+            if (
+              normalizePayosReferenceId(reservation) !==
+              normalizePayosReferenceId(reservationId)
+            )
+              throw Error("Reservation does not match this payment route.");
+            return reservation;
+          })
         : Promise.reject(Error("Invalid reservation ID.")),
     [reservationId],
   );
@@ -1727,12 +1766,12 @@ export function AccessIntegration() {
 function AccessForm({ id }) {
   const logs = useBackend((config) => accessApi.logs(config).then(rows), [id]);
   const resource = useBackend(
-      (config) =>
-        validId(id)
-          ? reservationApi.detailForCustomer(id, config).then(record)
-          : Promise.reject(Error("Invalid reservation ID.")),
-      [id],
-    ),
+    (config) =>
+      validId(id)
+        ? reservationApi.detailForCustomer(id, config).then(record)
+        : Promise.reject(Error("Invalid reservation ID.")),
+    [id],
+  ),
     [pin, setPin] = useState(""),
     [revealedPin, setRevealedPin] = useState(false),
     [pending, setPending] = useState(false),
@@ -1811,7 +1850,7 @@ function AccessForm({ id }) {
       {resource.data && !allowed && (
         <p>
           {resource.data?.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
-          !resource.data?.accessPinCode
+            !resource.data?.accessPinCode
             ? "Hệ thống cấp credential truy cập an toàn chưa khả dụng; không dùng mã demo để mở kho."
             : "Access unavailable for this reservation status or missing reservation code."}
         </p>

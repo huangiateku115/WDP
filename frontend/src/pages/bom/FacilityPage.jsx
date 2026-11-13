@@ -21,7 +21,10 @@ const EMPTY_FORM = {
   code: "", name: "", line1: "", ward: "", wardCustom: false, district: "", city: "", country: "",
   openingHours: "", allDay: false,
   description: "", serviceTypes: ["SELF_STORAGE"], images: [], status: "ACTIVE",
+  visitScheduleEnabled: false,
+  visitScheduleDraft: { slotDurationMinutes: 60, weeklyHours: Array.from({ length: 7 }, (_, weekday) => ({ weekday, enabled: false, opensAt: "09:00", closesAt: "18:00" })) },
 };
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // Single "opening hours" field: validates a `HH:MM - HH:MM` range (en-dash accepted).
 const HOURS_PATTERN = /^\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*$/;
@@ -202,6 +205,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],
+                ["Managed visit schedule", facility.managedVisitSchedule ? `${facility.managedVisitSchedule.timeZone} · ${facility.managedVisitSchedule.slotDurationMinutes} min slots · ${facility.managedVisitSchedule.weeklyHours?.length || 0} configured days` : "Not configured (Customer visit booking is unavailable)"],
                 ["Business status", <Status value={facility.status} />],
                 ["Contact phone", facility.contact?.phone],
                 ["Contact email", facility.contact?.email],
@@ -376,6 +380,13 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
         if (message) throw new Error(message);
       }
       const openingHours = form.allDay ? "24/7" : (hours ? formatHours(hours) : "");
+      if (form.visitScheduleEnabled) {
+        const configuredDays = form.visitScheduleDraft?.weeklyHours?.filter((entry) => entry.enabled) || [];
+        if (!configuredDays.length) throw new Error("Select at least one day for Managed Inventory visits.");
+        const duration = Number(form.visitScheduleDraft.slotDurationMinutes);
+        if (!Number.isSafeInteger(duration) || duration < 30 || duration > 480 || duration % 15) throw new Error("Visit slot duration must be 30–480 minutes in 15-minute increments.");
+        if (configuredDays.some((entry) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.opensAt) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.closesAt) || entry.opensAt >= entry.closesAt)) throw new Error("Each visit day needs valid opening and closing times.");
+      }
       const imageUrls = (form.images || []).map((url) => String(url).trim()).filter(Boolean);
       if (imageUrls.length > 10) throw new Error("At most 10 facility images are allowed.");
       if (imageUrls.some((url) => {
@@ -490,6 +501,21 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   <small role="alert" className="text-xs text-red-700">{hoursError(form.openingHours)}</small>
                 )}
               </div>
+              {form.serviceTypes.includes("MANAGED_INVENTORY") && <div className="manager-field">
+                <span>Managed Inventory visit schedule</span>
+                <small>Separate from general facility opening hours. Customer availability is estimated from active Staff accounts and overlapping visits; a Manager must still assign a specific escort. Times use Asia/Ho_Chi_Minh.</small>
+                <label className="mt-2 flex items-center gap-2 text-sm"><Checkbox aria-label="Configure Managed Inventory visit schedule" checked={form.visitScheduleEnabled} onCheckedChange={(checked) => change("visitScheduleEnabled", checked === true)} />Configure Customer visit booking schedule</label>
+                {form.visitScheduleEnabled && <div className="mt-3 space-y-3">
+                  <Field label="Visit slot duration" hint="30–480 minutes in 15-minute increments. Access Session still ends after at most 60 minutes or earlier at Visit/rental end.">
+                    <Select label="Visit slot duration" value={String(form.visitScheduleDraft.slotDurationMinutes)} onChange={(value) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, slotDurationMinutes: Number(value) } }))} options={Array.from({ length: 31 }, (_, index) => String(30 + index * 15))} />
+                  </Field>
+                  {form.visitScheduleDraft.weeklyHours.map((day, index) => <div key={day.weekday} className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr]">
+                    <label className="flex items-center gap-2 text-sm"><Checkbox aria-label={`${WEEKDAYS[day.weekday]} visit day`} checked={day.enabled} onCheckedChange={(checked) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, enabled: checked === true } : entry) } }))} />{WEEKDAYS[day.weekday]}</label>
+                    <Field label={`${WEEKDAYS[day.weekday]} opens`}><Input aria-label={`${WEEKDAYS[day.weekday]} opens`} type="time" disabled={!day.enabled} value={day.opensAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, opensAt: event.target.value } : entry) } }))} /></Field>
+                    <Field label={`${WEEKDAYS[day.weekday]} closes`}><Input aria-label={`${WEEKDAYS[day.weekday]} closes`} type="time" disabled={!day.enabled} value={day.closesAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, closesAt: event.target.value } : entry) } }))} /></Field>
+                  </div>)}
+                </div>}
+              </div>}
               <Field label="Business status">
                 <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
               </Field>

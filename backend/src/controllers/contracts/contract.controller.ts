@@ -41,6 +41,7 @@ export const getMyContracts = async (req: Request, res: Response) => {
   try {
     const contracts = await ContractModel.find({ customerId: req.user!._id })
       .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status')
+      .populate('verifiedByStaff', 'fullName displayName')
       .sort({ createdAt: -1 });
     return res.json({ success: true, data: contracts });
   } catch (error: any) {
@@ -51,7 +52,8 @@ export const getMyContracts = async (req: Request, res: Response) => {
 export const getContractById = async (req: Request, res: Response) => {
   try {
     const contract = await ContractModel.findById(req.params.id)
-      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType');
+      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType')
+      .populate('verifiedByStaff', 'fullName displayName');
     if (!contract) return res.status(404).json({ success: false, message: 'Contract not found' });
     
     // Check permission: FM, Admin, BOM or the owner
@@ -78,7 +80,8 @@ export const getContractByReservationId = async (req: Request, res: Response) =>
     const reservationId = req.params.reservationId;
     const contract: any = await (ContractModel as any).findOne({ reservationId })
       .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType')
-      .populate('customerId', 'fullName email phone');
+      .populate('customerId', 'fullName email phone')
+      .populate('verifiedByStaff', 'fullName displayName');
     if (!contract) return res.status(404).json({ success: false, message: 'Contract not found for this reservation.' });
 
     const customerId = contract.customerId?._id ?? contract.customerId;

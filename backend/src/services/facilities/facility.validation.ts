@@ -25,8 +25,26 @@ export function parseStatus(value: unknown): FacilityStatus {
 export function parseStatusBody(value: unknown): FacilityStatus {
   return parseStatus(object(value, ['status']).status);
 }
+function parseManagedVisitSchedule(value: unknown): Record<string, unknown> | null {
+  if (value === null) return null;
+  const schedule = object(value, ['timeZone', 'slotDurationMinutes', 'weeklyHours']);
+  if (schedule.timeZone !== 'Asia/Ho_Chi_Minh') invalid('managedVisitSchedule.timeZone must be Asia/Ho_Chi_Minh');
+  const duration = schedule.slotDurationMinutes;
+  if (!Number.isSafeInteger(duration) || (duration as number) < 30 || (duration as number) > 480 || (duration as number) % 15 !== 0) invalid('managedVisitSchedule.slotDurationMinutes must be 30–480 minutes in 15-minute increments');
+  if (!Array.isArray(schedule.weeklyHours) || !schedule.weeklyHours.length || schedule.weeklyHours.length > 7) invalid('managedVisitSchedule.weeklyHours must contain one to seven days');
+  const seen = new Set<number>();
+  const weeklyHours = schedule.weeklyHours.map((entry, index) => {
+    const day = object(entry, ['weekday', 'opensAt', 'closesAt']);
+    if (!Number.isSafeInteger(day.weekday) || (day.weekday as number) < 0 || (day.weekday as number) > 6 || seen.has(day.weekday as number)) invalid(`managedVisitSchedule.weeklyHours[${index}].weekday is invalid or duplicated`);
+    const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (typeof day.opensAt !== 'string' || !clock.test(day.opensAt) || typeof day.closesAt !== 'string' || !clock.test(day.closesAt) || day.opensAt >= day.closesAt) invalid(`managedVisitSchedule.weeklyHours[${index}] must have a same-day opening and closing time`);
+    seen.add(day.weekday as number);
+    return { weekday: day.weekday, opensAt: day.opensAt, closesAt: day.closesAt };
+  }).sort((a, b) => (a.weekday as number) - (b.weekday as number));
+  return { timeZone: schedule.timeZone, slotDurationMinutes: duration, weeklyHours };
+}
 export function parseFacility(value: unknown, partial = false): Record<string, unknown> {
-  const input = object(value, ['code', 'name', 'address', 'contact', 'serviceTypes', 'status', 'description', 'operatingHours', 'images']);
+  const input = object(value, ['code', 'name', 'address', 'contact', 'serviceTypes', 'status', 'description', 'operatingHours', 'images', 'managedVisitSchedule']);
   if (!Object.keys(input).length) invalid('At least one field is required');
   if (!partial) {
     for (const key of ['code', 'name', 'address', 'serviceTypes']) {
@@ -38,6 +56,7 @@ export function parseFacility(value: unknown, partial = false): Record<string, u
     if (key in input) output[key] = text(input[key], key, key === 'description' ? 2000 : 500);
   }
   if (typeof output.code === 'string') output.code = output.code.toUpperCase();
+  if ('managedVisitSchedule' in input) output.managedVisitSchedule = parseManagedVisitSchedule(input.managedVisitSchedule);
   if ('status' in input) output.status = parseStatus(input.status);
   if ('images' in input) {
     if (!Array.isArray(input.images) || input.images.length > MAX_RESOURCE_IMAGES || !input.images.every(isHttpImageUrl)) {

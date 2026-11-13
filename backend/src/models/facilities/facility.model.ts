@@ -31,6 +31,11 @@ const facilitySchema = new Schema<IFacility>({
   managedAccessRevision: { type: Number, min: 0, default: 0 },
   description: { type: String, trim: true },
   operatingHours: { type: String, trim: true },
+  managedVisitSchedule: {
+    timeZone: { type: String, enum: ['Asia/Ho_Chi_Minh'] },
+    slotDurationMinutes: { type: Number, min: 30, max: 480 },
+    weeklyHours: [{ _id: false, weekday: { type: Number, min: 0, max: 6 }, opensAt: { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/ }, closesAt: { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/ } }],
+  },
   images: {
     type: [{ type: String, trim: true }],
     default: [],

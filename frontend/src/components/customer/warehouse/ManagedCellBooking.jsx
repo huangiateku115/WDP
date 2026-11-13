@@ -299,9 +299,9 @@ export function BookingPeriodFields({ booking: b }) {
   return (
     <div className="wm-v5-period" aria-label="Thiết lập kỳ thuê">
       <label className="wm-v5-period-field">
-        <span>Ngày bắt đầu <small>(UTC)</small></span>
+        <span>Ngày bắt đầu <small>(giờ Việt Nam)</small></span>
         <Input
-          aria-label="Ngày bắt đầu thuê (UTC)"
+          aria-label="Ngày bắt đầu thuê (giờ Việt Nam)"
           type="date"
           min={b.minimumStart}
           value={b.period.start || ""}

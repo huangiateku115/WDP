@@ -16,13 +16,14 @@ import {
   Wrench,
   Layers,
   Map as MapIcon,
-  Maximize2,
-  Minimize2,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   ChevronDown,
   ChevronUp,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   X,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -43,7 +44,6 @@ import {
   measurementText,
 } from "@/lib/warehouseMap";
 import { availableCellCount } from "@/lib/managedBookingDisplay";
-import WarehouseBreadcrumbs from "@/components/customer/WarehouseBreadcrumbs";
 import WarehouseCells, {
   CellInformation,
   WarehouseStatus,
@@ -52,6 +52,12 @@ import { useManagedCellBooking, BookingPeriodFields, CellBookingPanel } from "./
 import "./warehouse-dashboard.css";
 // All business-state values still come from the existing map/booking hooks.
 // A missing counter stays missing; it is not converted to zero.
+// Date-only booking values are formatted without timezone conversion.
+function rentalDateLabel(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "Chưa xác định";
+}
+
 const STAT_APPEARANCE = [
   { Icon: Layers, tone: "neutral", hint: "Khu vực trong kho" },
   { Icon: Boxes, tone: "neutral", hint: "Kệ hàng đã tải" },
@@ -60,13 +66,12 @@ const STAT_APPEARANCE = [
   { Icon: ShieldAlert, tone: "danger", hint: "Chưa có số liệu tổng hợp" },
   { Icon: Wrench, tone: "warning", hint: "Chưa có số liệu tổng hợp" },
 ];
-
 function ResourceState({ resource, onRetry }) {
   return (
     <>
       {resource.loading && (
         <div role="status" className="wm-skeleton">
-          Loading warehouse structure…
+          Đang tải sơ đồ kho…
           <div />
           <div />
         </div>
@@ -80,7 +85,7 @@ function ResourceState({ resource, onRetry }) {
             size="sm"
             onClick={onRetry || resource.retry}
           >
-            Retry
+            Thử lại
           </Button>
         </div>
       )}
@@ -244,7 +249,9 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     [statusFilter, setStatusFilter] = useState("");
   const [sidebar, setSidebar] = useState(false),
     [drawer, setDrawer] = useState(false),
-    [bookingExpanded, setBookingExpanded] = useState(() => !Boolean(booking.period.range && !booking.startError)),
+    [bookingDrawer, setBookingDrawer] = useState(false),
+    [sidebarCollapsed, setSidebarCollapsed] = useState(false),
+    [bookingExpanded, setBookingExpanded] = useState(true),
     [expanded, setExpanded] = useState(false),
     [fullscreen, setFullscreen] = useState(false),
     [fullscreenError, setFullscreenError] = useState(""),
@@ -315,6 +322,8 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         setCell(null);
         setDrawer(false);
+        setSidebar(false);
+        setBookingDrawer(false);
         setExpanded(false);
       }
     };
@@ -480,7 +489,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     }
   }
   const periodReady = Boolean(booking.period.range && !booking.startError);
-  useEffect(() => { if (!periodReady) setBookingExpanded(true); }, [periodReady]);
   const information = (
     <>
       <div className="wm-section-heading">
@@ -530,7 +538,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
   return (
     <div
       ref={root}
-      className={`warehouse-dashboard ${expanded ? "wm-expanded" : ""}`}
+      className={`warehouse-dashboard ${expanded ? "wm-expanded" : ""} ${sidebarCollapsed ? "wm-sidebar-collapsed" : ""} ${bookingExpanded ? "" : "wm-booking-collapsed"}`}
     >
       <header className="wm-header">
         <div className="wm-header-intro">
@@ -569,35 +577,10 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             onClick={refresh}
           >
             <RefreshCw size={15} />
-            Refresh
+            Làm mới
           </Button>
         </div>
       </header>
-      <section className={`wm-booking-hero wm-v5-booking-hero ${bookingExpanded ? "is-expanded" : "is-collapsed"}`} aria-labelledby="wm-booking-hero-title">
-        <div className="wm-v5-booking-intro">
-          <span className="wm-booking-hero-symbol" aria-hidden="true"><CalendarRange size={21} /></span>
-          <div>
-            <span className="wm-booking-hero-eyebrow">THUÊ Ô LƯU TRỮ · 3 BƯỚC</span>
-            <h2 id="wm-booking-hero-title">Chọn ngày → Chọn ô → Đặt thuê</h2>
-          </div>
-        </div>
-        <button type="button" className="wm-booking-toggle" aria-expanded={bookingExpanded} aria-controls="wm-booking-period-fields" onClick={() => setBookingExpanded(value => !value)}>
-          {bookingExpanded ? <><ChevronUp size={16} aria-hidden="true"/>Thu gọn</> : <><ChevronDown size={16} aria-hidden="true"/>Mở</>}
-        </button>
-        {!bookingExpanded && <div className="wm-booking-summary" aria-live="polite">
-          <span>{periodReady ? `${booking.period.range.startDate} → ${booking.period.range.endDate}` : "Kỳ thuê chưa hợp lệ — mở để kiểm tra ngày và thời hạn."}</span>
-          <strong>{booking.selection.length} ô đã chọn</strong>
-          {booking.startError && <span role="alert">{booking.startError}</span>}
-        </div>}
-        <div id="wm-booking-period-fields" className="wm-booking-period-content" hidden={!bookingExpanded}>
-          <BookingPeriodFields booking={booking} />
-          <div className="wm-v5-hero-counter" aria-live="polite">
-            <strong>{booking.selection.length}</strong>
-            <small>ô đã chọn</small>
-            {periodReady && <span className="wm-v5-period-valid">Kỳ thuê hợp lệ</span>}
-          </div>
-        </div>
-      </section>
       {fullscreenError && (
         <p role="status" className="wm-notice">
           {fullscreenError}
@@ -619,99 +602,141 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
         })}
       </div>
       <div className="wm-mobile-tools">
-        {(cell || rackId) && <Button
-          className="wm-button"
-          variant="outline"
-          onClick={() => setSidebar((v) => !v)}
-          aria-expanded={sidebar}
-        >
-          <SlidersHorizontal size={15} />
-          Khu vực & tìm kiếm
-        </Button>}
         <Button
           className="wm-button"
           variant="outline"
-          onClick={() => setDrawer(true)}
+          onClick={() => { setBookingDrawer(false); setSidebar((value) => !value); }}
+          aria-expanded={sidebar}
+          aria-controls="wm-zone-sidebar"
         >
-          Xem chi tiết
+          <PanelLeftOpen size={16} aria-hidden="true" />
+          Khu vực kho
         </Button>
+        <Button
+          className="wm-button"
+          variant="outline"
+          onClick={() => { setSidebar(false); setBookingExpanded(true); setBookingDrawer(true); }}
+          aria-expanded={bookingDrawer}
+          aria-controls="wm-booking-sidebar"
+        >
+          <CalendarRange size={16} aria-hidden="true" />
+          Thời gian thuê
+        </Button>
+        {rackId && (
+          <Button
+            className="wm-button"
+            variant="outline"
+            onClick={() => setDrawer(true)}
+          >
+            Xem chi tiết
+          </Button>
+        )}
       </div>
       <div className="wm-dashboard-columns">
+        {sidebar && (
+          <button
+            type="button"
+            className="wm-sidebar-backdrop"
+            aria-label="Đóng bảng khu vực kho"
+            onClick={() => setSidebar(false)}
+          />
+        )}
         <aside
-          className={`wm-zone-sidebar wm-panel ${sidebar ? "wm-sidebar-open" : ""}`}
+          id="wm-zone-sidebar"
+          className={`wm-zone-sidebar wm-panel ${sidebar ? "wm-sidebar-open" : ""} ${sidebarCollapsed ? "wm-is-collapsed" : ""}`}
           aria-label="Khu vực kho"
         >
-          <h2>
-            <Layers size={16} />
-            Khu vực kho
-          </h2>
-          <div className="wm-search-wrap">
-            <Search size={17} aria-hidden="true" />
-            <Input
-              className="wm-search"
-              aria-label="Tìm khu, dãy, kệ hoặc ô"
-              placeholder="Tìm khu, kệ hoặc ô..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            {query && (
-              <button
-                type="button"
-                className="wm-search-clear"
-                aria-label="Xóa từ khóa tìm kiếm"
-                title="Xóa tìm kiếm"
-                onClick={() => setQuery("")}
-              >
-                <X size={15} />
-              </button>
-            )}
+          <div className="wm-sidebar-heading">
+            <h2><Layers size={17} aria-hidden="true" /><span>Khu vực kho</span></h2>
+            <button
+              type="button"
+              className="wm-sidebar-toggle"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              aria-label={sidebarCollapsed ? "Mở rộng khu vực kho" : "Thu gọn khu vực kho"}
+              title={sidebarCollapsed ? "Mở rộng khu vực kho" : "Thu gọn khu vực kho"}
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="wm-sidebar-content"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+            </button>
+            <button
+              type="button"
+              className="wm-mobile-sidebar-close"
+              aria-label="Đóng khu vực kho"
+              onClick={() => setSidebar(false)}
+            >
+              <X size={19} />
+            </button>
           </div>
-          <p className="wm-muted">
-            Chỉ tìm trên dữ liệu đã tải. Chọn một kệ để tải các ô của kệ đó.
-          </p>
-          <div className="wm-zone-list">
-            {(map.data?.zones || []).map((zone, index) => (
-              <button
-                type="button"
-                key={zone._id}
-                aria-pressed={zoneId === zone._id}
-                onClick={() => selectZone(zone._id)}
-                className={zoneId === zone._id ? "is-active" : ""}
-              >
-                <span className={`wm-zone-dot wm-zone-dot-${index % 4}`} />
-                <span>
-                  <strong>{zone.code}</strong>
-                  {zone.name && <small>{zone.name}</small>}
-                  <small>
-                    {zone.aisles.reduce((n, a) => n + a.racks.length, 0)} racks
-                  </small>
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="wm-legend">
-            <h3>Trạng thái ô lưu trữ</h3>
-            {[
-              "AVAILABLE",
-              "RESERVED",
-              "OCCUPIED",
-              "BLOCKED",
-              "MAINTENANCE",
-            ].map((status) => (
-              <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>
-                <WarehouseStatus status={status} />
-              </button>
-            ))}
-            {statusFilter && <button type="button" className="wm-clear-status-filter" onClick={() => setStatusFilter('')}>Xóa bộ lọc</button>}
+          <div id="wm-sidebar-content" className="wm-sidebar-content">
+            <div className="wm-search-wrap">
+              <Search size={17} aria-hidden="true" />
+              <Input
+                className="wm-search"
+                aria-label="Tìm khu, dãy, kệ hoặc ô"
+                placeholder="Tìm khu, kệ hoặc ô..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="wm-search-clear"
+                  aria-label="Xóa từ khóa tìm kiếm"
+                  title="Xóa tìm kiếm"
+                  onClick={() => setQuery("")}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
             <p className="wm-muted">
-              Đã chọn = ô trong giỏ thuê. Ô của bạn không đồng nghĩa có thể đặt thuê lại.
+              Chỉ tìm trên dữ liệu đã tải. Chọn một kệ để tải các ô của kệ đó.
             </p>
+            <div className="wm-zone-list">
+              {(map.data?.zones || []).map((zone, index) => (
+                <button
+                  type="button"
+                  key={zone._id}
+                  aria-pressed={zoneId === zone._id}
+                  onClick={() => selectZone(zone._id)}
+                  className={zoneId === zone._id ? "is-active" : ""}
+                >
+                  <span className={`wm-zone-dot wm-zone-dot-${index % 4}`} />
+                  <span>
+                    <strong>{zone.code}</strong>
+                    {zone.name && <small>{zone.name}</small>}
+                    <small>
+                      {zone.aisles.reduce((n, a) => n + a.racks.length, 0)} kệ
+                    </small>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="wm-legend">
+              <h3>Trạng thái ô lưu trữ</h3>
+              {[
+                "AVAILABLE",
+                "RESERVED",
+                "OCCUPIED",
+                "BLOCKED",
+                "MAINTENANCE",
+              ].map((status) => (
+                <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>
+                  <WarehouseStatus status={status} />
+                </button>
+              ))}
+              {statusFilter && <button type="button" className="wm-clear-status-filter" onClick={() => setStatusFilter('')}>Xóa bộ lọc</button>}
+              <p className="wm-muted">
+                Đã chọn = ô trong giỏ thuê. Ô của bạn không đồng nghĩa có thể đặt thuê lại.
+              </p>
+            </div>
+            <div className="wm-inventory-context-slot"><InventoryMapContext controller={inventory} /></div>
           </div>
-          <div className="wm-inventory-context-slot"><InventoryMapContext controller={inventory} /></div>
         </aside>
         <section
           className="wm-center wm-panel"
-          aria-label="Warehouse visualization"
+          aria-label="Sơ đồ kho"
         >
           <div className="wm-section-heading">
             <h2>
@@ -815,7 +840,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                   <>
                     <details className="wm-context-details">
                       <summary>Chi tiết kệ · {detail.data.rack.rackCode}</summary>
-                      <RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId}/>
+                      <RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId} />
                     </details>
                     <WarehouseCells
                       key={`${rackId}:${updated?.getTime() || 0}`}
@@ -829,8 +854,8 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                     />
                     {cell && <details className="wm-context-details wm-cell-context-details">
                       <summary>Chi tiết ô · {cell.cell.code || `C${cell.cell.cellNumber}`}</summary>
-                      <CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack}/>
-                      <InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack}/>
+                      <CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack} />
+                      <InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack} />
                     </details>}
                   </>
                 )}
@@ -846,6 +871,82 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
             />
           </div>
         </section>
+        {bookingDrawer && (
+          <button
+            type="button"
+            className="wm-booking-backdrop"
+            aria-label="Đóng bảng thời gian thuê"
+            onClick={() => setBookingDrawer(false)}
+          />
+        )}
+        <aside
+          id="wm-booking-sidebar"
+          className={`wm-booking-sidebar wm-panel ${bookingDrawer ? "wm-booking-mobile-open" : ""}`}
+          aria-label="Thiết lập thuê ô lưu trữ"
+        >
+          <div className="wm-booking-sidebar-heading">
+            <span className="wm-booking-side-icon" aria-hidden="true">
+              <CalendarRange size={20} />
+            </span>
+            <div className="wm-booking-side-heading-text">
+              <span className="wm-booking-side-eyebrow">THUÊ Ô LƯU TRỮ · 3 BƯỚC</span>
+              <h2>Chọn ngày → Chọn ô → Đặt thuê</h2>
+            </div>
+            <button
+              type="button"
+              className="wm-booking-side-toggle"
+              onClick={() => setBookingExpanded((value) => !value)}
+              aria-expanded={bookingExpanded}
+              aria-controls="wm-booking-period-fields"
+              aria-label={bookingExpanded ? "Thu gọn bảng thuê ô về bên phải" : "Mở rộng bảng thuê ô"}
+              title={bookingExpanded ? "Thu gọn sang phải" : "Mở bảng thuê ô"}
+            >
+              {bookingExpanded ? <PanelRightClose size={19} /> : <PanelRightOpen size={19} />}
+            </button>
+            <button
+              type="button"
+              className="wm-booking-mobile-close"
+              aria-label="Đóng bảng thuê ô"
+              onClick={() => setBookingDrawer(false)}
+            >
+              <X size={19} />
+            </button>
+          </div>
+          <div
+            className="wm-booking-sidebar-content"
+            id="wm-booking-period-fields"
+            hidden={!bookingExpanded}
+          >
+            <p className="wm-booking-side-help">Thiết lập thời gian thuê, sau đó chọn ô trực tiếp trên sơ đồ.</p>
+            <BookingPeriodFields booking={booking} />
+            <div className="wm-booking-side-summary" aria-live="polite">
+              <span>Thời gian thuê</span>
+              <strong>
+                {periodReady
+                  ? `${rentalDateLabel(booking.period.range.startDate)} – ${rentalDateLabel(booking.period.range.endDate)}`
+                  : "Chưa chọn ngày thuê"}
+              </strong>
+              <div className="wm-booking-side-count">
+                <span>Ô đã chọn</span>
+                <strong>{booking.selection.length}</strong>
+              </div>
+              {periodReady && <small className="wm-booking-side-ready">Kỳ thuê hợp lệ</small>}
+              {booking.startError && <small role="alert" className="wm-booking-side-error">{booking.startError}</small>}
+            </div>
+            <p className="wm-booking-side-footer">
+              Sau khi chọn ô, nhấn <strong>Xem báo giá & đặt thuê</strong> trong giỏ bên dưới sơ đồ.
+            </p>
+          </div>
+          {!bookingExpanded && (
+            <div
+              className="wm-booking-side-rail"
+              title={periodReady ? `${rentalDateLabel(booking.period.range.startDate)} – ${rentalDateLabel(booking.period.range.endDate)}` : "Chưa chọn ngày thuê"}
+            >
+              <span>Thời gian thuê</span>
+              <strong>{booking.selection.length} ô</strong>
+            </div>
+          )}
+        </aside>
       </div>
       {drawer &&
         createPortal(

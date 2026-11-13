@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { managedAccessApi } from '@/api/managedAccessApi';
 import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
 
@@ -83,6 +84,7 @@ export default function ManagedSelfInboundV3({ item, rental, onRefresh }) {
   return <section className="mt-6 space-y-4 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm" aria-labelledby="mi-v3-stock-title">
     <div><p className="text-xs font-bold uppercase tracking-widest text-emerald-800">Managed Inventory V3</p><h2 id="mi-v3-stock-title" className="mt-1 text-xl font-bold">Tồn kho thực tế & tự nhập hàng</h2>
       <p className="mt-1 text-sm text-slate-600">SKU là thông tin hàng hóa. Chỉ thao tác nhập được xác nhận trong Access Session mới ghi tăng tồn kho.</p></div>
+    {rental?.status==='ACTIVE'&&<Link className="inline-flex rounded-lg border border-emerald-800 px-3 py-2 text-sm font-semibold text-emerald-900" to={`/portal/managed-access?purpose=INBOUND&reservationId=${encodeURIComponent(valueOf(rental))}`}>Đặt lịch đến kho để nhập hàng</Link>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}{notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
     {stock && <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-4"><div><b>Tồn:</b> {stock.onHandQuantity} {item.quantityUnit}</div><div><b>Đang giữ:</b> {stock.heldQuantity}</div><div><b>Khối lượng:</b> {stock.totalWeightKg} kg</div><div><b>Đối soát:</b> {stock.reconciliationStatus === 'RECONCILED' ? 'Khớp sổ' : 'Cần kiểm tra'}</div></div>}
     {pending && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Kết quả lần nhập chưa xác định. Giữ nguyên hàng tại vị trí đã đặt, không nhập lại bằng yêu cầu mới. <button type="button" disabled={busy} onClick={reconcile} className="ml-2 font-bold underline">Đối soát / thử lại đúng yêu cầu</button></div>}

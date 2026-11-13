@@ -16,6 +16,7 @@ import { IUser, UserRole } from '../../types/user.type';
 import { ACCESS_SESSION_MAX_DURATION_MINUTES, IManagedAccessSession, IManagedAccessVisit, ManagedAccessAudit, ManagedAccessPurpose, ManagedAccessSessionStatus as SS, ManagedAccessVisitStatus as VS } from '../../types/managed-access.type';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { isAccessSessionAllowed, sessionExpiry, sessionIsCurrent } from './managed-access-policy';
+import { managedVisitDateRange, managedVisitSlots } from './managed-visit-schedule';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 export class ManagedAccessError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
@@ -50,6 +51,33 @@ async function assertFacility(facilityId: Types.ObjectId) {
   const f = await FacilityModel.findOne({ _id: facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).select('_id').lean().exec();
   if (!f) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
 }
+async function availableVisitSlots(reservation: IReservation, date: unknown, now: Date, dbSession?: mongoose.ClientSession,
+  facilitySnapshot?: any, excludeVisitId?: unknown) {
+  const facility: any = facilitySnapshot ?? await FacilityModel.findOne({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+    serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } }).select('managedVisitSchedule')
+    .session(dbSession ?? null).lean().exec();
+  if (!facility) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
+  const schedule = facility.managedVisitSchedule;
+  if (!schedule) fail(409, 'VISIT_SCHEDULE_NOT_CONFIGURED', 'Cơ sở chưa cấu hình giờ hoạt động và thời lượng lịch đến kho.');
+  const day = managedVisitDateRange(date);
+  if (!day) fail(400, 'INVALID_VISIT_DATE', 'Ngày đến kho không hợp lệ.');
+  const [staffCapacity, visits] = await Promise.all([
+    UserModel.countDocuments({ role: UserRole.FACILITY_STAFF, assignedFacilityId: reservation.facilityId, isActive: true }).session(dbSession ?? null).exec(),
+    (VisitModel as any).find({ facilityId: reservation.facilityId, status: { $in: [VS.SCHEDULED, VS.CHECKED_IN] },
+      startsAt: { $lt: day.end }, endsAt: { $gt: day.start }, ...(excludeVisitId ? { _id: { $ne: excludeVisitId } } : {}) })
+      .select('startsAt endsAt').session(dbSession ?? null).lean().exec(),
+  ]);
+  let slots: Array<{ startsAt: string; endsAt: string }>;
+  try {
+    slots = managedVisitSlots({ date, schedule, now, reservationStartDate: reservation.startDate,
+      reservationEndDate: reservation.endDate, staffCapacity,
+      overlappingVisitCount: (startsAt, endsAt) => visits.filter((visit: any) => visit.startsAt < endsAt && visit.endsAt > startsAt).length });
+  } catch (error: any) {
+    if (error?.message === 'VISIT_DATE_INVALID') fail(400, 'INVALID_VISIT_DATE', 'Ngày đến kho không hợp lệ.');
+    fail(409, 'VISIT_SCHEDULE_INVALID', 'Cấu hình giờ hoạt động của Facility không hợp lệ.');
+  }
+  return { slots, facility };
+}
 async function activeCells(reservation: IReservation, session?: mongoose.ClientSession, at?: Date) {
   const dateFilter = at
     ? { startDate: { $lte: at }, endDate: { $gt: at } }
@@ -59,6 +87,20 @@ async function activeCells(reservation: IReservation, session?: mongoose.ClientS
     .select('cellId').session(session ?? null).lean().exec();
   const ids = [...new Set(rows.map(x => String(x.cellId)))];
   if (!reservation.allocatedCellIds?.length || ids.length !== reservation.allocatedCellIds.length) fail(409, 'ALLOCATION_INVALID', 'Cell allocation không còn hợp lệ cho Reservation.');
+  return reservation.allocatedCellIds;
+}
+async function cellsCoveringWindow(reservation: IReservation, startsAt: Date, endsAt: Date, session?: mongoose.ClientSession) {
+  if (!(startsAt instanceof Date) || !(endsAt instanceof Date) || !Number.isFinite(startsAt.getTime()) ||
+      !Number.isFinite(endsAt.getTime()) || startsAt >= endsAt || startsAt < reservation.startDate || endsAt > reservation.endDate) {
+    fail(409, 'ALLOCATION_INVALID', 'Khung giờ không nằm trọn trong kỳ phân bổ Cell của Reservation.');
+  }
+  const rows = await CellAllocationModel.find({ reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
+    cellId: { $in: reservation.allocatedCellIds ?? [] }, status: { $in: [CellAllocationStatus.RESERVED, CellAllocationStatus.OCCUPIED] },
+    startDate: { $lte: startsAt }, endDate: { $gte: endsAt } }).select('cellId').session(session ?? null).lean().exec();
+  const ids = [...new Set(rows.map(row => String(row.cellId)))];
+  if (!reservation.allocatedCellIds?.length || ids.length !== reservation.allocatedCellIds.length) {
+    fail(409, 'ALLOCATION_INVALID', 'Cell allocation không bao phủ toàn bộ Visit hoặc không còn đúng Customer/Facility.');
+  }
   return reservation.allocatedCellIds;
 }
 const systemAudit = (action: string, at: Date, details?: Record<string, unknown>): ManagedAccessAudit => ({ action, actorRole: 'SYSTEM', at, ...(details ? { details } : {}) });
@@ -80,6 +122,18 @@ async function reconcileExpiredReservationSessions(reservationId: Types.ObjectId
 function visitIdemHash(input: Record<string, unknown>, reservationId: Types.ObjectId) { return hash({ reservationId: String(reservationId), purpose: input.purpose, startsAt: input.startsAt, endsAt: input.endsAt, note: input.note ?? '' }); }
 
 export class ManagedAccessService {
+  static async visitAvailability(reservationIdInput: unknown, dateInput: unknown, actor: Actor) {
+    requireRole(actor, [UserRole.CUSTOMER]);
+    const reservation = await findCustomerReservation(asId(reservationIdInput, 'reservationId'), actor._id);
+    const now = new Date();
+    if (![ReservationStatus.CHECKIN_READY, ReservationStatus.ACTIVE].includes(reservation.status) || reservation.endDate <= now) {
+      fail(409, 'RESERVATION_NOT_VISIT_READY', 'Reservation chưa đủ điều kiện đặt lịch đến kho.');
+    }
+    const result = await availableVisitSlots(reservation, dateInput, now);
+    return { timeZone: 'Asia/Ho_Chi_Minh', slotDurationMinutes: result.facility.managedVisitSchedule.slotDurationMinutes,
+      capacityBasis: 'ACTIVE_STAFF_ACCOUNTS_MINUS_OVERLAPPING_VISITS', staffAssignmentRequired: true, slots: result.slots };
+  }
+
   static async createVisit(body: unknown, actor: Actor, idempotencyHeader: unknown) {
     requireRole(actor, [UserRole.CUSTOMER]); const input = plain(body, ['reservationId', 'purpose', 'startsAt', 'endsAt', 'note'], 'Lịch đến kho');
     const reservationId = asId(input.reservationId, 'reservationId'), purpose = v3Purpose(input.purpose), window = windowInput(input, new Date());
@@ -90,12 +144,39 @@ export class ManagedAccessService {
     const reservation = await findCustomerReservation(reservationId, actor._id);
     const now = new Date();
     if (![ReservationStatus.CHECKIN_READY, ReservationStatus.ACTIVE].includes(reservation.status) || reservation.endDate <= now || window.startsAt < reservation.startDate || window.endsAt > reservation.endDate) fail(409, 'RESERVATION_NOT_VISIT_READY', 'Reservation phải ở trạng thái CHECKIN_READY hoặc ACTIVE và Visit phải nằm trong kỳ thuê.');
-    await assertFacility(reservation.facilityId);
-    const cells = await activeCells(reservation);
-    let created;
-    try { created = await VisitModel.create({ reservationId, customerId: actor._id, facilityId: reservation.facilityId, purpose, ...window, ...(typeof input.note === 'string' ? { note: input.note.trim() } : {}),
-      idempotencyKey: key, requestHash, revision: 0, assignmentHistory: [], audit: [audit('VISIT_CREATED', actor, now, { purpose, allowedCellIds: cells.map(String) })] });
-    } catch (error: any) { if (error?.code !== 11000) throw error; const raced = await VisitModel.findOne({ customerId: actor._id, idempotencyKey: key }).exec(); if (!raced) throw error; if (raced.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung khác.'); return raced; }
+    const date = new Date(window.startsAt.getTime() + 7 * 60 * 60_000).toISOString().slice(0, 10);
+    const session = await mongoose.startSession();
+    let created: any;
+    try {
+      await session.withTransaction(async () => {
+        const facility: any = await FacilityModel.findOneAndUpdate({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
+          serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } },
+        { $inc: { managedAccessRevision: 1 } }, { new: true, session }).select('managedVisitSchedule').exec();
+        if (!facility) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
+        const latestReservation = await ReservationModel.findOne({ _id: reservationId, customerId: actor._id,
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
+          status: { $in: [ReservationStatus.CHECKIN_READY, ReservationStatus.ACTIVE] },
+          startDate: { $lte: window.startsAt }, endDate: { $gte: window.endsAt } }).session(session).exec();
+        if (!latestReservation) fail(409, 'RESERVATION_NOT_VISIT_READY', 'Reservation đã thay đổi hoặc khung giờ nằm ngoài kỳ thuê.');
+        const availability = await availableVisitSlots(latestReservation, date, new Date(), session, facility);
+        if (!availability.slots.some(slot => Date.parse(slot.startsAt) === window.startsAt.getTime() && Date.parse(slot.endsAt) === window.endsAt.getTime())) {
+          fail(409, 'VISIT_SLOT_UNAVAILABLE', 'Khung giờ vừa hết hạn hoặc không còn khả dụng. Hãy tải lại danh sách khung giờ.');
+        }
+        const cells = await cellsCoveringWindow(latestReservation, window.startsAt, window.endsAt, session);
+        const rows = await VisitModel.create([{ reservationId, customerId: actor._id, facilityId: reservation.facilityId,
+          purpose, ...window, ...(typeof input.note === 'string' ? { note: input.note.trim() } : {}), idempotencyKey: key,
+          requestHash, revision: 0, assignmentHistory: [],
+          audit: [audit('VISIT_CREATED', actor, now, { purpose, allowedCellIds: cells.map(String) })] }], { session });
+        created = rows[0];
+      }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+    } catch (error: any) {
+      if (error?.code !== 11000) throw error;
+      const raced = await VisitModel.findOne({ customerId: actor._id, idempotencyKey: key }).exec();
+      if (!raced) throw error;
+      if (raced.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung khác.');
+      return raced;
+    } finally { await session.endSession(); }
+    if (!created) fail(503, 'VISIT_CREATE_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả tạo lịch. Hãy tải lại lịch trước khi gửi lại.');
     return created;
   }
   static async myVisits(actor: Actor) { requireRole(actor, [UserRole.CUSTOMER]); return VisitModel.find({ customerId: actor._id }).sort({ startsAt: -1 }).populate('assignedStaffId', 'displayName').lean().exec(); }
@@ -106,29 +187,92 @@ export class ManagedAccessService {
     if ([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) { scope(actor, visit.facilityId); if (actor.role === UserRole.FACILITY_STAFF && !visit.assignedStaffId?.equals(actor._id)) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch được giao.'); }
     return visit;
   }
-  static async amendVisit(visitId: unknown, body: unknown, actor: Actor, expectedRevision: unknown) {
+  static async amendVisit(visitId: unknown, body: unknown, actor: Actor, expectedRevision: unknown, idempotencyHeader: unknown) {
     requireRole(actor, [UserRole.CUSTOMER]); const input = plain(body, ['purpose', 'startsAt', 'endsAt', 'note'], 'Thông tin cập nhật');
     if (!Number.isSafeInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
-    const visit = await VisitModel.findOne({ _id: asId(visitId, 'visitId'), customerId: actor._id }).exec();
+    const key = reqKey(idempotencyHeader);
+    const id = asId(visitId, 'visitId');
+    const visit = await VisitModel.findOne({ _id: id, customerId: actor._id }).exec();
     if (!visit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
+    const requestHash = hash({ visitId: String(id), payload: input });
+    const currentAudit = (visit.audit ?? []).find(entry => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
+    if (currentAudit) {
+      if (currentAudit.details?.requestHash !== requestHash) {
+        fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung sửa lịch khác.');
+      }
+      return visit;
+    }
     if (visit.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_AMENDABLE', 'Chỉ có thể sửa lịch chưa check-in.');
     if (visit.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi sửa.');
     const window = windowInput({ startsAt: input.startsAt ?? visit.startsAt.toISOString(), endsAt: input.endsAt ?? visit.endsAt.toISOString() }, new Date());
     const purpose = input.purpose === undefined ? visit.purpose : v3Purpose(input.purpose);
     if (input.note !== undefined && (typeof input.note !== 'string' || input.note.length > 500)) fail(400, 'INVALID_INPUT', 'Ghi chú tối đa 500 ký tự.');
-    const reservation = await findCustomerReservation(visit.reservationId, actor._id);
-    if (![ReservationStatus.CHECKIN_READY, ReservationStatus.ACTIVE].includes(reservation.status) || reservation.endDate <= new Date() || window.startsAt < reservation.startDate || window.endsAt > reservation.endDate) fail(409, 'RESERVATION_NOT_VISIT_READY', 'Visit phải nằm trong kỳ thuê hiện hành.');
-    const now = new Date(), oldStaff = visit.assignedStaffId;
-    visit.startsAt = window.startsAt; visit.endsAt = window.endsAt; visit.purpose = purpose; if (input.note !== undefined) visit.note = (input.note as string).trim();
-    if (oldStaff) { visit.set('assignedStaffId', undefined); visit.assignmentHistory.push({ staffId: null as any, actorId: actor._id, at: now, reason: 'Customer amended visit; escort re-assignment required' }); }
-    visit.revision += 1; visit.audit.push(audit('VISIT_AMENDED', actor, now, { previousAssignmentCleared: !!oldStaff })); await visit.save(); return visit;
+    const date = new Date(window.startsAt.getTime() + 7 * 60 * 60_000).toISOString().slice(0, 10);
+    const dbSession = await mongoose.startSession(); let amended: any;
+    try {
+      await dbSession.withTransaction(async () => {
+        // The Facility revision is the shared serialization fence used by Visit create and amend.
+        const facility: any = await FacilityModel.findOneAndUpdate({ _id: visit.facilityId, status: FacilityStatus.ACTIVE,
+          serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } },
+        { $inc: { managedAccessRevision: 1 } }, { new: true, session: dbSession }).select('managedVisitSchedule').exec();
+        if (!facility) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
+        const latest: any = await VisitModel.findOne({ _id: id, customerId: actor._id }).session(dbSession).exec();
+        if (!latest) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
+        const replay = (latest.audit ?? []).find((entry: ManagedAccessAudit) => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
+        if (replay) {
+          if (replay.details?.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung sửa lịch khác.');
+          amended = latest; return;
+        }
+        if (latest.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_AMENDABLE', 'Chỉ có thể sửa lịch chưa check-in.');
+        if (latest.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi sửa.');
+        const reservation: any = await ReservationModel.findOne({ _id: latest.reservationId, customerId: actor._id,
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
+          status: { $in: [ReservationStatus.CHECKIN_READY, ReservationStatus.ACTIVE] },
+          startDate: { $lte: window.startsAt }, endDate: { $gte: window.endsAt } }).session(dbSession).exec();
+        if (!reservation || reservation.endDate <= new Date()) fail(409, 'RESERVATION_NOT_VISIT_READY', 'Visit phải nằm trong kỳ thuê hiện hành.');
+        const availability = await availableVisitSlots(reservation, date, new Date(), dbSession, facility, latest._id);
+        if (!availability.slots.some(slot => Date.parse(slot.startsAt) === window.startsAt.getTime() && Date.parse(slot.endsAt) === window.endsAt.getTime())) {
+          fail(409, 'VISIT_SLOT_UNAVAILABLE', 'Khung giờ sửa lịch không còn khả dụng. Hãy tải lại danh sách khung giờ.');
+        }
+        await cellsCoveringWindow(reservation, window.startsAt, window.endsAt, dbSession);
+        const now = new Date(), oldStaff = latest.assignedStaffId, scheduleChanged = latest.startsAt.getTime() !== window.startsAt.getTime() || latest.endsAt.getTime() !== window.endsAt.getTime();
+        latest.startsAt = window.startsAt; latest.endsAt = window.endsAt; latest.purpose = purpose;
+        if (input.note !== undefined) latest.note = (input.note as string).trim();
+        if (oldStaff && scheduleChanged) {
+          latest.set('assignedStaffId', undefined);
+          latest.assignmentHistory.push({ staffId: null as any, actorId: actor._id, at: now, reason: 'Customer amended visit time; escort re-assignment required' });
+        }
+        latest.revision += 1;
+        latest.audit.push(audit('VISIT_AMENDED', actor, now, { idempotencyKey: key, requestHash,
+          previousAssignmentCleared: !!oldStaff && scheduleChanged, scheduleChanged }));
+        amended = await latest.save({ session: dbSession });
+      }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+    } catch (error: any) {
+      // Resolve an uncertain commit from the durable amendment audit before surfacing failure.
+      const persisted = await VisitModel.findOne({ _id: id, customerId: actor._id }).exec().catch(() => null);
+      const committed = (persisted?.audit ?? []).find((entry: ManagedAccessAudit) => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
+      if (committed) {
+        if (committed.details?.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung sửa lịch khác.');
+        return persisted;
+      }
+      if (error?.hasErrorLabel?.('UnknownTransactionCommitResult')) fail(503, 'VISIT_AMEND_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả sửa lịch. Hãy tải lại lịch trước khi thử lại cùng yêu cầu.');
+      throw error;
+    } finally { await dbSession.endSession(); }
+    if (!amended) fail(503, 'VISIT_AMEND_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả sửa lịch. Hãy tải lại lịch trước khi thử lại cùng yêu cầu.');
+    return amended;
   }
   static async cancelVisit(visitId: unknown, actor: Actor, expectedRevision: unknown) {
-    requireRole(actor, [UserRole.CUSTOMER]); if (!Number.isSafeInteger(Number(expectedRevision))) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
-    const visit = await VisitModel.findOne({ _id: asId(visitId, 'visitId'), customerId: actor._id }).exec(); if (!visit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
-    if (visit.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi hủy.');
-    if (visit.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_CANCELLABLE', 'Lịch đã check-in hoặc kết thúc không thể hủy.');
-    const now = new Date(); visit.status = VS.CANCELLED; visit.revision += 1; visit.audit.push(audit('VISIT_CANCELLED', actor, now)); await visit.save(); return visit;
+    requireRole(actor, [UserRole.CUSTOMER]);
+    if (!Number.isSafeInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
+    const id = asId(visitId, 'visitId'), now = new Date(), revision = Number(expectedRevision);
+    const cancelled = await VisitModel.findOneAndUpdate({ _id: id, customerId: actor._id, status: VS.SCHEDULED, revision },
+      { $set: { status: VS.CANCELLED }, $inc: { revision: 1 }, $push: { audit: audit('VISIT_CANCELLED', actor, now) } },
+      { new: true, runValidators: true }).exec();
+    if (cancelled) return cancelled;
+    const current = await VisitModel.findOne({ _id: id, customerId: actor._id }).select('status revision').lean().exec();
+    if (!current) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
+    if (current.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_CANCELLABLE', 'Lịch đã check-in hoặc kết thúc không thể hủy.');
+    fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi hủy.');
   }
   static async facilityVisits(actor: Actor, status?: string) {
     requireRole(actor, [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]); if (!actor.assignedFacilityId) fail(403, 'FACILITY_SCOPE_DENIED', 'Chưa được phân công Facility.');
@@ -240,10 +384,11 @@ export class ManagedAccessService {
         const requestedCells = reservation.allocatedCellIds ?? [];
         if (!requestedCells.length) fail(409, 'ALLOCATION_INVALID', 'Reservation chưa có Cell được phân bổ.');
         const allocationFence = await CellAllocationModel.updateMany({ reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
-          cellId: { $in: requestedCells }, status: { $in: [CellAllocationStatus.RESERVED, CellAllocationStatus.OCCUPIED] }, startDate: { $lte: now }, endDate: { $gt: now } },
+          cellId: { $in: requestedCells }, status: { $in: [CellAllocationStatus.RESERVED, CellAllocationStatus.OCCUPIED] },
+          startDate: { $lte: currentVisit.startsAt }, endDate: { $gte: currentVisit.endsAt } },
           { $inc: { managedAccessRevision: 1 } }, { session: dbSession }).exec();
-        if (allocationFence.matchedCount !== requestedCells.length) fail(409, 'ALLOCATION_INVALID', 'Cell allocation vừa thay đổi hoặc không còn hợp lệ.');
-        await activeCells(reservation, dbSession, now);
+        if (allocationFence.matchedCount !== requestedCells.length) fail(409, 'ALLOCATION_INVALID', 'Cell allocation vừa thay đổi hoặc không bao phủ toàn bộ Visit.');
+        await cellsCoveringWindow(reservation, currentVisit.startsAt, currentVisit.endsAt, dbSession);
         if (reservation.rentalPaymentFlow !== 'FULL_UPFRONT_V1' || !reservation.fullPaymentId) fail(409, 'PAYMENT_NOT_VERIFIED', 'Không xác minh được thanh toán toàn phần cho Managed V3.');
         const paymentFilter = { _id: reservation.fullPaymentId, reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
           serviceType: FacilityServiceType.MANAGED_INVENTORY, purpose: PaymentPurpose.FULL_RENT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
@@ -269,7 +414,7 @@ export class ManagedAccessService {
         const activationAt = new Date();
         if (currentVisit.status !== VS.SCHEDULED || activationAt < currentVisit.startsAt || activationAt >= currentVisit.endsAt) fail(409, 'OUTSIDE_VISIT_WINDOW', 'Visit đã thay đổi hoặc hết hạn trong lúc check-in.');
         if (reservation.status !== ReservationStatus.ACTIVE || reservation.startDate > activationAt || reservation.endDate <= activationAt) fail(409, 'RENTAL_NOT_ACTIVE', 'Rental đã thay đổi hoặc hết hạn trong lúc check-in.');
-        const cells = await activeCells(reservation, dbSession, activationAt);
+        const cells = await cellsCoveringWindow(reservation, currentVisit.startsAt, currentVisit.endsAt, dbSession);
         await reconcileExpiredReservationSessions(reservation._id, activationAt, dbSession);
         const existing = await SessionModel.findOne({ reservationId: reservation._id, status: SS.ACTIVE, expiresAt: { $gt: activationAt } }).session(dbSession).exec();
         if (existing) fail(409, 'ACTIVE_SESSION_EXISTS', 'Reservation đã có Access Session đang hoạt động.');

@@ -13,6 +13,7 @@ router.get('/me', requireRole([UserRole.CUSTOMER]), AccessController.getMyAccess
 
 // Managed V3 Access Visit and Session API. These routes never call the legacy simulated PIN flow.
 router.post('/managed-v3/visits', requireRole([UserRole.CUSTOMER]), ManagedAccessController.createVisit);
+router.get('/managed-v3/visits/availability', requireRole([UserRole.CUSTOMER]), ManagedAccessController.visitAvailability);
 router.get('/managed-v3/visits/me', requireRole([UserRole.CUSTOMER]), ManagedAccessController.myVisits);
 router.get('/managed-v3/visits/facility', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedAccessController.facilityVisits);
 router.get('/managed-v3/visits/facility/staff', requireRole([UserRole.FACILITY_MANAGER]), ManagedAccessController.facilityStaff);
