@@ -10,3 +10,10 @@
 .manager-shell .facility-filter-row>button{flex:0 0 auto;min-height:48px;height:auto;padding-block:12px;align-self:flex-end}
 .manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a svg{flex-shrink:0}
 @media(max-width:640px){.manager-shell .facility-filter-row{flex-direction:column;align-items:stretch}.manager-shell .facility-filter-row>:is(input,select,.manager-field,button){flex:0 0 auto;width:100%;align-self:stretch}}
+/* Keep facility identifiers and action labels inside narrow Staff/Manager cards. */
+.manager-shell:not(.admin-shell):not(.bom-shell) :is(.manager-screen,.facility-outbound){overflow-wrap:anywhere}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-link{max-width:100%;min-width:0}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-link svg{flex-shrink:0}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-scope span{overflow-wrap:anywhere}
+.facility-outbound button{max-width:100%;min-height:44px;white-space:normal}
+@media(max-width:640px){.facility-outbound select{min-width:0}.facility-outbound .manager-link{align-self:center}}

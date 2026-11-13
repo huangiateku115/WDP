@@ -4,7 +4,7 @@ import { useAuthSession } from "@/lib/authSession";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, money,
 } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilityReservations } from "@/lib/bomApiData";
@@ -65,22 +65,21 @@ export default function ReservationsOversightPage() {
   return (
     <Screen
       title="Reservation oversight"
-      description="Review SELF_STORAGE reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract on the backend."
-      notice={LIVE_NOTICE}
+      description="Review Self Storage reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract."
       action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-            ["Reservations loaded", list.data ? list.data.self.length : "—", "SELF_STORAGE reservations of the selected facility"],
+            ["Reservations loaded", list.data ? list.data.self.length : "—", "Self Storage reservations of the selected facility"],
             ["Awaiting review", countBy(list.data?.self || [], "status", "RESERVED"), "Status RESERVED"],
             ["Contracted", countBy(list.data?.self || [], "status", "CONTRACTED"), "Approved, contract drafted"],
-            ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "ADMIN may change the review status" : `${role || "This role"} cannot approve or reject`],
+            ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "Approvers can change the review status" : "Your role cannot approve or reject"],
           ]} />
 
           <Panel
             title="Review scope"
-            subtitle="The facility endpoint returns reservations without paging, so the status and search filters apply to the rows already loaded."
+            subtitle="The list is not paged, so the status and search filters apply to the rows already loaded."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -111,7 +110,7 @@ export default function ReservationsOversightPage() {
             </div>
             {!canReview && (
               <p className="bom-warning mt-5">
-                {role} can read every reservation of a facility, but the backend only lets FACILITY_MANAGER and ADMIN approve or reject
+                You can read every reservation of a facility; only facility managers and admins can approve or reject
                 one. This console stays read-only for your role.
               </p>
             )}
@@ -119,7 +118,7 @@ export default function ReservationsOversightPage() {
 
           {!facilityId && (
             <Panel title="Select a facility">
-              <p className="text-sm text-slate-500">Reservations are listed facility by facility because the backend has no global reservation collection.</p>
+              <p className="text-sm text-slate-500">Reservations are listed facility by facility.</p>
             </Panel>
           )}
 
@@ -142,18 +141,6 @@ export default function ReservationsOversightPage() {
               </Panel>
             )} />
           )}
-
-          <Panel
-            title="Managed reservations"
-            subtitle="Backend chưa có endpoint danh sách Managed reservations."
-          >
-            <p className="text-sm text-slate-500">
-              Trang này chỉ liệt kê reservation SELF_STORAGE từ <code>GET /reservations/facility/:facilityId</code>.
-              Chưa thể hiển thị danh sách Managed Inventory vì backend không có collection endpoint và frontend
-              không gọi chi tiết từng bản ghi (tránh N+1, tránh bắt người dùng nhập ID).
-              Cần bổ sung <code>GET /reservations/managed</code> để hiển thị danh sách này.
-            </p>
-          </Panel>
         </>
       )} />
     </Screen>

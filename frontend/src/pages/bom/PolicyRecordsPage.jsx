@@ -9,7 +9,7 @@ import { bomPolicyApi } from "@/api/bomApi";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES, BOM_CATEGORY_STATUS,
+  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES,
   responseData, discountFromDto, discountValueLabel, categoryFromDto,
 } from "@/lib/bomMappers";
 
@@ -44,9 +44,10 @@ function RecordList({ kind, config }) {
   const state = useAsyncData(({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]), [kind]);
   const [status, setStatus] = useState("");
   const [filter, setFilter] = useState("");
+  // Discounts are narrowed by kind client-side; CATEGORY policies only need the status filter.
   const typeFilter = kind === "discount"
-    ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, k.replaceAll("_", " ")])]
-    : [["", "All acceptance policies"], ...BOM_CATEGORY_STATUS];
+    ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])]
+    : null;
 
   return (
     <Screen title={config.title}
@@ -57,7 +58,7 @@ function RecordList({ kind, config }) {
       <Panel title="Filters">
         <div className="manager-filters">
           <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
-          <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />
+          {typeFilter && <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />}
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {

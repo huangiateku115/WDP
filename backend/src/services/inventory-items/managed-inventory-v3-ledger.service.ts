@@ -5,9 +5,38 @@ const id = (value: unknown) => value == null ? '' : String(value);
 const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const close = (a: number, b: number, tolerance: number) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tolerance;
 const canonicalRound = (value: number, places: number) => Math.round((value + Number.EPSILON) * (10 ** places)) / (10 ** places);
+const precisionUnits = (value: number, places: 3 | 6) => {
+  const scale = 10 ** places, units = Math.round((value + Number.EPSILON) * scale);
+  if (!Number.isSafeInteger(units) || units < 0 || Math.abs(value - units / scale) > 1e-9) invalid('ARITHMETIC_OVERFLOW', 'Placement amount is outside canonical precision');
+  return units;
+};
+const allocatePrecisionUnits = (total: number, totalQuantity: number, requestedQuantity: number) => {
+  if (requestedQuantity === totalQuantity) return total;
+  const product = total * requestedQuantity;
+  if (!Number.isSafeInteger(product)) invalid('ARITHMETIC_OVERFLOW', 'Partial removal exceeds safe arithmetic range');
+  return Math.floor((product + Math.floor(totalQuantity / 2)) / totalQuantity);
+};
+export function canonicalA2RemovalAmounts(current: { quantity: number; weightKg: number; volumeM3: number }, quantity: number) {
+  if (!Number.isSafeInteger(current.quantity) || current.quantity < 1 || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > current.quantity) {
+    invalid('INVALID_REMOVE_QUANTITY', 'Partial REMOVE quantity must be positive and no greater than active placement quantity');
+  }
+  const weightUnits = precisionUnits(current.weightKg, 3), volumeUnits = precisionUnits(current.volumeM3, 6);
+  const removedWeightUnits = allocatePrecisionUnits(weightUnits, current.quantity, quantity);
+  const removedVolumeUnits = allocatePrecisionUnits(volumeUnits, current.quantity, quantity);
+  return { removedWeightKg: removedWeightUnits / 1000, removedVolumeM3: removedVolumeUnits / 1_000_000,
+    remainingQuantity: current.quantity - quantity, remainingWeightKg: (weightUnits - removedWeightUnits) / 1000,
+    remainingVolumeM3: (volumeUnits - removedVolumeUnits) / 1_000_000 };
+}
 const keyFor = (line: Row, kind: string) => kind === 'A1_PHYSICAL_UNIT' ? `U:${id(line.physicalUnitId)}:${id(line.cellId)}` : `B:${line.batchId}:${id(line.cellId)}`;
-const projectionLine = (line: Row) => ({ ...line, cellId: id(line.cellId), physicalUnitId: line.physicalUnitId ? id(line.physicalUnitId) : undefined,
-  topologyCertificationId: line.topologyCertificationId ? id(line.topologyCertificationId) : undefined, heldQuantity: line.heldQuantity ?? 0 });
+const projectionLine = (line: Row) => {
+  const result: Row = { ...line, cellId: id(line.cellId), topologyCertificationId: line.topologyCertificationId ? id(line.topologyCertificationId) : undefined,
+    heldQuantity: line.heldQuantity ?? 0 };
+  for (const key of ['physicalUnitId', 'receiptMovementId', 'sourceMovementId']) {
+    if (line[key] != null) result[key] = id(line[key]); else delete result[key];
+  }
+  if (result.topologyCertificationId === undefined) delete result.topologyCertificationId;
+  return result;
+};
 
 export class ManagedV3LedgerError extends Error { constructor(public code: string, message: string) { super(message); } }
 function invalid(code: string, message: string): never { throw new ManagedV3LedgerError(code, message); }
@@ -48,12 +77,15 @@ export function replayManagedInventoryV3(item: Row, input: Row[]) {
       for (let i = 0; i < destination.length; i++) {
         const line = destination[i]!, key = keys[i]!;
         if (placements.has(key)) invalid('PLACEMENT_ALREADY_ACTIVE', 'ADD would duplicate an active placement');
-        placements.set(key, { ...line, itemKind: effect.itemKind });
+        placements.set(key, { ...line, itemKind: effect.itemKind,
+          ...(effect.itemKind === 'A2_BATCH' ? { receiptMovementId: id(movement._id), receivedAt: movement.performedAt } :
+            { sourceMovementId: id(movement._id), receivedAt: movement.performedAt }) });
         if (effect.itemKind === 'A1_PHYSICAL_UNIT') {
           const unitId = id(line.physicalUnitId), cells = unitCells.get(unitId) ?? new Set<string>(); cells.add(line.cellId); unitCells.set(unitId, cells);
         }
       }
     } else {
+      const sourceLineage = new Map<string, Row>();
       if (effect.itemKind === 'A1_PHYSICAL_UNIT') {
         const sourceByUnit = new Map<string, Set<string>>();
         for (const line of source) { const cells = sourceByUnit.get(id(line.physicalUnitId)) ?? new Set<string>(); cells.add(line.cellId); sourceByUnit.set(id(line.physicalUnitId), cells); }
@@ -64,16 +96,35 @@ export function replayManagedInventoryV3(item: Row, input: Row[]) {
       }
       for (let i = 0; i < source.length; i++) {
         const line = source[i]!, current = placements.get(keys[i]!);
-        if (!current || current.quantity !== line.quantity || !close(current.weightKg, line.weightKg, 0.001) || !close(current.volumeM3, line.volumeM3, 0.000001)) {
+        const partialA2Remove = effect.action === 'REMOVE' && effect.itemKind === 'A2_BATCH';
+        if (!current || (partialA2Remove ? line.quantity > current.quantity : current.quantity !== line.quantity) ||
+            (effect.itemKind === 'A2_BATCH' && (!current.receiptMovementId ||
+              (line.receiptMovementId != null && id(line.receiptMovementId) !== id(current.receiptMovementId)))) ||
+            !Number.isSafeInteger(current.quantity)) {
           invalid('SOURCE_PLACEMENT_MISMATCH', 'REMOVE/MOVE source does not match active stock placement');
         }
-        placements.delete(keys[i]!);
+        const weightUnits = precisionUnits(current.weightKg, 3), volumeUnits = precisionUnits(current.volumeM3, 6);
+        const removedWeightUnits = partialA2Remove ? allocatePrecisionUnits(weightUnits, current.quantity, line.quantity) : weightUnits;
+        const removedVolumeUnits = partialA2Remove ? allocatePrecisionUnits(volumeUnits, current.quantity, line.quantity) : volumeUnits;
+        if (precisionUnits(line.weightKg, 3) !== removedWeightUnits || precisionUnits(line.volumeM3, 6) !== removedVolumeUnits) {
+          invalid('CONSERVATION_MISMATCH', 'REMOVE physical amounts do not follow the canonical per-placement rounding rule');
+        }
+        if (partialA2Remove && line.quantity < current.quantity) {
+          const remainingQuantity = current.quantity - line.quantity;
+          const remainingWeightUnits = weightUnits - removedWeightUnits, remainingVolumeUnits = volumeUnits - removedVolumeUnits;
+          if (remainingQuantity < 1 || remainingWeightUnits < 0 || remainingVolumeUnits < 0) invalid('NEGATIVE_STOCK', 'Partial REMOVE would create negative placement stock');
+          placements.set(keys[i]!, { ...current, quantity: remainingQuantity, weightKg: remainingWeightUnits / 1000, volumeM3: remainingVolumeUnits / 1_000_000 });
+        } else placements.delete(keys[i]!);
+        if (effect.action === 'MOVE') sourceLineage.set(effect.itemKind === 'A1_PHYSICAL_UNIT' ? id(line.physicalUnitId) : String(line.batchId), current);
         if (effect.itemKind === 'A1_PHYSICAL_UNIT') unitCells.get(id(line.physicalUnitId))?.delete(line.cellId);
       }
       if (effect.action === 'MOVE') for (const line of destination) {
         const key = keyFor(line, effect.itemKind);
         if (placements.has(key)) invalid('PLACEMENT_ALREADY_ACTIVE', 'MOVE destination already has an active placement');
-        placements.set(key, { ...line, itemKind: effect.itemKind });
+        const lineage = sourceLineage.get(effect.itemKind === 'A1_PHYSICAL_UNIT' ? id(line.physicalUnitId) : String(line.batchId));
+        placements.set(key, { ...line, itemKind: effect.itemKind,
+          ...(effect.itemKind === 'A2_BATCH' ? { receiptMovementId: lineage?.receiptMovementId, receivedAt: lineage?.receivedAt } :
+            { sourceMovementId: lineage?.sourceMovementId, receivedAt: lineage?.receivedAt }) });
         if (effect.itemKind === 'A1_PHYSICAL_UNIT') { const unitId = id(line.physicalUnitId), cells = unitCells.get(unitId) ?? new Set<string>(); cells.add(line.cellId); unitCells.set(unitId, cells); }
       }
     }
@@ -103,7 +154,7 @@ export function replayManagedInventoryV3(item: Row, input: Row[]) {
     byCellMap.set(line.cellId, cell);
     if (line.itemKind === 'A1_PHYSICAL_UNIT') {
       const unitId = id(line.physicalUnitId), unit: Row = unitMap.get(unitId) ?? { itemKind: 'A1_PHYSICAL_UNIT', physicalUnitId: unitId, quantity: 1,
-        quantityUnit: line.quantityUnit, pose: line.pose, weightKg: 0, volumeM3: 0, cellIds: [] };
+        sourceMovementId: line.sourceMovementId, receivedAt: line.receivedAt, quantityUnit: line.quantityUnit, pose: line.pose, weightKg: 0, volumeM3: 0, cellIds: [] };
       if (unit.quantityUnit !== line.quantityUnit || JSON.stringify(unit.pose) !== JSON.stringify(line.pose)) invalid('A1_FOOTPRINT_MISMATCH', 'PhysicalUnit footprint has inconsistent unit or pose data');
       unit.weightKg += line.weightKg; unit.volumeM3 += line.volumeM3; unit.cellIds.push(line.cellId); unitMap.set(unitId, unit);
     }

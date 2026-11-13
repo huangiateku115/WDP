@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field, Select, Input } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAdminUsers, userId } from "@/lib/adminUsers";
 import { useAuthSession } from "@/lib/authSession";
@@ -13,7 +13,9 @@ import maintenanceApi from "@/api/maintenanceApi";
 // Reads are live; assign / unassign / status / escalate write through the confirmed
 // ADMIN/BOM/FACILITY_MANAGER endpoints (assign, unassign and escalate are manager-only).
 const SERVICE_STATUSES = ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED"];
-const ASSIGNEE_ROLES = ["FACILITY_STAFF", "FACILITY_MANAGER"];
+// Assign/unassign only accepts an active FACILITY_STAFF assigned to the ticket facility,
+// so managers must not be offered as assignees.
+const ASSIGNEE_ROLES = ["FACILITY_STAFF"];
 
 const unwrap = (response) => response?.data?.data ?? null;
 const unwrapList = (response) => (Array.isArray(response?.data?.data) ? response.data.data : []);
@@ -111,8 +113,7 @@ function ServiceList({ config }) {
   return (
     <Screen
       title={config.title}
-      description={`Live list from the confirmed ${config.title.toLowerCase()} API.`}
-      notice={LIVE_NOTICE}
+      description={`All ${config.title.toLowerCase()}.`}
       action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
@@ -131,7 +132,7 @@ function ServiceList({ config }) {
                 { key: "assignedTo", label: "Assigned to" },
                 { key: "createdAt", label: "Created" },
               ]}
-              empty="No records were returned by the backend."
+              empty="No records to show."
             />
           </Panel>
         );
@@ -150,7 +151,7 @@ function ServiceDetail({ config }) {
 
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error))
     return (
-      <Screen title="Record unavailable" notice={LIVE_NOTICE}>
+      <Screen title="Record unavailable">
         <Panel title="Record unavailable"><Link className="manager-link" to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Panel>
       </Screen>
     );
@@ -158,8 +159,7 @@ function ServiceDetail({ config }) {
   return (
     <Screen
       title={config.title.replace(/s$/, "") + " detail"}
-      description={`Live detail from the confirmed ${config.title.toLowerCase()} API.`}
-      notice={LIVE_NOTICE}
+      description={`${config.title.replace(/s$/, "")} detail.`}
       action={<Button asChild variant="outline"><Link to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
@@ -183,7 +183,7 @@ function ServiceDetail({ config }) {
             </Panel>
             <ServiceActions config={config} row={row} onDone={state.reload} />
             {config.messages && (
-              <Panel title="Conversation" subtitle="Internal messages are hidden from customers by the backend.">
+              <Panel title="Conversation" subtitle="Internal messages are hidden from customers.">
                 {messages.loading && <p role="status" className="text-sm text-slate-500">Loading messages…</p>}
                 {messages.error && <Message error={messages.error} />}
                 {messages.data && (
@@ -238,12 +238,12 @@ function ServiceAdminActions({ config, row, onDone }) {
   const assigneeName = assignees.find(([id]) => id === assignee)?.[1] || assignee;
 
   return (
-    <Panel title="Actions" subtitle="Every change is sent to the backend API. The backend authorizes the action and validates the transition.">
+    <Panel title="Actions" subtitle="Every change is saved immediately and validated before it is applied.">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field
           label={config.assigneeLabel}
-          hint={assignees.length ? undefined : "The user collection returned no FACILITY_STAFF or FACILITY_MANAGER account."}
+          hint={assignees.length ? undefined : "No facility staff account is available."}
         >
           <Select
             label={`${config.assigneeLabel} to assign`}
@@ -269,7 +269,7 @@ function ServiceAdminActions({ config, row, onDone }) {
               title: `Assign ${config.assigneeLabel.toLowerCase()}`,
               confirmLabel: "Assign",
               summary: <Details values={[["Record", row.subject || row.title], [config.assigneeLabel, assigneeName]]} />,
-              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved through the backend API."),
+              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved."),
             })
             : setError(`Select a ${config.assigneeLabel.toLowerCase()} first.`))}
         >
@@ -282,7 +282,7 @@ function ServiceAdminActions({ config, row, onDone }) {
             title: "Remove assignment",
             confirmLabel: "Unassign",
             summary: <Details values={[["Record", row.subject || row.title], ["Currently assigned to", row.assignedTo]]} />,
-            execute: confirmed(() => config.unassign(row.id), "Assignment removed through the backend API."),
+            execute: confirmed(() => config.unassign(row.id), "Assignment removed."),
           })}
         >
           Unassign
@@ -294,7 +294,7 @@ function ServiceAdminActions({ config, row, onDone }) {
               title: "Escalate request",
               confirmLabel: "Escalate",
               summary: <Details values={[["Record", row.subject || row.title], ["Current status", row.status]]} />,
-              execute: confirmed(() => config.escalate(row.id), "Request escalated through the backend API."),
+              execute: confirmed(() => config.escalate(row.id), "Request escalated."),
             })}
           >
             Escalate
@@ -317,7 +317,7 @@ function ServiceAdminActions({ config, row, onDone }) {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 }),
-                "Status saved through the backend API.",
+                "Status saved.",
               ),
             })
             : setError("Select the new status first."))}
@@ -333,7 +333,7 @@ function ServiceAdminActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>
@@ -351,7 +351,7 @@ function ServiceStatusActions({ config, row, onDone }) {
   const open = (next) => { setError(""); setNotice(""); setDialog(next); };
 
   return (
-    <Panel title="Actions" subtitle="Status changes are sent to the backend API. Assignment stays with ADMIN.">
+    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment is an admin action.">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field label="New status">
@@ -361,10 +361,6 @@ function ServiceStatusActions({ config, row, onDone }) {
           <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
-      <p className="mt-4 text-sm text-slate-500">
-        Assigning a {config.assigneeLabel.toLowerCase()} needs the ADMIN user directory (GET /users is ADMIN-only),
-        so the assignment controls are not shown here.
-      </p>
       <div className="mt-5 flex flex-wrap gap-3">
         <Button
           variant="orange"
@@ -383,7 +379,7 @@ function ServiceStatusActions({ config, row, onDone }) {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 });
-                setNotice("Status saved through the backend API.");
+                setNotice("Status saved.");
                 onDone?.();
               },
             })
@@ -400,7 +396,7 @@ function ServiceStatusActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The backend applies the change and the record is reloaded afterwards.</p>
+          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>

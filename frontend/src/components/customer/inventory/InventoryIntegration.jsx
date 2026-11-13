@@ -29,6 +29,7 @@ import {
 } from "./InventoryBackendUI";
 import InventoryItemForm from "./InventoryItemForm";
 import ManagedSelfInboundV3 from "./ManagedSelfInboundV3";
+import ManagedSelfOutboundV3 from "./ManagedSelfOutboundV3";
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -368,12 +369,8 @@ function Detail({ id }) {
           <p className="text-sm text-slate-500">
             Registration records the SKU only. Physical stock changes only after Customer Self-Inbound V3 is confirmed in an active Access Session.
           </p>
-          <CanonicalCustomerOutbound
-            item={item}
-            rental={rental}
-            loading={resource.loading || !!resource.error || rentals.loading}
-            onRefresh={refresh}
-          />
+          {item.inventorySchemaVersion === 3 ? <ManagedSelfOutboundV3 item={item} rental={rental} onRefresh={refresh} /> :
+            <CanonicalCustomerOutbound item={item} rental={rental} loading={resource.loading || !!resource.error || rentals.loading} onRefresh={refresh} />}
         </>
       )}
     </CustomerScreen>

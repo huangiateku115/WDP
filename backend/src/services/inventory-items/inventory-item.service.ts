@@ -836,6 +836,7 @@ export class InventoryItemService {
     return execute(async () => withTransaction(async session => {
       const current = await InventoryItemModel.findOne({ _id: itemId, ...live }).session(session).exec();
       if (!current) throw new InventoryItemError(404, 'Inventory item not found');
+      if (current.inventorySchemaVersion === 3) throw new InventoryItemError(409, 'Legacy Staff outbound confirmation cannot mutate V3 inventory');
       assertFacilityScope(actor, current.facilityId.toString());
       if (current.inventorySchemaVersion === 3) throw new InventoryItemError(409, 'Legacy Staff inbound cannot mutate V3 inventory');
 

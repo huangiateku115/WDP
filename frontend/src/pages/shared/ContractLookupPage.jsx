@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Details, Field, Input, Select, Status, Button, Message, money } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAuthSession } from "@/lib/authSession";
 import { loadFacilities, loadFacilityReservations, loadContractForReservation } from "@/lib/bomApiData";
 import { apiErrorMessage } from "@/lib/apiError";
 import contractApi from "@/api/contractApi";
+import { serviceLabel } from "@/lib/bomMappers";
 
 // Shared contract workspace for BOM and Admin.
 // The backend exposes no contract collection, only GET /contracts/:id and
@@ -120,7 +121,7 @@ function ContractList({ basePath }) {
     setFeedback({});
     try {
       const contract = await loadContractForReservation(reservationId);
-      if (!contract.id) throw new Error("The backend returned a contract without an id.");
+      if (!contract.id) throw new Error("The contract could not be opened.");
       nav(`${basePath}/${contract.id}`);
     } catch (error) {
       setFeedback({ error: apiErrorMessage(error, "No contract is available for this reservation yet.") });
@@ -132,8 +133,7 @@ function ContractList({ basePath }) {
   return (
     <Screen
       title="Contracts"
-      description="Open a facility reservation to review the contract captured when it was approved. Contract detail stays on its own route."
-      notice={LIVE_NOTICE}
+      description="Open a facility reservation to review the contract captured when it was approved. Contract detail opens on its own page."
       action={<Button variant="outline" disabled={reservations.loading} onClick={reservations.reload}>Refresh</Button>}
     >
       <Panel
@@ -169,11 +169,11 @@ function ContractList({ basePath }) {
             />
           </Field>
         </div>
-        {facilityScoped && <p className="mb-4 text-sm text-slate-500">The backend narrows the reservation collection to your assigned facility.</p>}
+        {facilityScoped && <p className="mb-4 text-sm text-slate-500">Only reservations of your assigned facility are listed.</p>}
         <Message {...feedback} />
 
         {!facilityId ? (
-          <p className="text-sm text-slate-500">Choose a facility first. Contracts cannot be listed globally because the backend has no contract collection endpoint.</p>
+          <p className="text-sm text-slate-500">Choose a facility first. Contracts are opened per reservation.</p>
         ) : (
           <AsyncBoundary state={reservations} render={() => (
             <Table
@@ -182,7 +182,9 @@ function ContractList({ basePath }) {
               columns={[
                 { key: "code", label: "Reservation", render: (row) => row.code || row.id },
                 { key: "customer", label: "Customer", render: (row) => row.customerName },
-                { key: "service", label: "Service", render: (row) => (row.serviceType || "SELF_STORAGE").replaceAll("_", " ") },
+                // reservationFromDto exposes the service model as `service`; `serviceType` is kept
+                // as a fallback for raw backend rows.
+                { key: "service", label: "Service", render: (row) => serviceLabel(row.service || row.serviceType) },
                 { key: "window", label: "Rental window", render: (row) => `${day(row.startDate)} → ${day(row.endDate)}` },
                 { key: "status", label: "Reservation status", render: (row) => <Status value={row.status} /> },
                 {
@@ -199,14 +201,6 @@ function ContractList({ basePath }) {
           )} />
         )}
       </Panel>
-
-      <Panel title="Backend surface" subtitle="Nothing is requested until a reservation is opened.">
-        <Details values={[
-          ["Reservation list", "GET /reservations/facility/:facilityId — one request per selected facility."],
-          ["Contract lookup", "GET /contracts/reservation/:reservationId — one request for the reservation you open."],
-          ["Missing API", "GET /contracts (collection with code/status/facility filters) — needed to search contracts directly across facilities."],
-        ]} />
-      </Panel>
     </Screen>
   );
 }
@@ -221,7 +215,6 @@ function ContractDetail({ id, basePath }) {
     <Screen
       title="Contract detail"
       description="Read-only contract record. Customer and pricing values are copies captured at approval time."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" onClick={() => nav(basePath)}>Back to contracts</Button>}
     >
       <AsyncBoundary

@@ -25,6 +25,7 @@ const batchLineSchema = new Schema({
 
 const v3EffectLineSchema = new Schema({
   cellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', required: true },
+  receiptMovementId: { type: Schema.Types.ObjectId, ref: 'ItemMovement', immutable: true },
   topologyCertificationId: { type: Schema.Types.ObjectId, required: true }, topologyRevision: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
   batchId: { type: String, trim: true, maxlength: 128 },
   physicalUnitId: { type: Schema.Types.ObjectId, ref: 'ManagedV3PhysicalUnit' },
@@ -48,6 +49,7 @@ const v3EffectSchema = new Schema({
   correlationId: { type: String, required: true, trim: true, maxlength: 160 },
   source: { type: [v3EffectLineSchema] }, destination: { type: [v3EffectLineSchema] },
   evidenceIds: [{ type: Schema.Types.ObjectId }],
+  customerAttestation: { customerId: { type: Schema.Types.ObjectId, ref: 'User' }, attestedAt: Date, statement: { type: String, trim: true, maxlength: 500 } },
 }, { _id: false, strict: 'throw', immutable: true });
 
 const schema = new Schema<IItemMovement>({

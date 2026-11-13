@@ -35,6 +35,37 @@ test('A1 footprint spanning Cells remains one unit and conserves distributed sup
   assert.equal(result.byCell.reduce((n, row) => n + row.weightKg, 0), 50);
 });
 
+test('A2 partial REMOVE preserves the receipt lineage and canonical weight/volume remainder over repeated removals', () => {
+  const receipt = movement({ revision: 1, destination: [a2(ids.c1, 'receipt-1', 10, 3.333, .000011)], quantity: 10, weight: 3.333, volume: .000011 });
+  const receiptLine = { ...a2(ids.c1, 'receipt-1', 3, 1, .000003), receiptMovementId: receipt._id };
+  const first = movement({ revision: 2, action: 'REMOVE', source: [receiptLine], quantity: 3, weight: 1, volume: .000003 });
+  const second = movement({ revision: 3, action: 'REMOVE', source: [{ ...receiptLine, quantity: 2, weightKg: .667, volumeM3: .000002 }], quantity: 2, weight: .667, volume: .000002 });
+  const result = replayManagedInventoryV3(item, [receipt, first, second]);
+  assert.equal(result.onHandQuantity, 5); assert.equal(result.totalWeightKg, 1.666); assert.equal(result.totalVolumeM3, .000006);
+  assert.equal(result.byBatch[0].quantity, 5); assert.equal(result.byBatch[0].weightKg, 1.666); assert.equal(result.byBatch[0].volumeM3, .000006);
+  assert.equal(String(result.byBatch[0].receiptMovementId), String(receipt._id));
+  assert.equal(result.byBatch[0].receivedAt.toISOString(), receipt.performedAt.toISOString());
+  assert.equal(result.totalWeightKg + first.actualTotalWeightKg + second.actualTotalWeightKg, 3.333);
+  assert.equal(result.totalVolumeM3 + first.actualTotalVolumeM3 + second.actualTotalVolumeM3, .000011);
+});
+
+test('A2 REMOVE rejects unknown or overdrawn batch/cell and depletes a full placement without zero rows', () => {
+  const receipt = movement({ revision: 1, destination: [a2(ids.c1, 'receipt-2', 2, 1.001, .000007)], quantity: 2, weight: 1.001, volume: .000007 });
+  const lineage = { ...a2(ids.c1, 'receipt-2', 3, 1.502, .000011), receiptMovementId: receipt._id };
+  assert.throws(() => replayManagedInventoryV3(item, [receipt, movement({ revision: 2, action: 'REMOVE', source: [lineage], quantity: 3, weight: 1.502, volume: .000011 })]), /active stock placement/i);
+  assert.throws(() => replayManagedInventoryV3(item, [receipt, movement({ revision: 2, action: 'REMOVE', source: [{ ...lineage, batchId: 'missing', quantity: 1, weightKg: .501, volumeM3: .000004 }], quantity: 1, weight: .501, volume: .000004 })]), /active stock placement/i);
+  const depleted = replayManagedInventoryV3(item, [receipt, movement({ revision: 2, action: 'REMOVE', source: [{ ...lineage, quantity: 2, weightKg: 1.001, volumeM3: .000007 }], quantity: 2, weight: 1.001, volume: .000007 })]);
+  assert.equal(depleted.onHandQuantity, 0); assert.deepEqual(depleted.byBatch, []); assert.equal(depleted.totalWeightKg, 0); assert.equal(depleted.totalVolumeM3, 0);
+});
+
+test('A1 PhysicalUnit can only be removed as its complete footprint', () => {
+  const add = movement({ revision: 1, itemKind: 'A1_PHYSICAL_UNIT', quantity: 1, weight: 50, volume: .475, destination: [a1(ids.c1, ids.unit, 25, .25, 25), a1(ids.c2, ids.unit, 25, .225, 25)] });
+  const partial = movement({ revision: 2, action: 'REMOVE', itemKind: 'A1_PHYSICAL_UNIT', quantity: 1, weight: 25, volume: .25, source: [a1(ids.c1, ids.unit, 25, .25, 25)] });
+  assert.throws(() => replayManagedInventoryV3(item, [add, partial]), /complete active PhysicalUnit footprint/i);
+  const remove = movement({ revision: 2, action: 'REMOVE', itemKind: 'A1_PHYSICAL_UNIT', quantity: 1, weight: 50, volume: .475, source: [a1(ids.c1, ids.unit, 25, .25, 25), a1(ids.c2, ids.unit, 25, .225, 25)] });
+  const result = replayManagedInventoryV3(item, [add, remove]); assert.equal(result.onHandQuantity, 0); assert.deepEqual(result.byPhysicalUnit, []);
+});
+
 test('ledger replay DTO validates as a strict persisted projection for both A1 and A2', async () => {
   const normalize = value => value?.toHexString ? value.toHexString() : Array.isArray(value) ? value.map(normalize) : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).filter(key => !['_id', 'createdAt', 'updatedAt', '__v'].includes(key) && value[key] !== undefined).sort().map(key => [key, normalize(value[key])]))

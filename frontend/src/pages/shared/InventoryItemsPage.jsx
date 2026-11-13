@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, Details, Timeline,
 } from "@/components/manager/ManagerUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadInventoryItem, loadInventoryItems, loadItemMovements } from "@/lib/bomApiData";
@@ -51,7 +51,6 @@ function ItemList({ basePath }) {
     <Screen
       title="Managed inventory"
       description="Every inventory lot registered by customers, its placement state and the cell that holds it. Staff perform the physical inbound; this console reports the result."
-      notice={LIVE_NOTICE}
       action={<Button variant="outline" disabled={items.loading} onClick={items.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={() => (
@@ -65,7 +64,7 @@ function ItemList({ basePath }) {
 
           <Panel
             title="Filters"
-            subtitle="Filters run on the backend (facilityId, status, category, search). Leave the facility empty to list every facility."
+            subtitle="Filters apply to the whole list. Leave the facility empty to list every facility."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -92,7 +91,7 @@ function ItemList({ basePath }) {
               </Field>
             </div>
             <p className="bom-warning mt-5">
-              The backend enforces the effective Item Category policy at inbound, so a lot can only be stored when its category is
+              The effective Item Category policy applies at inbound, so a lot can only be stored when its category is
               allowed by the facility policy.
             </p>
           </Panel>
@@ -134,7 +133,6 @@ function ItemDetail({ id, basePath }) {
     <Screen
       title="Inventory lot"
       description="Registered goods, its Managed reservation link, placement state and the immutable movement ledger written by Staff inbounds."
-      notice={LIVE_NOTICE}
       action={<Button asChild variant="outline"><Link to={basePath}>Back to inventory</Link></Button>}
     >
       <AsyncBoundary state={item} render={(row) => (
@@ -172,7 +170,7 @@ function ItemDetail({ id, basePath }) {
           <AsyncBoundary state={movements} render={(ledger) => (
             <Panel
               title="Movement ledger"
-              subtitle={`${ledger.length} movement${ledger.length === 1 ? "" : "s"} · newest first, written by the backend`}
+              subtitle={`${ledger.length} movement${ledger.length === 1 ? "" : "s"} · newest first`}
             >
               {ledger.length > 0 && (
                 <div className="mb-5">

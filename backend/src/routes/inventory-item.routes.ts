@@ -7,6 +7,7 @@ import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
 import * as checkinController from '../controllers/reservations/managed-checkin.controller';
 import * as v3Controller from '../controllers/inventory-items/managed-inventory-v3.controller';
+import * as v3OutboundController from '../controllers/inventory-items/managed-inventory-v3-outbound.controller';
 import rateLimit from 'express-rate-limit';
 import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
 
@@ -15,10 +16,21 @@ const customer = requireRole([UserRole.CUSTOMER]);
 const readers = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]);
 const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.CUSTOMER]);
 const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
+const v3OutboundLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { success: false, code: 'RATE_LIMITED', message: 'Quá nhiều thao tác xuất kho; vui lòng thử lại sau.' } });
 
 router.use(requireAuth);
 // V3 read-only facility oversight is intentionally mounted before the dynamic legacy /:id routes.
 router.get('/managed-v3/facility/overview', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), v3Controller.facilityOverview);
+router.get('/managed-v3/facility/outbound-requests', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), v3OutboundController.facilityQueue);
+router.get('/managed-v3/facility/outbound-requests/:requestId', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), v3OutboundController.facilityDetail);
+router.get('/:id/v3/outbound/context', customer, v3OutboundController.context);
+router.get('/:id/v3/outbound/operations', itemReaders, v3OutboundController.operation);
+router.post('/:id/v3/outbound-requests', customer, v3OutboundLimiter, v3OutboundController.create);
+router.get('/:id/v3/outbound-requests', customer, v3OutboundController.listForItem);
+router.get('/:id/v3/outbound-requests/:requestId', customer, v3OutboundController.get);
+router.post('/:id/v3/outbound-requests/:requestId/cancel', customer, v3OutboundLimiter, v3OutboundController.cancel);
+router.post('/:id/v3/outbound-requests/:requestId/preview', customer, v3OutboundLimiter, v3OutboundController.preview);
+router.post('/:id/v3/outbound-requests/:requestId/confirm', customer, v3OutboundLimiter, v3OutboundController.confirm);
 router.get('/:id/v3/physical-units', customer, v3Controller.listPhysicalUnits);
 router.post('/:id/v3/physical-units', customer, v3Controller.preparePhysicalUnit);
 router.post('/:id/v3/inbound/preview', customer, v3Controller.previewInbound);

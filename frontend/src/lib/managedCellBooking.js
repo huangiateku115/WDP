@@ -1,16 +1,15 @@
-import {managedRequest} from './customerReservationService.js';
+import {managedRequest, managedVietnamDate, managedBookingDateAllowed} from './customerReservationService.js';
 import {managedQuoteFinancials} from './managedRentalPricing.js';
 
 const id=value=>typeof value==='string'&&/^[a-f\d]{24}$/i.test(value);
-// The date-only picker retains its existing 00:00 UTC payload. Backend requires start > now.
 export function minimumBookingStartDate(now=Date.now()){
-  const day=new Date(now);day.setUTCHours(0,0,0,0);day.setUTCDate(day.getUTCDate()+1);return day.toISOString().slice(0,10);
+  return managedVietnamDate(now);
 }
 export function bookingStartDateError(start,now=Date.now()){
   if(!start)return 'Choose a rental start date.';
   const range=bookingInterval(start,{value:1,unit:'DAY'});
-  if(!range)return 'Choose a valid UTC calendar date.';
-  return Date.parse(range.startDate)<=now?'Choose a future UTC start date. Dates start at 00:00 UTC (07:00 Vietnam time).':'';
+  if(!range)return 'Choose a valid calendar date.';
+  return managedBookingDateAllowed(range.startDate,now)?'':'Choose today or a future start date in Vietnam time.';
 }
 export const volumeText=value=>Number.isFinite(value)?`${Number(value.toFixed(6)).toLocaleString('en-US',{maximumFractionDigits:6})} m³`:'Not returned';
 export function bookingInterval(start,term) {
@@ -38,10 +37,10 @@ export function cellVolume(cell) {
   if(!values.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>0))throw Error('Measured width, depth and usable height are required.');
   const result=values.reduce((a,b)=>a*b,1);if(!Number.isFinite(result)||result<=0)throw Error('Invalid measured Cell volume.');return result;
 }
-export function cellBookingReason(cell,rack,range) {
+export function cellBookingReason(cell,rack,range,now=Date.now()) {
   if(!range)return 'Choose a rental start date and term before selecting Cells.';
   try{canonicalRange(range);}catch{return 'Choose a valid UTC rental interval.';}
-  if(Date.parse(range.startDate)<=Date.now())return 'Choose a future UTC start date.';
+  if(!managedBookingDateAllowed(range.startDate,now))return 'Choose today or a future start date in Vietnam time.';
   if(!id(cell?._id)||!id(rack?._id)||!id(rack?.facilityId))return 'Cell identity or Facility is unavailable.';
   if(rack.operationalStatus!=='AVAILABLE')return 'Parent Rack is not AVAILABLE.';
   if(cell.facilityId!=null&&cell.facilityId!==rack.facilityId)return 'Cell belongs to a different Facility.';

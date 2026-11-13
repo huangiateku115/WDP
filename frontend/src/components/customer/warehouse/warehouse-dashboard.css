@@ -207,8 +207,13 @@ body:has(.warehouse-dashboard) {
   box-shadow: 0 4px 14px rgba(22, 85, 45, 0.1);
   color: #123d27;
 }
-.warehouse-dashboard .wm-booking-hero.is-expanded { min-height: 105px; }
-.warehouse-dashboard .wm-booking-hero-symbol { flex-basis: 38px; height: 38px; }
+.warehouse-dashboard .wm-booking-hero.is-expanded {
+  min-height: 105px;
+}
+.warehouse-dashboard .wm-booking-hero-symbol {
+  flex-basis: 38px;
+  height: 38px;
+}
 .warehouse-dashboard .wm-booking-toggle {
   display: inline-flex;
   align-items: center;
@@ -224,7 +229,10 @@ body:has(.warehouse-dashboard) {
   font-weight: 800;
   cursor: pointer;
 }
-.warehouse-dashboard .wm-booking-toggle:hover { background: #e4f3e9; border-color: #3a9660; }
+.warehouse-dashboard .wm-booking-toggle:hover {
+  background: #e4f3e9;
+  border-color: #3a9660;
+}
 .warehouse-dashboard .wm-booking-summary {
   grid-column: 1 / -1;
   display: flex;
@@ -235,11 +243,30 @@ body:has(.warehouse-dashboard) {
   color: #345c43;
   font-size: 12px;
 }
-.warehouse-dashboard .wm-booking-summary strong { color: #145d37; }
-.warehouse-dashboard .wm-booking-summary [role="alert"] { color: #a43d23; font-weight: 750; }
-.warehouse-dashboard .wm-booking-period-content { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
-.warehouse-dashboard .wm-booking-period-content[hidden] { display: none; }
-.warehouse-dashboard .wm-booking-period-content .wm-v5-period { grid-template-columns: minmax(130px,1.2fr) minmax(72px,.6fr) minmax(88px,.7fr) minmax(120px,1fr); }
+.warehouse-dashboard .wm-booking-summary strong {
+  color: #145d37;
+}
+.warehouse-dashboard .wm-booking-summary [role="alert"] {
+  color: #a43d23;
+  font-weight: 750;
+}
+.warehouse-dashboard .wm-booking-period-content {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.warehouse-dashboard .wm-booking-period-content[hidden] {
+  display: none;
+}
+.warehouse-dashboard .wm-booking-period-content .wm-v5-period {
+  grid-template-columns: minmax(130px, 1.2fr) minmax(72px, 0.6fr) minmax(
+      88px,
+      0.7fr
+    ) minmax(120px, 1fr);
+}
 .warehouse-dashboard .wm-v5-booking-intro {
   display: flex;
   align-items: center;
@@ -374,70 +401,75 @@ body:has(.warehouse-dashboard) {
 
 /* ── Statistics ── */
 .warehouse-dashboard .wm-stats {
-  flex: 0 0 78px;
+  flex: 0 0 auto; /* Intrinsic height; remaining viewport space goes to the map. */
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 9px;
   width: 100%;
   min-height: 0;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .warehouse-dashboard .wm-stat {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
-  height: 78px;
-  padding: 9px 12px;
+  min-height: 76px;
+  height: auto; /* Never crop labels or values, even at browser zoom. */
+  padding: 7px 11px;
   border: 1px solid #a7cbb2;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #f4fbf6 0%, #e7f3e9 100%);
-  box-shadow: var(--wm-shadow);
+  border-radius: 13px;
+  background: linear-gradient(155deg, #ffffff 0%, #f1f9f3 100%);
+  box-shadow: 0 5px 14px rgba(18, 69, 40, 0.12);
   color: var(--wm-ink);
 }
 .warehouse-dashboard .wm-stat:hover {
   border-color: #5eaa7d;
 }
 .warehouse-dashboard .wm-stat p {
-  max-width: calc(100% - 36px);
+  max-width: calc(100% - 30px);
   color: #345840;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
-  line-height: 1.3;
+  line-height: 1.2;
 }
 .warehouse-dashboard .wm-stat strong {
   display: block;
-  margin-top: auto;
+  margin-top: 0;
   color: #123a27;
-  font-size: clamp(23px, 1.8vw, 29px);
+  font-size: clamp(23px, 1.5vw, 27px);
   font-weight: 850;
-  line-height: 1.05;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 .warehouse-dashboard .wm-stat small {
-  color: #4d6c56;
+  color: #42674c;
   font-size: 10px;
   font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 .warehouse-dashboard .wm-stat .wm-stat-unknown {
   color: #536d59;
 }
 .warehouse-dashboard .wm-stat-icon {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 8px;
+  right: 9px;
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 27px;
+  height: 27px;
   place-items: center;
   border: 1px solid #c4deca;
   border-radius: 9px;
   background: #e1efe6;
   color: #256345;
+}
+.warehouse-dashboard .wm-stat-icon svg {
+  width: 16px;
+  height: 16px;
 }
 .warehouse-dashboard .wm-stat--success {
   border-color: #75bb92;
@@ -467,6 +499,7 @@ body:has(.warehouse-dashboard) {
   display: grid;
   grid-template-columns: minmax(240px, 260px) minmax(0, 1fr);
   gap: 14px;
+  transition: grid-template-columns 220ms ease;
   min-width: 0;
   min-height: 0;
   width: 100%;
@@ -483,12 +516,12 @@ body:has(.warehouse-dashboard) {
   overflow: hidden;
 }
 .warehouse-dashboard .wm-zone-sidebar {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 16px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  padding: 12px;
+  overflow: hidden;
   scrollbar-color: #97bda2 #e7f2e9;
   scrollbar-width: thin;
 }
@@ -1614,9 +1647,7 @@ body:has(.warehouse-dashboard) {
     grid-template-columns: 256px minmax(0, 1fr);
   }
   .warehouse-dashboard .wm-mobile-tools {
-    display: flex;
-    flex: 0 0 auto;
-    gap: 8px;
+    display: none;
   }
   .warehouse-detail-drawer {
     display: block;
@@ -1647,14 +1678,12 @@ body:has(.warehouse-dashboard) {
     display: block;
   }
   .warehouse-dashboard .wm-stats {
-    flex-basis: 86px;
+    min-height: 0;
   }
   .warehouse-dashboard .wm-stat {
-    height: 86px;
-    padding: 10px 12px;
-  }
-  .warehouse-dashboard .wm-stat small {
-    display: none;
+    min-height: 82px;
+    height: auto;
+    padding: 7px 10px;
   }
   .warehouse-dashboard .wm-v5-period {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1685,17 +1714,30 @@ body:has(.warehouse-dashboard) {
   .warehouse-dashboard .wm-v5-period {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .warehouse-dashboard .wm-booking-period-content { grid-template-columns: minmax(0,1fr); }
-  .warehouse-dashboard .wm-booking-period-content .wm-v5-hero-counter { display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:8px; min-height:40px; }
-  .warehouse-dashboard .wm-booking-period-content .wm-v5-hero-counter strong { font-size:20px; }
+  .warehouse-dashboard .wm-booking-period-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .warehouse-dashboard .wm-booking-period-content .wm-v5-hero-counter {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 40px;
+  }
+  .warehouse-dashboard .wm-booking-period-content .wm-v5-hero-counter strong {
+    font-size: 20px;
+  }
   .warehouse-dashboard .wm-v5-period-note {
     font-size: 10px;
   }
   .warehouse-dashboard .wm-stats {
-    flex: 0 0 85px;
+    flex: 0 0 auto;
     gap: 8px;
   }
-  .warehouse-dashboard .wm-stat { flex-basis: 158px; }
+  .warehouse-dashboard .wm-stat {
+    flex-basis: 158px;
+  }
   .warehouse-dashboard .wm-v5-basket-bar {
     flex-wrap: wrap;
   }
@@ -1756,920 +1798,791 @@ body:has(.warehouse-dashboard) {
   font-weight: 800;
   cursor: pointer;
 }
-.warehouse-dashboard .wm-context-details[open] summary { margin-bottom: 8px; border-bottom: 1px solid #d1e4d7; }
-.warehouse-dashboard .wm-cell-context-details { margin-top: 12px; }
-.warehouse-dashboard .wm-booking-hero.is-collapsed { min-height: 56px; padding-block: 8px; }
-.warehouse-dashboard .wm-v5-period-note { overflow-wrap: anywhere; }
-.customer-warehouse-layout .warehouse-dashboard .wm-dashboard-columns {
-  grid-template-columns: minmax(240px, 260px) minmax(0, 1fr);
-  gap: 14px;
+.warehouse-dashboard .wm-context-details[open] summary {
+  margin-bottom: 8px;
+  border-bottom: 1px solid #d1e4d7;
 }
+.warehouse-dashboard .wm-cell-context-details {
+  margin-top: 12px;
+}
+.warehouse-dashboard .wm-booking-hero.is-collapsed {
+  min-height: 56px;
+  padding-block: 8px;
+}
+.warehouse-dashboard .wm-v5-period-note {
+  overflow-wrap: anywhere;
+}
+/* Warehouse shell uses flex sizing so the map consumes freed space. */
 .customer-warehouse-layout .warehouse-dashboard .wm-map-viewport {
-  height: calc(100dvh - 275px);
-  min-height: 260px;
+  min-height: 0;
+  height: auto;
 }
 .customer-warehouse-layout .warehouse-dashboard .wm-drilldown-content {
-  height: auto;
   flex: 1 1 0;
   min-height: 0;
 }
-@media (max-width: 1120px) {
-  .customer-warehouse-layout .warehouse-dashboard .wm-dashboard-columns {
-    grid-template-columns: minmax(220px, 256px) minmax(0, 1fr);
-  }
-  .customer-warehouse-layout .warehouse-dashboard .wm-map-viewport { height: 58dvh; }
-}
-@media (max-width: 860px) {
-  .customer-warehouse-layout .warehouse-dashboard .wm-dashboard-columns { grid-template-columns: minmax(0, 1fr); }
-}
 @media (max-width: 630px) {
-  .warehouse-dashboard .wm-booking-summary { padding-left: 0; }
-  .warehouse-dashboard .wm-booking-toggle { min-height: 42px; }
-  .customer-warehouse-layout .warehouse-dashboard .wm-map-viewport { height: 58dvh; min-height: 340px; }
-}
-/* =========================================================
-   WAREHOUSE DASHBOARD — raise cards & side panels
-   Dán ở CUỐI warehouse-dashboard.css
-   ========================================================= */
-
-/* Nền tổng: hơi đậm hơn chút để card nổi rõ */
-.warehouse-dashboard {
-  background: linear-gradient(
-    180deg,
-    #dcecdf 0%,
-    #e7f3ea 45%,
-    #deeee2 100%
-  ) !important;
-}
-
-/* Khối panel chung */
-.warehouse-dashboard .wm-panel {
-  background: linear-gradient(180deg, #f7fbf8 0%, #f2f8f4 100%) !important;
-  border: 1px solid #a9ccb5 !important;
-  box-shadow:
-    0 10px 24px rgba(17, 78, 47, 0.1),
-    0 2px 6px rgba(17, 78, 47, 0.05) !important;
-}
-
-/* Zone sidebar nổi rõ hơn */
-.warehouse-dashboard .wm-zone-sidebar {
-  background: linear-gradient(180deg, #f7fbf8 0%, #eef6f1 100%) !important;
-  border: 1px solid #9fc6ad !important;
-  box-shadow:
-    0 14px 30px rgba(18, 73, 46, 0.12),
-    0 3px 10px rgba(18, 73, 46, 0.06) !important;
-  position: relative;
-}
-
-/* viền trên nhẹ để panel tách hẳn khỏi nền */
-.warehouse-dashboard .wm-zone-sidebar::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 5px;
-  border-radius: 19px 19px 0 0;
-  background: linear-gradient(90deg, #197548 0%, #42a36d 100%);
-  opacity: 0.95;
-  pointer-events: none;
-}
-
-/* Header của panel */
-.warehouse-dashboard .wm-zone-sidebar h2,
-.warehouse-dashboard .wm-section-heading h2 {
-  color: #123c28 !important;
-  font-weight: 800 !important;
-}
-
-.warehouse-dashboard .wm-section-heading {
-  background: #f8fcf9 !important;
-  border-bottom: 1px solid #d2e4d8 !important;
-}
-
-/* =========================
-   6 card thống kê
-   ========================= */
-.warehouse-dashboard .wm-stats {
-  gap: 14px !important;
-}
-
-.warehouse-dashboard .wm-stat {
-  background: linear-gradient(180deg, #ffffff 0%, #f1f8f3 100%) !important;
-  border: 1px solid #a7ccb5 !important;
-  border-radius: 18px !important;
-  box-shadow:
-    0 12px 26px rgba(18, 80, 49, 0.12),
-    0 3px 8px rgba(18, 80, 49, 0.06) !important;
-  transform: translateY(0);
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    border-color 0.18s ease !important;
-}
-
-.warehouse-dashboard .wm-stat:hover {
-  transform: translateY(-3px);
-  border-color: #79b893 !important;
-  box-shadow:
-    0 18px 34px rgba(18, 80, 49, 0.16),
-    0 4px 10px rgba(18, 80, 49, 0.08) !important;
-}
-
-.warehouse-dashboard .wm-stat p {
-  color: #557161 !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-.warehouse-dashboard .wm-stat strong {
-  color: #123f2a !important;
-  font-size: clamp(28px, 2vw, 34px) !important;
-  font-weight: 850 !important;
-}
-
-.warehouse-dashboard .wm-stat small {
-  color: #6f8779 !important;
-  font-size: 11px !important;
-}
-
-/* icon trong card */
-.warehouse-dashboard .wm-stat-icon {
-  background: #edf6f0 !important;
-  color: #2f6d4a !important;
-  box-shadow: inset 0 0 0 1px #d4e6db !important;
-}
-
-/* card available nổi bật hơn */
-.warehouse-dashboard .wm-stat--success {
-  background: linear-gradient(180deg, #f8fffa 0%, #e8f6ec 100%) !important;
-  border-color: #86c3a0 !important;
-}
-
-.warehouse-dashboard .wm-stat--success .wm-stat-icon {
-  background: #daf1e2 !important;
-  color: #177848 !important;
-}
-
-.warehouse-dashboard .wm-stat--success strong {
-  color: #167646 !important;
-}
-
-/* blocked / maintenance nhẹ nhưng vẫn rõ */
-.warehouse-dashboard .wm-stat--danger {
-  background: linear-gradient(180deg, #fffefe 0%, #f9f1f2 100%) !important;
-  border-color: #e2c2c8 !important;
-}
-
-.warehouse-dashboard .wm-stat--warning {
-  background: linear-gradient(180deg, #fffef9 0%, #fbf5e6 100%) !important;
-  border-color: #e5d29b !important;
-}
-
-/* =========================
-   search + danh sách zone ở cột trái
-   ========================= */
-.warehouse-dashboard .wm-search {
-  background: #ffffff !important;
-  border: 1px solid #b7d4c1 !important;
-  color: #183d2c !important;
-  box-shadow: inset 0 1px 2px rgba(13, 65, 39, 0.04) !important;
-}
-
-.warehouse-dashboard .wm-search::placeholder {
-  color: #7c9386 !important;
-}
-
-.warehouse-dashboard .wm-zone-list > button {
-  background: linear-gradient(180deg, #ffffff 0%, #f6fbf7 100%) !important;
-  border: 1px solid #c6ddd0 !important;
-  box-shadow: 0 5px 12px rgba(18, 70, 44, 0.06) !important;
-}
-
-.warehouse-dashboard .wm-zone-list > button:hover {
-  background: linear-gradient(180deg, #f7fcf8 0%, #edf7f0 100%) !important;
-  border-color: #8fc2a3 !important;
-  box-shadow: 0 8px 18px rgba(18, 70, 44, 0.1) !important;
-}
-
-.warehouse-dashboard .wm-zone-list > button.is-active,
-.warehouse-dashboard .wm-zone-list > button[aria-pressed="true"] {
-  background: linear-gradient(180deg, #eef8f1 0%, #e2f2e7 100%) !important;
-  border-color: #61a57e !important;
-  box-shadow:
-    inset 4px 0 0 #1c8b57,
-    0 8px 20px rgba(20, 87, 53, 0.12) !important;
-}
-
-.warehouse-dashboard .wm-zone-list strong {
-  color: #153c2a !important;
-}
-
-.warehouse-dashboard .wm-zone-list small,
-.warehouse-dashboard .wm-muted {
-  color: #648170 !important;
-}
-
-/* legend tag ở cột trái */
-.warehouse-dashboard .wm-status-filter {
-  padding: 4px 6px !important;
-  border-radius: 8px !important;
-}
-
-.warehouse-dashboard .wm-status-filter[aria-pressed="true"] {
-  background: #e4f3e9 !important;
-  border-color: #7db895 !important;
-  box-shadow: 0 0 0 1px rgba(28, 139, 87, 0.08) !important;
-}
-
-/* =========================
-   panel giữa + panel thông tin phải
-   ========================= */
-.warehouse-dashboard .wm-center {
-  background: linear-gradient(180deg, #f6fbf7 0%, #eef6f1 100%) !important;
-  border: 1px solid #a9ccb5 !important;
-  border-radius: 19px !important;
-  box-shadow:
-    0 14px 30px rgba(17, 78, 47, 0.1),
-    0 3px 8px rgba(17, 78, 47, 0.05) !important;
-}
-
-.warehouse-dashboard .wm-floorplan-view,
-.warehouse-dashboard .wm-drilldown-content {
-  background: #f2f8f4 !important;
-}
-
-/* map surface cho nổi hơn so với panel giữa */
-.warehouse-dashboard .wm-map-viewport {
-  background-color: #f7fbf8 !important;
-  border: 1px solid #bfd8c8 !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5) !important;
-}
-
-/* Shared detail content */
-.warehouse-dashboard .wm-info-heading strong {
-  color: #153d2b !important;
-}
-
-.warehouse-dashboard .wm-definition > div {
-  border-bottom: 1px solid #d8e6dc !important;
-}
-
-.warehouse-dashboard .wm-definition dt {
-  color: #6f8779 !important;
-}
-
-.warehouse-dashboard .wm-definition dd {
-  color: #1d4732 !important;
-  font-weight: 700 !important;
-}
-
-/* =========================
-   Footer booking dock cũng nổi hơn nhẹ
-   ========================= */
-.warehouse-dashboard .wm-checkout-dock {
-  background: linear-gradient(180deg, #edf7f0 0%, #e3f1e7 100%) !important;
-  border-top: 1px solid #bfd8c8 !important;
-  box-shadow: 0 -4px 12px rgba(17, 78, 47, 0.06) !important;
-}
-
-/* Mobile / tablet vẫn giữ cảm giác nổi */
-@media (max-width: 1199px) {
-  .warehouse-dashboard .wm-zone-sidebar,
-  .warehouse-dashboard .wm-center,
-  .warehouse-dashboard .wm-panel {
-    box-shadow:
-      0 10px 24px rgba(18, 73, 46, 0.1),
-      0 2px 6px rgba(18, 73, 46, 0.05) !important;
+  .warehouse-dashboard .wm-booking-summary {
+    padding-left: 0;
+  }
+  .warehouse-dashboard .wm-booking-toggle {
+    min-height: 42px;
   }
 }
 
-/* ============================================================
-   VAULTSPACE WAREHOUSE — UI ENHANCEMENT V6
-   Cell cards / Detail content / Checkout / Action buttons
-   Dán vào cuối warehouse-dashboard.css hiện tại
-   ============================================================ */
-
-/* ---------- 1. ELEVATED DASHBOARD CARDS ---------- */
-
-.warehouse-dashboard {
-  --wm-action-green: #166c42;
-  --wm-action-green-hover: #0f5634;
-  --wm-action-orange: #b45a09;
-  --wm-action-orange-hover: #944707;
-  --wm-action-ink: #143827;
-  --wm-action-shadow: 0 8px 20px rgba(16, 75, 39, 0.15);
+/* ── Collapsible workspace controls & fully readable statistics ── */
+.warehouse-dashboard .wm-booking-hero.wm-v5-booking-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 9px;
 }
-
-.warehouse-dashboard .wm-stat {
-  background: linear-gradient(150deg, #ffffff, #f0f8f2) !important;
-  border: 1px solid #9fc6ad !important;
-  border-radius: 16px !important;
-  box-shadow:
-    0 10px 25px rgba(18, 69, 40, 0.13),
-    0 2px 6px rgba(18, 69, 40, 0.06) !important;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+.warehouse-dashboard .wm-booking-hero.is-collapsed {
+  min-height: 56px;
+  padding-block: 8px;
 }
-
-.warehouse-dashboard .wm-stat:hover {
-  transform: translateY(-3px);
-  box-shadow:
-    0 16px 30px rgba(18, 69, 40, 0.19),
-    0 3px 8px rgba(18, 69, 40, 0.08) !important;
-}
-
-.warehouse-dashboard .wm-stat p {
-  color: #365a43 !important;
-  font-weight: 750;
-}
-
-.warehouse-dashboard .wm-stat strong {
-  color: #123b26 !important;
-  font-weight: 850;
-}
-
-.warehouse-dashboard .wm-stat small {
-  color: #526d5a !important;
-}
-
-.warehouse-dashboard .wm-stat--success {
-  background: linear-gradient(140deg, #f6fff8, #ddf3e5) !important;
-  border-color: #7eb992 !important;
-}
-
-.warehouse-dashboard .wm-stat--success strong {
-  color: #11673d !important;
-}
-
-/* ---------- 2. PANELS ---------- */
-
-.warehouse-dashboard .wm-panel {
-  border: 1px solid #9fc4aa !important;
-  background: #f8fcf9 !important;
-  border-radius: 17px !important;
-  box-shadow:
-    0 12px 28px rgba(17, 72, 40, 0.13),
-    0 2px 7px rgba(17, 72, 40, 0.055) !important;
-}
-
-.warehouse-dashboard .wm-zone-sidebar {
-  background: linear-gradient(180deg, #f8fcf9 0%, #edf7f0 100%) !important;
-  color: #183e2b !important;
-}
-
-.warehouse-dashboard .wm-info-heading {
-  padding: 14px;
-  border: 1px solid #bad8c2;
-  border-radius: 12px;
-  background: #e8f5ec;
-}
-
-.warehouse-dashboard .wm-info-heading strong {
-  color: #10422a !important;
-  font-size: 17px !important;
-  font-weight: 850;
-}
-
-/* Detail key/value rows */
-
-.warehouse-dashboard .wm-definition {
-  gap: 0 !important;
-}
-
-.warehouse-dashboard .wm-definition > div {
+.warehouse-dashboard .wm-booking-header-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-  margin: 0;
-  padding: 12px 5px;
-  border-bottom: 1px solid #d1e4d7 !important;
-}
-
-.warehouse-dashboard .wm-definition > div:nth-child(even) {
-  background: rgba(231, 245, 235, 0.56);
-}
-
-.warehouse-dashboard .wm-definition dt {
-  color: #526d59 !important;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.warehouse-dashboard .wm-definition dd {
-  color: #123c28 !important;
-  font-size: 12px;
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
-/* ---------- 3. RACK / CELL AREA ---------- */
-
-.warehouse-dashboard .wm-drilldown-content {
-  background: #edf6f0 !important;
-}
-
-.warehouse-dashboard .wm-cell-area > .wm-section-heading {
-  padding: 12px 15px;
-  background: #dcefe3 !important;
-  border: 1px solid #b7d6c1;
-  border-radius: 12px;
-}
-
-.warehouse-dashboard .wm-cell-area .wm-level > h4 {
-  color: #174e31 !important;
-  font-size: 13px;
-  font-weight: 850;
-  border-bottom: 1px solid #bdd7c5;
-  padding-bottom: 9px;
-}
-
-.warehouse-dashboard .wm-cell-row {
-  display: grid !important;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 12px;
-  width: 100%;
-}
-
-.warehouse-dashboard .wm-cell-choice {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
   min-width: 0;
-  width: 100%;
-  min-height: 202px;
-  height: 202px;
-  max-width: none;
-  border-radius: 13px;
-}
-
-/* Cell card — consistent dimensions */
-
-.warehouse-dashboard .wm-cell-choice > button.wm-cell {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  flex: 0 0 126px;
-  width: 100%;
-  max-width: none;
-  min-width: 0;
-  height: 126px;
-  min-height: 126px;
-  max-height: 126px;
-  padding: 11px 8px;
-  gap: 7px;
-  border: 1px solid #7fb995;
-  border-top: 4px solid #237c4b;
-  border-radius: 12px;
-  background: linear-gradient(150deg, #f1fbf4, #dcefe3);
-  color: #17492e;
-  text-align: center;
-  box-shadow:
-    0 9px 18px rgba(23, 82, 49, 0.14),
-    0 2px 5px rgba(23, 82, 49, 0.04);
-  cursor: pointer;
-  overflow: hidden;
-  transition:
-    transform 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.warehouse-dashboard .wm-cell-choice > button.wm-cell:hover {
-  transform: translateY(-3px);
-  border-color: #176a3d;
-  box-shadow:
-    0 15px 27px rgba(23, 82, 49, 0.21),
-    0 3px 8px rgba(23, 82, 49, 0.08);
-}
-
-.warehouse-dashboard .wm-cell-choice > button.wm-cell.is-selected {
-  border-color: #126a3c;
-  outline: 2px solid #126a3c;
-  outline-offset: 1px;
-}
-
-.warehouse-dashboard .wm-cell-code {
-  color: #17492e;
-  font-size: 11px;
-  font-weight: 850;
-  overflow-wrap: anywhere;
-}
-
-/* Cell status palettes */
-
-.warehouse-dashboard .wm-cell-choice .wm-cell.wm-reserved {
-  background: linear-gradient(150deg, #fff7e8, #f8e7c8);
-  border-color: #d7b575;
-  border-top-color: #bf852b;
-}
-
-.warehouse-dashboard .wm-cell-choice .wm-cell.wm-occupied {
-  background: linear-gradient(150deg, #f3f1ff, #e1e1f4);
-  border-color: #b4b7da;
-  border-top-color: #7c7dae;
-}
-
-.warehouse-dashboard .wm-cell-choice .wm-cell.wm-blocked {
-  background: linear-gradient(150deg, #fff5f6, #f5dfe4);
-  border-color: #dea8b4;
-  border-top-color: #b44960;
-}
-
-.warehouse-dashboard .wm-cell-choice .wm-cell.wm-maintenance {
-  background: linear-gradient(150deg, #fff9ed, #f7ebc8);
-  border-color: #ddc787;
-  border-top-color: #a98028;
-}
-
-.warehouse-dashboard .wm-cell-choice .wm-cell.wm-unknown {
-  background: #e8efe9;
-  border-color: #b5c9bd;
-  border-top-color: #809e8a;
-}
-
-.warehouse-dashboard
-  .wm-cell-choice
-  .wm-cell.wm-reserved
-  :is(.wm-cell-code, small) {
-  color: #765118;
-}
-
-.warehouse-dashboard
-  .wm-cell-choice
-  .wm-cell.wm-occupied
-  :is(.wm-cell-code, small) {
-  color: #424972;
-}
-
-.warehouse-dashboard
-  .wm-cell-choice
-  .wm-cell.wm-blocked
-  :is(.wm-cell-code, small) {
-  color: #87293d;
-}
-
-/* ---------- 4. SELECT CELL BUTTON ---------- */
-
-.warehouse-dashboard .wm-cell-choice > button:not(.wm-cell) {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  flex: 0 0 39px;
-  width: 100%;
-  height: 39px;
-  min-height: 39px;
-  max-height: 39px;
-  margin: 0;
-  padding: 7px 10px;
-  border: 1px solid #115c36;
-  border-radius: 10px;
-  background: #176c43;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 850;
-  cursor: pointer;
-  box-shadow: 0 5px 12px rgba(19, 95, 55, 0.2);
-  opacity: 1;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease;
-}
-
-.warehouse-dashboard
-  .wm-cell-choice
-  > button:not(.wm-cell):hover:not(:disabled) {
-  transform: translateY(-2px);
-  background: #105532;
-  color: #ffffff;
-  box-shadow: 0 9px 17px rgba(19, 95, 55, 0.28);
-}
-
-/* Disabled is visibly disabled */
-
-.warehouse-dashboard .wm-cell-choice > button:not(.wm-cell):disabled {
-  background: #e0eae3;
-  color: #557260;
-  border-color: #b7cbbd;
-  box-shadow: none;
-  cursor: not-allowed;
-  opacity: 1;
-}
-
-/* Selected cell */
-
-.warehouse-dashboard .wm-cell-choice.wm-picked {
-  outline: 3px solid #21824e;
-  outline-offset: 3px;
-}
-
-.warehouse-dashboard
-  .wm-cell-choice.wm-picked
-  > button:not(.wm-cell):not(:disabled) {
-  background: #fff1d5;
-  border-color: #c9963d;
-  color: #76501c;
-}
-
-.warehouse-dashboard .wm-booking-reason {
-  display: -webkit-box;
-  flex: 0 0 28px;
-  height: 28px;
-  max-height: 28px;
-  overflow: hidden;
-  color: #496b54;
-  font-size: 10px;
-  line-height: 14px;
-  text-align: center;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-/* ---------- 5. CHECKOUT BAR ---------- */
-
-.warehouse-dashboard .wm-checkout-dock.wm-v5-checkout-dock {
-  display: block;
-  position: relative;
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 14px 17px;
-  border-top: 2px solid #8eb99d;
-  background: linear-gradient(
-    110deg,
-    #ffffff 0%,
-    #edf8f0 55%,
-    #dff0e5 100%
-  ) !important;
-  color: #153c28;
-  box-shadow: 0 -9px 26px rgba(16, 74, 40, 0.16);
-}
-
-.warehouse-dashboard .wm-v5-basket-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 14px;
 }
-
-.warehouse-dashboard .wm-v5-basket-info {
+.warehouse-dashboard .wm-booking-header-actions .wm-booking-summary {
   display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 13px;
+  grid-column: auto;
   min-width: 0;
-  padding-left: 14px;
-  border-left: 4px solid #228952;
-}
-
-.warehouse-dashboard .wm-v5-basket-info strong {
-  color: #113d28 !important;
-  font-size: 15px;
-  font-weight: 850;
-}
-
-.warehouse-dashboard .wm-v5-basket-info span {
-  color: #40664e !important;
-  font-size: 12px;
+  max-width: min(48vw, 600px);
+  padding: 0;
   font-weight: 650;
 }
+.warehouse-dashboard
+  .wm-booking-header-actions
+  .wm-booking-summary
+  > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.warehouse-dashboard .wm-booking-header-actions .wm-booking-summary strong {
+  white-space: nowrap;
+}
+.warehouse-dashboard .wm-booking-toggle {
+  flex: 0 0 auto;
+}
+.warehouse-dashboard .wm-booking-period-content[hidden] {
+  display: none;
+}
 
-.warehouse-dashboard .wm-v5-basket-actions {
+/* Sidebar heading keeps the rail toggle visible at all times. */
+.warehouse-dashboard .wm-sidebar-heading {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-bottom: 12px;
 }
-
-.warehouse-dashboard .wm-v5-basket-actions button {
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid #a0bfaa;
-  border-radius: 11px;
+.warehouse-dashboard .wm-sidebar-heading h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+}
+.warehouse-dashboard .wm-sidebar-toggle,
+.warehouse-dashboard .wm-mobile-sidebar-close {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #a6ceb2;
+  border-radius: 10px;
   background: #ffffff;
-  color: #23543b;
-  font-size: 12px;
-  font-weight: 850;
-  box-shadow: 0 4px 10px rgba(20, 75, 43, 0.09);
+  color: #176b45;
   cursor: pointer;
   transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+.warehouse-dashboard .wm-sidebar-toggle:hover,
+.warehouse-dashboard .wm-mobile-sidebar-close:hover {
+  background: #e2f3e9;
+  box-shadow: 0 4px 11px rgba(18, 69, 40, 0.12);
+}
+.warehouse-dashboard .wm-mobile-sidebar-close {
+  display: none;
+}
+.warehouse-dashboard .wm-sidebar-content {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.warehouse-dashboard .wm-sidebar-backdrop {
+  display: none;
 }
 
-/* The final checkout action becomes orange */
+@media (min-width: 861px) {
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-dashboard-columns {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-zone-sidebar {
+    padding: 9px 5px;
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-sidebar-heading {
+    flex-direction: column;
+    justify-content: center;
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-sidebar-heading h2 {
+    justify-content: center;
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-sidebar-heading h2 span {
+    display: none;
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-sidebar-content {
+    display: none;
+  }
+}
 
+/* Elevated cards, legible numbers and stable map sizing. */
+.warehouse-dashboard .wm-stat:hover {
+  border-color: #78b48b;
+  box-shadow: 0 10px 22px rgba(18, 69, 40, 0.16);
+}
+.warehouse-dashboard .wm-stat--success {
+  background: linear-gradient(145deg, #f6fff8, #dcf2e3);
+}
+.warehouse-dashboard .wm-rack .wm-status {
+  align-self: center;
+  width: fit-content;
+  margin-inline: auto;
+}
+.warehouse-dashboard .wm-center,
+.warehouse-dashboard .wm-panel {
+  box-shadow: 0 8px 24px rgba(17, 78, 47, 0.11);
+}
+.warehouse-dashboard .wm-cell-choice > button.wm-cell {
+  border-top: 4px solid #237c4b;
+  box-shadow: 0 7px 16px rgba(23, 82, 49, 0.13);
+}
+.warehouse-dashboard .wm-cell-choice .wm-cell.wm-reserved {
+  border-top-color: #bf852b;
+}
+.warehouse-dashboard .wm-cell-choice .wm-cell.wm-occupied {
+  border-top-color: #7c7dae;
+}
+.warehouse-dashboard .wm-cell-choice .wm-cell.wm-blocked {
+  border-top-color: #b44960;
+}
+.warehouse-dashboard .wm-cell-choice .wm-cell.wm-maintenance {
+  border-top-color: #a98028;
+}
+.warehouse-dashboard .wm-checkout-dock.wm-v5-checkout-dock {
+  background: linear-gradient(110deg, #ffffff, #e5f2e9);
+  box-shadow: 0 -6px 20px rgba(16, 74, 40, 0.1);
+}
 .warehouse-dashboard .wm-v5-basket-actions button:last-child:not(:disabled) {
-  min-width: 180px;
-  border-color: var(--wm-action-orange);
-  background: linear-gradient(135deg, #c2670e, #a45108);
-  color: #ffffff;
-  box-shadow: 0 8px 19px rgba(145, 70, 5, 0.24);
+  border-color: #a45108;
+  background: #b45a09;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(145, 70, 5, 0.18);
 }
-
 .warehouse-dashboard
   .wm-v5-basket-actions
   button:last-child:hover:not(:disabled) {
-  transform: translateY(-3px);
   background: #944707;
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(145, 70, 5, 0.3);
 }
 
-.warehouse-dashboard .wm-v5-basket-actions button:last-child:disabled {
-  border-color: #aec2b4;
-  background: #e1ebe4;
-  color: #536c5c;
-  box-shadow: none;
-  cursor: not-allowed;
-  opacity: 1;
-}
-
-/* Clear selection action */
-
-.warehouse-dashboard
-  .wm-v5-basket-actions
-  button:first-child:not(:last-child):hover:not(:disabled) {
-  background: #fff2f2;
-  border-color: #bc7379;
-  color: #963749;
-  transform: translateY(-2px);
-}
-
-/* Basket details */
-
-.warehouse-dashboard .wm-v5-basket-details {
-  margin-top: 10px;
-  padding: 9px 12px;
-  border: 1px solid #c2d9c9;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.75);
-}
-
-.warehouse-dashboard .wm-v5-basket-details summary {
-  color: #125e38;
-  font-weight: 850;
-  cursor: pointer;
-}
-
-/* ---------- 6. IMPORTANT SECONDARY BUTTONS ---------- */
-
-.warehouse-dashboard .wm-header-actions .wm-button,
-.warehouse-dashboard .wm-section-heading .wm-button,
-.warehouse-dashboard .wm-rack-picker .wm-button {
-  border: 1px solid #8db89a !important;
-  border-radius: 10px !important;
-  background: #ffffff !important;
-  color: #175a39 !important;
-  font-weight: 800 !important;
-  box-shadow: 0 3px 9px rgba(19, 78, 46, 0.1);
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    background 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.warehouse-dashboard .wm-header-actions .wm-button:hover:not(:disabled),
-.warehouse-dashboard .wm-section-heading .wm-button:hover:not(:disabled),
-.warehouse-dashboard .wm-rack-picker .wm-button:hover:not(:disabled) {
-  background: #e4f3e9 !important;
-  border-color: #3a9660 !important;
-  color: #105c36 !important;
-  transform: translateY(-2px);
-  box-shadow: 0 7px 14px rgba(19, 78, 46, 0.16);
-}
-
-/* Zone buttons */
-
-.warehouse-dashboard .wm-zone-list > button {
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.warehouse-dashboard .wm-zone-list > button:hover {
-  transform: translateY(-2px);
-  border-color: #6eaf83 !important;
-  box-shadow: 0 8px 18px rgba(17, 75, 40, 0.16) !important;
-}
-
-.warehouse-dashboard .wm-zone-list > button.is-active {
-  border-color: #278550 !important;
-  background: #e2f2e7 !important;
-  box-shadow:
-    inset 4px 0 0 #197747,
-    0 7px 17px rgba(17, 75, 40, 0.14) !important;
-}
-
-/* Rack buttons */
-
-.warehouse-dashboard .wm-rack {
-  cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.warehouse-dashboard .wm-rack:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 23px rgba(20, 81, 45, 0.18) !important;
-}
-
-/* ---------- 7. FOCUS / DISABLED / RESPONSIVE ---------- */
-
-.warehouse-dashboard button:focus-visible,
-.warehouse-dashboard a:focus-visible,
-.warehouse-dashboard input:focus-visible,
-.warehouse-dashboard select:focus-visible,
-.wm-v5-review-content button:focus-visible {
-  outline: 3px solid #d58a23 !important;
-  outline-offset: 3px;
-}
-
-.warehouse-dashboard button:disabled {
-  cursor: not-allowed;
-}
-
-@media (max-width: 1250px) {
-  .warehouse-dashboard .wm-cell-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+@media (max-width: 860px) {
+  .warehouse-dashboard .wm-mobile-tools {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
   }
-}
-
-@media (max-width: 700px) {
-  .warehouse-dashboard .wm-cell-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .warehouse-dashboard .wm-zone-sidebar.wm-sidebar-open {
+    display: flex;
+    flex-direction: column;
   }
-
-  .warehouse-dashboard .wm-v5-basket-bar {
-    flex-wrap: wrap;
+  .warehouse-dashboard .wm-zone-sidebar {
+    width: min(330px, calc(100% - 28px));
+    padding: 12px;
   }
-
-  .warehouse-dashboard .wm-v5-basket-actions {
+  .warehouse-dashboard .wm-sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
     width: 100%;
+    border: 0;
+    background: rgba(11, 38, 24, 0.28);
+    cursor: pointer;
   }
-
-  .warehouse-dashboard .wm-v5-basket-actions button {
-    flex: 1;
-    min-width: 0;
+  .warehouse-dashboard .wm-zone-sidebar.wm-sidebar-open .wm-sidebar-content {
+    display: block;
+  }
+  .warehouse-dashboard .wm-sidebar-toggle {
+    display: none;
+  }
+  .warehouse-dashboard .wm-mobile-sidebar-close {
+    display: grid;
+  }
+  .warehouse-dashboard .wm-booking-header-actions .wm-booking-summary {
+    max-width: 40vw;
   }
 }
-
-@media (max-width: 420px) {
-  .warehouse-dashboard .wm-cell-row {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 630px) {
+  .warehouse-dashboard .wm-booking-hero.wm-v5-booking-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .warehouse-dashboard .wm-booking-header-actions .wm-booking-summary {
+    display: none;
+  }
+  .warehouse-dashboard .wm-booking-period-content {
+    grid-column: 1 / -1;
+  }
+  .warehouse-dashboard .wm-v5-booking-intro h2 {
+    font-size: 13px;
+  }
+  .warehouse-dashboard .wm-stat {
+    min-height: 82px;
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .warehouse-dashboard .wm-stat,
-  .warehouse-dashboard .wm-cell,
-  .warehouse-dashboard button,
-  .warehouse-dashboard .wm-rack {
-    transition: none !important;
-  }
-
-  .warehouse-dashboard .wm-stat:hover,
-  .warehouse-dashboard .wm-cell:hover,
-  .warehouse-dashboard button:hover,
-  .warehouse-dashboard .wm-rack:hover {
-    transform: none !important;
+  .warehouse-dashboard .wm-dashboard-columns,
+  .warehouse-dashboard .wm-sidebar-toggle,
+  .warehouse-dashboard .wm-mobile-sidebar-close {
+    transition: none;
   }
 }
 
-/* FIX: Căn giữa trạng thái AVAILABLE trong Rack */
+/* =============================================================
+   VAULTSPACE V8 — CONTRAST / PALETTE GUARD
+   Deliberately scoped to the map's statistics and zone sidebar.
+   Colors are pinned here because customer/global theme styles may
+   set dark surfaces with !important, leaving dark green labels unreadable.
+   Do not change sizing, click handlers, or availability state here.
+   ============================================================= */
 
-.warehouse-dashboard .wm-rack {
+.warehouse-dashboard.warehouse-dashboard {
+  background: linear-gradient(
+    160deg,
+    #dceee2 0%,
+    #e8f5eb 55%,
+    #d7eadd 100%
+  ) !important;
+  color: #173e2a !important;
+}
+
+/* Statistics: bright, elevated surfaces with legible labels and values. */
+.warehouse-dashboard.warehouse-dashboard .wm-stats {
+  background: transparent !important;
+  color: #173e2a !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat {
+  background: linear-gradient(150deg, #ffffff 0%, #f0f8f3 100%) !important;
+  border: 1px solid #a8cfb6 !important;
+  box-shadow: 0 7px 18px rgba(23, 75, 45, 0.13) !important;
+  color: #153d2b !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--success {
+  background: linear-gradient(145deg, #f3fff6 0%, #ddf2e4 100%) !important;
+  border-color: #74bb91 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--danger {
+  background: linear-gradient(145deg, #fffdfd 0%, #fbf0f1 100%) !important;
+  border-color: #e3c1c9 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--warning {
+  background: linear-gradient(145deg, #fffefb 0%, #fcf3df 100%) !important;
+  border-color: #e4cf9e !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat > p {
+  color: #325843 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat > strong {
+  color: #123d29 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--success > strong {
+  color: #11693f !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat > small {
+  color: #486a55 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat .wm-stat-unknown {
+  color: #5c7161 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat-icon {
+  background: #e6f3e9 !important;
+  border-color: #c2dfca !important;
+  color: #236c48 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--danger .wm-stat-icon {
+  background: #fcecef !important;
+  border-color: #e6bbc5 !important;
+  color: #a33a4f !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-stat--warning .wm-stat-icon {
+  background: #fff1d5 !important;
+  border-color: #e6d09b !important;
+  color: #865e20 !important;
+}
+
+/* Left sidebar: light surface, readable text, distinguishable active Zone. */
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar.wm-panel {
+  background: linear-gradient(170deg, #f9fdf9 0%, #eef7f0 100%) !important;
+  border-color: #9ec5ab !important;
+  color: #173e2a !important;
+  box-shadow: 0 10px 24px rgba(16, 73, 40, 0.12) !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-sidebar-heading,
+.warehouse-dashboard.warehouse-dashboard .wm-sidebar-heading h2,
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-legend h3 {
+  color: #133d28 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-muted,
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-legend > p {
+  color: #4d6a56 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  .wm-zone-list
+  > button {
+  background: #ffffff !important;
+  border-color: #c5dfcc !important;
+  color: #143d29 !important;
+}
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  .wm-zone-list
+  > button:hover {
+  background: #e9f7ee !important;
+  border-color: #75b78c !important;
+}
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  .wm-zone-list
+  > button.is-active,
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  .wm-zone-list
+  > button[aria-pressed="true"] {
+  background: #def1e5 !important;
+  border-color: #368957 !important;
+  box-shadow:
+    inset 4px 0 0 #1a7e49,
+    0 5px 13px rgba(27, 96, 55, 0.12) !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-zone-list strong {
+  color: #16442e !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-zone-list small {
+  color: #4f6e57 !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar input.wm-search {
+  background: #ffffff !important;
+  color: #173e2a !important;
+  border-color: #abceba !important;
+}
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  input.wm-search::placeholder {
+  color: #637e6d !important;
+  opacity: 1 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-sidebar-toggle,
+.warehouse-dashboard.warehouse-dashboard
+  .wm-zone-sidebar
+  .wm-mobile-sidebar-close {
+  background: #ffffff !important;
+  border-color: #a4cbb2 !important;
+  color: #176b45 !important;
+}
+.warehouse-dashboard.warehouse-dashboard .wm-zone-sidebar .wm-legend {
+  border-top-color: #c1d9c7 !important;
+}
+
+/* =============================================================
+   V9 — MAP-FIRST / SYMMETRIC COLLAPSIBLE SIDE PANELS
+   3 columns: Zone | Map | Rental period.
+   Collapse either side independently. Booking form stays mounted.
+   ============================================================= */
+.warehouse-dashboard {
+  --wm-side-column: clamp(250px, 18vw, 292px);
+  --wm-zone-column: var(--wm-side-column);
+  --wm-rental-column: var(--wm-side-column);
+}
+
+/* These classes are on the root, not inherited from the body. */
+.warehouse-dashboard.wm-sidebar-collapsed {
+  --wm-zone-column: 56px;
+}
+.warehouse-dashboard.wm-booking-collapsed {
+  --wm-rental-column: 56px;
+}
+
+.warehouse-dashboard .wm-dashboard-columns {
+  display: grid;
+  grid-template-columns: var(--wm-zone-column) minmax(0, 1fr) var(
+      --wm-rental-column
+    );
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  width: 100%;
+  overflow: hidden;
+  transition: grid-template-columns 220ms ease;
+}
+
+.warehouse-dashboard .wm-zone-sidebar,
+.warehouse-dashboard .wm-center,
+.warehouse-dashboard .wm-booking-sidebar {
+  min-width: 0;
+  min-height: 0;
+}
+
+.warehouse-dashboard .wm-booking-sidebar.wm-panel {
   display: flex;
   flex-direction: column;
-  align-items: center !important;
-  justify-content: center;
-  text-align: center;
-  gap: 8px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #a5ccb2;
+  background: linear-gradient(170deg, #f9fdf9 0%, #eaf5ed 100%);
+  color: #173e2a;
+  box-shadow: 0 9px 23px rgba(19, 68, 39, 0.12);
 }
 
-.warehouse-dashboard .wm-rack .wm-status {
-  align-self: center !important;
-  display: inline-flex;
+.warehouse-dashboard .wm-booking-sidebar-heading {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 auto !important;
-  text-align: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px 11px;
+  border-bottom: 1px solid #bdd9c5;
+  background: #deefe3;
+}
+.warehouse-dashboard .wm-booking-side-icon {
+  display: grid;
+  flex: 0 0 35px;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  border: 1px solid #a6ccb1;
+  border-radius: 10px;
+  background: #f5fcf7;
+  color: #176b45;
+}
+.warehouse-dashboard .wm-booking-side-heading-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.warehouse-dashboard .wm-booking-side-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #246543;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+.warehouse-dashboard .wm-booking-side-heading-text h2 {
+  margin: 0;
+  color: #123c28;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.4;
+}
+.warehouse-dashboard .wm-booking-side-toggle,
+.warehouse-dashboard .wm-booking-mobile-close {
+  display: grid;
+  flex: 0 0 35px;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #92bfa3;
+  border-radius: 9px;
+  background: #fff;
+  color: #17633e;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease;
+}
+.warehouse-dashboard .wm-booking-side-toggle:hover,
+.warehouse-dashboard .wm-booking-mobile-close:hover {
+  background: #e4f3e9;
+  box-shadow: 0 4px 10px rgba(16, 73, 40, 0.13);
+}
+.warehouse-dashboard .wm-booking-mobile-close {
+  display: none;
+}
+.warehouse-dashboard .wm-booking-sidebar-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 15px 13px 18px;
+}
+.warehouse-dashboard .wm-booking-sidebar-content[hidden] {
+  display: none;
+}
+.warehouse-dashboard .wm-booking-side-help {
+  margin: 0 0 14px;
+  color: #4d7059;
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* Vertical fields in the 260–292px-wide side column. */
+.warehouse-dashboard .wm-booking-sidebar .wm-v5-period,
+.warehouse-dashboard
+  .wm-booking-sidebar
+  .wm-booking-period-content
+  .wm-v5-period {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+.warehouse-dashboard .wm-booking-sidebar .wm-v5-period-field {
+  gap: 6px;
+  min-width: 0;
+  color: #244b34;
+}
+.warehouse-dashboard
+  .wm-booking-sidebar
+  .wm-v5-period-field
+  :is(input, select, output) {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  background: #fff;
+  color: #143b26;
+  border: 1px solid #a4c7ae;
+}
+.warehouse-dashboard .wm-booking-sidebar .wm-v5-period-note {
+  grid-column: 1 / -1;
+  color: #43694f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.warehouse-dashboard .wm-booking-side-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid #b8d8c1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 5px 13px rgba(20, 75, 43, 0.07);
+}
+.warehouse-dashboard .wm-booking-side-summary > span,
+.warehouse-dashboard .wm-booking-side-count span {
+  color: #55705e;
+  font-size: 11px;
+  font-weight: 700;
+}
+.warehouse-dashboard .wm-booking-side-summary > strong {
+  color: #153d29;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.warehouse-dashboard .wm-booking-side-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 9px;
+  border-top: 1px solid #d4e6d9;
+}
+.warehouse-dashboard .wm-booking-side-count strong {
+  color: #126c41;
+  font-size: 22px;
+  line-height: 1.15;
+}
+.warehouse-dashboard .wm-booking-side-ready {
+  color: #19764a;
+  font-weight: 800;
+}
+.warehouse-dashboard .wm-booking-side-error {
+  color: #a63d24;
+  font-weight: 750;
+}
+.warehouse-dashboard .wm-booking-side-footer {
+  margin-top: 15px;
+  padding: 11px 12px;
+  border: 1px solid #c8e0cf;
+  border-radius: 11px;
+  background: #e6f3e9;
+  color: #3c6048;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.warehouse-dashboard .wm-booking-side-footer strong {
+  color: #185a3c;
+}
+.warehouse-dashboard .wm-booking-side-rail,
+.warehouse-dashboard .wm-booking-backdrop {
+  display: none;
 }
 
-.warehouse-dashboard .wm-rack strong,
-.warehouse-dashboard .wm-rack small,
-.warehouse-dashboard .wm-rack-symbol {
-  align-self: center !important;
-  text-align: center;
-  margin-left: auto;
-  margin-right: auto;
+/* Collapsed right rail: 56px, no hidden forms occupying map width. */
+@media (min-width: 1051px) {
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-sidebar-heading {
+    flex-direction: column;
+    justify-content: center;
+    padding: 9px 4px;
+    gap: 10px;
+  }
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-side-icon,
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-side-heading-text {
+    display: none;
+  }
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-side-rail {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    padding: 16px 5px;
+    color: #236344;
+  }
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-side-rail > span {
+    writing-mode: vertical-rl;
+    font-size: 12px;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-side-rail strong {
+    writing-mode: vertical-rl;
+    font-size: 12px;
+    color: #137044;
+  }
+  .warehouse-dashboard.wm-booking-collapsed .wm-booking-sidebar-content {
+    display: none;
+  }
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-dashboard-columns,
+  .warehouse-dashboard.wm-booking-collapsed .wm-dashboard-columns,
+  .warehouse-dashboard.wm-sidebar-collapsed.wm-booking-collapsed
+    .wm-dashboard-columns {
+    grid-template-columns: var(--wm-zone-column) minmax(0, 1fr) var(
+        --wm-rental-column
+      );
+  }
+}
+
+/* A full map for narrower viewports; independent slide-in panels. */
+@media (max-width: 1050px) {
+  .warehouse-dashboard .wm-dashboard-columns,
+  .warehouse-dashboard.wm-sidebar-collapsed .wm-dashboard-columns,
+  .warehouse-dashboard.wm-booking-collapsed .wm-dashboard-columns {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .warehouse-dashboard .wm-mobile-tools {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+  .warehouse-dashboard .wm-zone-sidebar,
+  .warehouse-dashboard .wm-booking-sidebar.wm-panel {
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(350px, calc(100% - 25px));
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 12px 34px rgba(12, 46, 27, 0.23);
+  }
+  .warehouse-dashboard .wm-zone-sidebar {
+    left: 0;
+    padding: 12px;
+  }
+  .warehouse-dashboard .wm-zone-sidebar.wm-sidebar-open {
+    display: flex;
+    flex-direction: column;
+  }
+  .warehouse-dashboard .wm-booking-sidebar.wm-panel {
+    right: 0;
+    left: auto;
+  }
+  .warehouse-dashboard .wm-booking-sidebar.wm-booking-mobile-open {
+    display: flex;
+    flex-direction: column;
+  }
+  .warehouse-dashboard .wm-booking-side-toggle {
+    display: none;
+  }
+  .warehouse-dashboard .wm-booking-mobile-close,
+  .warehouse-dashboard .wm-mobile-sidebar-close {
+    display: grid;
+  }
+  .warehouse-dashboard .wm-sidebar-toggle {
+    display: none;
+  }
+  .warehouse-dashboard .wm-booking-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    padding: 0;
+    border: 0;
+    background: rgba(10, 37, 25, 0.3);
+    cursor: pointer;
+  }
+  .warehouse-dashboard .wm-zone-sidebar.wm-sidebar-open {
+    z-index: 31;
+  }
+  .warehouse-dashboard .wm-booking-sidebar.wm-booking-mobile-open {
+    z-index: 31;
+  }
+  .warehouse-dashboard .wm-booking-sidebar .wm-booking-sidebar-content[hidden] {
+    display: none;
+  }
+}
+@media (max-width: 630px) {
+  .warehouse-dashboard .wm-mobile-tools {
+    flex-wrap: wrap;
+  }
+  .warehouse-dashboard .wm-mobile-tools > button {
+    flex: 1 1 auto;
+  }
+  .warehouse-dashboard .wm-booking-sidebar .wm-v5-period {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .warehouse-dashboard .wm-booking-sidebar-content {
+    padding: 12px 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .warehouse-dashboard .wm-dashboard-columns,
+  .warehouse-dashboard .wm-booking-side-toggle {
+    transition: none;
+  }
 }

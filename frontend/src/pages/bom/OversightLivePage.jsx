@@ -4,12 +4,12 @@ import {
   Screen, Panel, Table, Status, Field, Input, Select, Details, Button, Meter,
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservations, loadFacilityUnits, loadWarehouseStructure,
 } from "@/lib/bomApiData";
-import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES } from "@/lib/bomMappers";
+import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES, serviceLabel } from "@/lib/bomMappers";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 // Cross-facility oversight rebuilt on live reads.
@@ -41,8 +41,7 @@ export default function OversightLivePage({
   return (
     <Screen
       title="Cross-facility oversight"
-      description="Read-only cross-facility visibility built from the live facility, warehouse-map, storage-unit, managed-inventory and reservation APIs."
-      notice={LIVE_NOTICE}
+      description="Read-only cross-facility visibility across facilities, warehouses, storage units, managed inventory and reservations."
       action={<Button asChild variant="outline"><Link to={managePath}>Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
@@ -53,10 +52,10 @@ export default function OversightLivePage({
         return (
           <>
             <Kpis items={[
-              ["Facilities", facilities.length, "Backend facility collection"],
+              ["Facilities", facilities.length, "Across all facilities"],
               ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "SELF_STORAGE service model"],
-              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "MANAGED_INVENTORY service model"],
+              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
+              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
             ]} />
 
             <Panel title="Facility directory" subtitle={`${rows.length} of ${facilities.length} facilities`}>
@@ -70,7 +69,7 @@ export default function OversightLivePage({
                 </Field>
                 <Field label="Service model">
                   <Select label="Service model filter" value={service} onChange={setService}
-                    options={[["", "All service models"], ...BOM_SERVICE_TYPES]} />
+                    options={[["", "All service models"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
                 </Field>
               </div>
               <Table
@@ -88,7 +87,7 @@ export default function OversightLivePage({
               />
             </Panel>
 
-            <Panel title="Facility scope" subtitle="Pick one facility to load its live warehouse structure, storage units, managed inventory and reservations.">
+            <Panel title="Facility scope" subtitle="Pick one facility to load its warehouse structure, storage units, managed inventory and reservations.">
               <div className="manager-filters">
                 <Field label="Facility">
                   <Select
@@ -101,7 +100,7 @@ export default function OversightLivePage({
               </div>
               {!facilityId && (
                 <p className="text-sm text-slate-500">
-                  No facility selected. The backend has no cross-facility aggregate endpoint, so scoped reads are issued per facility on demand.
+                  Select a facility to load its operational data.
                 </p>
               )}
             </Panel>
@@ -135,7 +134,7 @@ function FacilityScope({ facilityId, facilities, data }) {
         ["Rated capacity", kg(ratedKg), `${kg(allocatableKg)} allocatable across cells`],
       ]} />
 
-      <Panel title="Warehouse structure" subtitle="Live warehouse-map read model (zones -> aisles -> racks -> cells).">
+      <Panel title="Warehouse structure" subtitle="Zones -> aisles -> racks -> cells.">
         {racks.length > 0 && <Meter label="Allocatable cell capacity" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
         <p className="bom-warning mt-4">
           Used weight reads 0 until Staff confirm an inbound for an item, because the rack total is the sum of its cell counters.
@@ -195,7 +194,7 @@ function FacilityScope({ facilityId, facilities, data }) {
               { key: "code", label: "Item code" },
               { key: "name", label: "Name" },
               { key: "category", label: "Category" },
-              { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit}` },
+                { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
               { key: "totalVolumeM3", label: "Volume", render: (r) => m3(r.totalVolumeM3) },
               { key: "totalWeightKg", label: "Weight", render: (r) => kg(r.totalWeightKg) },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
@@ -214,7 +213,7 @@ function FacilityScope({ facilityId, facilities, data }) {
             columns={[
               { key: "code", label: "Reservation" },
               { key: "customer", label: "Customer", render: (r) => r.customerName },
-              { key: "service", label: "Service", render: (r) => String(r.service || "").replaceAll("_", " ") },
+                  { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
               { key: "resource", label: "Unit / capacity", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
               { key: "period", label: "Period", render: (r) => `${r.startDate} → ${r.endDate}` },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },

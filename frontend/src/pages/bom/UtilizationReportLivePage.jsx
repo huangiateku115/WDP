@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, Field, Select, Details, Button, Meter,
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
@@ -48,22 +48,21 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
   return (
     <Screen
       title="Utilization report"
-      description="Current private-unit occupancy and volume-based physical/allocation utilization from the confirmed warehouse, storage-unit, managed-inventory and capacity APIs."
-      notice={LIVE_NOTICE}
+      description="Private-unit occupancy and volume-based physical/allocation utilization per facility."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-            ["Facilities", facilities.length, "Backend facility collection"],
+              ["Facilities", facilities.length, "Across all facilities"],
             ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-            ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "SELF_STORAGE service model"],
-            ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "MANAGED_INVENTORY service model"],
+              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
+              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
           ]} />
 
           <Panel
             title="Report scope"
-            subtitle="Utilization is a current stock snapshot. The backend exposes no cross-facility aggregate, so capacity is loaded for the facility you select."
+            subtitle="Utilization shows the current stock snapshot for the selected facility."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -190,7 +189,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
           </>
         ) : (
           <p className="bom-warning">
-            The capacity API answers 404 unless the facility is ACTIVE, offers MANAGED_INVENTORY and has a capacity configuration row.
+            Capacity is only available for an ACTIVE Managed Inventory facility with a saved capacity configuration.
             Registered item volume is still reported below.
           </p>
         )}
@@ -231,7 +230,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
           ["Rack envelope volume", m3(envelopeM3)],
         ]} />
         <p className="bom-warning mt-5">
-          Rack envelope volume is an approximate physical denominator (width × depth × height per rack). Used volume stays 0 until an inbound is confirmed on a cell.
+          Rack envelope volume is an approximate physical denominator (width × depth × height per rack). Used volume stays 0 until goods are received into a cell.
         </p>
         <div className="mt-5">
           <Table
