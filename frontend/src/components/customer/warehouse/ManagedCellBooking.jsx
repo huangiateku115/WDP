@@ -12,6 +12,7 @@ import warehouseMapApi from '@/api/warehouseMapApi';
 
 import { customerProfileApi } from '@/api/customerRentalApi';
 import { termsApi } from '@/api/termsApi';
+import { reservationAmount, reservationDateOnly } from '@/lib/customerReservationDisplay';
 
 import { minimumBookingStartDate, bookingStartDateError, readBookingPeriod, selectedPayload, cellBookingReason, cellVolume, volumeText, verifiedCellQuote, matchesCellReservation } from '@/lib/managedCellBooking';
 
@@ -35,6 +36,21 @@ import { useBackend, record, rows, LoadState, Message, Link, ManagedFinancialSum
 // these functions. Keep the idempotency key stable until a confirmed success.
 const MANAGED_BOOKING_KEY_PREFIX = "vaultspace:managed-v2:create:v1:";
 const managedBookingKeyCache = new Map();
+
+function managedDate(value) {
+  if (typeof value !== 'string') return 'Chưa xác định';
+  const date = value.slice(0, 10);
+  return reservationDateOnly(date) || 'Chưa xác định';
+}
+
+function managedMoney(value, currency) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Chưa có thông tin';
+  return typeof currency === 'string' ? reservationAmount(value, currency) : 'Chưa xác định tiền tệ';
+}
+
+function managedTermUnit(value) {
+  return ({ DAY: 'ngày', MONTH: 'tháng', YEAR: 'năm' })[value] || 'chưa xác định';
+}
 
 function canonicalBookingValue(value) {
   if (Array.isArray(value)) return value.map(canonicalBookingValue);
@@ -294,7 +310,7 @@ export const clearMapAvailability = () => window.dispatchEvent(new Event('vaults
  */
 export function BookingPeriodFields({ booking: b }) {
   const interval = b.period.range;
-  const endDate = interval?.endDate?.slice(0, 10) || "";
+  const endDate = interval?.endDate ? managedDate(interval.endDate) : "";
 
   return (
     <div className="wm-v5-period" aria-label="Thiết lập kỳ thuê">
@@ -395,8 +411,8 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
       onClose={close}
     >
       <div className="wm-v5-review-content">
-        <p><strong>{facilityName || facilityId}</strong> · {b.period.term.value} {b.period.term.unit}</p>
-        <p className="text-sm">{b.period.range?.startDate} → {b.period.range?.endDate}</p>
+        <p><strong>{facilityName || facilityId}</strong> · {b.period.term.value} {managedTermUnit(b.period.term.unit)}</p>
+        <p className="text-sm">{managedDate(b.period.range?.startDate)} → {managedDate(b.period.range?.endDate)}</p>
         <SelectedList selection={b.selection} />
         <p>Tổng thể tích: {b.payload ? volumeText(b.payload.allocatedCapacityM3) : "Đang kiểm tra tính hợp lệ"}</p>
         <LoadState resource={b.profile} />
@@ -419,11 +435,15 @@ function BookingReview({ booking: b, facilityId, facilityName }) {
                 ["Phiên bản giá", b.review.pricing.version],
               ].map(([label, value]) => (
                 <div key={label} className="min-w-0 break-words">
-                  <dt>{label}</dt><dd className="font-semibold">{value ?? "Chưa có dữ liệu"}</dd>
+                  <dt>{label}</dt><dd className="font-semibold">{label === 'Tiền tệ'
+                    ? value === 'VND' ? 'Đồng Việt Nam (VND)' : value ?? 'Chưa có dữ liệu'
+                    : ['Đơn giá / m³', 'Tiền thuê dự kiến', 'Thanh toán 100% tiền thuê', 'Thuế'].includes(label)
+                      ? managedMoney(value, b.review.pricing.currency)
+                      : value ?? "Chưa có dữ liệu"}</dd>
                 </div>
               ))}
             </dl>
-            {b.review.bookingFlowVersion === 2 && <ManagedFinancialSummary quote={b.review} />}
+            {b.review.bookingFlowVersion === 2 && <ManagedFinancialSummary quote={b.review} localizeCurrency />}
             <label className="flex cursor-pointer items-start gap-3 text-sm">
               <Checkbox
                 aria-label="Xác nhận đã xem kỳ thuê, các ô và chi phí"

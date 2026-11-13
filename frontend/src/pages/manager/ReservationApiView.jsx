@@ -44,22 +44,21 @@ function ReservationApiContent({ workspace }) {
 
             return apiRows(response).map(reservationRecord);
         },
-        [id, managed, facilityId]
+        [id, managed, facilityId, accessToken]
     );
 
     const resource = useFacilityResource(
         load,
         reader &&
         hasFacility &&
-        valid &&
-        (!managed || manager),
+        valid,
         { refreshOnFocus: !id }
     );
     const row = id ? resource.data : null, scoped = !!row && row.facility === facilityId;
     return <Screen title={id ? "Chi tiết đơn thuê" : "Đơn đặt thuê"} code="P013" notice={row?.bookingFlowVersion === 3 ? "Hàng hóa phiên bản 3 · Kiểm tra bản chốt báo giá ô, hoàn tất chữ ký và ghi nhận bàn giao quyền truy cập. Nhập hàng thực tế là bước riêng." : "Theo dõi hợp đồng, thanh toán và bàn giao theo trạng thái hiện tại của hệ thống."} action={<Button variant="outline" disabled={resource.loading} onClick={resource.reload}>Tải lại</Button>}>
         {!reader ? <Panel title="Không có quyền truy cập"><p role="alert">Chỉ nhân viên và quản lý cơ sở có quyền xem đơn thuê. Đơn hàng hóa được giới hạn theo cơ sở được phân công.</p></Panel> : !hasFacility ? <Panel title="Chưa được phân công cơ sở"><p role="alert">Tài khoản cần được phân công cơ sở để xem đơn thuê.</p></Panel> : !valid ? <Panel title="Mã định danh đơn thuê không hợp lệ"><p role="alert">Nhập mã định danh đơn thuê hợp lệ thay cho mã trình diễn.</p></Panel> : <>
-            {!id && <Panel title="Loại dịch vụ"><Select label="Loại dịch vụ thuê" value={managed ? 'managed' : 'self'} onChange={value => nav(`${base}/reservations${value === 'managed' ? '?service=managed' : ''}`)} options={manager ? [['self', "Thuê kho riêng"], ['managed', "Lưu trữ hàng hóa"]] : [['self', "Thuê kho riêng"]]} /></Panel>}
-            {managed && !manager && <Panel title="Chưa có quyền xem chi tiết"><p>Nhân viên xem giám sát hàng hóa tại mục Lưu trữ hàng hóa. Quyền đọc đơn hàng hóa và lịch bàn giao cần được hệ thống cấp bổ sung.</p></Panel>}
+            {!id && <Panel title="Loại dịch vụ"><Select label="Loại dịch vụ thuê" value={managed ? 'managed' : 'self'} onChange={value => nav(`${base}/reservations${value === 'managed' ? '?service=managed' : ''}`)} options={[[ 'self', 'Thuê kho riêng' ], [ 'managed', 'Lưu trữ hàng hóa' ]]} /></Panel>}
+            {managed && !manager && <Panel title="Đơn lưu trữ hàng hóa dành cho nhân viên"><p>Tra cứu đơn trong cơ sở theo quyền tài khoản. Nhân viên hỗ trợ và giám sát; các thao tác hợp đồng và bàn giao trên trang này dành cho quản lý.</p>{resource.error&&<p className="mt-3">Nếu hệ thống báo không có quyền, backend cần cấp quyền đọc đơn lưu trữ hàng hóa cho nhân viên. Không thể thay thế bằng dữ liệu của vai trò khác.</p>}<div className="mt-3 flex flex-wrap gap-4"><OpenLink to="/staff/managed">Hàng hóa và tồn kho</OpenLink><OpenLink to="/staff/managed-access">Lịch đến kho và phiên truy cập</OpenLink></div></Panel>}
 
             {resource.loading && <p role="status">Đang tải đơn thuê…</p>}<Message error={resource.error} />
             {manager && !managed && !id && resource.data && <Panel title="Theo dõi hạn ký hợp đồng giấy"><p className="mb-3">Đơn thanh toán 100% quá hạn ký cần quản lý xem xét. Danh sách này chỉ theo dõi; không tự hủy đơn, khấu trừ hoặc xác nhận hoàn tiền.</p><Table empty="Không có đơn đã thanh toán 100% quá hạn ký trong dữ liệu đang tải." rows={resource.data.filter(row => row.facility === facilityId && row.rentalPaymentFlow === 'FULL_UPFRONT_V1' && row.status === 'PAID' && row.signingDeadline && Date.parse(row.signingDeadline) <= Date.now())} columns={[{ key: 'reservationCode', label: 'Đơn thuê', render: row => <OpenLink to={`${base}/reservations/${row.id}`}>{row.reservationCode || row.id}</OpenLink> }, { key: 'signingDeadline', label: 'Hạn ký', render: row => new Date(row.signingDeadline).toLocaleString('vi-VN') }, { key: 'status', label: 'Trạng thái', render: row => <Status value={row.status} /> }]} /></Panel>}
@@ -67,7 +66,7 @@ function ReservationApiContent({ workspace }) {
             {row && !scoped && <Panel title="Ngoài cơ sở được phân công"><p role="alert">Không thể xem hoặc duyệt đơn ngoài cơ sở được phân công.</p></Panel>}
             {row && scoped && <><Panel title="Thông tin đơn thuê"><Details values={[["Mã đơn thuê", row.reservationCode || row.id], ["Trạng thái", <Status value={row.status} />], ["Dịch vụ", row.serviceType], ["Khách hàng", row.customerName], ["Email", row.customerId?.email || "Chưa cung cấp"], ["Số điện thoại", row.customerId?.phone || "Chưa cung cấp"], ["Kho / dung lượng", managed ? `${row.allocatedCapacity ?? '—'} m³` : row.unit], ["Bắt đầu", new Date(row.startDate).toLocaleDateString('vi-VN')], ["Kết thúc", new Date(row.endDate).toLocaleDateString('vi-VN')], ...(row.actualCheckoutDate || row.status === 'CHECKED_OUT' ? [["Ngày trả kho", row.actualCheckoutDate ? new Date(row.actualCheckoutDate).toLocaleString('vi-VN') : '—']] : []), ...(managed ? [["Tiền thuê", money(row.estimatedRent)], ["Khoản trả trước", money(row.depositAmount)]] : [["Tổng tiền thanh toán", money(row.estimatedRent)]]), ["Lý do từ chối", row.rejectReason || '—']]} /></Panel>
                 {!managed && <FacilityHandoverPanel reservationId={row.id} />}
-                {managed && (row.bookingFlowVersion === 3 ? <ManagedV3LifecyclePanel reservation={row} onRefresh={resource.reload} /> : <Panel title="Đơn thuê phiên bản trước"><p>Hồ sơ được giữ để tra cứu lịch sử. Các thao tác tiếp nhận hàng theo phiên bản trước đã ngừng sử dụng trong quy trình mới.</p></Panel>)}<Panel title="Lịch sử trạng thái"><Timeline entries={row.history} /></Panel></>}
+                {managed && manager && (row.bookingFlowVersion === 3 ? <ManagedV3LifecyclePanel reservation={row} onRefresh={resource.reload} /> : <Panel title="Đơn thuê phiên bản trước"><p>Hồ sơ được giữ để tra cứu lịch sử. Các thao tác tiếp nhận hàng theo phiên bản trước đã ngừng sử dụng trong quy trình mới.</p></Panel>)}<Panel title="Lịch sử trạng thái"><Timeline entries={row.history} /></Panel></>}
         </>}
     </Screen>;
 }
