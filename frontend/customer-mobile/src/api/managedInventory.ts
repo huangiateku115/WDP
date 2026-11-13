@@ -92,10 +92,13 @@ export const managedInventory={
     const body=managedBookingBody(input);
     if(body.startDate!==range.startDate)throw new MobileInputError('Kỳ thuê không khớp với yêu cầu báo giá.');
     const response=await wire('POST','/reservations/managed/quote',{body,signal});
-    const capability=readData(z.object({bookingFlowVersion:z.number().optional()}),response);
-    if(capability.bookingFlowVersion!==2)throw new MobileInputError('Máy chủ chưa bật báo giá kho ký gửi V2 cho môi trường này.');
     const quote=mapManagedQuote(response);
     validateRange(quote,range);
+    if(quote.bookingFlowVersion===3 &&
+      (new Set(quote.cellIds).size!==body.cellIds.length || quote.cellIds.length!==body.cellIds.length ||
+        quote.cellIds.some(cellId=>!body.cellIds.includes(cellId)))) {
+      throw new MobileInputError('Báo giá không khớp danh sách ô đã chọn.');
+    }
     if(quote.facilityId!==body.facilityId||quote.allocatedCapacityM3!==body.allocatedCapacityM3||
       quote.term.unit!==body.term.unit||quote.term.value!==body.term.value||quote.availableCapacityM3<body.allocatedCapacityM3){
       throw new MobileInputError('Báo giá không khớp với kỳ thuê hoặc các ô đã chọn.');

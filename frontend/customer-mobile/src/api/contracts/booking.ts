@@ -20,14 +20,21 @@ export function mapSelfCreation(response:unknown,body:z.infer<typeof selfBody>,o
 export const suggestionDto=z.object({_id:objectId,unitCode:z.string().trim().min(1).max(100),size:z.enum(['SMALL','MEDIUM','LARGE']),sameSize:z.boolean(),volumeM3:positive.optional(),dimensions:z.unknown().optional()});
 export function mapSuggestions(error:unknown){const e=error as {response?:{status?:number;data?:unknown}};if(e.response?.status!==409)return [];const result=z.object({suggestedUnits:z.array(suggestionDto).max(5)}).safeParse(e.response.data);if(!result.success)return [];const seen=new Set<string>();return result.data.suggestedUnits.filter(u=>!seen.has(u._id.toLowerCase())&&!!seen.add(u._id.toLowerCase()));}
 export const managedBody=z.object({facilityId:objectId,allocatedCapacityM3:positive,startDate:utc,term,cellIds:z.array(objectId).min(1).max(100)}).strict();
+export const managedCreateBody=managedBody.extend({termsAccepted:z.literal(true),termsVersionId:z.string().min(1).max(120)});
 export function managedBookingBody(input:unknown,now=Date.now()){const b=managedBody.parse(input);if(Date.parse(b.startDate)<=now||new Set(b.cellIds.map(x=>x.toLowerCase())).size!==b.cellIds.length)throw Error('Invalid future Managed period or duplicate Cells');return b;}
 export const cellDto=z.object({_id:objectId,code:z.string().optional(),operationalStatus:z.string(),displayStatus:z.string().optional(),periodStatus:z.string().optional(),isBookable:z.boolean().optional(),isMine:z.boolean().optional(),hasMyInventory:z.boolean().optional(),physicalUsageKnown:z.boolean().optional(),usedWeightKg:nonnegative.optional(),usedVolumeM3:nonnegative.optional()}).passthrough();
 export function mapCell(input:unknown){const c=cellDto.parse(input);const status=['AVAILABLE','RESERVED','OCCUPIED'].includes(c.periodStatus??'')?c.periodStatus!:'UNKNOWN';return {...c,bookingLabel:status==='AVAILABLE'&&c.isBookable!==true?'UNKNOWN':status,yours:c.isMine===true,selectable:c.isBookable===true&&status==='AVAILABLE'&&c.operationalStatus==='AVAILABLE'};}
 export const rackGeometry=z.object({_id:objectId,rackCode:z.string().min(1),mapX:finite,mapY:finite,orientation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]),dimensions:z.object({widthM:positive,depthM:positive,heightM:positive})}).passthrough();
 export const warehouseMapDto=z.object({facilityId:objectId,requestedInterval:z.object({startDate:utc,endDate:utc}).optional(),zones:z.array(z.object({_id:objectId,code:z.string(),name:z.string(),aisles:z.array(z.object({aisleCode:z.string(),racks:z.array(rackGeometry)}))}))});
 export function mapWarehouse(response:unknown,facilityId:string){const map=readData(warehouseMapDto,response);if(map.facilityId!==objectId.parse(facilityId))throw Error('Wrong map facility');return map;}
-export function mapManagedQuote(response:unknown){return readData(z.object({bookingFlowVersion:z.literal(2),facilityId:objectId,allocatedCapacityM3:positive,startDate:utc,endDate:utc,term,
-  availableCapacityM3:nonnegative,pricing:z.object({ruleId:objectId,version:whole,billingBasis:z.literal('PER_M3'),ratePerM3:nonnegative,currency:z.literal('VND'),estimatedRent:nonnegative}),
-  deposit:z.object({policyId:objectId,version:whole,calculation:z.literal('PERCENT_OF_RENT'),percentage:nonnegative,amount:nonnegative}),
-  taxAmount:nonnegative,paymentBreakdown:z.object({totalDue:nonnegative,depositCredit:nonnegative,balanceDue:nonnegative})}).passthrough(),response);}
+const managedQuoteBase=z.object({facilityId:objectId,allocatedCapacityM3:positive,startDate:utc,endDate:utc,term,
+  availableCapacityM3:nonnegative,pricing:z.object({ruleId:objectId,version:whole,billingBasis:z.literal('PER_M3'),ratePerM3:nonnegative,currency:z.literal('VND'),estimatedRent:nonnegative}),taxAmount:nonnegative});
+const managedQuoteDto=z.discriminatedUnion('bookingFlowVersion',[
+  managedQuoteBase.extend({bookingFlowVersion:z.literal(2),
+    deposit:z.object({policyId:objectId,version:whole,calculation:z.literal('PERCENT_OF_RENT'),percentage:nonnegative,amount:nonnegative}),
+    paymentBreakdown:z.object({totalDue:nonnegative,depositCredit:nonnegative,balanceDue:nonnegative})}),
+  managedQuoteBase.extend({bookingFlowVersion:z.literal(3),cellIds:z.array(objectId).min(1).max(100),
+    payment:z.object({purpose:z.literal('FULL_RENT'),amount:nonnegative,currency:z.literal('VND')})}),
+]);
+export function mapManagedQuote(response:unknown){return readData(managedQuoteDto,response);}
 export function closureContext(r:Pick<ReservationDto,'status'|'activeClosureRequestId'|'inventoryVersion'>){const pending=r.activeClosureRequestId!=null;return {status:r.status,inventoryVersion:r.inventoryVersion??0,closurePending:pending,mayAddOrEdit:!pending,cleanupNotGloballyDisabled:true as const,completeClosure:false as const};}

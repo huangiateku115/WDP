@@ -9,7 +9,7 @@ import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,StateCard,ui} from '../components/ui';
 import {dateLabel,LiveScreen,ResourceState,useResource} from '../components/liveUI';
 
-const movementLabel={INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Di chuyển'};
+const movementLabel={INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Di chuyển',ADD:'Nhập kho',REMOVE:'Xuất kho',MOVE:'Di chuyển'};
 const pendingStatuses=new Set(['RESERVED','CONTRACTED','DEPOSIT_PAID','CHECKIN_READY','PAID']);
 export function ManagedDashboard(){
   const owner=useLiveSession(s=>s.user?._id??'');
@@ -20,11 +20,13 @@ export function ManagedDashboard(){
   const items=inventory.data?.items;
   const preview=items?.slice(0,3);
   const inspected=items?.find(item=>item._id===stockItem);
-  const stock=useResource(owner+':'+(inspected?._id??''),signal=>inspected?mobileRepo.stock(inspected,owner,signal):Promise.resolve(null));
+  const stock=useResource(owner+':'+(inspected?._id??''),signal=>inspected?mobileRepo.inventoryStock(inspected,owner,signal):Promise.resolve(null));
   const activity=useResource(owner+':'+(preview?.map(item=>item._id).join(',')??''),async signal=>{
-    const results=await Promise.allSettled((preview??[]).map(item=>mobileRepo.movements(item,owner,signal)
-      .then(moves=>moves.map(move=>({...move,itemName:item.name})))));
-    return {partial:results.some(result=>result.status==='rejected'),rows:results.flatMap(result=>result.status==='fulfilled'?result.value:[])
+    const results=await Promise.allSettled((preview??[]).map(item=>mobileRepo.inventoryMovements(item,owner,signal)
+      .then(history=>history.kind==='V3'
+        ? history.rows.map(move=>({_id:move._id,type:move.v3Effect.action,performedAt:move.performedAt,itemName:item.name}))
+        : history.rows.map(move=>({_id:move._id,type:move.type,performedAt:move.performedAt,itemName:item.name})))));
+    return {partial:results.some(result=>result.status==='rejected'),rows:results.flatMap<{_id:string;type:keyof typeof movementLabel;performedAt:string;itemName:string}>(result=>result.status==='fulfilled'?result.value:[])
       .sort((a,b)=>Date.parse(b.performedAt)-Date.parse(a.performedAt)).slice(0,5)};
   });
   function refresh(){rentals.reload();inventory.reload();activity.reload();stock.reload();}
@@ -57,11 +59,14 @@ export function ManagedDashboard(){
       <Button label={stockItem===item._id?'Ẩn tồn kho':'Xem tồn kho'} variant="quiet" onPress={()=>setStockItem(stockItem===item._id?'':item._id)}/>
       {inspected?._id===item._id&&<>
         <ResourceState {...stock}/>
-        {stock.data&&<>
-          <AppText variant="caption">{stock.data.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu đã đối chiếu từ dữ liệu cũ'}</AppText>
-          <AppText>Đang lưu: {stock.data.onHandQuantity} {stock.data.quantityUnit}</AppText>
-          <AppText>Đang giữ: {stock.data.heldQuantity} {stock.data.quantityUnit}</AppText>
-          <AppText>Khả dụng: {stock.data.availableQuantity===undefined?'Chưa có xác nhận':stock.data.availableQuantity+' '+stock.data.quantityUnit}</AppText>
+        {stock.data?.kind==='V3'&&(stock.data.stock.reconciliationStatus==='RECONCILED'
+          ? <AppText>Đang lưu theo sổ V3: {stock.data.stock.onHandQuantity} {item.quantityUnit}</AppText>
+          : <AppText>Tồn kho chưa được xác minh. Cần đối soát sổ kho.</AppText>)}
+        {stock.data?.kind==='LEGACY'&&<>
+          <AppText variant="caption">{stock.data.stock.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu đã đối chiếu từ dữ liệu cũ'}</AppText>
+          <AppText>Đang lưu: {stock.data.stock.onHandQuantity} {stock.data.stock.quantityUnit}</AppText>
+          <AppText>Đang giữ: {stock.data.stock.heldQuantity} {stock.data.stock.quantityUnit}</AppText>
+          <AppText>Khả dụng: {stock.data.stock.availableQuantity===undefined?'Chưa có xác nhận':stock.data.stock.availableQuantity+' '+stock.data.stock.quantityUnit}</AppText>
         </>}
       </>}
       <Button label="Xem hàng hóa" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id}})}/>

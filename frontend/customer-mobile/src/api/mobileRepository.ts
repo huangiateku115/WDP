@@ -1,3 +1,4 @@
+import {mapV3Movements,mapV3Stock} from './contracts/managedV3Ledger';
 import {z} from 'zod';
 import axios from 'axios';
 import {Platform} from 'react-native';
@@ -222,6 +223,36 @@ export const mobileRepo = {
     const item=mapItem(await wire('GET','/inventory-items/'+id(itemId),{signal}),owner);
     if(item._id!==itemId) throw new MobileInputError('Mã hàng không khớp.');
     return item;
+  },
+  async inventoryLedgerVersion(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
+    assertOwner(item,owner);
+    const rental=await mobileRepo.rental(refId(item.managedReservationId),owner,signal);
+    if(rental.serviceType!=='MANAGED_INVENTORY'||refId(rental.facilityId)!==refId(item.facilityId)) {
+      throw new MobileInputError('Mặt hàng không thuộc đơn thuê ký gửi này.');
+    }
+    return rental.bookingFlowVersion===3?'V3':'LEGACY';
+  },
+  async inventoryOperation(item:ReturnType<typeof mapItem>,owner:string,key:string,signal?:AbortSignal) {
+    if(!/^[A-Za-z0-9_.:\/-]{8,128}$/.test(key)||await mobileRepo.inventoryLedgerVersion(item,owner,signal)!=='V3') {
+      throw new MobileInputError('Mã thao tác không hợp lệ cho sổ kho V3.');
+    }
+    const response=await wire('GET','/inventory-items/'+id(item._id)+'/v3/operations',{params:{key},signal});
+    const operation=readData(z.object({status:z.literal('COMMITTED'),movement:z.unknown()}),response);
+    const movement=mapV3Movements({success:true,data:[operation.movement]},item,owner)[0];
+    if(!movement)throw new MobileInputError('Chưa xác minh được thao tác.');
+    return movement;
+  },
+  async inventoryStock(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
+    if(await mobileRepo.inventoryLedgerVersion(item,owner,signal)==='V3'){
+      return {kind:'V3' as const,stock:mapV3Stock(await wire('GET','/inventory-items/'+id(item._id)+'/v3/stock',{signal}),item,owner)};
+    }
+    return {kind:'LEGACY' as const,stock:await mobileRepo.stock(item,owner,signal)};
+  },
+  async inventoryMovements(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
+    if(await mobileRepo.inventoryLedgerVersion(item,owner,signal)==='V3'){
+      return {kind:'V3' as const,rows:mapV3Movements(await wire('GET','/inventory-items/'+id(item._id)+'/v3/movements',{signal}),item,owner)};
+    }
+    return {kind:'LEGACY' as const,rows:await mobileRepo.movements(item,owner,signal)};
   },
   async stock(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     assertOwner(item,owner);
