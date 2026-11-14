@@ -168,7 +168,15 @@ function FacilityDetail({ basePath, oversightRoot }) {
   const location = useLocation();
   const nav = useNavigate();
   const state = useAsyncData(() => bomFacilityApi.get(id).then(responseData).then(facilityFromDto), [id]);
-  const warehouse = useAsyncData(({ signal }) => loadWarehouseStructure(id, { signal }), [id]);
+  // The warehouse map only exists for Managed Inventory facilities (the Backend answers 409 for a
+  // Self Storage-only facility), so that facility neither fetches nor renders the structure panel.
+  const supportsManagedInventory = Boolean(state.data?.serviceTypes?.includes("MANAGED_INVENTORY"));
+  const warehouse = useAsyncData(
+    ({ signal }) => (supportsManagedInventory
+      ? loadWarehouseStructure(id, { signal })
+      : Promise.resolve({ zones: [], racks: [], available: false, reason: "" })),
+    [id, supportsManagedInventory],
+  );
   const units = useAsyncData(({ signal }) => loadFacilityUnits(id, { signal }), [id]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -239,7 +247,10 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 <p className="text-sm text-slate-500">No facility image yet. Use <b>Edit facility</b> to upload gallery images; they appear in the public catalog.</p>
               )}
             </Panel>
-            <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
+            {supportsManagedInventory && (
+            <AsyncBoundary state={warehouse} render={(structure) => {
+              if (!structure) return null;
+              const { zones, racks, available, reason } = structure;
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");
               return (
@@ -274,6 +285,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 </Panel>
               );
             }} />
+            )}
             <AsyncBoundary state={units} render={({ rows, total, truncated }) => (
               <Panel title="Private storage units" subtitle={`${rows.length} of ${total} units`}>
                 {truncated && <TruncatedNotice total={total} shown={rows.length} />}
