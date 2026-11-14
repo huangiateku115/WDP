@@ -60,3 +60,11 @@ test('the facility form uploads multiple files instead of asking for URL text', 
     /uploadFacilityImage/, /planFacilityImageUploads/, /Facility image gallery/, /Make cover/,
   ]) assert.match(source, expected);
 });
+
+test('the file picker copies the selection before clearing the input', () => {
+  const source = readFileSync(new URL('../src/pages/bom/FacilityPage.jsx', import.meta.url), 'utf8');
+  const copyIndex = source.indexOf('Array.from(event.target.files');
+  const clearIndex = source.indexOf('event.target.value = ""');
+  assert.ok(copyIndex > 0, 'the picker must copy the FileList');
+  assert.ok(clearIndex > copyIndex, 'the input must only be cleared after the FileList was copied');
+});

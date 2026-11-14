@@ -387,9 +387,11 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   };
 
   async function pickImages(event) {
-    const selected = event.target.files;
+    // Copy the FileList BEFORE resetting the input: `input.value = ""` empties the live
+    // FileList in place, which previously made every selected file disappear silently.
+    const selected = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!selected?.length || uploading) return;
+    if (!selected.length || uploading) return;
     setUploadError("");
     setUploadNotice("");
     const { accepted, errors } = planFacilityImageUploads(selected, images.length);
