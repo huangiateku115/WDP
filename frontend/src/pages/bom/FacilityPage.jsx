@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Textarea, Details, Button,
@@ -9,6 +9,7 @@ import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
+import { FACILITY_IMAGE_LIMIT, planFacilityImageUploads, uploadFacilityImage } from "@/lib/facilityImages";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilitiesIncludingDeleted, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
@@ -331,6 +332,17 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadDone, setUploadDone] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadNotice, setUploadNotice] = useState("");
+  const [urlDraft, setUrlDraft] = useState("");
+  const fileInputRef = useRef(null);
+  const uploadAbortRef = useRef(null);
+
+  // A facility image upload can still be in flight when the operator leaves the form.
+  useEffect(() => () => uploadAbortRef.current?.abort(), []);
 
   useEffect(() => {
     const next = state.data || EMPTY_FORM;
@@ -354,17 +366,69 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       : [...f.serviceTypes, service],
   }));
   const images = form.images || [];
-  const setImage = (index, value) => setForm((f) => ({
-    ...f,
-    images: (f.images || []).map((url, i) => (i === index ? value : url)),
-  }));
-  const addImage = () => setForm((f) => ({ ...f, images: [...(f.images || []), ""].slice(0, 10) }));
   const removeImage = (index) => setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
+  const makeCover = (index) => setForm((f) => {
+    const list = f.images || [];
+    return { ...f, images: [list[index], ...list.filter((_, i) => i !== index)] };
+  });
+  const addImageUrl = () => {
+    const url = urlDraft.trim();
+    if (!url) return;
+    if (images.length >= FACILITY_IMAGE_LIMIT) return setUploadError(`At most ${FACILITY_IMAGE_LIMIT} facility images are allowed.`);
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw Error();
+    } catch {
+      return setUploadError("Each facility image must be a valid HTTP(S) URL.");
+    }
+    setForm((f) => ({ ...f, images: [...(f.images || []).filter(Boolean), url] }));
+    setUrlDraft("");
+    setUploadError("");
+  };
+
+  async function pickImages(event) {
+    const selected = event.target.files;
+    event.target.value = "";
+    if (!selected?.length || uploading) return;
+    setUploadError("");
+    setUploadNotice("");
+    const { accepted, errors } = planFacilityImageUploads(selected, images.length);
+    if (errors.length) setUploadError(errors.join(" "));
+    if (!accepted.length) return;
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    setUploading(true);
+    setUploadDone(0);
+    setUploadTotal(accepted.length);
+    const uploadedUrls = [];
+    let failure = "";
+    for (const file of accepted) {
+      try {
+        const asset = await uploadFacilityImage(file, { signal: controller.signal });
+        uploadedUrls.push(asset.secureUrl);
+        setUploadDone((done) => done + 1);
+      } catch (err) {
+        failure = err.message;
+        break;
+      }
+    }
+    setUploading(false);
+    uploadAbortRef.current = null;
+    if (uploadedUrls.length) {
+      setForm((f) => ({ ...f, images: [...(f.images || []).filter(Boolean), ...uploadedUrls].slice(0, FACILITY_IMAGE_LIMIT) }));
+      setUploadNotice(`${uploadedUrls.length} image${uploadedUrls.length === 1 ? "" : "s"} uploaded. Save the facility to attach ${uploadedUrls.length === 1 ? "it" : "them"}.`);
+    }
+    if (failure) setUploadError(failure);
+  }
 
   async function submit(event) {
     event.preventDefault();
     if (pending) return;
     setError("");
+    if (uploading) {
+      setError("Wait for the image upload to finish before saving.");
+      return;
+    }
     setPending(true);
     try {
       if (!form.country) throw new Error("Select a country.");
@@ -389,7 +453,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
         if (configuredDays.some((entry) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.opensAt) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.closesAt) || entry.opensAt >= entry.closesAt)) throw new Error("Each visit day needs valid opening and closing times.");
       }
       const imageUrls = (form.images || []).map((url) => String(url).trim()).filter(Boolean);
-      if (imageUrls.length > 10) throw new Error("At most 10 facility images are allowed.");
+      if (imageUrls.length > FACILITY_IMAGE_LIMIT) throw new Error(`At most ${FACILITY_IMAGE_LIMIT} facility images are allowed.`);
       if (imageUrls.some((url) => {
         try {
           const parsed = new URL(url);
@@ -537,25 +601,69 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               </Field>
               <div className="manager-field">
                 <span>Facility images</span>
-                <div className="space-y-2">
-                  {images.map((url, index) => (
-                    <div key={index} className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-[240px] flex-1">
-                        <Input
-                          aria-label={`Facility image URL ${index + 1}`}
-                          placeholder="https://res.cloudinary.com/..."
-                          value={url}
-                          onChange={(event) => setImage(index, event.target.value)}
-                        />
-                      </div>
-                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Remove</Button>
-                    </div>
-                  ))}
-                  {images.length < 10 && (
-                    <Button type="button" variant="outline" onClick={addImage}>Add image URL</Button>
+                <div className="space-y-3">
+                  {images.length > 0 && (
+                    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="Facility image gallery">
+                      {images.map((url, index) => (
+                        <li key={`${url}-${index}`} className="overflow-hidden rounded-xl border bg-white">
+                          <img src={url} alt={`Facility image ${index + 1}`} className="h-32 w-full object-cover" />
+                          <div className="flex flex-wrap items-center justify-between gap-2 p-2">
+                            <span className="text-xs font-semibold text-slate-500">{index === 0 ? "Cover" : `Image ${index + 1}`}</span>
+                            <div className="flex flex-wrap gap-2">
+                              {index > 0 && (
+                                <Button type="button" variant="outline" onClick={() => makeCover(index)}>Make cover</Button>
+                              )}
+                              <Button type="button" variant="outline" disabled={uploading || pending} onClick={() => removeImage(index)}>Remove</Button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label="Facility images"
+                    className="hidden"
+                    onChange={pickImages}
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={uploading || pending || images.length >= FACILITY_IMAGE_LIMIT}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {uploading ? `Uploading ${uploadDone}/${uploadTotal}…` : "Upload images"}
+                    </Button>
+                    {uploading && (
+                      <Button type="button" variant="outline" onClick={() => uploadAbortRef.current?.abort()}>Cancel upload</Button>
+                    )}
+                    <span className="text-xs text-slate-500">{images.length}/{FACILITY_IMAGE_LIMIT} images</span>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[240px] flex-1">
+                      <Input
+                        aria-label="Facility image URL"
+                        placeholder="https://res.cloudinary.com/... (optional)"
+                        value={urlDraft}
+                        onChange={(event) => setUrlDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            addImageUrl();
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" disabled={uploading || pending || images.length >= FACILITY_IMAGE_LIMIT} onClick={addImageUrl}>Add image URL</Button>
+                  </div>
+                  {uploadNotice && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{uploadNotice}</p>}
+                  {uploadError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{uploadError}</p>}
                 </div>
-                <small>Optional. Up to 10 HTTP(S) image URLs; the first image is used as the public catalog cover.</small>
+                <small>Optional. Upload JPG, PNG or WebP files (up to 8 MB each, {FACILITY_IMAGE_LIMIT} images in total) or paste an HTTP(S) URL. The first image is used as the public catalog cover.</small>
               </div>
               <div className="bom-wide">
                 <Field label="Description">
