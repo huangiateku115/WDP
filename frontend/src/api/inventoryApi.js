@@ -1,5 +1,5 @@
 import axiosClient from "./axiosClient";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 
 const inventoryItemId = (value) => {

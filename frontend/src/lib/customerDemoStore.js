@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { customerSeed, inventoryCategories, inventoryUnits } from '@/mocks/customerData';
-export const customerDemoEnabled = import.meta.env.VITE_USE_MOCK !== 'false';
+export const customerDemoEnabled = import.meta.env.VITE_USE_MOCK === 'true';
 const key = 'VaultSpace_customer_priority1_demo_v1';
 const empty = { profile:{fullName:'',email:'',phone:'',address:'',company:''},rentals:[],items:[],movements:[],requests:[],payments:[],refunds:[],charges:[],notifications:[] };
 const clone = value => JSON.parse(JSON.stringify(value));

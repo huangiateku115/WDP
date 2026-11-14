@@ -9,8 +9,7 @@ export default function RoleWorkspaceOutlet({role}){
  if(role==='staff'&&/^inventory\/(inbound|outbound|relocation)(\/|$)/.test(path))return <Navigate to="/staff/managed" replace/>;
  if(!path||path==='dashboard')return <Navigate to={facilityHome(role)} replace/>;
  if(!facilityPageVisible(role,path))return <div className="manager-screen"><Panel title="Trang chưa khả dụng" subtitle="Vui lòng chọn một nghiệp vụ trong menu."><OpenLink to={facilityHome(role)}>Về danh sách đơn thuê</OpenLink></Panel></div>;
- if(import.meta.env.VITE_USE_MOCK!=='false')return <Panel title="Chưa kết nối dữ liệu"><p>Không thể tải dữ liệu vận hành. Vui lòng liên hệ người quản trị cấu hình kết nối.</p></Panel>;
- if(!isM4DemoPage(role,path))return <div className="manager-screen"><Panel title="Đang ẩn trong bản trình diễn" subtitle="Trang này ngoài phạm vi trình diễn nhân viên và quản lý hiện tại."><OpenLink to={m4DemoHome(role)}>Về trang trình diễn</OpenLink></Panel></div>;
- if(import.meta.env.VITE_USE_MOCK==='false')return <FacilitySessionGate role={role}><Outlet/></FacilitySessionGate>;
+ if(import.meta.env.VITE_USE_MOCK==='true'&&!isM4DemoPage(role,path))return <div className="manager-screen"><Panel title="Đang ẩn trong bản trình diễn" subtitle="Trang này ngoài phạm vi trình diễn nhân viên và quản lý hiện tại."><OpenLink to={m4DemoHome(role)}>Về trang trình diễn</OpenLink></Panel></div>;
+ if(import.meta.env.VITE_USE_MOCK!=='true')return <FacilitySessionGate role={role}><Outlet/></FacilitySessionGate>;
  return <Outlet/>;
 }

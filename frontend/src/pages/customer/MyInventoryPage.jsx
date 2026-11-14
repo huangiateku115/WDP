@@ -5,7 +5,7 @@ import inventoryApi from '@/api/inventoryApi';
 import { PackageOpen } from 'lucide-react';
 import {Card,CardContent} from '@/components/ui/card';
 
-const USE_BACKEND = import.meta.env.VITE_USE_MOCK === 'false';
+const USE_BACKEND = import.meta.env.VITE_USE_MOCK !== 'true';
 const unwrapItems = response => {
  const body = response?.data;
  if (Array.isArray(body?.data)) return body.data;

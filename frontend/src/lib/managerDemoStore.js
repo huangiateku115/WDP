@@ -1,6 +1,6 @@
 import {useSyncExternalStore} from 'react';
 import {assignedFacility,managerPermissions,managerSeed} from '@/mocks/managerData';
-export const managerDemoEnabled=import.meta.env.VITE_USE_MOCK!=='false';
+export const managerDemoEnabled=import.meta.env.VITE_USE_MOCK==='true';
 export const managerStorageKey='VaultSpace_manager_priority2_demo_v1';
 const clone=value=>JSON.parse(JSON.stringify(value));
 const empty=Object.fromEntries(Object.keys(managerSeed).map(key=>[key,[]]));

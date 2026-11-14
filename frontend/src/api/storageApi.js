@@ -1,7 +1,7 @@
 import axiosClient from "./axiosClient";
 import { mockStorageUnits } from "../mocks/storageUnits";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
 const storageApi = {

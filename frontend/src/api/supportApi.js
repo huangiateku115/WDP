@@ -1,5 +1,5 @@
 import axiosClient from "./axiosClient";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 const supportApi = {
   createReal: ({category,subject,description})=>axiosClient.post('/support-requests',{category,subject,description}),

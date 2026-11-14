@@ -1,6 +1,6 @@
 import {useSyncExternalStore} from 'react';
 import {staffSeed,staffFacility,staffOperators} from '@/mocks/staffData';
-export const staffDemoEnabled=import.meta.env.VITE_USE_MOCK!=='false';
+export const staffDemoEnabled=import.meta.env.VITE_USE_MOCK==='true';
 export const staffStorageKey='VaultSpace_staff_priority3_demo_v1';
 const clone=value=>JSON.parse(JSON.stringify(value)),collections=Object.keys(staffSeed).filter(key=>key!=='operatorId');
 const empty={operatorId:null,...Object.fromEntries(collections.map(key=>[key,[]]))};

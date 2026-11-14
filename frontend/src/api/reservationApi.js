@@ -7,7 +7,7 @@ import {
 import axiosClient from "./axiosClient";
 import { selfStorageCreateReservationPayload } from "@/lib/selfStorageReservation";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 const delay = (ms = 450) => new Promise((r) => setTimeout(r, ms));
 const INDEX_KEY = "SelfStorage_reservations";
 

@@ -1,6 +1,7 @@
 import axiosClient from "./axiosClient";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+// Fail closed: mock data is opt-in so a build without VITE_USE_MOCK always calls the Backend.
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 const delay = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
 const contractApi = {
