@@ -9,7 +9,7 @@ import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
-import { FACILITY_IMAGE_LIMIT, planFacilityImageUploads, uploadFacilityImage } from "@/lib/facilityImages";
+import { FACILITY_IMAGE_LIMIT, facilityDraftKey, mergeFacilityImages, planFacilityImageUploads, readFacilityImageDraft, uploadFacilityImage, writeFacilityImageDraft } from "@/lib/facilityImages";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilitiesIncludingDeleted, invalidateFacilities, loadFacilityUnits, loadWarehouseStructure } from "@/lib/bomApiData";
 import {
@@ -355,11 +355,16 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   const [uploading, setUploading] = useState(false);
   const [uploadDone, setUploadDone] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [uploadError, setUploadError] = useState("");
   const [uploadNotice, setUploadNotice] = useState("");
   const [urlDraft, setUrlDraft] = useState("");
   const fileInputRef = useRef(null);
   const uploadAbortRef = useRef(null);
+  const draftKey = facilityDraftKey(isEdit ? id : "new");
+  // Uploaded but not yet saved images survive a page reload through sessionStorage.
+  const [draftUrls, setDraftUrls] = useState(() => readFacilityImageDraft(draftKey));
+  const draftRestoredRef = useRef(false);
 
   // A facility image upload can still be in flight when the operator leaves the form.
   useEffect(() => () => uploadAbortRef.current?.abort(), []);
@@ -376,6 +381,18 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
     });
   }, [state.data]);
 
+  useEffect(() => { writeFacilityImageDraft(draftKey, draftUrls); }, [draftKey, draftUrls]);
+
+  // Runs after the server payload is applied, so a reload restores unsaved uploads on top of it.
+  const formDataReady = isEdit ? Boolean(state.data) : !state.loading;
+  useEffect(() => {
+    if (!formDataReady || draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+    if (!draftUrls.length) return;
+    setForm((f) => ({ ...f, images: mergeFacilityImages(f.images || [], draftUrls) }));
+    setUploadNotice(`${draftUrls.length} unsaved uploaded image${draftUrls.length === 1 ? "" : "s"} restored after reload. Save the facility to attach ${draftUrls.length === 1 ? "it" : "them"}.`);
+  }, [formDataReady, draftUrls]);
+
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
   const wards = wardsFor(form.city);
   const wardChosen = form.wardCustom ? Boolean(form.ward.trim()) : Boolean(form.ward);
@@ -386,7 +403,16 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       : [...f.serviceTypes, service],
   }));
   const images = form.images || [];
-  const removeImage = (index) => setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
+  const removeImage = (index) => {
+    const target = (form.images || [])[index];
+    setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
+    if (target) setDraftUrls((urls) => urls.filter((url) => url !== target));
+  };
+  const discardDraft = () => {
+    setForm((f) => ({ ...f, images: (f.images || []).filter((url) => !draftUrls.includes(url)) }));
+    setDraftUrls([]);
+    setUploadNotice("Unsaved uploaded images were discarded.");
+  };
   const makeCover = (index) => setForm((f) => {
     const list = f.images || [];
     return { ...f, images: [list[index], ...list.filter((_, i) => i !== index)] };
@@ -422,11 +448,15 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
     setUploading(true);
     setUploadDone(0);
     setUploadTotal(accepted.length);
+    setUploadPercent(0);
     const uploadedUrls = [];
     let failure = "";
-    for (const file of accepted) {
+    for (let index = 0; index < accepted.length; index += 1) {
       try {
-        const asset = await uploadFacilityImage(file, { signal: controller.signal });
+        const asset = await uploadFacilityImage(accepted[index], {
+          signal: controller.signal,
+          onProgress: (percent) => setUploadPercent(Math.min(100, Math.round(((index + percent / 100) / accepted.length) * 100))),
+        });
         uploadedUrls.push(asset.secureUrl);
         setUploadDone((done) => done + 1);
       } catch (err) {
@@ -437,8 +467,10 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
     setUploading(false);
     uploadAbortRef.current = null;
     if (uploadedUrls.length) {
+      setUploadPercent(100);
       setForm((f) => ({ ...f, images: [...(f.images || []).filter(Boolean), ...uploadedUrls].slice(0, FACILITY_IMAGE_LIMIT) }));
-      setUploadNotice(`${uploadedUrls.length} image${uploadedUrls.length === 1 ? "" : "s"} uploaded. Save the facility to attach ${uploadedUrls.length === 1 ? "it" : "them"}.`);
+      setDraftUrls((urls) => mergeFacilityImages(urls, uploadedUrls));
+      setUploadNotice(`${uploadedUrls.length} image${uploadedUrls.length === 1 ? "" : "s"} uploaded. Save the facility to attach ${uploadedUrls.length === 1 ? "it" : "them"}; an unsaved upload survives a page reload.`);
     }
     if (failure) setUploadError(failure);
   }
@@ -487,6 +519,8 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       const body = facilityBody({ ...form, openingHours, images: imageUrls }, { includeCode: !isEdit });
       if (isEdit) await bomFacilityApi.update(id, body);
       else await bomFacilityApi.create(body);
+      writeFacilityImageDraft(draftKey, []);
+      setDraftUrls([]);
       invalidateFacilities();
       nav(backTo);
     } catch (err) {
@@ -665,6 +699,25 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                     )}
                     <span className="text-xs text-slate-500">{images.length}/{FACILITY_IMAGE_LIMIT} images</span>
                   </div>
+                  {uploading && (
+                    <div aria-live="polite">
+                      <progress
+                        className="w-full"
+                        max="100"
+                        value={uploadPercent}
+                        aria-label="Facility image upload progress"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        {uploadDone}/{uploadTotal} uploaded · {uploadPercent}%
+                      </p>
+                    </div>
+                  )}
+                  {draftUrls.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                      <span>{draftUrls.length} uploaded image{draftUrls.length === 1 ? "" : "s"} not saved yet (kept after reload).</span>
+                      <Button type="button" variant="outline" disabled={uploading || pending} onClick={discardDraft}>Discard unsaved uploads</Button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-end gap-2">
                     <div className="min-w-[240px] flex-1">
                       <Input
