@@ -219,6 +219,26 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 </Button>
               </div>
             </Panel>
+            <Panel
+              title="Facility images"
+              subtitle={`${facility.images?.length || 0} of ${FACILITY_IMAGE_LIMIT} images · the first image is the public catalog cover.`}
+              action={<Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Manage images</Link></Button>}
+            >
+              {facility.images?.length ? (
+                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-label="Facility image gallery">
+                  {facility.images.map((url, index) => (
+                    <li key={`${url}-${index}`} className="overflow-hidden rounded-xl border bg-white">
+                      <a href={url} target="_blank" rel="noreferrer" aria-label={`Open facility image ${index + 1}`}>
+                        <img src={url} alt={`Facility image ${index + 1}`} loading="lazy" className="h-36 w-full object-cover" />
+                      </a>
+                      <p className="p-2 text-xs font-semibold text-slate-500">{index === 0 ? "Cover" : `Image ${index + 1}`}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500">No facility image yet. Use <b>Edit facility</b> to upload gallery images; they appear in the public catalog.</p>
+              )}
+            </Panel>
             <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");

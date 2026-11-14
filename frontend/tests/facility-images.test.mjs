@@ -68,3 +68,10 @@ test('the file picker copies the selection before clearing the input', () => {
   assert.ok(copyIndex > 0, 'the picker must copy the FileList');
   assert.ok(clearIndex > copyIndex, 'the input must only be cleared after the FileList was copied');
 });
+
+test('the facility detail page shows the saved images instead of hiding them', () => {
+  const source = readFileSync(new URL('../src/pages/bom/FacilityPage.jsx', import.meta.url), 'utf8');
+  assert.ok(source.includes('facility.images?.length || 0'), 'the detail panel must count the saved images');
+  assert.ok(source.includes('Manage images'), 'the detail panel must link back to the image editor');
+  assert.ok(source.includes('Open facility image'), 'each detail image must open the full asset');
+});
