@@ -140,7 +140,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
 
       <Panel title="Warehouse structure" subtitle="Zones -> aisles -> racks -> cells.">
         {racks.length > 0 && <Meter label="Allocatable cell capacity" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
-        <p className="bom-warning mt-4">
+        <p className="bom-note mt-4">
           Used weight reads 0 until Staff confirm an inbound for an item.
         </p>
         <Table

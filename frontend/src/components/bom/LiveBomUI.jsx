@@ -12,7 +12,7 @@ export function AsyncBoundary({ state, render }) {
   if (state.error)
     return (
       <Panel title="Unable to load">
-        <p role="alert" className="text-sm text-red-700">{state.error}</p>
+        <p role="alert" className="bom-error">{state.error}</p>
         <Button variant="outline" className="mt-4" onClick={state.reload}>Try again</Button>
       </Panel>
     );
@@ -21,7 +21,7 @@ export function AsyncBoundary({ state, render }) {
 
 export function TruncatedNotice({ total, shown }) {
   return (
-    <p role="status" className="bom-warning mb-4">
+    <p role="status" className="bom-note mb-4">
       Showing the first {shown} of {total} records. Refine the filters to narrow the result set.
     </p>
   );

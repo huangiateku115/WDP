@@ -215,7 +215,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
 
       <Panel title="Warehouse structure and physical capacity" subtitle="Zones → aisles → racks → cells.">
         {!structure.available && (
-          <p className="bom-warning mb-5">
+          <p className="bom-note mb-5">
             The warehouse map is unavailable for this facility: {structure.reason || "the facility is not part of the managed warehouse map"}.
           </p>
         )}

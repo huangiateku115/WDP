@@ -226,7 +226,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
               return (
                 <Panel title="Warehouse structure" subtitle="Zones → aisles → racks → cells.">
                   {!available && (
-                    <p className="bom-warning mb-5">
+                    <p className="bom-note mb-5">
                       The warehouse map does not apply to this facility: {reason || "this facility does not offer Managed Inventory"}.
                       Storage units are the storage model that applies here.
                     </p>
@@ -563,7 +563,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                 </Field>
                 {form.status === "INACTIVE" && (
                   <p className="bom-warning mb-5">New reservations are blocked.</p>                )}
-                {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+                {error && <p role="alert" className="bom-error">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>
                   <Button type="button" variant="outline" onClick={() => nav(backTo)}>Cancel</Button>

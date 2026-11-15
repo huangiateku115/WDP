@@ -277,6 +277,7 @@ function RecordForm({ kind, config, mode }) {
         state={state}
         render={([, facilities = []]) => (
           <Panel title="Rule form">
+            {locked && <p className="bom-warning mb-5">{lockNotice}</p>}
             <form className="bom-form" onSubmit={submit}>
               {!isEdit && <Field label="Facility scope">
                 <Select
@@ -321,7 +322,7 @@ function RecordForm({ kind, config, mode }) {
                 <Select label="Status" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
               </Field>}
               <div className="bom-wide">
-                {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+                {error && <p role="alert" className="bom-error">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save future price" : "Create rule"}</Button>
                   <Button type="button" variant="outline" onClick={() => nav(config.root)}>Cancel</Button>

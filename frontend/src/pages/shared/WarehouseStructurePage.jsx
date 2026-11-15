@@ -118,7 +118,7 @@ export default function WarehouseStructurePage() {
                 </Field>
               </div>
               {excluded > 0 && (
-                <p className="bom-warning mt-5">
+                <p className="bom-note mt-5">
                   {excluded} other facilit{excluded === 1 ? "y is" : "ies are"} hidden because the facility is not active or
                   does not offer Managed Inventory.
                 </p>
