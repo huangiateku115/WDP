@@ -9,7 +9,7 @@ import { bomPolicyApi } from "@/api/bomApi";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES,
+  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES, BOM_DISCOUNT_KIND_LABELS,
   responseData, discountFromDto, discountValueLabel, categoryFromDto,
 } from "@/lib/bomMappers";
 
@@ -67,20 +67,20 @@ function RecordList({ kind, config }) {
         return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
           {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={recordPage.rows.length} />}
           <Table label={config.title} rows={rows} columns={kind === "discount" ? [
-            { key: "name", label: "Discount", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-            { key: "kind", label: "Kind", render: (r) => r.kind.replaceAll("_", " ") },
-            { key: "value", label: "Value", render: (r) => discountValueLabel(r) },
-            { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
-            { key: "effectiveFrom", label: "Effective from" },
-            { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-            { key: "revision", label: "Version" },
+            { key: "name", label: "Tên giảm giá", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
+            { key: "kind", label: "Hình thức", render: (r) => BOM_DISCOUNT_KIND_LABELS[r.kind] || r.kind.replaceAll("_", " ") },
+            { key: "value", label: "Giá trị", render: (r) => discountValueLabel(r) },
+            { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+            { key: "effectiveFrom", label: "Hiệu lực từ" },
+            { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+            { key: "revision", label: "Phiên bản" },
           ] : [
-            { key: "name", label: "Category", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-            { key: "acceptance", label: "Acceptance", render: (r) => <Status value={r.allowedStatus} /> },
-            { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
-            { key: "effectiveFrom", label: "Effective from" },
-            { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-            { key: "revision", label: "Version" },
+            { key: "name", label: "Danh mục", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
+            { key: "acceptance", label: "Chấp nhận", render: (r) => <Status value={r.allowedStatus} /> },
+            { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+            { key: "effectiveFrom", label: "Hiệu lực từ" },
+            { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+            { key: "revision", label: "Phiên bản" },
           ]} />
         </Panel>;
       }} />
@@ -96,13 +96,15 @@ function RecordDetail({ kind, config }) {
     action={<Button asChild variant="outline"><Link to={config.root}>Quay lại danh sách</Link></Button>}>
     <AsyncBoundary state={state} render={(record) => <Panel title="Chính sách hiện tại">
       <Details values={kind === "discount" ? [
-        ["Discount", record.name], ["Kind", record.kind.replaceAll("_", " ")], ["Policy type", record.policyType],
-        ["Value", discountValueLabel(record)], ["Conditions", record.conditions], ["Effective from", record.effectiveFrom],
-        ["Effective end", record.effectiveTo || "Không thời hạn"], ["Status", <Status value={record.status} />], ["Version", record.revision],
+        ["Tên giảm giá", record.name],
+        ["Hình thức", BOM_DISCOUNT_KIND_LABELS[record.kind] || record.kind.replaceAll("_", " ")],
+        ["Loại chính sách", record.policyType],
+        ["Giá trị", discountValueLabel(record)], ["Điều kiện áp dụng", record.conditions], ["Hiệu lực từ", record.effectiveFrom],
+        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ] : [
-        ["Category", record.name], ["Acceptance", <Status value={record.allowedStatus} />], ["Description", record.description],
-        ["Handling notes", record.handlingNotes], ["Restrictions", record.restrictions], ["Effective from", record.effectiveFrom],
-        ["Effective end", record.effectiveTo || "Không thời hạn"], ["Status", <Status value={record.status} />], ["Version", record.revision],
+        ["Danh mục", record.name], ["Chấp nhận", <Status value={record.allowedStatus} />], ["Mô tả", record.description],
+        ["Ghi chú xử lý", record.handlingNotes], ["Ràng buộc", record.restrictions], ["Hiệu lực từ", record.effectiveFrom],
+        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ]} />
     </Panel>} />
   </Screen>;
