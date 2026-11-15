@@ -25,7 +25,9 @@ const dateInVietnam=(value:string)=>{
 const todayInVietnam=()=>dateInVietnam(new Date().toISOString());
 const timeOnly=new Intl.DateTimeFormat('vi-VN',{timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'});
 
-export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:string}){
+export type ManagedOperationProgress={hasVisit?:boolean;hasInboundSession?:boolean;hasStoredItems?:boolean};
+
+export function ManagedReservationOperations({r,owner,onProgress}:{r:ReservationDto;owner:string;onProgress?:(progress:ManagedOperationProgress)=>void}){
   const router=useRouter();
   const [open,setOpen]=useState(false),[showReadiness,setShowReadiness]=useState(false),[scheduleOpen,setScheduleOpen]=useState(false);
   const [cancel,setCancel]=useState(''),[editing,setEditing]=useState(''),[detail,setDetail]=useState<ManagedVisit>(),[pending,setPending]=useState(false),[error,setError]=useState('');
@@ -44,6 +46,14 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
     ?managedReservationReads.visitAvailability(r,owner,date,signal):Promise.resolve(null));
   const slots=availability.data?.slots??[];
   const createEligible=['CHECKIN_READY','ACTIVE'].includes(r.status)&&Date.parse(r.endDate)>Date.now();
+  useEffect(()=>{if(open)onProgress?.({hasVisit:undefined,hasInboundSession:undefined,hasStoredItems:undefined});},[open,onProgress]);
+  useEffect(()=>{
+    const progress:ManagedOperationProgress={};
+    if(visits.data)progress.hasVisit=visits.data.some(visit=>visit.status!=='CANCELLED');
+    if(sessions.data)progress.hasInboundSession=sessions.data.some(session=>eligibleInboundCells(r,session,now).length>0);
+    if(readiness.data?.stockSummary?.currentQuantity!=null)progress.hasStoredItems=readiness.data.stockSummary.currentQuantity>0;
+    if(Object.keys(progress).length)onProgress?.(progress);
+  },[visits.data,sessions.data,readiness.data,r,now,onProgress]);
   async function createVisit(recover:boolean){
     if(busy.current||useLiveSession.getState().user?._id!==owner)return;
     busy.current=true;setPending(true);setError('');
@@ -120,11 +130,15 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
   }
   return <>
     <Card>
-      <Button label={open?'Ẩn lịch và phiên truy cập':'Xem lịch và phiên truy cập'} variant="outline" onPress={()=>setOpen(!open)}/>
+      <Button label={open?'Ẩn lịch và phiên truy cập':createEligible?'Đặt lịch đến kho':'Xem lịch và phiên truy cập'} variant={createEligible&&!open?'primary':'outline'} onPress={()=>{
+        if(open){setOpen(false);return;}
+        setOpen(true);
+        if(createEligible){setPurposeValue('INBOUND');setScheduleOpen(true);}
+      }}/>
       {open&&<>
         <AppText variant="medium">Lịch đến kho</AppText>
         {createEligible&&<Button label={scheduleOpen?'Đóng đặt lịch':'Đặt lịch đến kho'} variant="outline" disabled={pending||createAttempt.loading||!!createAttempt.error||!!createAttempt.data} onPress={()=>{setEditing('');setScheduleOpen(!scheduleOpen);setError('');}}/>}
-        {createAttempt.data&&<Card><AppText>Yêu cầu đặt lịch trước chưa rõ kết quả. Hệ thống sẽ gửi lại đúng nội dung với cùng mã idempotency.</AppText>
+        {createAttempt.data&&<Card><AppText>Kết quả đặt lịch trước chưa được xác nhận. Bạn có thể kiểm tra lại yêu cầu đã gửi.</AppText>
           <Button label="Khôi phục yêu cầu đặt lịch" loading={pending} onPress={()=>void createVisit(true)}/></Card>}
         {createAttempt.error&&<ResourceState {...createAttempt}/>}
         {scheduleOpen&&<Card>
@@ -151,7 +165,7 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
           <AppText>{time.format(new Date(visit.startsAt))} – {time.format(new Date(visit.endsAt))}</AppText>
           <AppText>{visit.assignedStaffId?'Đã phân công nhân viên':'Chưa phân công nhân viên'}</AppText>
           {!!visit.note&&<AppText>{visit.note}</AppText>}
-          {detail?._id===visit._id&&<AppText accessibilityRole="summary">Chi tiết lịch đã được tải lại: {purpose[detail.purpose]} · {time.format(new Date(detail.startsAt))} – {time.format(new Date(detail.endsAt))} · phiên bản {detail.revision}</AppText>}
+          {detail?._id===visit._id&&<AppText accessibilityRole="summary">{purpose[detail.purpose]} · {time.format(new Date(detail.startsAt))} – {time.format(new Date(detail.endsAt))}</AppText>}
           <Button label="Tải chi tiết lịch" variant="quiet" disabled={pending} onPress={()=>void loadVisit(visit)}/>
           {visit.status==='SCHEDULED'&&<Button label="Sửa lịch" variant="outline" disabled={pending||!!amendAttempt.data} onPress={()=>beginAmend(visit)}/>}
           {visit.status==='SCHEDULED'&&(cancel===visit._id
@@ -166,8 +180,8 @@ export function ManagedReservationOperations({r,owner}:{r:ReservationDto;owner:s
         {sessions.data?.map(session=><Card key={'session:'+session._id}>
           <AppText>{sessionState[session.status==='ACTIVE'&&Date.parse(session.expiresAt)<=now?'EXPIRED':session.status]}</AppText>
           <AppText>{session.allowedPurposes.map(value=>purpose[value]).join(', ')}</AppText>
-          <AppText>Đơn {r.reservationCode} · Lịch {typeof session.visitId==='string'?session.visitId:session.visitId._id}</AppText>
-          <AppText>Phiên {session._id} · Nhân viên {typeof session.assignedStaffId==='string'?session.assignedStaffId:session.assignedStaffId._id}</AppText>
+          <AppText>Đơn {r.reservationCode}</AppText>
+          <AppText>Phiên truy cập do cơ sở cấp cho lịch này.</AppText>
           <AppText>Bắt đầu: {time.format(new Date(session.startedAt))}</AppText>
           {session.status==='ACTIVE'&&Date.parse(session.expiresAt)>now&&<AppText>Còn {Math.ceil((Date.parse(session.expiresAt)-now)/1000)} giây</AppText>}
           <AppText>Hết hạn: {time.format(new Date(session.expiresAt))}</AppText>

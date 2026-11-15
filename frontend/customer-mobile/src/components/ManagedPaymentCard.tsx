@@ -13,8 +13,9 @@ import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card} from './ui';
 import {ResourceState,money,useResource} from './liveUI';
 import {FullRentCheckout} from './FullRentCheckout';
+import {managedPaymentLabel,managedPaymentProgress,type ManagedPaymentProgress} from '../domain/managedV3RentalProgress';
 
-export function ManagedPaymentCard({r,owner,reload}:{r:ReservationDto;owner:string;reload:()=>void}){
+export function ManagedPaymentCard({r,owner,reload,onProgress}:{r:ReservationDto;owner:string;reload:()=>void;onProgress?:(state:ManagedPaymentProgress)=>void}){
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const running=useRef(false),mounted=useRef(false);
   const polling=useRef(0);
@@ -40,13 +41,15 @@ export function ManagedPaymentCard({r,owner,reload}:{r:ReservationDto;owner:stri
   const priceConsent=useResource(owner+':price:'+r._id,()=>journal('managed-v3-price-consent',owner,r._id).then(store=>store.read()));
   const priceBlocked=priceConsent.loading||!!priceConsent.error||managedPriceNeedsAcceptance(priceConsent.data?.priceReview);
   const rows=data.data?.payments;
-  const applied=rows?.find(managedPaymentApplied);
+  const progress=managedPaymentProgress(rows);
+  const applied=progress==='APPLIED'?rows?.find(managedPaymentApplied):undefined;
   const outstanding=rows?.filter(row=>!managedPaymentApplied(row)&&!fullRentTerminal(row))??[];
   const candidate=outstanding.length===1?outstanding[0]:undefined;
   const ready=!priceBlocked&&!applied&&managedPaymentEligible(r)&&candidate&&fullRentReady(candidate,r._id)?candidate:undefined;
   const waiting=!!candidate&&!applied&&!candidate.reconciliationRequired&&candidate.checkoutStatus!=='UNKNOWN'&&candidate.status==='PENDING';
   const review=!applied&&(outstanding.length>1||!!candidate&&!ready);
   const action=!priceBlocked&&managedPaymentEligible(r)&&rows?managedCheckoutAction(rows,data.data?.attempt):'BLOCKED';
+  useEffect(()=>{onProgress?.(data.data?progress:'NONE');},[data.data,data.loading,onProgress,progress]);
   useEffect(()=>{if(!foreground||!focused)polling.current=0;},[foreground,focused]);
   useEffect(()=>{
     if(!focused||!foreground||!waiting||busy||polling.current>=3)return;
@@ -100,12 +103,13 @@ export function ManagedPaymentCard({r,owner,reload}:{r:ReservationDto;owner:stri
     {priceConsent.data?.priceReview&&!priceConsent.data.priceReview.accepted&&<Card>
       <AppText variant="medium">Giá tạo đơn khác với báo giá bạn đã xem</AppText>
       <AppText>Báo giá đã xem: {money(priceConsent.data.priceReview.quotedAmount)}</AppText>
-      <AppText>Giá Backend lưu cho đơn: {money(priceConsent.data.priceReview.authoritativeAmount)}</AppText>
+      <AppText>Giá đã ghi nhận cho đơn: {money(priceConsent.data.priceReview.authoritativeAmount)}</AppText>
       <AppText>Vui lòng xác nhận mức giá của đơn trước khi tiếp tục thanh toán.</AppText>
       <Button label="Tôi xác nhận mức giá của đơn" variant="orange" disabled={priceConsent.loading||!!priceConsent.error} onPress={()=>void acceptUpdatedPrice()}/>
     </Card>}
     <ResourceState {...data}/>
-    {applied?<AppText>Máy chủ đã xác minh và ghi nhận thanh toán.</AppText>:null}
+    {applied?<AppText>Thanh toán đã được xác minh và ghi nhận.</AppText>:progress==='VERIFYING'?<AppText>Đang xác minh thanh toán.</AppText>:null}
+    {progress==='REVIEW'?<AppText accessibilityRole="alert">Giao dịch cần được đối soát trước khi tiếp tục.</AppText>:null}
     {ready?<><FullRentCheckout payment={ready} url={checkoutLink(ready,r._id,'FULL_RENT')}/>
       <AppText>Quay lại ứng dụng sau khi thanh toán để kiểm tra trạng thái.</AppText></>:null}
     {review?<AppText>Giao dịch cần kiểm tra trước khi tiếp tục.</AppText>:null}
@@ -117,6 +121,6 @@ export function ManagedPaymentCard({r,owner,reload}:{r:ReservationDto;owner:stri
     {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}
     <AppText variant="medium">Lịch sử thanh toán</AppText>
     {rows?.length===0?<AppText>Chưa có giao dịch.</AppText>:null}
-    {rows?.map(row=><AppText key={row.id}>{money(row.amount)} · {row.status} · {row.checkoutStatus}</AppText>)}
+    {rows?.map(row=><AppText key={row.id}>{money(row.amount)} · {managedPaymentLabel(row)}</AppText>)}
   </Card>;
 }
