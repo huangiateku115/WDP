@@ -23,6 +23,13 @@ export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Promotional", LOYALTY: "
 export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Percentage", FIXED: "Fixed amount", UNDEFINED: "Not defined" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
 
+// Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
+// (facility.model.ts / storage-unit.model.ts). The console renders `images` only in that
+// order and treats the first entry as the public catalog cover.
+export function httpImages(value) {
+  return Array.isArray(value) ? value.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url)) : [];
+}
+
 export const responseData = (response) => response?.data?.data ?? response?.data ?? null;
 export function responseList(response) {
   const body = response?.data;
@@ -138,6 +145,7 @@ export function cellFromDto(d) {
 }
 
 export function unitFromDto(d) {
+  const images = httpImages(d?.images);
   return {
     id: d?._id,
     code: d?.unitCode || "",
@@ -146,6 +154,8 @@ export function unitFromDto(d) {
     volumeM3: d?.volumeM3 ?? 0,
     dimensions: d?.dimensions || {},
     description: d?.description || "",
+    images,
+    coverImage: images[0] || "",
   };
 }
 
@@ -217,7 +227,8 @@ export function facilityFromDto(d) {
     openingHours: d?.operatingHours || "",
     description: d?.description || "",
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
-    images: Array.isArray(d?.images) ? d.images : [],
+    images: httpImages(d?.images),
+    coverImage: httpImages(d?.images)[0] || "",
     status: d?.status || "ACTIVE",
     managedVisitSchedule: d?.managedVisitSchedule || null,
     deleted: Boolean(d?.deletedAt),
@@ -542,6 +553,8 @@ export function reservationFromDto(d) {
     code: d?.reservationCode || "",
     facilityId: facility && typeof facility === "object" ? facility._id : facility,
     service: d?.serviceType,
+    // Managed reservations have their own detail route (GET /reservations/managed/:id).
+    isManaged: d?.serviceType === "MANAGED_INVENTORY",
     customerName: (customer && typeof customer === "object"
       ? customer.displayName || customer.fullName || customer.email
       : null) || "Customer",

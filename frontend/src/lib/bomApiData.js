@@ -59,21 +59,59 @@ export async function loadFacilitiesIncludingDeleted({ signal } = {}) {
   return rows.map(facilityFromDto).filter((facility) => facility.deleted);
 }
 
-// Cross-facility reservations. The backend only exposes reservations per facility,
-// so we fetch the facilities in parallel and bound the number of calls.
+// Cross-facility reservations. The backend only exposes reservations per facility and
+// defaults `GET /reservations/facility/:id` to SELF_STORAGE (reservation.controller.ts), so
+// Managed reservations must be requested explicitly or they never appear in BOM reports.
 const MAX_FACILITY_FETCHES = 12;
+const RESERVATION_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
+const RESERVATION_SCOPE_LABELS = { SELF_STORAGE: "private storage", MANAGED_INVENTORY: "Managed Inventory" };
+const isCanceled = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError" || error?.name === "AbortError";
+
+// Both service scopes are read in parallel; a failing scope is reported to the caller
+// instead of being swallowed (a silent zero understates every reservation KPI).
+async function facilityReservations(facilityId, { signal } = {}) {
+  const settled = await Promise.allSettled(
+    RESERVATION_SERVICE_TYPES.map((serviceType) =>
+      bomReservationApi
+        .listByFacility(facilityId, { signal, params: { serviceType } })
+        .then((response) => responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }))),
+    ),
+  );
+  const rows = [];
+  const failedServiceTypes = [];
+  for (let index = 0; index < settled.length; index += 1) {
+    const result = settled[index];
+    if (result.status === "fulfilled") rows.push(...result.value);
+    else if (isCanceled(result.reason)) throw result.reason;
+    else failedServiceTypes.push(RESERVATION_SERVICE_TYPES[index]);
+  }
+  return { rows, failedServiceTypes };
+}
+
+export const reservationScopeLabel = (failedServiceTypes = []) =>
+  failedServiceTypes.map((serviceType) => RESERVATION_SCOPE_LABELS[serviceType] || serviceType).join(" and ");
 
 export async function loadReservations(facilities, { signal } = {}) {
   const targets = facilities.slice(0, MAX_FACILITY_FETCHES);
-  const chunks = await Promise.all(
-    targets.map((facility) =>
-      bomReservationApi
-        .listByFacility(facility.id, { signal })
-        .then((response) => responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId: facility.id })))
-        .catch(() => []), // one failing facility must not blank the whole dashboard
-    ),
+  const results = await Promise.all(
+    targets.map(async (facility) => {
+      try {
+        return { facility, ...(await facilityReservations(facility.id, { signal })) };
+      } catch (error) {
+        if (isCanceled(error)) throw error;
+        return { facility, rows: [], failedServiceTypes: [...RESERVATION_SERVICE_TYPES] };
+      }
+    }),
   );
-  return { rows: chunks.flat(), truncated: facilities.length > targets.length };
+  const rows = [];
+  const failedFacilities = [];
+  for (const result of results) {
+    rows.push(...result.rows);
+    if (result.failedServiceTypes.length) {
+      failedFacilities.push(result.facility.name || result.facility.code || result.facility.id);
+    }
+  }
+  return { rows, truncated: facilities.length > targets.length, failedFacilities };
 }
 
 /* ---------------------- Facility-scoped oversight reads ---------------------- */
@@ -128,6 +166,12 @@ export async function loadItemMovements(id, { signal } = {}) {
 export async function loadFacilityReservations(facilityId, { signal } = {}) {
   const response = await bomReservationApi.listByFacility(facilityId, { signal });
   return responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }));
+}
+
+// Cross-service read used by the oversight console: private storage AND Managed inventory,
+// with the failed scopes surfaced so the page can label incomplete counts.
+export async function loadFacilityReservationsAll(facilityId, { signal } = {}) {
+  return facilityReservations(facilityId, { signal });
 }
 
 // A contract can only be discovered through its reservation with the current backend surface.

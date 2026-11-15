@@ -5,9 +5,11 @@ import {
 } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { ResourceThumb } from "@/components/bom/ResourceImages";
 import { useAsyncData } from "@/lib/useAsyncData";
 import {
-  facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservations, loadFacilityUnits, loadWarehouseStructure,
+  facilityName, loadFacilities, loadFacilityInventory, loadFacilityReservationsAll, loadFacilityUnits, loadWarehouseStructure,
+  reservationScopeLabel,
 } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, BOM_SERVICE_TYPES, BOM_UNIT_SIZES, serviceLabel } from "@/lib/bomMappers";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
@@ -19,7 +21,7 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 // facility-scoped reads (warehouse map, units, managed inventory, reservations) for
 // the facility the user selects - 4 parallel requests, no N+1.
 export default function OversightLivePage({
-  oversightRoot = "/bom/oversight", managePath = "/bom/facilities",
+  oversightRoot = "/bom/oversight", managePath = "/bom/facilities", reservationsBase = "/bom/reservations",
 }) {
   const directory = useAsyncData(loadFacilities, []);
   const [facilityId, setFacilityId] = useState("");
@@ -33,7 +35,7 @@ export default function OversightLivePage({
       loadWarehouseStructure(facilityId, { signal }),
       loadFacilityUnits(facilityId, { signal }),
       loadFacilityInventory(facilityId, { signal }),
-      loadFacilityReservations(facilityId, { signal }),
+      loadFacilityReservationsAll(facilityId, { signal }),
     ]);
     return { structure, units, inventory, reservations };
   }, [facilityId]);
@@ -76,6 +78,7 @@ export default function OversightLivePage({
                 label="Facility directory"
                 rows={rows}
                 columns={[
+                  { key: "cover", label: "Photo", render: (f) => <ResourceThumb src={f.coverImage} alt={`${f.name} cover`} /> },
                   { key: "name", label: "Facility", render: (f) => <Link className="manager-link font-semibold" to={`${oversightRoot}/facilities/${f.id}`}>{f.name}</Link> },
                   { key: "code", label: "Code" },
                   { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
@@ -107,7 +110,7 @@ export default function OversightLivePage({
 
             {facilityId && (
               <AsyncBoundary state={scope} render={(data) => (data ? (
-                <FacilityScope facilityId={facilityId} facilities={facilities} data={data} />
+                <FacilityScope facilityId={facilityId} facilities={facilities} data={data} reservationsBase={reservationsBase} />
               ) : null)} />
             )}
           </>
@@ -117,8 +120,9 @@ export default function OversightLivePage({
   );
 }
 
-function FacilityScope({ facilityId, facilities, data }) {
+function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
   const { structure, units, inventory, reservations } = data;
+  const reservationRows = reservations.rows;
   const racks = structure.racks;
   const cells = sumBy(racks, "cellCount");
   const availableCells = sumBy(racks, "availableCellCount");
@@ -168,6 +172,7 @@ function FacilityScope({ facilityId, facilities, data }) {
             label="Storage units"
             rows={units.rows}
             columns={[
+              { key: "photo", label: "Photo", render: (r) => <ResourceThumb src={r.coverImage} alt={`${r.code} photo`} /> },
               { key: "code", label: "Unit" },
               { key: "size", label: "Size" },
               { key: "volumeM3", label: "Volume", render: (r) => m3(r.volumeM3) },
@@ -204,14 +209,28 @@ function FacilityScope({ facilityId, facilities, data }) {
         </div>
       </Panel>
 
-      <Panel title="Reservations" subtitle={`${reservations.length} records for this facility`}>
-        <Details values={BOM_RESERVATION_STATUSES.map((value) => [value, countBy(reservations, "status", value)])} />
+      <Panel title="Reservations" subtitle={`${reservationRows.length} records for this facility`}>
+        {reservations.failedServiceTypes.length > 0 && (
+          <p className="bom-warning mb-4">
+            {reservationScopeLabel(reservations.failedServiceTypes)} reservations could not be loaded for this facility, so the
+            counts below exclude them. Reload to try again.
+          </p>
+        )}
+        <Details values={BOM_RESERVATION_STATUSES.map((value) => [value, countBy(reservationRows, "status", value)])} />
         <div className="mt-5">
           <Table
             label="Facility reservations"
-            rows={reservations}
+            rows={reservationRows}
             columns={[
-              { key: "code", label: "Reservation" },
+              {
+                key: "code",
+                label: "Reservation",
+                render: (r) => (
+                  <Link className="manager-link" to={`${reservationsBase}/${r.isManaged ? "managed/" : ""}${r.id}`}>
+                    {r.code || r.id}
+                  </Link>
+                ),
+              },
               { key: "customer", label: "Customer", render: (r) => r.customerName },
                   { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
               { key: "resource", label: "Unit / capacity", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },

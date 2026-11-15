@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { ResourceGallery, ResourceThumb } from "@/components/bom/ResourceImages";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -108,6 +109,7 @@ function FacilityList({ basePath }) {
             label="Facilities"
             rows={rows}
             columns={[
+              { key: "cover", label: "Photo", render: (f) => <ResourceThumb src={f.coverImage} alt={`${f.name} cover`} /> },
               { key: "name", label: "Facility", render: (f) => (f.deleted
                 ? f.name
                 : <OpenLink to={`${basePath}/${f.id}`}>{f.name}</OpenLink>) },
@@ -217,6 +219,9 @@ function FacilityDetail({ basePath, oversightRoot }) {
                   {nextStatus === "ACTIVE" ? "Activate facility" : "Deactivate facility"}
                 </Button>
               </div>
+            </Panel>
+            <Panel title="Facility images" subtitle="Saved photo URLs. The first image is the public catalog cover.">
+              <ResourceGallery images={facility.images} alt={`${facility.name} photo`} />
             </Panel>
             <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
               const cells = sumBy(racks, "cellCount");

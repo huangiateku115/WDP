@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
+import { ResourceThumb } from "@/components/bom/ResourceImages";
 import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilityUnits } from "@/lib/bomApiData";
@@ -125,6 +126,7 @@ export default function StorageUnitsPage() {
                       label="Storage units"
                       rows={data.rows}
                       columns={[
+                        { key: "photo", label: "Photo", render: (r) => <ResourceThumb src={r.coverImage} alt={`${r.code} photo`} /> },
                         { key: "code", label: "Unit" },
                         { key: "size", label: "Size" },
                         { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },

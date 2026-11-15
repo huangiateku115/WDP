@@ -256,14 +256,20 @@ function RoleChange({ row, id, roles }) {
 
 function CreateUser({ state }) {
   const nav = useNavigate();
+  const facilities = useAsyncData(loadFacilities, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState(state.roles[0] || "FACILITY_MANAGER");
+  const [facilityId, setFacilityId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const busy = useRef(false);
+  // Only Facility Manager / Facility Staff accounts carry a Facility scope, and the backend
+  // refuses to assign one to any other role (facility-assignment.service.ts).
+  const needsFacility = ["FACILITY_MANAGER", "FACILITY_STAFF"].includes(role);
+  const facilityOptions = facilities.data || [];
 
   async function submit(event) {
     event.preventDefault();
@@ -272,7 +278,20 @@ function CreateUser({ state }) {
     setPending(true);
     setError("");
     try {
-      await createAdminUser({ email, password, displayName, phone, role }, () => setPassword(""));
+      if (needsFacility && !facilityId) throw new Error("Select a Facility for this account.");
+      const createdId = await createAdminUser({ email, password, displayName, phone, role }, () => setPassword(""));
+      if (needsFacility) {
+        if (!createdId) {
+          setError("The account was created, but its identifier was not returned. Assign the Facility from the account detail page.");
+          return;
+        }
+        try {
+          await assignAdminUserFacility(createdId, facilityId);
+        } catch (assignError) {
+          setError(`The account was created, but the Facility assignment failed: ${apiErrorMessage(assignError, "unknown error")}. Assign it from the account detail page.`);
+          return;
+        }
+      }
       nav("/admin/users");
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to create the account."));
@@ -292,7 +311,23 @@ function CreateUser({ state }) {
           <Field label="Password"><Input aria-label="New user password" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={pending} /></Field>
           <Field label="Display name"><Input aria-label="New user display name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} disabled={pending} /></Field>
           <Field label="Phone"><Input aria-label="New user phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} disabled={pending} /></Field>
-          <Field label="Role"><Select label="New user role" value={role} onChange={setRole} options={state.roles.map((r) => [r, ROLE_LABELS[r] || r])} disabled={pending} /></Field>
+          <Field label="Role"><Select label="New user role" value={role} onChange={(value) => { setRole(value); setFacilityId(""); }} options={state.roles.map((r) => [r, ROLE_LABELS[r] || r])} disabled={pending} /></Field>
+          {needsFacility && (
+            <Field
+              label="Facility scope"
+              hint={facilities.error
+                ? "The facility directory could not be loaded. Create the account and assign the Facility from its detail page."
+                : "Required: a Manager or Staff account has no access until it is assigned to a Facility."}
+            >
+              <Select
+                label="New user facility"
+                value={facilityId}
+                onChange={setFacilityId}
+                disabled={pending || facilities.loading || Boolean(facilities.error)}
+                options={[["", facilities.loading ? "Loading facilities…" : "Select a facility"], ...facilityOptions.map((f) => [f.id, `${f.name} (${f.code})`])]}
+              />
+            </Field>
+          )}
           <div className="admin-wide space-y-4">
             <p className="text-xs text-slate-500">Role choices are the supported roles plus any role already present in the loaded data. Passwords are cleared immediately after submission.</p>
             <Message error={error} />

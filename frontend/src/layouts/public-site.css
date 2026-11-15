@@ -925,6 +925,15 @@
   font-size: 13px;
   color: var(--vs-muted);
 }
+.vs-public .vs-option-image {
+  height: 140px;
+  border-radius: 10px;
+}
+.vs-public .vs-option-image img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
 .vs-public .vs-pricing-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;

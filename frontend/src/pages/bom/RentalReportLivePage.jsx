@@ -15,8 +15,8 @@ const MAX_FACILITY_FETCHES = 12;
 export default function RentalReportLivePage({ basePath = "/bom" }) {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
-    const { rows, truncated } = await loadReservations(facilities, { signal });
-    return { facilities, reservations: rows, truncated };
+    const { rows, truncated, failedFacilities } = await loadReservations(facilities, { signal });
+    return { facilities, reservations: rows, truncated, failedFacilities };
   }, []);
   const [facility, setFacility] = useState("");
   const [status, setStatus] = useState("");
@@ -28,7 +28,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
       description="Reservations across every facility, with facility, status and search filters."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
-      <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {
+      <AsyncBoundary state={state} render={({ facilities, reservations, truncated, failedFacilities }) => {
         const rows = reservations.filter((r) =>
           (!facility || r.facilityId === facility) &&
           (!status || r.status === status) &&
@@ -41,6 +41,12 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
               ["Overdue", countBy(reservations, "OVERDUE"), "Status OVERDUE"],
               ["Closed", countBy(reservations, "CLOSED"), "Status CLOSED"],
             ]} />
+            {failedFacilities?.length > 0 && (
+              <p className="bom-warning">
+                Reservations could not be loaded for {failedFacilities.length} facilit{failedFacilities.length === 1 ? "y" : "ies"}:{" "}
+                {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. The report below excludes those records.
+              </p>
+            )}
             <Panel title="Filters">
               <div className="manager-filters">
                 <Field label="Facility">
@@ -62,7 +68,15 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 label="Rental lifecycle"
                 rows={rows}
                 columns={[
-                  { key: "code", label: "Reservation" },
+                  {
+                    key: "code",
+                    label: "Reservation",
+                    render: (r) => (
+                      <Link className="manager-link" to={`${basePath}/reservations/${r.isManaged ? "managed/" : ""}${r.id}`}>
+                        {r.code || r.id}
+                      </Link>
+                    ),
+                  },
                   { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
                   { key: "customer", label: "Customer", render: (r) => r.customerName },
                   { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },

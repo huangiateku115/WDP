@@ -14,8 +14,8 @@ const MAX_FACILITY_FETCHES = 12;
 export default function DashboardLivePage() {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
-    const { rows, truncated } = await loadReservations(facilities, { signal });
-    return { facilities, reservations: rows, truncated };
+    const { rows, truncated, failedFacilities } = await loadReservations(facilities, { signal });
+    return { facilities, reservations: rows, truncated, failedFacilities };
   }, []);
 
   return (
@@ -24,7 +24,7 @@ export default function DashboardLivePage() {
       description="Facilities and reservations across every facility."
       action={<Button asChild variant="outline"><Link to="/bom/facilities">Manage facilities</Link></Button>}
     >
-      <AsyncBoundary state={state} render={({ facilities, reservations, truncated }) => {
+      <AsyncBoundary state={state} render={({ facilities, reservations, truncated, failedFacilities }) => {
         const byFacility = facilities.map((f) => {
           const rows = reservations.filter((r) => r.facilityId === f.id);
           return {
@@ -54,6 +54,12 @@ export default function DashboardLivePage() {
               ["Cancelled", countBy(reservations, "CANCELLED"), "Reservations with status CANCELLED"],
             ]} />
             {truncated && <TruncatedNotice total={facilities.length} shown={Math.min(facilities.length, MAX_FACILITY_FETCHES)} />}
+            {failedFacilities?.length > 0 && (
+              <p className="bom-warning">
+                Reservations could not be loaded for {failedFacilities.length} facilit{failedFacilities.length === 1 ? "y" : "ies"}:{" "}
+                {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. The counts below exclude those records.
+              </p>
+            )}
             <Panel title="Reservations by facility" subtitle="Counts per facility.">
               <Table
                 label="Reservations by facility"
