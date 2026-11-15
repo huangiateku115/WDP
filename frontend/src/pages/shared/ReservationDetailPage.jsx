@@ -79,58 +79,58 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
 
   return (
     <Screen
-      title={managed ? "Managed reservation detail" : "Reservation detail"}
-      description="Reservation record. Actions run from this page, not from the list."
-      action={<Button variant="outline" onClick={() => nav(basePath)}>Back to reservations</Button>}
+      title={managed ? "Chi tiết đơn lưu trữ hàng hóa" : "Chi tiết đơn đặt thuê"}
+      description="Thông tin đơn đặt thuê. Các thao tác thực hiện tại trang này."
+      action={<Button variant="outline" onClick={() => nav(basePath)}>Quay lại danh sách đơn</Button>}
     >
       <AsyncBoundary state={resource} render={(reservation) => (reservation ? (
         <>
           <Panel
-            title={reservation.reservationCode || "Reservation"}
-            subtitle={managed ? "Managed Inventory" : "Self Storage"}
+            title={reservation.reservationCode || "Đơn đặt thuê"}
+            subtitle={managed ? "Lưu trữ hàng hóa" : "Thuê kho riêng"}
             action={<Status value={reservation.status} />}
           >
             <Details values={[
-              ["Customer", customerName(reservation)],
-              ["Facility", facilityName(reservation)],
-              ["Storage unit", unitLabel(reservation)],
+              ["Khách hàng", customerName(reservation)],
+              ["Cơ sở", facilityName(reservation)],
+              ["Kho", unitLabel(reservation)],
               ...(managed ? [
-                ["Allocated capacity", `${reservation.allocatedCapacity ?? 0} m³`],
-                ["Used capacity", `${reservation.usedCapacityM3 ?? 0} m³`],
+                ["Công suất được cấp", `${reservation.allocatedCapacity ?? 0} m³`],
+                ["Công suất đã dùng", `${reservation.usedCapacityM3 ?? 0} m³`],
               ] : []),
-              ["Rental window", `${day(reservation.startDate)} → ${day(reservation.endDate)}`],
+              ["Thời gian thuê", `${day(reservation.startDate)} → ${day(reservation.endDate)}`],
               ...(managed ? [
-                ["Estimated rent", money(reservation.estimatedRent)],
-                ["Deposit", money(reservation.depositAmount)],
+                ["Tiền thuê tạm tính", money(reservation.estimatedRent)],
+                ["Tiền đặt cọc", money(reservation.depositAmount)],
               ] : [
                 ["Tổng tiền thanh toán", money(reservation.estimatedRent)],
               ]),
-              ["Hold expires", reservation.expiresAt ? new Date(reservation.expiresAt).toLocaleString("en-GB") : "—"],
-              ["Rejection reason", reservation.rejectReason || "—"],
+              ["Hết hạn giữ chỗ", reservation.expiresAt ? new Date(reservation.expiresAt).toLocaleString("vi-VN") : "—"],
+              ["Lý do từ chối", reservation.rejectReason || "—"],
               ...(reservation.actualCheckoutDate || reservation.status === "CHECKED_OUT" ? [
                 ["Ngày trả kho", reservation.actualCheckoutDate ? new Date(reservation.actualCheckoutDate).toLocaleString("vi-VN") : "—"],
               ] : []),
-              ["Created", day(reservation.createdAt)],
+              ["Ngày tạo", day(reservation.createdAt)],
             ]} />
             <Message {...feedback} />
             <div className="mt-5 flex flex-wrap gap-2">
               {canReview && reservation.status === "RESERVED" && (
                 <>
-                  <Button onClick={() => { setReason(""); setDecision({ kind: "approve", code: reservation.reservationCode }); }}>Approve</Button>
-                  <Button variant="outline" onClick={() => { setReason(""); setDecision({ kind: "reject", code: reservation.reservationCode }); }}>Reject</Button>
+                  <Button onClick={() => { setReason(""); setDecision({ kind: "approve", code: reservation.reservationCode }); }}>Duyệt</Button>
+                  <Button variant="outline" onClick={() => { setReason(""); setDecision({ kind: "reject", code: reservation.reservationCode }); }}>Từ chối</Button>
                 </>
               )}
               {managed && canMockPay && reservation.status === "CONTRACTED" && (
-                <Button variant="outline" onClick={() => apply("mock-pay")} disabled={busy}>Simulate payment</Button>
+                <Button variant="outline" onClick={() => apply("mock-pay")} disabled={busy}>Mô phỏng thanh toán</Button>
               )}
               {managed && canReview && reservation.status === "PAID" && (
-                <Button onClick={() => apply("activate")} disabled={busy}>Activate reservation</Button>
+                <Button onClick={() => apply("activate")} disabled={busy}>Kích hoạt đơn</Button>
               )}
-              {!canReview && <p className="text-xs text-slate-500">Your role can read this record but cannot approve, reject or activate it.</p>}
+              {!canReview && <p className="text-xs text-slate-500">Vai trò của bạn chỉ được xem, không được duyệt, từ chối hay kích hoạt đơn.</p>}
             </div>
           </Panel>
 
-          <Panel title="Status history">
+          <Panel title="Lịch sử trạng thái">
             <Timeline entries={timelineOf(reservation)} />
           </Panel>
         </>
@@ -138,21 +138,21 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
 
       {decision && (
         <ConfirmDialog
-          title={decision.kind === "approve" ? `Approve ${decision.code}?` : `Reject ${decision.code}?`}
+          title={decision.kind === "approve" ? `Duyệt ${decision.code}?` : `Từ chối ${decision.code}?`}
           summary={(
             <p className="text-sm text-slate-500">
               {decision.kind === "approve"
-                ? "Approving moves the reservation to the contracted stage and creates the draft contract."
-                : "Rejecting cancels the reservation and stores the reason you enter."}
+                ? "Duyệt sẽ chuyển đơn sang bước lập hợp đồng và tạo hợp đồng nháp."
+                : "Từ chối sẽ hủy đơn và lưu lý do bạn nhập."}
             </p>
           )}
-          confirmLabel={decision.kind === "approve" ? "Confirm approval" : "Confirm rejection"}
+          confirmLabel={decision.kind === "approve" ? "Xác nhận duyệt" : "Xác nhận từ chối"}
           onConfirm={() => apply(decision.kind)}
           onClose={() => setDecision(null)}
         >
           {decision.kind === "reject" && (
-            <Field label="Rejection reason" hint="Required, up to 500 characters.">
-              <Input aria-label="Rejection reason" required value={reason} onChange={(event) => setReason(event.target.value)} />
+            <Field label="Lý do từ chối" hint="Bắt buộc, tối đa 500 ký tự.">
+              <Input aria-label="Lý do từ chối" required value={reason} onChange={(event) => setReason(event.target.value)} />
             </Field>
           )}
         </ConfirmDialog>

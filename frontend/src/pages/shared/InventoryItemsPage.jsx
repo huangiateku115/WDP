@@ -49,54 +49,54 @@ function ItemList({ basePath }) {
 
   return (
     <Screen
-      title="Managed inventory"
-      description="Inventory lots registered by customers with their placement state."
-      action={<Button variant="outline" disabled={items.loading} onClick={items.reload}>Refresh</Button>}
+      title="Hàng hóa và tồn kho"
+      description="Các lô hàng khách đã đăng ký và trạng thái xếp ô."
+      action={<Button variant="outline" disabled={items.loading} onClick={items.reload}>Tải lại</Button>}
     >
       <AsyncBoundary state={directory} render={() => (
         <>
           <Kpis items={[
-            ["Inventory lots", items.data?.total ?? "—", facilityId ? "In the selected facility" : "Across every facility"],
-            ["In storage", rows.filter((r) => r.status === "IN_STORAGE").length, "Placed on a cell"],
-            ["Pending inbound", rows.filter((r) => r.status === "PENDING_INBOUND").length, "Waiting for Staff confirmation"],
-            ["Stored volume", m3(sumBy(rows, "totalVolumeM3")), "Registered item volume"],
+            ["Lô hàng", items.data?.total ?? "—", facilityId ? "Trong cơ sở đã chọn" : "Trên mọi cơ sở"],
+            ["Trong kho", rows.filter((r) => r.status === "IN_STORAGE").length, "Đã xếp vào ô"],
+            ["Chờ nhập kho", rows.filter((r) => r.status === "PENDING_INBOUND").length, "Chờ nhân viên xác nhận"],
+            ["Thể tích đang lưu", m3(sumBy(rows, "totalVolumeM3")), "Thể tích hàng đã đăng ký"],
           ]} />
 
           <Panel
-            title="Filters"
-            subtitle="Leave the facility empty to list every facility."
+            title="Bộ lọc"
+            subtitle="Để trống cơ sở để xem mọi cơ sở."
           >
             <div className="manager-filters">
-              <Field label="Facility">
+              <Field label="Cơ sở">
                 <Select
-                  label="Inventory facility"
+                  label="Cơ sở hàng hóa"
                   value={facilityId}
                   onChange={setFacilityId}
-                  options={[["", "All facilities"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                  options={[["", "Tất cả cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                 />
               </Field>
-              <Field label="Status">
+              <Field label="Trạng thái">
                 <Select
-                  label="Inventory status filter"
+                  label="Lọc theo trạng thái hàng hóa"
                   value={status}
                   onChange={setStatus}
-                  options={[["", "All statuses"], ...ITEM_STATUSES.map((s) => [s, s.replaceAll("_", " ")])]}
+                  options={[["", "Tất cả trạng thái"], ...ITEM_STATUSES.map((s) => [s, s.replaceAll("_", " ")])]}
                 />
               </Field>
-              <Field label="Category" hint="Exact match on the item category.">
-                <Input aria-label="Inventory category filter" value={category} onChange={(e) => setCategory(e.target.value)} />
+              <Field label="Danh mục" hint="Khớp chính xác danh mục hàng.">
+                <Input aria-label="Lọc theo danh mục hàng hóa" value={category} onChange={(e) => setCategory(e.target.value)} />
               </Field>
-              <Field label="Search" hint="Item code, name or category.">
-                <Input aria-label="Search inventory items" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Field label="Tìm kiếm" hint="Mã hàng, tên hoặc danh mục.">
+                <Input aria-label="Tìm hàng hóa" value={search} onChange={(e) => setSearch(e.target.value)} />
               </Field>
             </div>
           </Panel>
 
           <AsyncBoundary state={items} render={(data) => (data ? (
-            <Panel title="Inventory lots" subtitle={`${data.total} lot${data.total === 1 ? "" : "s"} · ${rows.filter((r) => r.placed).length} placed on a cell`}>
+            <Panel title="Lô hàng" subtitle={`${data.total} lô · ${rows.filter((r) => r.placed).length} đã xếp ô`}>
               {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
               <Table
-                label="Managed inventory"
+                label="Hàng hóa lưu trữ"
                 rows={data.rows}
                 columns={[
                   { key: "code", label: "Item", render: (r) => <OpenLink to={`${basePath}/${r.id}`}>{r.code || r.name}</OpenLink> },
@@ -111,7 +111,7 @@ function ItemList({ basePath }) {
                   { key: "cell", label: "Cell", render: (r) => (r.currentCellId ? "Placed" : r.preferredCellId ? "Preferred only" : "—") },
                   { key: "createdAt", label: "Registered", render: (r) => day(r.createdAt) },
                 ]}
-                empty="No inventory lot matches the current filters."
+                empty="Không có lô hàng phù hợp bộ lọc hiện tại."
               />
             </Panel>
           ) : null)} />
@@ -127,9 +127,9 @@ function ItemDetail({ id, basePath }) {
 
   return (
     <Screen
-      title="Inventory lot"
-      description="Goods, reservation link, placement state and movement history."
-      action={<Button asChild variant="outline"><Link to={basePath}>Back to inventory</Link></Button>}
+      title="Chi tiết lô hàng"
+      description="Hàng hóa, đơn lưu trữ, trạng thái xếp ô và lịch sử biến động."
+      action={<Button asChild variant="outline"><Link to={basePath}>Quay lại danh sách hàng hóa</Link></Button>}
     >
       <AsyncBoundary state={item} render={(row) => (
         <>
@@ -161,8 +161,8 @@ function ItemDetail({ id, basePath }) {
 
           <AsyncBoundary state={movements} render={(ledger) => (
             <Panel
-              title="Movement ledger"
-              subtitle={`${ledger.length} movement${ledger.length === 1 ? "" : "s"} · newest first`}
+            title="Lịch sử biến động"
+            subtitle={`${ledger.length} biến động · mới nhất ở trên`}
             >
               {ledger.length > 0 && (
                 <div className="mb-5">
@@ -174,20 +174,20 @@ function ItemDetail({ id, basePath }) {
                 </div>
               )}
               <Table
-                label="Item movements"
+                label="Biến động hàng hóa"
                 rows={ledger.map((row) => ({ ...row, id: row.id }))}
                 columns={[
-                  { key: "type", label: "Type", render: (r) => <Status value={r.type} /> },
-                  { key: "performedAt", label: "Performed", render: (r) => stamp(r.performedAt) },
-                  { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
-                  { key: "totalWeightKg", label: "Weight", render: (r) => kg(r.totalWeightKg) },
-                  { key: "totalVolumeM3", label: "Volume", render: (r) => m3(r.totalVolumeM3) },
-                  { key: "sourceCellId", label: "Source cell", render: (r) => r.sourceCellId || "—" },
-                  { key: "cellId", label: "Destination cell", render: (r) => r.cellId || "—" },
-                  { key: "performedBy", label: "Performed by", render: (r) => r.performedBy || "—" },
-                  { key: "note", label: "Note", render: (r) => r.note || "—" },
+                  { key: "type", label: "Loại", render: (r) => <Status value={r.type} /> },
+                  { key: "performedAt", label: "Thời điểm", render: (r) => stamp(r.performedAt) },
+                  { key: "quantity", label: "Số lượng", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
+                  { key: "totalWeightKg", label: "Khối lượng", render: (r) => kg(r.totalWeightKg) },
+                  { key: "totalVolumeM3", label: "Thể tích", render: (r) => m3(r.totalVolumeM3) },
+                  { key: "sourceCellId", label: "Ô nguồn", render: (r) => r.sourceCellId || "—" },
+                  { key: "cellId", label: "Ô đích", render: (r) => r.cellId || "—" },
+                  { key: "performedBy", label: "Người thực hiện", render: (r) => r.performedBy || "—" },
+                  { key: "note", label: "Ghi chú", render: (r) => r.note || "—" },
                 ]}
-                empty="No movement yet. A row appears when Staff confirm an inbound, outbound or relocation."
+                empty="Chưa có biến động. Bản ghi xuất hiện khi nhân viên xác nhận nhập, xuất hoặc di chuyển hàng."
               />
             </Panel>
           )} />
