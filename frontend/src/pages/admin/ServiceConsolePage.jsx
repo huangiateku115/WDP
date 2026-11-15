@@ -198,7 +198,7 @@ function ServiceDetail({ config }) {
                         {m.isInternal && <Status value="INTERNAL" />}
                       </li>
                     ))}
-                    {!messages.data.length && <li className="text-sm text-slate-500">Chưa có tin nhắn nào.</li>}}
+                    {!messages.data.length && <li className="text-sm text-slate-500">Chưa có tin nhắn nào.</li>}
                   </ul>
                 )}
               </Panel>
