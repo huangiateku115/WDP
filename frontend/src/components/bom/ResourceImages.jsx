@@ -24,7 +24,7 @@ export function ResourceThumb({ src, alt, size = "h-10 w-10" }) {
 
 export function ResourceGallery({ images = [], alt = "Resource image" }) {
   const list = Array.isArray(images) ? images.filter(httpImage) : [];
-  if (!list.length) return <p className="text-sm text-slate-500">No image has been saved for this record.</p>;
+  if (!list.length) return <p className="text-sm text-slate-500">Chưa lưu ảnh nào cho bản ghi này.</p>;
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {list.map((url, index) => (
@@ -39,7 +39,7 @@ export function ResourceGallery({ images = [], alt = "Resource image" }) {
             />
           </a>
           <figcaption className="mt-1 truncate text-xs text-slate-500">
-            {index === 0 ? "Cover" : `Image ${index + 1}`}
+            {index === 0 ? "Ảnh bìa" : `Ảnh ${index + 1}`}
           </figcaption>
         </figure>
       ))}

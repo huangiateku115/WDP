@@ -64,41 +64,41 @@ export default function ReservationsOversightPage() {
 
   return (
     <Screen
-      title="Reservation oversight"
-      description="Review Self Storage reservations per facility and act on the Managed reservation lifecycle. Approving a reservation creates the draft contract."
-      action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Refresh</Button>}
+      title="Giám sát đơn đặt thuê"
+      description="Theo dõi đơn Thuê kho riêng theo từng cơ sở và xử lý đơn Lưu trữ hàng hóa. Duyệt đơn sẽ tạo hợp đồng nháp."
+      action={<Button variant="outline" disabled={list.loading} onClick={refresh}>Tải lại</Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-            ["Reservations loaded", list.data ? list.data.self.length : "—", "Self Storage reservations of the selected facility"],
-            ["Awaiting review", countBy(list.data?.self || [], "status", "RESERVED"), "Status RESERVED"],
-            ["Contracted", countBy(list.data?.self || [], "status", "CONTRACTED"), "Approved, contract drafted"],
-            ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "Approvers can change the review status" : "Your role cannot approve or reject"],
+            ["Số đơn đã tải", list.data ? list.data.self.length : "—", "Đơn Thuê kho riêng của cơ sở đã chọn"],
+            ["Chờ duyệt", countBy(list.data?.self || [], "status", "RESERVED"), "Trạng thái Chờ xử lý"],
+            ["Đã lập hợp đồng", countBy(list.data?.self || [], "status", "CONTRACTED"), "Đã duyệt, đã tạo hợp đồng"],
+            ["Quyền xử lý", canReview ? "Duyệt / từ chối" : "Chỉ xem", canReview ? "Có thể đổi trạng thái duyệt" : "Vai trò của bạn không được duyệt"],
           ]} />
 
-          <Panel title="Review scope">
+          <Panel title="Phạm vi xem xét">
             <div className="manager-filters">
-              <Field label="Facility">
+              <Field label="Cơ sở">
                 <Select
-                  label="Reservation facility"
+                  label="Cơ sở của đơn"
                   value={facilityId}
                   onChange={selectFacility}
                   options={[["", "Select a facility"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                 />
               </Field>
-              <Field label="Status">
+              <Field label="Trạng thái">
                 <Select
-                  label="Reservation status filter"
+                  label="Lọc theo trạng thái đơn"
                   value={status}
                   onChange={setStatus}
                   disabled={!facilityId}
                   options={[["", "All statuses"], ...RESERVATION_STATUSES.map((s) => [s, s.replaceAll("_", " ")])]}
                 />
               </Field>
-              <Field label="Search" hint="Reservation code or customer name.">
+              <Field label="Tìm kiếm" hint="Mã đơn hoặc tên khách hàng.">
                 <Input
-                  aria-label="Search reservations"
+                  aria-label="Tìm đơn đặt thuê"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   disabled={!facilityId}
@@ -113,26 +113,26 @@ export default function ReservationsOversightPage() {
           </Panel>
 
           {!facilityId && (
-            <Panel title="Select a facility">
+            <Panel title="Chọn cơ sở">
               <p className="text-sm text-slate-500">Reservations are listed facility by facility.</p>
             </Panel>
           )}
 
           {facilityId && (
             <AsyncBoundary state={list} render={() => (
-              <Panel title="Reservations" subtitle={`${rows.length} of ${(list.data?.self || []).length} reservation(s) shown`}>
+              <Panel title="Đơn đặt thuê" subtitle={`${rows.length} / ${(list.data?.self || []).length} đơn`}>
                 <Table
-                  label="Facility reservations"
+                  label="Đơn đặt thuê của cơ sở"
                   rows={rows}
                   columns={[
                     { key: "code", label: "Reservation", render: (r) => <OpenLink to={`${workspace}/reservations/${r.id}`}>{r.code || r.id}</OpenLink> },
                     { key: "customer", label: "Customer", render: (r) => r.customerName },
                     { key: "unit", label: "Unit", render: (r) => r.unitCode || r.unitSize || "—" },
-                    { key: "window", label: "Rental window", render: (r) => `${day(r.startDate)} → ${day(r.endDate)}` },
-                    { key: "rent", label: "Rent / deposit", render: (r) => `${money(r.estimatedRent)} · ${money(r.depositAmount)}` },
+                    { key: "window", label: "Thời gian thuê", render: (r) => `${day(r.startDate)} → ${day(r.endDate)}` },
+                    { key: "rent", label: "Tiền thuê / đặt cọc", render: (r) => `${money(r.estimatedRent)} · ${money(r.depositAmount)}` },
                     { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
                   ]}
-                  empty="No reservation matches the current filters."
+                  empty="Không có đơn phù hợp bộ lọc hiện tại."
                 />
               </Panel>
             )} />

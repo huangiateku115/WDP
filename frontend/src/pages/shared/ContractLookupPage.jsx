@@ -132,52 +132,52 @@ function ContractList({ basePath }) {
 
   return (
     <Screen
-      title="Contracts"
-      description="Open a facility reservation to review the contract captured when it was approved. Contract detail opens on its own page."
-      action={<Button variant="outline" disabled={reservations.loading} onClick={reservations.reload}>Refresh</Button>}
+      title="Hợp đồng"
+      description="Mở đơn đặt thuê của cơ sở để xem hợp đồng đã lập khi đơn được duyệt. Trang chi tiết hợp đồng mở riêng."
+      action={<Button variant="outline" disabled={reservations.loading} onClick={reservations.reload}>Tải lại</Button>}
     >
       <Panel
-        title="Find a contract through its reservation"
-        subtitle={facilityId ? `${rows.length} of ${(reservations.data || []).length} reservation(s) shown` : "Select a facility to load its reservations."}
+        title="Tìm hợp đồng qua đơn đặt thuê"
+        subtitle={facilityId ? `${rows.length} / ${(reservations.data || []).length} đơn` : "Chọn một cơ sở để tải danh sách đơn."}
       >
         <div className="manager-filters">
           {!facilityScoped && (
-            <Field label="Facility">
+            <Field label="Cơ sở">
               <Select
-                label="Contract facility"
+                label="Cơ sở của hợp đồng"
                 value={facilityId}
                 onChange={selectFacility}
-                options={[["", "Select a facility"], ...(directory.data || []).map((facility) => [facility.id, `${facility.name} (${facility.code})`])]}
+                options={[["", "Chọn cơ sở"], ...(directory.data || []).map((facility) => [facility.id, `${facility.name} (${facility.code})`])]}
               />
             </Field>
           )}
-          <Field label="Reservation status">
+          <Field label="Trạng thái đơn">
             <Select
-              label="Reservation status filter"
+              label="Lọc theo trạng thái đơn"
               value={status}
               onChange={setStatus}
               disabled={!facilityId}
-              options={[["", "All statuses"], ...RESERVATION_STATUSES.map((value) => [value, value.replaceAll("_", " ")])]}
+              options={[["", "Tất cả trạng thái"], ...RESERVATION_STATUSES.map((value) => [value, value.replaceAll("_", " ")])]}
             />
           </Field>
-          <Field label="Search" hint="Reservation code or customer name.">
+          <Field label="Tìm kiếm" hint="Mã đơn hoặc tên khách hàng.">
             <Input
-              aria-label="Search contracts by reservation"
+              aria-label="Tìm hợp đồng theo đơn"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               disabled={!facilityId}
             />
           </Field>
         </div>
-        {facilityScoped && <p className="mb-4 text-sm text-slate-500">Only reservations of your assigned facility are listed.</p>}
+        {facilityScoped && <p className="mb-4 text-sm text-slate-500">Chỉ hiển thị đơn của cơ sở bạn được phân công.</p>}
         <Message {...feedback} />
 
         {!facilityId ? (
-          <p className="text-sm text-slate-500">Choose a facility first. Contracts are opened per reservation.</p>
+          <p className="text-sm text-slate-500">Hãy chọn cơ sở trước. Hợp đồng được mở theo từng đơn đặt thuê.</p>
         ) : (
           <AsyncBoundary state={reservations} render={() => (
             <Table
-              label="Reservations"
+              label="Đơn đặt thuê"
               rows={rows}
               columns={[
                 { key: "code", label: "Reservation", render: (row) => row.code || row.id },
@@ -191,12 +191,12 @@ function ContractList({ basePath }) {
                   key: "contract", label: "Contract",
                   render: (row) => (
                     <Button variant="outline" size="sm" disabled={opening === row.id} onClick={() => openContract(row.id)}>
-                      {opening === row.id ? "Opening…" : "Open contract"}
+                      {opening === row.id ? "Đang mở…" : "Mở hợp đồng"}
                     </Button>
                   ),
                 },
               ]}
-              empty="No reservation matches the current filters."
+              empty="Không có đơn phù hợp bộ lọc hiện tại."
             />
           )} />
         )}
@@ -213,9 +213,9 @@ function ContractDetail({ id, basePath }) {
   );
   return (
     <Screen
-      title="Contract detail"
-      description="Contract record. Values were captured at approval time."
-      action={<Button variant="outline" onClick={() => nav(basePath)}>Back to contracts</Button>}
+      title="Chi tiết hợp đồng"
+      description="Bản ghi hợp đồng với các giá trị được chốt tại thời điểm duyệt đơn."
+      action={<Button variant="outline" onClick={() => nav(basePath)}>Quay lại danh sách hợp đồng</Button>}
     >
       <AsyncBoundary
         state={state}
@@ -253,11 +253,11 @@ function ContractRecord({ contract }) {
         ]} />
       </Panel>
 
-      <Panel title="Customer information">
+      <Panel title="Thông tin khách hàng">
         <Details values={customerRows(customer)} />
       </Panel>
 
-      <Panel title="Pricing & payment">
+      <Panel title="Giá và thanh toán">
         <Details values={pricingRows(pricing)} />
       </Panel>
     </>

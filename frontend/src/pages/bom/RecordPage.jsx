@@ -11,7 +11,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
-  bomFutureDate, responseData,
+  bomFutureDate, responseData, serviceLabel,
   pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
   policyFromDto,
 } from "@/lib/bomMappers";
