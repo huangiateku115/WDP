@@ -50,7 +50,7 @@ function ItemList({ basePath }) {
   return (
     <Screen
       title="Managed inventory"
-      description="Every inventory lot registered by customers, its placement state and the cell that holds it. Staff perform the physical inbound; this console reports the result."
+      description="Inventory lots registered by customers with their placement state."
       action={<Button variant="outline" disabled={items.loading} onClick={items.reload}>Refresh</Button>}
     >
       <AsyncBoundary state={directory} render={() => (
@@ -64,7 +64,7 @@ function ItemList({ basePath }) {
 
           <Panel
             title="Filters"
-            subtitle="Filters apply to the whole list. Leave the facility empty to list every facility."
+            subtitle="Leave the facility empty to list every facility."
           >
             <div className="manager-filters">
               <Field label="Facility">
@@ -90,10 +90,6 @@ function ItemList({ basePath }) {
                 <Input aria-label="Search inventory items" value={search} onChange={(e) => setSearch(e.target.value)} />
               </Field>
             </div>
-            <p className="bom-warning mt-5">
-              The effective Item Category policy applies at inbound, so a lot can only be stored when its category is
-              allowed by the facility policy.
-            </p>
           </Panel>
 
           <AsyncBoundary state={items} render={(data) => (data ? (
@@ -132,7 +128,7 @@ function ItemDetail({ id, basePath }) {
   return (
     <Screen
       title="Inventory lot"
-      description="Registered goods, its Managed reservation link, placement state and the immutable movement ledger written by Staff inbounds."
+      description="Goods, reservation link, placement state and movement history."
       action={<Button asChild variant="outline"><Link to={basePath}>Back to inventory</Link></Button>}
     >
       <AsyncBoundary state={item} render={(row) => (
@@ -161,10 +157,6 @@ function ItemDetail({ id, basePath }) {
               ["Registered", stamp(row.createdAt)],
               ["Description", row.description || "—"],
             ]} />
-            <p className="bom-warning mt-5">
-              Placement is decided during the Staff-confirmed inbound. Cell weight and volume counters increase only at that moment,
-              which is why an approved reservation can still hold unplaced lots.
-            </p>
           </Panel>
 
           <AsyncBoundary state={movements} render={(ledger) => (

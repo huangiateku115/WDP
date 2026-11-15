@@ -106,7 +106,7 @@ export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
       <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Save zone" : "Create zone"}>
         <div className="manager-filters">
           {!editing && (
-            <Field label="Zone code" hint="Uppercased; unique per facility.">
+            <Field label="Zone code" hint="Unique per facility.">
               <Input aria-label="Zone code" required value={form.code} onChange={(e) => change("code", e.target.value)} />
             </Field>
           )}
@@ -294,7 +294,7 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
         <p className="bom-warning">
           {editing
             ? "Dimensions, level capacity and status changes are rejected while cells hold inventory, allocations or reserved bookings."
-            : "Creating a rack also creates every cell for the requested layout. The level weight is split evenly across cells; tune an individual cell afterwards."}
+            : "Creating a rack also creates its cells; the level weight is split evenly across them."}
         </p>
       </Form>
     </Dialog>
@@ -355,8 +355,7 @@ export function CellDialog({ cell, onClose, onSaved }) {
           </Field>
         </div>
         <p className="bom-warning">
-          Cell width and depth are derived from the rack, so only the usable height can be tuned here. Structural changes are
-          rejected while the cell is reserved or occupied.
+          Only the usable height can be changed. Structural changes are rejected while the cell is reserved or occupied.
         </p>
       </Form>
     </Dialog>

@@ -43,7 +43,7 @@ export default function StorageUnitsPage() {
   function removeUnit(unit) {
     setConfirm({
       title: `Delete unit ${unit.code}?`,
-      summary: "Units are soft deleted: held and occupied units cannot be deleted. Deleted units disappear from every list and cannot be restored from this console.",
+      summary: "Held and occupied units cannot be deleted.",
       label: "Delete unit",
       run: async () => { await bomUnitApi.remove(unit.id); units.reload(); },
     });

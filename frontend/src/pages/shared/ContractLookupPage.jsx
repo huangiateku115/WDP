@@ -214,7 +214,7 @@ function ContractDetail({ id, basePath }) {
   return (
     <Screen
       title="Contract detail"
-      description="Read-only contract record. Customer and pricing values are copies captured at approval time."
+      description="Contract record. Values were captured at approval time."
       action={<Button variant="outline" onClick={() => nav(basePath)}>Back to contracts</Button>}
     >
       <AsyncBoundary
@@ -251,16 +251,13 @@ function ContractRecord({ contract }) {
           ["Created", day(contract.createdAt)],
           ["Last updated", day(contract.updatedAt)],
         ]} />
-        <p className="bom-warning mt-5">
-          These values were frozen when the reservation was approved. Later pricing or customer changes do not rewrite this contract.
-        </p>
       </Panel>
 
-      <Panel title="Customer information" subtitle="Captured at approval time.">
+      <Panel title="Customer information">
         <Details values={customerRows(customer)} />
       </Panel>
 
-      <Panel title="Pricing & payment" subtitle="Amounts captured at approval time.">
+      <Panel title="Pricing & payment">
         <Details values={pricingRows(pricing)} />
       </Panel>
     </>

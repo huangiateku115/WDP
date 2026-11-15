@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  Panel, Table, Status, Field, Input, Select, Details, Button, Message,
+  Panel, Table, Status, Field, Input, Select, Button, Message,
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState } from "@/components/admin/AdminUI";
 import { ReadOnlyValues, Kpis } from "@/components/bom/BomUI";
@@ -42,21 +42,21 @@ export function DashboardPage() {
   return (
     <AdminScreen
       title="System administration overview"
-      description="Account and facility metrics. Login history and audit logs are scoped to one account."
+      description="Account and facility metrics."
       action={<Button asChild variant="orange"><Link to="/admin/users">Manage users</Link></Button>}
     >
       <UserApiState state={state} />
-        <Panel title="User metrics" subtitle="Derived from the loaded accounts.">
+        <Panel title="User metrics">
         <Kpis items={[
           ["Total users", ready ? state.users.length : "Unavailable", "Total accounts"],
-          ["Active users", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Unavailable", "Shown when all returned statuses are available"],
+          ["Active users", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Unavailable", "Status ACTIVE"],
           ["Customers", count("CUSTOMER"), "Customer accounts"],
           ["Facility Staff", count("FACILITY_STAFF"), "Facility staff accounts"],
           ["Facility Managers", count("FACILITY_MANAGER"), "Facility manager accounts"],
         ]} />
       </Panel>
       {ready && (
-        <Panel title="Returned role distribution" subtitle="Unknown role names are displayed exactly as returned.">
+        <Panel title="Role distribution">
           <Table
             label="Returned role distribution"
             rows={[...new Set(state.users.map((u) => u.role || "Role not returned"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Role not returned") === role).length }))}
@@ -66,7 +66,6 @@ export function DashboardPage() {
       )}
       <Panel
         title="Facility metrics"
-        subtitle="Facility directory."
         action={<Button asChild variant="outline"><Link to="/admin/facilities">Open facility oversight</Link></Button>}
       >
         {facilities.error
@@ -82,8 +81,7 @@ export function DashboardPage() {
               ]} />
             )}
       </Panel>
-      <Panel title="Login history & audit" subtitle="Sign-in events and audit actions are scoped to one account.">
-        <p className="mb-4 text-sm text-slate-500">Select an account on the dedicated pages to inspect its sign-in events or the audit actions it performed.</p>
+      <Panel title="Login history & audit">
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link to="/admin/login-history">Open login history</Link></Button>
           <Button asChild variant="outline"><Link to="/admin/audit">Open audit logs</Link></Button>
@@ -185,7 +183,6 @@ export function AuditPage() {
           )}
         </>
       )}
-      <Details values={[["Note", "Audit history lists the actions performed by one account."]]} />
     </AdminScreen>
   );
 }
@@ -200,7 +197,7 @@ export function FacilitiesPage() {
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
 
   return (
-    <AdminScreen title="Facility oversight" description="Read-only system-wide facility visibility. Management stays in the business workspace.">
+    <AdminScreen title="Facility oversight" description="System-wide facility visibility.">
       <Panel title="Filters">
         <div className="manager-filters">
           <Field label="Search">

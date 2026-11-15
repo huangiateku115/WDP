@@ -190,7 +190,6 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
         ) : (
           <p className="bom-warning">
             Capacity is only available for an ACTIVE Managed Inventory facility with a saved capacity configuration.
-            Registered item volume is still reported below.
           </p>
         )}
         <div className="mt-5">
@@ -214,11 +213,10 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
         )}
       </Panel>
 
-      <Panel title="Warehouse structure and physical capacity" subtitle="Warehouse-map read model (zones → aisles → racks → cells).">
+      <Panel title="Warehouse structure and physical capacity" subtitle="Zones → aisles → racks → cells.">
         {!structure.available && (
           <p className="bom-warning mb-5">
             The warehouse map is unavailable for this facility: {structure.reason || "the facility is not part of the managed warehouse map"}.
-            Structure counts stay empty, but the managed capacity configuration below can still be reviewed or configured.
           </p>
         )}
         <Details values={[
@@ -229,9 +227,6 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
           ["Allocatable weight capacity", kg(allocatableKg)],
           ["Rack envelope volume", m3(envelopeM3)],
         ]} />
-        <p className="bom-warning mt-5">
-          Rack envelope volume is an approximate physical denominator (width × depth × height per rack). Used volume stays 0 until goods are received into a cell.
-        </p>
         <div className="mt-5">
           <Table
             label="Rack physical capacity"

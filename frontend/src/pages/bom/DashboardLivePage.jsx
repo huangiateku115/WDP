@@ -46,7 +46,7 @@ export default function DashboardLivePage() {
             <Kpis items={[
               ["Total facilities", facilities.length, "Facility records"],
               ["Active facilities", facilities.filter((f) => f.status === "ACTIVE").length, "Accepting new reservations"],
-              ["Total reservations", reservations.length, "Across every fetched facility"],
+              ["Total reservations", reservations.length, "Across facilities"],
               ["Active rentals", countBy(reservations, "ACTIVE"), "Reservations with status ACTIVE"],
               ["Awaiting approval", countBy(reservations, "RESERVED"), "Reservations with status RESERVED"],
               ["Overdue", countBy(reservations, "OVERDUE"), "Reservations with status OVERDUE"],
@@ -75,7 +75,7 @@ export default function DashboardLivePage() {
                 empty="No facilities to show."
               />
             </Panel>
-            <Panel title="Recent reservations" subtitle="Latest 20 records across the fetched facilities.">
+            <Panel title="Recent reservations" subtitle="Latest 20 records.">
               <Table
                 label="Recent reservations"
                 rows={recent}

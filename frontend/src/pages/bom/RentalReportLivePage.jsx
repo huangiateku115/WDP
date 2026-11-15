@@ -36,7 +36,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
         return (
           <>
             <Kpis items={[
-              ["Reservations", reservations.length, "Across every fetched facility"],
+              ["Reservations", reservations.length, "Across facilities"],
               ["Active", countBy(reservations, "ACTIVE"), "Status ACTIVE"],
               ["Overdue", countBy(reservations, "OVERDUE"), "Status OVERDUE"],
               ["Closed", countBy(reservations, "CLOSED"), "Status CLOSED"],

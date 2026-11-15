@@ -51,7 +51,7 @@ test('Admin and BOM Policy pages expose read-only routes and omit mutation contr
   const policyPages=readFileSync(new URL('../src/pages/bom/PolicyRecordsPage.jsx',import.meta.url),'utf8');
   assert.match(generic,/Scheduled Pricing Rule/);
   assert.match(generic,/new Date\(record\.effectiveFrom\) > new Date\(\)/);
-  assert.match(generic,/current effective price remains in force until then/);
+  assert.match(generic,/Scheduled for \{record\.effectiveFrom\}/);
   assert.match(generic,/kind === "policy" && \["new", "edit"\]/);
   assert.match(generic,/kind === "pricing" \? <Button/);
   assert.doesNotMatch(policyPages,/bomPolicyApi\.(create|update|setActive)/);

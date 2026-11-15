@@ -47,6 +47,6 @@ test('Visit amendments keep an idempotency key across ambiguous outcomes and Acc
 });
 test('Facility editor exposes an explicit Admin/BOM Managed visit schedule without inferring it from general opening hours',()=>{
  const editor=read('../src/pages/bom/FacilityPage.jsx');const mapper=read('../src/lib/bomMappers.js');
- assert.match(editor,/Configure Managed Inventory visit schedule/);assert.match(editor,/Asia\/Ho_Chi_Minh/);assert.match(editor,/active Staff accounts/);
+ assert.match(editor,/Configure Managed Inventory visit schedule/);assert.match(editor,/Asia\/Ho_Chi_Minh/);assert.match(editor,/Separate from the facility opening hours/);
  assert.match(mapper,/managedVisitSchedule/);assert.match(mapper,/visitScheduleDraft/);
 });

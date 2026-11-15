@@ -41,7 +41,7 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
             {report.live ? (
               <OpenLink to={`${basePath}/reports/${report.key}`}>Open report</OpenLink>
             ) : (
-              <p className="text-sm text-slate-500">No data available yet.</p>
+              <p className="text-sm text-slate-500">Not available.</p>
             )}
           </Panel>
         ))}
@@ -58,7 +58,7 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
     >
       <Panel title="Cross-facility revenue">
-        <p className="text-sm text-slate-600">No revenue data is available yet.</p>
+        <p className="text-sm text-slate-600">Not available.</p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Open utilization report</Link></Button>
           <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Open rental report</Link></Button>

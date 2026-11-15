@@ -77,10 +77,7 @@ export default function ReservationsOversightPage() {
             ["Review rights", canReview ? "Approve / reject" : "Read only", canReview ? "Approvers can change the review status" : "Your role cannot approve or reject"],
           ]} />
 
-          <Panel
-            title="Review scope"
-            subtitle="The list is not paged, so the status and search filters apply to the rows already loaded."
-          >
+          <Panel title="Review scope">
             <div className="manager-filters">
               <Field label="Facility">
                 <Select
@@ -110,8 +107,7 @@ export default function ReservationsOversightPage() {
             </div>
             {!canReview && (
               <p className="bom-warning mt-5">
-                You can read every reservation of a facility; only facility managers and admins can approve or reject
-                one. This console stays read-only for your role.
+                Only facility managers and admins can approve or reject reservations.
               </p>
             )}
           </Panel>

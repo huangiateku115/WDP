@@ -76,7 +76,7 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
     <Dialog title={editing ? `Edit unit ${unit.code}` : "Create storage unit"} onClose={onClose}>
       <form className="space-y-5" onSubmit={submit}>
         <div className="manager-filters">
-          <Field label="Unit code" hint="Uppercased; unique inside the facility.">
+          <Field label="Unit code" hint="Must be unique inside the facility.">
             <Input aria-label="Unit code" required value={form.unitCode} onChange={(e) => change("unitCode", e.target.value)} />
           </Field>
           <Field label="Size">
@@ -143,7 +143,7 @@ export function UnitStatusDialog({ unit, onClose, onSaved }) {
           </Field>
         </div>
         <p className="bom-warning">
-          Marking a unit AVAILABLE requires the facility to still be ACTIVE and to offer SELF_STORAGE, otherwise the change is rejected.
+          Marking a unit AVAILABLE requires the facility to still be ACTIVE and to offer SELF_STORAGE.
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">

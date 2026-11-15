@@ -93,7 +93,7 @@ function FacilityList({ basePath }) {
           <Field label="City">
             <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
           </Field>
-            <Field label="Records" hint="Only administrators and business operations can list deleted facilities.">
+            <Field label="Records">
             <Select
               label="Record filter"
               value={showDeleted ? "deleted" : "live"}
@@ -205,22 +205,19 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],
-                ["Managed visit schedule", facility.managedVisitSchedule ? `${facility.managedVisitSchedule.timeZone} · ${facility.managedVisitSchedule.slotDurationMinutes} min slots · ${facility.managedVisitSchedule.weeklyHours?.length || 0} configured days` : "Not configured (Customer visit booking is unavailable)"],
+                ["Managed visit schedule", facility.managedVisitSchedule ? `${facility.managedVisitSchedule.timeZone} · ${facility.managedVisitSchedule.slotDurationMinutes} min slots · ${facility.managedVisitSchedule.weeklyHours?.length || 0} configured days` : "Not configured"],
                 ["Business status", <Status value={facility.status} />],
                 ["Contact phone", facility.contact?.phone],
                 ["Contact email", facility.contact?.email],
                 ["Description", facility.description],
               ]} />
-              <p className="bom-warning mt-5">
-                Deactivation only blocks new reservations. Existing active rentals are preserved.
-              </p>
               <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
                   {nextStatus === "ACTIVE" ? "Activate facility" : "Deactivate facility"}
                 </Button>
               </div>
             </Panel>
-            <Panel title="Facility images" subtitle="Saved photo URLs. The first image is the public catalog cover.">
+            <Panel title="Facility images">
               <ResourceGallery images={facility.images} alt={`${facility.name} photo`} />
             </Panel>
             <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
@@ -310,9 +307,8 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  <b>{facility.name}</b> is soft deleted: it leaves every list, the warehouse map and the rent wizard, and only
-                  ADMIN/BOM can list and restore it again. The delete is blocked while storage units or warehouse zones still
-                  reference the facility.
+                  <b>{facility.name}</b> will be removed from every list, the warehouse map and the rent wizard. Storage units or
+                  warehouse zones that still reference it block the deletion.
                 </p>
               </ConfirmDialog>
             )}
@@ -418,7 +414,6 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
   return (
     <Screen
       title={isEdit ? "Edit facility" : "Create facility"}
-      description="Code is required on create and is immutable afterwards."
     >
       <AsyncBoundary
         state={isEdit ? state : { loading: false, data: null, error: "" }}
@@ -426,14 +421,14 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
           <Panel title="Facility form">
             <form className="bom-form" onSubmit={submit}>
               {!isEdit && (
-                <Field label="Facility code" hint="Trimmed and uppercased; must be unique.">
+                <Field label="Facility code" hint="Must be unique.">
                   <Input aria-label="Facility code" required value={form.code} onChange={(e) => change("code", e.target.value)} />
                 </Field>
               )}
               <Field label="Facility name">
                 <Input aria-label="Facility name" required value={form.name} onChange={(e) => change("name", e.target.value)} />
               </Field>
-              <Field label="Country" hint="Country where the facility is located.">
+              <Field label="Country">
                 <Select
                   label="Country"
                   value={form.country}
@@ -441,7 +436,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   options={[["", "Select a country"], ...COUNTRIES]}
                 />
               </Field>
-              <Field label="City / Province" hint="Select the city or province.">
+              <Field label="City / Province">
                 <Select
                   label="City / Province"
                   value={form.city}
@@ -450,7 +445,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   options={[["", form.country ? "Select a city / province" : "Select a country first"], ...citiesFor(form.country)]}
                 />
               </Field>
-              <Field label="Ward / Commune" hint="Select the ward or commune.">
+              <Field label="Ward / Commune">
                 <Select
                   label="Ward / Commune"
                   value={form.wardCustom ? CUSTOM_WARD : form.ward}
@@ -460,11 +455,11 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                 />
               </Field>
               {form.wardCustom && (
-                <Field label="Ward / Commune (manual)" hint="Enter the ward or commune.">
+                <Field label="Ward / Commune (manual)">
                   <Input aria-label="Ward / Commune" required value={form.ward} onChange={(e) => change("ward", e.target.value)} />
                 </Field>
               )}
-              <Field label="Street / Area" hint="Street name or area.">
+              <Field label="Street / Area">
                 <Input
                   aria-label="Street / Area"
                   required
@@ -473,7 +468,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   onChange={(e) => change("district", e.target.value)}
                 />
               </Field>
-              <Field label="Address / House number" hint="House number and detail address.">
+              <Field label="Address / House number">
                 <Input
                   aria-label="Address / House number"
                   required
@@ -508,10 +503,10 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               </div>
               {form.serviceTypes.includes("MANAGED_INVENTORY") && <div className="manager-field">
                 <span>Managed Inventory visit schedule</span>
-                <small>Separate from general facility opening hours. Customer availability is estimated from active Staff accounts and overlapping visits; a Manager must still assign a specific escort. Times use Asia/Ho_Chi_Minh.</small>
+                <small>Separate from the facility opening hours. Times use Asia/Ho_Chi_Minh.</small>
                 <label className="mt-2 flex items-center gap-2 text-sm"><Checkbox aria-label="Configure Managed Inventory visit schedule" checked={form.visitScheduleEnabled} onCheckedChange={(checked) => change("visitScheduleEnabled", checked === true)} />Configure Customer visit booking schedule</label>
                 {form.visitScheduleEnabled && <div className="mt-3 space-y-3">
-                  <Field label="Visit slot duration" hint="30–480 minutes in 15-minute increments. Access Session still ends after at most 60 minutes or earlier at Visit/rental end.">
+                  <Field label="Visit slot duration" hint="30–480 minutes in 15-minute increments.">
                     <Select label="Visit slot duration" value={String(form.visitScheduleDraft.slotDurationMinutes)} onChange={(value) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, slotDurationMinutes: Number(value) } }))} options={Array.from({ length: 31 }, (_, index) => String(30 + index * 15))} />
                   </Field>
                   {form.visitScheduleDraft.weeklyHours.map((day, index) => <div key={day.weekday} className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr]">
@@ -524,10 +519,10 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               <Field label="Business status">
                 <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
               </Field>
-              <Field label="Contact phone" hint="Optional. Sent as contact.phone.">
+              <Field label="Contact phone">
                 <Input aria-label="Contact phone" value={form.contactPhone || ""} onChange={(e) => change("contactPhone", e.target.value)} />
               </Field>
-              <Field label="Contact email" hint="Optional. Sent as contact.email and must be a valid address.">
+              <Field label="Contact email" hint="Optional.">
                 <Input aria-label="Contact email" type="email" value={form.contactEmail || ""} onChange={(e) => change("contactEmail", e.target.value)} />
               </Field>
               <Field label="Service models" hint="At least one service model is required.">
@@ -560,14 +555,14 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                     <Button type="button" variant="outline" onClick={addImage}>Add image URL</Button>
                   )}
                 </div>
-                <small>Optional. Up to 10 HTTP(S) image URLs; the first image is used as the public catalog cover.</small>
+                <small>Optional. Up to 10 image URLs; the first image is the cover.</small>
               </div>
               <div className="bom-wide">
                 <Field label="Description">
                   <Textarea aria-label="Description" value={form.description} onChange={(e) => change("description", e.target.value)} />
                 </Field>
                 {form.status === "INACTIVE" && (
-                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>                )}
+                  <p className="bom-warning mb-5">New reservations are blocked.</p>                )}
                 {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>

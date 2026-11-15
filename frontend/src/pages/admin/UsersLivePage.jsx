@@ -86,14 +86,14 @@ function UserDetail({ state, id }) {
   const row = state.users.find((u) => userId(u) === id);
   if (!state.sessionToken || state.status !== "ready")
     return (
-      <AdminScreen title="User detail" description="Details are resolved from the loaded account list.">
+      <AdminScreen title="User detail" description="Account details.">
         <UserApiState state={state} />
       </AdminScreen>
     );
 
   if (!row)
     return (
-      <AdminScreen title="User unavailable" description="This account is not in the loaded list. Reload the directory or return to it.">
+      <AdminScreen title="User unavailable" description="This account is not available.">
         <UserApiState state={state} />
         <Panel title="Account unavailable">
           <div className="flex flex-wrap gap-3">
@@ -116,7 +116,7 @@ function UserDetail({ state, id }) {
   ];
 
   return (
-    <AdminScreen title={row.displayName || row.email || "Account"} description="Identity and supported account actions.">
+    <AdminScreen title={row.displayName || row.email || "Account"} description="Account details and actions.">
       <UserApiState state={state} />
       <Panel title="Account identity" action={<Button asChild variant="outline"><Link to="/admin/users">Back to users</Link></Button>}>
         <Details values={values} />
@@ -130,7 +130,7 @@ function UserDetail({ state, id }) {
 
       <FacilityScope row={row} id={id} facilities={facilities.data || []} />
 
-      <Panel title="Account status" subtitle={inactive ? "This account is inactive according to the loaded data." : "This account is active according to the loaded data."}>
+      <Panel title="Account status" subtitle={inactive ? "Inactive" : "Active"}>
         {inactive
           ? <ApiConfirmation
               label="Reactivate account"
@@ -155,7 +155,7 @@ function FacilityScope({ row, id, facilities }) {
   const [facilityId, setFacilityId] = useState("");
   if (!eligible)
     return (
-      <Panel title="Facility scope" subtitle="Only Facility Manager and Facility Staff accounts can be assigned to a Facility.">
+      <Panel title="Facility scope">
         <p className="text-sm text-slate-500">This role does not use a Facility scope.</p>
       </Panel>
     );
@@ -239,7 +239,6 @@ function RoleChange({ row, id, roles }) {
   const [selected, setSelected] = useState("");
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-500">Only supported roles, or roles already in use, are selectable.</p>
       <Field label="New account role">
         <Select label="New account role" value={selected} onChange={setSelected} options={[["", "Select role"], ...roles.map((r) => [r, ROLE_LABELS[r] || r])]} />
       </Field>
@@ -303,7 +302,7 @@ function CreateUser({ state }) {
   }
 
   return (
-    <AdminScreen title="Create user" description="Create an account. Identity, password and role are validated on submit.">
+    <AdminScreen title="Create user" description="Create an account.">
       {!state.sessionToken && <UserApiState state={state} />}
       <Panel title="New account">
         <form onSubmit={submit} className="admin-form">
@@ -329,7 +328,6 @@ function CreateUser({ state }) {
             </Field>
           )}
           <div className="admin-wide space-y-4">
-            <p className="text-xs text-slate-500">Role choices are the supported roles plus any role already present in the loaded data. Passwords are cleared immediately after submission.</p>
             <Message error={error} />
             <div className="flex flex-wrap gap-3">
               <Button type="submit" variant="orange" disabled={pending}>{pending ? "Creating…" : "Create user"}</Button>

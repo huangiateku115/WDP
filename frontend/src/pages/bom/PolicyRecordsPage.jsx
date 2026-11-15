@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, OpenLink, Select, Details, Button,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPolicyApi } from "@/api/bomApi";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
@@ -52,9 +52,8 @@ function RecordList({ kind, config }) {
   return (
     <Screen title={config.title}
       description={kind === "discount"
-        ? "System-controlled promotional, loyalty and fee-waiver policies. Records are available in read-only form."
-        : "System-controlled Managed Inventory category policies. Records are available in read-only form."}
-      notice={LIVE_NOTICE}>
+        ? "Promotional, loyalty and fee-waiver policies."
+        : "Managed Inventory category policies."}>
       <Panel title="Filters">
         <div className="manager-filters">
           <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
@@ -93,11 +92,11 @@ function RecordDetail({ kind, config }) {
   const { id } = useParams();
   const state = useAsyncData(() => bomPolicyApi.get(id).then(responseData).then(config.fromDto), [id, kind]);
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error)) return <BomUnavailable />;
-  return <Screen title="Policy record" description={`${config.title} · read only`} notice={LIVE_NOTICE}
+  return <Screen title="Policy record" description={config.title}
     action={<Button asChild variant="outline"><Link to={config.root}>Back to {config.title.toLowerCase()}</Link></Button>}>
     <AsyncBoundary state={state} render={(record) => <Panel title="Current policy">
       <Details values={kind === "discount" ? [
-        ["Discount", record.name], ["Kind", record.kind.replaceAll("_", " ")], ["Backend policy type", record.policyType],
+        ["Discount", record.name], ["Kind", record.kind.replaceAll("_", " ")], ["Policy type", record.policyType],
         ["Value", discountValueLabel(record)], ["Conditions", record.conditions], ["Effective from", record.effectiveFrom],
         ["Effective end", record.effectiveTo || "Open-ended"], ["Status", <Status value={record.status} />], ["Version", record.revision],
       ] : [

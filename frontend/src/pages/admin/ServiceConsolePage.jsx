@@ -238,7 +238,7 @@ function ServiceAdminActions({ config, row, onDone }) {
   const assigneeName = assignees.find(([id]) => id === assignee)?.[1] || assignee;
 
   return (
-    <Panel title="Actions" subtitle="Every change is saved immediately and validated before it is applied.">
+    <Panel title="Actions">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field
@@ -333,7 +333,6 @@ function ServiceAdminActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>
@@ -351,7 +350,7 @@ function ServiceStatusActions({ config, row, onDone }) {
   const open = (next) => { setError(""); setNotice(""); setDialog(next); };
 
   return (
-    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment is an admin action.">
+    <Panel title="Actions">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field label="New status">
@@ -396,7 +395,6 @@ function ServiceStatusActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>

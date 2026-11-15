@@ -62,7 +62,7 @@ export default function WarehouseStructurePage() {
   function removeZone(zone) {
     setConfirm({
       title: `Delete zone ${zone.code}?`,
-      summary: "A zone can only be deleted after all of its racks are deleted. Deleted rows are hidden from every list, so the console cannot restore them afterwards.",
+      summary: "A zone can only be deleted after all of its racks are deleted.",
       label: "Delete zone",
       run: async () => { await bomWarehouseApi.deleteZone(zone.id); reloadStructure(); },
     });
@@ -80,7 +80,7 @@ export default function WarehouseStructurePage() {
   return (
     <Screen
       title="Warehouse structure"
-      description="Zones, racks and rack cells of a Managed Inventory facility. Zones and racks are fully editable; cells accept limited updates."
+      description="Zones, racks and rack cells of a Managed Inventory facility."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);
@@ -119,8 +119,8 @@ export default function WarehouseStructurePage() {
               </div>
               {excluded > 0 && (
                 <p className="bom-warning mt-5">
-                  {excluded} other facilit{excluded === 1 ? "y is" : "ies are"} hidden: the warehouse map rejects a facility that is not
-                  ACTIVE or does not offer Managed Inventory with 409.
+                  {excluded} other facilit{excluded === 1 ? "y is" : "ies are"} hidden because the facility is not active or
+                  does not offer Managed Inventory.
                 </p>
               )}
             </Panel>
@@ -135,7 +135,7 @@ export default function WarehouseStructurePage() {
               <>
                 <Panel
                   title="Managed capacity"
-                  subtitle="Sellable quota the managed reservation flow can allocate, measured over the current calendar month."
+                  subtitle="Sellable quota over the current calendar month."
                   action={<Button onClick={() => setCapacityOpen(true)}>Configure capacity</Button>}
                 >
                   <AsyncBoundary state={capacity} render={(data) => (data ? (
@@ -157,7 +157,7 @@ export default function WarehouseStructurePage() {
                 <AsyncBoundary state={zones} render={(data) => (data ? (
                   <Panel
                     title="Zones"
-                    subtitle={`${data.total} zone${data.total === 1 ? "" : "s"} · zones order the warehouse into logical areas`}
+                    subtitle={`${data.total} zone${data.total === 1 ? "" : "s"}`}
                     action={<Button onClick={() => setZoneDialog("new")}>Create zone</Button>}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
@@ -189,7 +189,6 @@ export default function WarehouseStructurePage() {
                 <AsyncBoundary state={racks} render={(data) => (data ? (
                   <Panel
                     title="Racks"
-                    subtitle="Racks carry the physical dimensions, the level rating and the map position used by the customer map."
                     action={(
                       <Button onClick={() => setRackDialog("new")} disabled={!(zones.data?.rows || []).length}>
                         Create rack
@@ -233,7 +232,7 @@ export default function WarehouseStructurePage() {
                   <AsyncBoundary state={cells} render={(data) => (data ? (
                     <Panel
                       title="Rack cells"
-                      subtitle={`${data.total} cell${data.total === 1 ? "" : "s"} · cells are generated with the rack and only accept a limited patch`}
+                      subtitle={`${data.total} cell${data.total === 1 ? "" : "s"}`}
                       action={<Button variant="outline" onClick={() => setRackId("")}>Close cells</Button>}
                     >
                       <Details values={[

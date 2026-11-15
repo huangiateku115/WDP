@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, LIVE_NOTICE, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -178,7 +178,7 @@ function RecordDetail({ kind, config }) {
                 ["Status", <Status value={record.status} />],
                 ["Version", record.revision],
               ]} />
-              {futurePricing && <p className="mt-4 text-sm text-slate-600">This price is scheduled for {record.effectiveFrom}; the current effective price remains in force until then.</p>}
+              {futurePricing && <p className="mt-4 text-sm text-slate-600">Scheduled for {record.effectiveFrom}.</p>}
               {kind === "pricing" && <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
                   {nextStatus === "ACTIVE" ? "Activate" : "Deactivate"}
@@ -186,7 +186,7 @@ function RecordDetail({ kind, config }) {
               </div>}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
-              <Panel title="Future quote illustration" subtitle="Illustrative only. Does not create or modify any contract, invoice or payment.">
+              <Panel title="Future quote illustration">
                 <Field label="Quote allocated capacity (m³)">
                   <Input aria-label="Quote allocated capacity (m³)" type="number" min="0.01" step="any" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
                 </Field>
@@ -209,7 +209,7 @@ function RecordDetail({ kind, config }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  This rule will be set to <b>{nextStatus}</b>. Historical contract and payment snapshots are not rewritten.
+                  This rule will be set to <b>{nextStatus}</b>.
                 </p>
               </ConfirmDialog>
             )}
@@ -263,16 +263,15 @@ function RecordForm({ kind, config, mode }) {
 
   const minDate = bomFutureDate(1);
   const lockNotice = locked
-    ? "This record is already effective: the scope, price and start date are immutable. Only a future effective end date can be saved."
+    ? "This record is already effective. Only a future effective end date can be changed."
     : "";
 
   return (
     <Screen
       title={`${isEdit ? "Edit" : "Create"} ${kind}`}
       description={isEdit
-        ? "Set the future date when this price starts. The current effective price remains unchanged before that date."
-        : "Effective dates must start in the future. Changes are written to the backend through the confirmed ADMIN/BOM APIs."}
-      notice={LIVE_NOTICE}
+        ? "Set the future date when this price starts."
+        : "Effective dates must start in the future."}
     >
       <AsyncBoundary
         state={state}
@@ -312,7 +311,7 @@ function RecordForm({ kind, config, mode }) {
                   </Field>
                 </>
               )}
-              <Field label="Effective from" hint={`Must be ${minDate} or later (backend rejects today/past).`}>
+              <Field label="Effective from" hint={`Must be ${minDate} or later.`}>
                 <Input aria-label="Effective from" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
               <Field label="Effective end (optional)" hint={locked ? "Required to close an effective record; must be in the future." : undefined}>

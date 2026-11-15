@@ -43,7 +43,7 @@ export default function OversightLivePage({
   return (
     <Screen
       title="Cross-facility oversight"
-      description="Read-only cross-facility visibility across facilities, warehouses, storage units, managed inventory and reservations."
+      description="Cross-facility visibility across facilities, warehouses, storage units, managed inventory and reservations."
       action={<Button asChild variant="outline"><Link to={managePath}>Manage facilities</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
@@ -141,7 +141,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
       <Panel title="Warehouse structure" subtitle="Zones -> aisles -> racks -> cells.">
         {racks.length > 0 && <Meter label="Allocatable cell capacity" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
         <p className="bom-warning mt-4">
-          Used weight reads 0 until Staff confirm an inbound for an item, because the rack total is the sum of its cell counters.
+          Used weight reads 0 until Staff confirm an inbound for an item.
         </p>
         <Table
           label="Warehouse racks"
