@@ -42,9 +42,9 @@ export default function OversightLivePage({
 
   return (
     <Screen
-      title="Cross-facility oversight"
-      description="Cross-facility visibility across facilities, warehouses, storage units, managed inventory and reservations."
-      action={<Button asChild variant="outline"><Link to={managePath}>Manage facilities</Link></Button>}
+      title="Giám sát đa cơ sở"
+      description="Theo dõi cơ sở, kho, kho riêng, hàng hóa và đơn đặt thuê trên toàn hệ thống."
+      action={<Button asChild variant="outline"><Link to={managePath}>Quản lý cơ sở</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const rows = facilities.filter((f) =>
@@ -54,28 +54,28 @@ export default function OversightLivePage({
         return (
           <>
             <Kpis items={[
-              ["Facilities", facilities.length, "Across all facilities"],
-              ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
-              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
+              ["Cơ sở", facilities.length, "Trên toàn hệ thống"],
+              ["Đang hoạt động", countBy(facilities, "status", "ACTIVE"), "Trạng thái ACTIVE"],
+              ["Thuê kho riêng", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Mô hình Thuê kho riêng"],
+              ["Lưu trữ hàng hóa", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Mô hình Lưu trữ hàng hóa"],
             ]} />
 
-            <Panel title="Facility directory" subtitle={`${rows.length} of ${facilities.length} facilities`}>
+            <Panel title="Danh sách cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`}>
               <div className="manager-filters">
-                <Field label="Search">
-                  <Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <Field label="Tìm kiếm">
+                  <Input aria-label="Tìm cơ sở" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </Field>
-                <Field label="Status">
-                  <Select label="Facility status filter" value={status} onChange={setStatus}
-                    options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+                <Field label="Trạng thái">
+                  <Select label="Lọc theo trạng thái cơ sở" value={status} onChange={setStatus}
+                    options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
                 </Field>
-                <Field label="Service model">
-                  <Select label="Service model filter" value={service} onChange={setService}
-                    options={[["", "All service models"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
+                <Field label="Mô hình dịch vụ">
+                  <Select label="Lọc theo mô hình dịch vụ" value={service} onChange={setService}
+                    options={[["", "Tất cả mô hình dịch vụ"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
                 </Field>
               </div>
               <Table
-                label="Facility directory"
+                label="Danh sách cơ sở"
                 rows={rows}
                 columns={[
                   { key: "cover", label: "Photo", render: (f) => <ResourceThumb src={f.coverImage} alt={`${f.name} cover`} /> },
@@ -86,24 +86,24 @@ export default function OversightLivePage({
                   { key: "services", label: "Service models", render: (f) => f.serviceTypes.join(", ") || "—" },
                   { key: "openingHours", label: "Opening hours" },
                 ]}
-                empty="No facilities match the filters."
+                empty="Không có cơ sở phù hợp bộ lọc."
               />
             </Panel>
 
-            <Panel title="Facility scope" subtitle="Pick one facility to load its warehouse structure, storage units, managed inventory and reservations.">
+            <Panel title="Phạm vi cơ sở" subtitle="Chọn một cơ sở để tải cấu trúc kho, kho riêng, hàng hóa và đơn đặt thuê.">
               <div className="manager-filters">
-                <Field label="Facility">
+                <Field label="Cơ sở">
                   <Select
-                    label="Oversight facility"
+                    label="Cơ sở cần giám sát"
                     value={facilityId}
                     onChange={setFacilityId}
-                    options={[["", "Select a facility"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                    options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                   />
                 </Field>
               </div>
               {!facilityId && (
                 <p className="text-sm text-slate-500">
-                  Select a facility to load its operational data.
+                  Chọn một cơ sở để xem dữ liệu vận hành.
                 </p>
               )}
             </Panel>
@@ -132,34 +132,34 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
   return (
     <>
       <Kpis items={[
-        ["Zones", structure.zones.length, `Active zones · ${facilityName(facilities, facilityId)}`],
-        ["Racks", racks.length, "Across every active zone"],
-        ["Cells", cells, `${availableCells} available for placement`],
-        ["Rated capacity", kg(ratedKg), `${kg(allocatableKg)} allocatable across cells`],
+        ["Khu vực", structure.zones.length, `Khu vực đang hoạt động · ${facilityName(facilities, facilityId)}`],
+        ["Kệ", racks.length, "Trong mọi khu vực đang hoạt động"],
+        ["Ô chứa", cells, `${availableCells} ô còn trống để xếp hàng`],
+        ["Tải trọng định mức", kg(ratedKg), `${kg(allocatableKg)} có thể phân bổ theo ô`],
       ]} />
 
-      <Panel title="Warehouse structure" subtitle="Zones -> aisles -> racks -> cells.">
-        {racks.length > 0 && <Meter label="Allocatable cell capacity" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
+      <Panel title="Cấu trúc kho" subtitle="Khu vực → lối đi → kệ → ô chứa.">
+        {racks.length > 0 && <Meter label="Tải trọng ô có thể phân bổ" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
         <p className="bom-note mt-4">
-          Used weight reads 0 until Staff confirm an inbound for an item.
+          Tải trọng đã dùng bằng 0 cho đến khi nhân viên xác nhận nhập kho.
         </p>
         <Table
-          label="Warehouse racks"
+          label="Kệ trong cơ sở"
           rows={racks}
           columns={[
             { key: "rackCode", label: "Rack" },
             { key: "zone", label: "Zone", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
             { key: "aisleCode", label: "Aisle" },
             { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-            { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} available` },
+            { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
             { key: "capacity", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
             { key: "utilizationStatus", label: "Utilization", render: (r) => <Status value={r.utilizationStatus} /> },
           ]}
-          empty="No warehouse zone, rack or cell is configured for this facility."
+          empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
         />
       </Panel>
 
-      <Panel title="Private storage units" subtitle={`${units.rows.length} of ${units.total} units`}>
+      <Panel title="Kho riêng" subtitle={`${units.rows.length} / ${units.total} kho`}>
         {units.truncated && <TruncatedNotice total={units.total} shown={units.rows.length} />}
         <Details values={[
           ["Occupied", countBy(units.rows, "status", "OCCUPIED")],
@@ -169,7 +169,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
         ]} />
         <div className="mt-5">
           <Table
-            label="Storage units"
+            label="Kho riêng của cơ sở"
             rows={units.rows}
             columns={[
               { key: "photo", label: "Photo", render: (r) => <ResourceThumb src={r.coverImage} alt={`${r.code} photo`} /> },
@@ -178,22 +178,22 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
               { key: "volumeM3", label: "Volume", render: (r) => m3(r.volumeM3) },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
             ]}
-            empty="No storage units are registered for this facility."
+            empty="Cơ sở này chưa đăng ký kho riêng nào."
           />
         </div>
       </Panel>
 
-      <Panel title="Managed inventory items" subtitle={`${inventory.rows.length} of ${inventory.total} registered items`}>
+      <Panel title="Hàng hóa lưu trữ" subtitle={`${inventory.rows.length} / ${inventory.total} mặt hàng đã đăng ký`}>
         {inventory.truncated && <TruncatedNotice total={inventory.total} shown={inventory.rows.length} />}
         <Details values={[
-          ["Registered lots", inventory.rows.length],
-          ["Total volume", m3(sumBy(inventory.rows, "totalVolumeM3"))],
-          ["Total weight", kg(sumBy(inventory.rows, "totalWeightKg"))],
-          ["Placed on a cell", countBy(inventory.rows, "placed", true)],
+          ["Số lô đã đăng ký", inventory.rows.length],
+          ["Tổng thể tích", m3(sumBy(inventory.rows, "totalVolumeM3"))],
+          ["Tổng khối lượng", kg(sumBy(inventory.rows, "totalWeightKg"))],
+          ["Đã xếp vào ô", countBy(inventory.rows, "placed", true)],
         ]} />
         <div className="mt-5">
           <Table
-            label="Managed inventory items"
+            label="Hàng hóa lưu trữ"
             rows={inventory.rows}
             columns={[
               { key: "code", label: "Item code" },
@@ -204,22 +204,22 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
               { key: "totalWeightKg", label: "Weight", render: (r) => kg(r.totalWeightKg) },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
             ]}
-            empty="No managed inventory item is registered for this facility."
+            empty="Cơ sở này chưa có mặt hàng lưu trữ nào."
           />
         </div>
       </Panel>
 
-      <Panel title="Reservations" subtitle={`${reservationRows.length} records for this facility`}>
+      <Panel title="Đơn đặt thuê" subtitle={`${reservationRows.length} bản ghi của cơ sở này`}>
         {reservations.failedServiceTypes.length > 0 && (
           <p className="bom-warning mb-4">
-            {reservationScopeLabel(reservations.failedServiceTypes)} reservations could not be loaded for this facility, so the
-            counts below exclude them. Reload to try again.
+            Không tải được đơn {reservationScopeLabel(reservations.failedServiceTypes)} của cơ sở này, nên các số liệu bên dưới
+            không bao gồm chúng. Hãy tải lại để thử lại.
           </p>
         )}
         <Details values={BOM_RESERVATION_STATUSES.map((value) => [value, countBy(reservationRows, "status", value)])} />
         <div className="mt-5">
           <Table
-            label="Facility reservations"
+            label="Đơn đặt thuê của cơ sở"
             rows={reservationRows}
             columns={[
               {
@@ -237,7 +237,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
               { key: "period", label: "Period", render: (r) => `${r.startDate} → ${r.endDate}` },
               { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
             ]}
-            empty="No reservation exists for this facility."
+            empty="Cơ sở này chưa có đơn đặt thuê nào."
           />
         </div>
       </Panel>

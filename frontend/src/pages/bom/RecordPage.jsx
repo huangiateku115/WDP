@@ -22,12 +22,12 @@ const blankPricing = () => ({
 });
 const CONFIGS = {
   pricing: {
-    api: bomPricingApi, root: "/bom/pricing", title: "Pricing rules", code: "P051",
+    api: bomPricingApi, root: "/bom/pricing", title: "Bảng giá", code: "P051",
     fromDto: pricingFromDto, body: pricingBody, updateBody: pricingUpdateBody,
     blank: blankPricing, hasService: true,
   },
   policy: {
-    api: bomPolicyApi, root: "/bom/policies", title: "Business policies", code: "P052",
+    api: bomPolicyApi, root: "/bom/policies", title: "Chính sách kinh doanh", code: "P052",
     policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
     fromDto: policyFromDto,
   },
@@ -76,22 +76,22 @@ function RecordList({ kind, config }) {
     <Screen
       title={config.title}
       description={kind === "pricing"
-        ? "Private-unit prices and Managed capacity rates with effective periods."
-        : "Business policies grouped by policy type."}
+        ? "Giá kho riêng và đơn giá công suất lưu trữ theo từng thời gian hiệu lực."
+        : "Chính sách kinh doanh theo từng loại chính sách."}
       action={kind === "pricing"
-        ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Create pricing rule</Link></Button>
+        ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo quy tắc giá</Link></Button>
         : undefined}
     >
-      <Panel title="Filters">
+      <Panel title="Bộ lọc">
         <div className="manager-filters">
-          <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
           {kind === "policy" && (
-            <Select label="Policy type filter" value={type} onChange={setType}
-              options={[["", "All policy types"], ...BOM_POLICY_TYPES.map(({ key, label }) => [key, label])]} />
+            <Select label="Lọc theo loại chính sách" value={type} onChange={setType}
+              options={[["", "Tất cả loại chính sách"], ...BOM_POLICY_TYPES.map(({ key, label }) => [key, label])]} />
           )}
           {kind === "pricing" && (
-            <Select label="Service filter" value={service} onChange={setService}
-              options={[["", "Both services"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
+            <Select label="Lọc theo dịch vụ" value={service} onChange={setService}
+              options={[["", "Cả hai dịch vụ"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
           )}
         </div>
       </Panel>
@@ -102,7 +102,7 @@ function RecordList({ kind, config }) {
           (kind !== "policy" || !type || row.type === type) &&
           (kind !== "pricing" || !service || row.service === service));
         return (
-          <Panel title={config.title} subtitle={`${rows.length} of ${records.length} records`}>
+          <Panel title={config.title} subtitle={`${rows.length} / ${records.length} bản ghi`}>
             {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
             <Table
               label={config.title}
@@ -144,9 +144,9 @@ function RecordDetail({ kind, config }) {
 
   return (
     <Screen
-      title="Record detail"
+      title="Chi tiết bản ghi"
       description={config.title}
-      action={<Button asChild variant="outline"><Link to={config.root}>Back to {config.title.toLowerCase()}</Link></Button>}
+      action={<Button asChild variant="outline"><Link to={config.root}>Quay lại danh sách</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
         const nextStatus = record.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
@@ -154,8 +154,8 @@ function RecordDetail({ kind, config }) {
         return (
           <>
             <Panel
-              title={kind === "pricing" ? futurePricing ? "Scheduled Pricing Rule" : "Effective Pricing Rule" : "Current rule"}
-              action={kind === "pricing" ? <Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Edit</Link></Button> : undefined}
+              title={kind === "pricing" ? futurePricing ? "Quy tắc giá đã lên lịch" : "Quy tắc giá đang hiệu lực" : "Chính sách hiện tại"}
+              action={kind === "pricing" ? <Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Sửa</Link></Button> : undefined}
             >
               <Details values={kind === "pricing" ? [
                 ["Scope", pricingLabel(record)],
@@ -181,27 +181,27 @@ function RecordDetail({ kind, config }) {
               {futurePricing && <p className="mt-4 text-sm text-slate-600">Scheduled for {record.effectiveFrom}.</p>}
               {kind === "pricing" && <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
-                  {nextStatus === "ACTIVE" ? "Activate" : "Deactivate"}
+                  {nextStatus === "ACTIVE" ? "Kích hoạt" : "Ngừng áp dụng"}
                 </Button>
               </div>}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
-              <Panel title="Future quote illustration">
-                <Field label="Quote allocated capacity (m³)">
-                  <Input aria-label="Quote allocated capacity (m³)" type="number" min="0.01" step="any" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+              <Panel title="Ước tính theo công suất">
+                <Field label="Công suất dự kiến (m³)">
+                  <Input aria-label="Công suất dự kiến (m³)" type="number" min="0.01" step="any" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
                 </Field>
                 <p className="mt-5 text-xl font-bold">
                   {Number(capacity) > 0 && Number.isFinite(Number(capacity))
                     ? `${money(Number(capacity) * record.rate)} ${record.currency}`
-                    : "Enter a positive capacity"}{" "}
-                  / {record.billingMonths} month billing period
+                    : "Nhập công suất lớn hơn 0"}{" "}
+                  / kỳ {record.billingMonths} tháng
                 </p>
               </Panel>
             )}
             {confirmOpen && (
               <ConfirmDialog
-                title="Confirm status change"
-                confirmLabel={`Set ${nextStatus}`}
+                title="Xác nhận đổi trạng thái"
+                confirmLabel={`Chuyển sang ${nextStatus}`}
                 onClose={() => setConfirmOpen(false)}
                 onConfirm={async () => {
                   await config.api.setActive(id, nextStatus === "ACTIVE");
@@ -209,7 +209,7 @@ function RecordDetail({ kind, config }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  This rule will be set to <b>{nextStatus}</b>.
+                  Quy tắc sẽ được chuyển sang trạng thái <b>{nextStatus}</b>.
                 </p>
               </ConfirmDialog>
             )}
@@ -263,69 +263,69 @@ function RecordForm({ kind, config, mode }) {
 
   const minDate = bomFutureDate(1);
   const lockNotice = locked
-    ? "This record is already effective. Only a future effective end date can be changed."
+    ? "Bản ghi đã có hiệu lực. Chỉ có thể thay đổi ngày kết thúc hiệu lực trong tương lai."
     : "";
 
   return (
     <Screen
-      title={`${isEdit ? "Edit" : "Create"} ${kind}`}
+      title={`${isEdit ? "Sửa" : "Tạo"} ${kind === "pricing" ? "bảng giá" : "chính sách"}`}
       description={isEdit
-        ? "Set the future date when this price starts."
-        : "Effective dates must start in the future."}
+        ? "Đặt ngày bắt đầu áp dụng giá mới."
+        : "Ngày hiệu lực phải ở tương lai."}
     >
       <AsyncBoundary
         state={state}
         render={([, facilities = []]) => (
-          <Panel title="Rule form">
+          <Panel title="Biểu mẫu">
             {locked && <p className="bom-warning mb-5">{lockNotice}</p>}
             <form className="bom-form" onSubmit={submit}>
-              {!isEdit && <Field label="Facility scope">
+              {!isEdit && <Field label="Phạm vi cơ sở">
                 <Select
-                  label="Facility scope"
+                  label="Phạm vi cơ sở"
                   value={form.facilityId}
                   disabled={locked}
                   onChange={(v) => change("facilityId", v)}
-                  options={[["", "Select a facility"], ...facilities.map((f) => [f.id, f.name])]}
+                  options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, f.name])]}
                 />
               </Field>}
               {!isEdit && config.hasService && (
-                <Field label="Service model">
-                  <Select label="Service model" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])} />
+                <Field label="Mô hình dịch vụ">
+                  <Select label="Mô hình dịch vụ" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])} />
                 </Field>
               )}
               {!isEdit && kind === "pricing" && form.service === "SELF_STORAGE" && (
-                <Field label="Private unit size">
-                  <Select label="Private unit size" value={form.unitSize} disabled={locked} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
+                <Field label="Kích cỡ kho riêng">
+                  <Select label="Kích cỡ kho riêng" value={form.unitSize} disabled={locked} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
                 </Field>
               )}
               {kind === "pricing" && (
                 <>
-                  {!isEdit && <Field label="Billing duration (months)">
-                    <Select label="Billing duration (months)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
-                      options={BOM_TERM_MONTHS.map((m) => [m, `${m} month(s)`])} />
+                  {!isEdit && <Field label="Kỳ thanh toán (tháng)">
+                    <Select label="Kỳ thanh toán (tháng)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
+                      options={BOM_TERM_MONTHS.map((m) => [m, `${m} tháng`])} />
                   </Field>}
-                  <Field label={form.service === "MANAGED_INVENTORY" ? "Rate per m³ per billing period (VND)" : "Price per billing period (VND)"}>
-                    <Input aria-label="Rate" type="number" min="0" step="any" required disabled={locked} value={form.rate} onChange={(e) => change("rate", e.target.value)} />
+                  <Field label={form.service === "MANAGED_INVENTORY" ? "Đơn giá mỗi m³ mỗi kỳ (VND)" : "Giá mỗi kỳ thanh toán (VND)"}>
+                    <Input aria-label="Đơn giá" type="number" min="0" step="any" required disabled={locked} value={form.rate} onChange={(e) => change("rate", e.target.value)} />
                   </Field>
-                  <Field label="Currency">
-                    <Input aria-label="Currency" maxLength={3} disabled={locked} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
+                  <Field label="Tiền tệ">
+                    <Input aria-label="Tiền tệ" maxLength={3} disabled={locked} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
                   </Field>
                 </>
               )}
-              <Field label="Effective from" hint={`Must be ${minDate} or later.`}>
-                <Input aria-label="Effective from" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
+              <Field label="Hiệu lực từ" hint={`Chọn từ ${minDate} trở đi.`}>
+                <Input aria-label="Hiệu lực từ" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
-              <Field label="Effective end (optional)" hint={locked ? "Required to close an effective record; must be in the future." : undefined}>
-                <Input aria-label="Effective end" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
+              <Field label="Hiệu lực đến (không bắt buộc)" hint={locked ? "Bắt buộc khi đóng một bản ghi đang hiệu lực; phải ở tương lai." : undefined}>
+                <Input aria-label="Hiệu lực đến" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
               </Field>
-              {!isEdit && <Field label="Status">
-                <Select label="Status" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
+              {!isEdit && <Field label="Trạng thái">
+                <Select label="Trạng thái" value={form.status} onChange={(v) => change("status", v)} options={["INACTIVE", "ACTIVE"]} />
               </Field>}
               <div className="bom-wide">
                 {error && <p role="alert" className="bom-error">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
-                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save future price" : "Create rule"}</Button>
-                  <Button type="button" variant="outline" onClick={() => nav(config.root)}>Cancel</Button>
+                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : isEdit ? "Lưu giá mới" : "Tạo quy tắc"}</Button>
+                  <Button type="button" variant="outline" onClick={() => nav(config.root)}>Hủy</Button>
                 </div>
               </div>
             </form>

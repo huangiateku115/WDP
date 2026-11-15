@@ -16,10 +16,10 @@ import {
 // Policy records remain visible for operational readers and history, but are system-controlled.
 const CONFIGS = {
   discount: {
-    title: "Discounts and waivers", policyTypes: BOM_DISCOUNT_TYPES, listParams: {}, fromDto: discountFromDto,
+    title: "Giảm giá và miễn giảm", policyTypes: BOM_DISCOUNT_TYPES, listParams: {}, fromDto: discountFromDto,
   },
   category: {
-    title: "Item categories", policyTypes: ["CATEGORY"], listParams: { type: "CATEGORY" }, fromDto: categoryFromDto,
+    title: "Danh mục hàng hóa", policyTypes: ["CATEGORY"], listParams: { type: "CATEGORY" }, fromDto: categoryFromDto,
   },
 };
 const CONFIG_ROOTS = { discount: "/policies/discounts", category: "/policies/item-categories" };
@@ -46,25 +46,25 @@ function RecordList({ kind, config }) {
   const [filter, setFilter] = useState("");
   // Discounts are narrowed by kind client-side; CATEGORY policies only need the status filter.
   const typeFilter = kind === "discount"
-    ? [["", "All discount kinds"], ...BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])]
+    ? [["", "Tất cả hình thức giảm giá"], ...BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])]
     : null;
 
   return (
     <Screen title={config.title}
       description={kind === "discount"
-        ? "Promotional, loyalty and fee-waiver policies."
-        : "Managed Inventory category policies."}>
-      <Panel title="Filters">
+        ? "Chính sách khuyến mại, khách hàng thân thiết và miễn phụ phí."
+        : "Chính sách danh mục hàng hóa lưu trữ."}>
+      <Panel title="Bộ lọc">
         <div className="manager-filters">
-          <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
-          {typeFilter && <Select label="Type filter" value={filter} onChange={setFilter} options={typeFilter} />}
+          <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
+          {typeFilter && <Select label="Lọc theo hình thức" value={filter} onChange={setFilter} options={typeFilter} />}
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
         const rows = recordPage.rows.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
           (!filter || (kind === "discount" ? row.kind === filter : row.allowedStatus === filter)));
-        return <Panel title={config.title} subtitle={`${rows.length} of ${recordPage.rows.length} records`}>
+        return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
           {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={recordPage.rows.length} />}
           <Table label={config.title} rows={rows} columns={kind === "discount" ? [
             { key: "name", label: "Discount", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
@@ -92,17 +92,17 @@ function RecordDetail({ kind, config }) {
   const { id } = useParams();
   const state = useAsyncData(() => bomPolicyApi.get(id).then(responseData).then(config.fromDto), [id, kind]);
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error)) return <BomUnavailable />;
-  return <Screen title="Policy record" description={config.title}
-    action={<Button asChild variant="outline"><Link to={config.root}>Back to {config.title.toLowerCase()}</Link></Button>}>
-    <AsyncBoundary state={state} render={(record) => <Panel title="Current policy">
+  return <Screen title="Chi tiết chính sách" description={config.title}
+    action={<Button asChild variant="outline"><Link to={config.root}>Quay lại danh sách</Link></Button>}>
+    <AsyncBoundary state={state} render={(record) => <Panel title="Chính sách hiện tại">
       <Details values={kind === "discount" ? [
         ["Discount", record.name], ["Kind", record.kind.replaceAll("_", " ")], ["Policy type", record.policyType],
         ["Value", discountValueLabel(record)], ["Conditions", record.conditions], ["Effective from", record.effectiveFrom],
-        ["Effective end", record.effectiveTo || "Open-ended"], ["Status", <Status value={record.status} />], ["Version", record.revision],
+        ["Effective end", record.effectiveTo || "Không thời hạn"], ["Status", <Status value={record.status} />], ["Version", record.revision],
       ] : [
         ["Category", record.name], ["Acceptance", <Status value={record.allowedStatus} />], ["Description", record.description],
         ["Handling notes", record.handlingNotes], ["Restrictions", record.restrictions], ["Effective from", record.effectiveFrom],
-        ["Effective end", record.effectiveTo || "Open-ended"], ["Status", <Status value={record.status} />], ["Version", record.revision],
+        ["Effective end", record.effectiveTo || "Không thời hạn"], ["Status", <Status value={record.status} />], ["Version", record.revision],
       ]} />
     </Panel>} />
   </Screen>;

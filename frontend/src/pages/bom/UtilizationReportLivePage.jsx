@@ -47,35 +47,35 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
 
   return (
     <Screen
-      title="Utilization report"
-      description="Private-unit occupancy and volume-based physical/allocation utilization per facility."
-      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
+      title="Báo cáo mức sử dụng"
+      description="Tỷ lệ lấp đầy kho riêng và mức sử dụng theo thể tích của từng cơ sở."
+      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
     >
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-              ["Facilities", facilities.length, "Across all facilities"],
-            ["Active", countBy(facilities, "status", "ACTIVE"), "Status ACTIVE"],
-              ["Private storage", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Self Storage service model"],
-              ["Managed inventory", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Managed Inventory service model"],
+              ["Cơ sở", facilities.length, "Trên toàn hệ thống"],
+            ["Đang hoạt động", countBy(facilities, "status", "ACTIVE"), "Trạng thái ACTIVE"],
+              ["Thuê kho riêng", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Mô hình Thuê kho riêng"],
+              ["Lưu trữ hàng hóa", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Mô hình Lưu trữ hàng hóa"],
           ]} />
 
           <Panel
-            title="Report scope"
-            subtitle="Utilization shows the current stock snapshot for the selected facility."
+            title="Phạm vi báo cáo"
+            subtitle="Mức sử dụng phản ánh tình hình tồn kho hiện tại của cơ sở được chọn."
           >
             <div className="manager-filters">
-              <Field label="Facility">
+              <Field label="Cơ sở">
                 <Select
-                  label="Utilization facility"
+                  label="Cơ sở cần xem sử dụng"
                   value={facilityId}
                   onChange={setFacilityId}
-                  options={[["", "Select a facility"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                  options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                 />
               </Field>
             </div>
             <p className="text-sm text-slate-500">
-              Managed capacity is measured over <b>{window.startDate.slice(0, 10)} → {window.endDate.slice(0, 10)}</b> (current calendar month).
+              Công suất lưu trữ được tính trong <b>{window.startDate.slice(0, 10)} → {window.endDate.slice(0, 10)}</b> (tháng hiện tại).
             </p>
           </Panel>
 
@@ -133,63 +133,63 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
   return (
     <>
       <Kpis items={[
-        ["Private unit occupancy", unitsTotal ? `${Math.round((unitsOccupied / unitsTotal) * 100)}%` : "—", `${unitsOccupied} of ${unitsTotal} units occupied`],
-        ["Managed volume used", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : m3(usedM3), sellableM3 ? `${m3(usedM3)} of ${m3(sellableM3)} sellable` : "No sellable capacity configured"],
-        ["Cells available", cells ? `${availableCells} / ${cells}` : "—", "Cells open for new placement"],
-        ["Allocatable weight", kg(allocatableKg), `of ${kg(ratedKg)} rated`],
+        ["Tỷ lệ lấp đầy kho riêng", unitsTotal ? `${Math.round((unitsOccupied / unitsTotal) * 100)}%` : "—", `${unitsOccupied} / ${unitsTotal} kho đang sử dụng`],
+        ["Thể tích đã dùng", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : m3(usedM3), sellableM3 ? `${m3(usedM3)} / ${m3(sellableM3)} công suất bán được` : "Chưa cấu hình công suất bán được"],
+        ["Ô còn trống", cells ? `${availableCells} / ${cells}` : "—", "Ô có thể xếp thêm hàng"],
+        ["Tải trọng có thể phân bổ", kg(allocatableKg), `trên ${kg(ratedKg)} định mức`],
       ]} />
 
-      <Panel title="Private unit occupancy" subtitle={`${units.rows.length} of ${units.total} units · ${facilityName(facilities, facilityId)}`}>
+      <Panel title="Tỷ lệ lấp đầy kho riêng" subtitle={`${units.rows.length} / ${units.total} kho · ${facilityName(facilities, facilityId)}`}>
         {units.truncated && <TruncatedNotice total={units.total} shown={units.rows.length} />}
-        {unitsTotal > 0 && <Meter label="Occupied private units" used={unitsOccupied} max={unitsTotal} unit="units" />}
+        {unitsTotal > 0 && <Meter label="Kho riêng đang sử dụng" used={unitsOccupied} max={unitsTotal} unit="kho" />}
         <div className="mt-5">
           <Details values={[
-            ["Occupied", unitsOccupied],
-            ["Available", unitsFree],
-            ["Blocked (held / maintenance / inactive)", unitsBlocked],
-            ["Registered unit volume", m3(unitsCapacityM3)],
+            ["Đang sử dụng", unitsOccupied],
+            ["Sẵn sàng", unitsFree],
+            ["Bị chặn (đang giữ / bảo trì / ngưng hoạt động)", unitsBlocked],
+            ["Tổng thể tích kho đã đăng ký", m3(unitsCapacityM3)],
           ]} />
         </div>
         <div className="mt-5">
           <Table
-            label="Occupancy by unit size"
+            label="Tỷ lệ lấp đầy theo kích cỡ kho"
             rows={sizeRows}
             columns={[
-              { key: "size", label: "Unit size" },
-              { key: "total", label: "Total" },
-              { key: "occupied", label: "Occupied" },
-              { key: "available", label: "Available" },
-              { key: "blocked", label: "Blocked" },
-              { key: "capacityM3", label: "Capacity", render: (r) => m3(r.capacityM3) },
-              { key: "occupancy", label: "Occupancy" },
+              { key: "size", label: "Kích cỡ kho" },
+              { key: "total", label: "Tổng" },
+              { key: "occupied", label: "Đang sử dụng" },
+              { key: "available", label: "Sẵn sàng" },
+              { key: "blocked", label: "Bị chặn" },
+              { key: "capacityM3", label: "Công suất", render: (r) => m3(r.capacityM3) },
+              { key: "occupancy", label: "Tỷ lệ lấp đầy" },
             ]}
-            empty="No storage unit is registered for this facility."
+            empty="Cơ sở này chưa đăng ký kho riêng nào."
           />
         </div>
       </Panel>
 
       <Panel
-        title="Managed capacity utilization"
+        title="Công suất lưu trữ hàng hóa"
         subtitle={capacity
-          ? `Interval ${String(capacity.interval?.startDate || window.startDate).slice(0, 10)} → ${String(capacity.interval?.endDate || window.endDate).slice(0, 10)}`
-          : "This facility has no active Managed Inventory capacity configuration."}
-        action={<Button variant="outline" onClick={() => setCapacityOpen(true)}>Configure capacity</Button>}
+          ? `Khoảng ${String(capacity.interval?.startDate || window.startDate).slice(0, 10)} → ${String(capacity.interval?.endDate || window.endDate).slice(0, 10)}`
+          : "Cơ sở này chưa có cấu hình công suất lưu trữ hàng hóa đang hoạt động."}
+        action={<Button variant="outline" onClick={() => setCapacityOpen(true)}>Cấu hình công suất</Button>}
       >
         {capacity ? (
           <>
-            <Meter label="Committed managed capacity" used={committedM3} max={sellableM3 || committedM3 || 1} />
+            <Meter label="Công suất đã cam kết" used={committedM3} max={sellableM3 || committedM3 || 1} />
             <div className="mt-5">
               <Details values={[
-                ["Sellable capacity", m3(sellableM3)],
-                ["Committed peak capacity", m3(committedM3)],
-                ["Available capacity", m3(availableM3)],
-                ["Committed ratio", `${Math.round(pct(committedM3, sellableM3))}% of sellable capacity`],
+                ["Công suất bán được", m3(sellableM3)],
+                ["Công suất cam kết cao nhất", m3(committedM3)],
+                ["Công suất còn lại", m3(availableM3)],
+                ["Tỷ lệ cam kết", `${Math.round(pct(committedM3, sellableM3))}% công suất bán được`],
               ]} />
             </div>
           </>
         ) : (
           <p className="bom-warning">
-            Capacity is only available for an ACTIVE Managed Inventory facility with a saved capacity configuration.
+            Chỉ có công suất khi cơ sở đang hoạt động, có dịch vụ Lưu trữ hàng hóa và đã lưu cấu hình công suất.
           </p>
         )}
         <div className="mt-5">

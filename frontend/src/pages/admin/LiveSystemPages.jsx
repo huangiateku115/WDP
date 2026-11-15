@@ -41,50 +41,50 @@ export function DashboardPage() {
 
   return (
     <AdminScreen
-      title="System administration overview"
-      description="Account and facility metrics."
-      action={<Button asChild variant="orange"><Link to="/admin/users">Manage users</Link></Button>}
+      title="Tổng quan quản trị hệ thống"
+      description="Số liệu tài khoản và cơ sở."
+      action={<Button asChild variant="orange"><Link to="/admin/users">Quản lý người dùng</Link></Button>}
     >
       <UserApiState state={state} />
-        <Panel title="User metrics">
+        <Panel title="Số liệu người dùng">
         <Kpis items={[
-          ["Total users", ready ? state.users.length : "Unavailable", "Total accounts"],
-          ["Active users", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Unavailable", "Status ACTIVE"],
-          ["Customers", count("CUSTOMER"), "Customer accounts"],
-          ["Facility Staff", count("FACILITY_STAFF"), "Facility staff accounts"],
-          ["Facility Managers", count("FACILITY_MANAGER"), "Facility manager accounts"],
+          ["Tổng người dùng", ready ? state.users.length : "Không khả dụng", "Tổng số tài khoản"],
+          ["Người dùng đang hoạt động", hasStatuses ? state.users.filter((u) => userStatus(u)?.toUpperCase() === "ACTIVE").length : "Không khả dụng", "Trạng thái ACTIVE"],
+          ["Khách hàng", count("CUSTOMER"), "Tài khoản khách hàng"],
+          ["Nhân viên cơ sở", count("FACILITY_STAFF"), "Tài khoản nhân viên cơ sở"],
+          ["Quản lý cơ sở", count("FACILITY_MANAGER"), "Tài khoản quản lý cơ sở"],
         ]} />
       </Panel>
       {ready && (
-        <Panel title="Role distribution">
+        <Panel title="Phân bố vai trò">
           <Table
-            label="Returned role distribution"
+            label="Phân bố vai trò"
             rows={[...new Set(state.users.map((u) => u.role || "Role not returned"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Role not returned") === role).length }))}
             columns={[{ key: "role", label: "Role" }, { key: "count", label: "Users" }]}
           />
         </Panel>
       )}
       <Panel
-        title="Facility metrics"
-        action={<Button asChild variant="outline"><Link to="/admin/facilities">Open facility oversight</Link></Button>}
+        title="Số liệu cơ sở"
+        action={<Button asChild variant="outline"><Link to="/admin/facilities">Mở giám sát cơ sở</Link></Button>}
       >
         {facilities.error
           ? <Message error={facilities.error} />
           : facilities.loading
-            ? <p role="status" className="text-sm text-slate-500">Loading facilities…</p>
+            ? <p role="status" className="text-sm text-slate-500">Đang tải danh sách cơ sở…</p>
             : (
               <Kpis items={[
-                ["Total facilities", facilitiesData.length, "Facility records"],
-                ["Active facilities", activeFacilities, "Accepting new reservations"],
-                ["Inactive facilities", facilitiesData.length - activeFacilities, "Blocked for new reservations"],
-                ["Service models", serviceModels.length, serviceModels.join(", ") || "None returned"],
+                ["Tổng số cơ sở", facilitiesData.length, "Bản ghi cơ sở"],
+                ["Cơ sở đang hoạt động", activeFacilities, "Đang nhận đơn mới"],
+                ["Cơ sở ngừng hoạt động", facilitiesData.length - activeFacilities, "Chặn nhận đơn mới"],
+                ["Mô hình dịch vụ", serviceModels.length, serviceModels.join(", ") || "Chưa có dữ liệu"],
               ]} />
             )}
       </Panel>
-      <Panel title="Login history & audit">
+      <Panel title="Lịch sử đăng nhập và nhật ký">
         <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline"><Link to="/admin/login-history">Open login history</Link></Button>
-          <Button asChild variant="outline"><Link to="/admin/audit">Open audit logs</Link></Button>
+          <Button asChild variant="outline"><Link to="/admin/login-history">Mở lịch sử đăng nhập</Link></Button>
+          <Button asChild variant="outline"><Link to="/admin/audit">Mở nhật ký kiểm toán</Link></Button>
         </div>
       </Panel>
     </AdminScreen>
@@ -101,20 +101,20 @@ export function LoginHistoryPage() {
   const rows = (history.data || []).map((row, index) => ({ id: row._id || `login-${index}`, source: row }));
 
   return (
-    <AdminScreen title="Login history" description="Sign-in events for the selected account.">
+    <AdminScreen title="Lịch sử đăng nhập" description="Các lần đăng nhập của tài khoản đã chọn.">
       <UserApiState state={state} />
-      <Panel title="User selection">
+      <Panel title="Chọn tài khoản">
         <div className="manager-filters">
-          <UserPicker state={state} value={selected} onChange={setSelected} label="Account" />
+          <UserPicker state={state} value={selected} onChange={setSelected} label="Tài khoản" />
         </div>
-        {!selected && <p className="text-sm text-slate-500">Select an account to load its login history.</p>}
+        {!selected && <p className="text-sm text-slate-500">Chọn một tài khoản để xem lịch sử đăng nhập.</p>}
       </Panel>
       {selected && (
-        <Panel title="Login events" subtitle={`${rows.length} event(s)`} action={<Button variant="outline" onClick={history.reload}>Refresh</Button>}>
+        <Panel title="Lần đăng nhập" subtitle={`${rows.length} sự kiện`} action={<Button variant="outline" onClick={history.reload}>Tải lại</Button>}>
           {history.error
             ? <Message error={history.error} />
             : history.loading
-              ? <p role="status" className="text-sm text-slate-500">Loading login history…</p>
+              ? <p role="status" className="text-sm text-slate-500">Đang tải lịch sử đăng nhập…</p>
               : (
                 <Table label="Login history" rows={rows} columns={[
                   { key: "event", label: "Event", render: (r) => r.source.eventType || "—" },
@@ -146,21 +146,21 @@ export function AuditPage() {
   const open = records.find((row) => row._id === openId);
 
   return (
-    <AdminScreen title="Audit logs" description="Actions performed by the selected account.">
+    <AdminScreen title="Nhật ký kiểm toán" description="Hành động của tài khoản đã chọn.">
       <UserApiState state={state} />
-      <Panel title="User selection">
+      <Panel title="Chọn tài khoản">
         <div className="manager-filters">
-          <UserPicker state={state} value={selected} onChange={(v) => { setSelected(v); setOpenId(""); }} label="Account" />
+          <UserPicker state={state} value={selected} onChange={(v) => { setSelected(v); setOpenId(""); }} label="Tài khoản" />
         </div>
-        {!selected && <p className="text-sm text-slate-500">Select an account to load the audit actions it performed.</p>}
+        {!selected && <p className="text-sm text-slate-500">Chọn một tài khoản để xem các hành động đã thực hiện.</p>}
       </Panel>
       {selected && (
         <>
-          <Panel title="Audit events" subtitle={`${rows.length} event(s)`} action={<Button variant="outline" onClick={logs.reload}>Refresh</Button>}>
+          <Panel title="Sự kiện kiểm toán" subtitle={`${rows.length} sự kiện`} action={<Button variant="outline" onClick={logs.reload}>Tải lại</Button>}>
             {logs.error
               ? <Message error={logs.error} />
               : logs.loading
-                ? <p role="status" className="text-sm text-slate-500">Loading audit logs…</p>
+                ? <p role="status" className="text-sm text-slate-500">Đang tải nhật ký…</p>
                 : (
                   <Table label="Audit logs" rows={rows} columns={[
                     { key: "action", label: "Action", render: (r) => (r.source._id === openId ? <b>{r.source.action}</b> : r.source.action) },
@@ -173,12 +173,12 @@ export function AuditPage() {
                 )}
           </Panel>
           {open && (
-            <Panel title={`Change detail · ${open.action}`} subtitle={stamp(open.createdAt)} action={<Button variant="ghost" onClick={() => setOpenId("")}>Close</Button>}>
+            <Panel title={`Chi tiết thay đổi · ${open.action}`} subtitle={stamp(open.createdAt)} action={<Button variant="ghost" onClick={() => setOpenId("")}>Đóng</Button>}>
               <div className="grid gap-5 md:grid-cols-2">
-                <div><h4 className="mb-2 font-bold">Before</h4><ReadOnlyValues value={open.before} /></div>
-                <div><h4 className="mb-2 font-bold">After</h4><ReadOnlyValues value={open.after} /></div>
+                <div><h4 className="mb-2 font-bold">Trước</h4><ReadOnlyValues value={open.before} /></div>
+                <div><h4 className="mb-2 font-bold">Sau</h4><ReadOnlyValues value={open.after} /></div>
               </div>
-              {open.reason && <p className="mt-5 text-sm text-slate-500">Reason: {open.reason}</p>}
+              {open.reason && <p className="mt-5 text-sm text-slate-500">Lý do: {open.reason}</p>}
             </Panel>
           )}
         </>
@@ -197,28 +197,28 @@ export function FacilitiesPage() {
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
 
   return (
-    <AdminScreen title="Facility oversight" description="System-wide facility visibility.">
-      <Panel title="Filters">
+    <AdminScreen title="Giám sát cơ sở" description="Xem toàn bộ cơ sở trong hệ thống.">
+      <Panel title="Bộ lọc">
         <div className="manager-filters">
-          <Field label="Search">
-            <Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Field label="Tìm kiếm">
+            <Input aria-label="Tìm cơ sở" value={search} onChange={(e) => setSearch(e.target.value)} />
           </Field>
-          <Field label="Status">
-            <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          <Field label="Trạng thái">
+            <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
           </Field>
         </div>
       </Panel>
-      <Panel title="Facility snapshot" subtitle={`${rows.length} of ${facilities.length} facilities`} action={<Button variant="outline" onClick={() => { invalidateFacilities(); state.reload(); }}>Refresh</Button>}>
+      <Panel title="Tổng hợp cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`} action={<Button variant="outline" onClick={() => { invalidateFacilities(); state.reload(); }}>Tải lại</Button>}>
         {state.error
           ? <Message error={state.error} />
           : state.loading
-            ? <p role="status" className="text-sm text-slate-500">Loading facilities…</p>
+            ? <p role="status" className="text-sm text-slate-500">Đang tải danh sách cơ sở…</p>
             : (
-              <Table label="Facilities" rows={rows} columns={[
+              <Table label="Cơ sở" rows={rows} columns={[
                 { key: "name", label: "Facility" },
                 { key: "code", label: "Code" },
                 { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
-                { key: "district", label: "District/location" },
+                { key: "district", label: "Khu vực" },
                 { key: "address", label: "Address" },
                 { key: "services", label: "Service models", render: (f) => f.serviceTypes.join(", ") || "—" },
                 { key: "openingHours", label: "Opening hours" },

@@ -9,18 +9,18 @@ export const BOM_CURRENCY = "VND";
 
 // Only policy types confirmed by the backend PolicyType enum are offered live.
 export const BOM_POLICY_TYPES = [
-  { key: "DEPOSIT", label: "Deposit" },
-  { key: "CANCELLATION", label: "Cancellation" },
-  { key: "REFUND", label: "Refund" },
-  { key: "OVERDUE", label: "Overdue" },
-  { key: "SHELF_CONSTRAINT", label: "Shelf constraints" },
+  { key: "DEPOSIT", label: "Đặt cọc" },
+  { key: "CANCELLATION", label: "Hủy đơn" },
+  { key: "REFUND", label: "Hoàn tiền" },
+  { key: "OVERDUE", label: "Quá hạn" },
+  { key: "SHELF_CONSTRAINT", label: "Ràng buộc kệ" },
 ];
 export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
 
 // Display labels for backend enum values rendered in the console (never show raw codes).
-export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Self Storage", MANAGED_INVENTORY: "Managed Inventory" };
-export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Promotional", LOYALTY: "Loyalty", FEE_WAIVER: "Fee waiver" };
-export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Percentage", FIXED: "Fixed amount", UNDEFINED: "Not defined" };
+export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Thuê kho riêng", MANAGED_INVENTORY: "Lưu trữ hàng hóa" };
+export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Khuyến mại", LOYALTY: "Khách hàng thân thiết", FEE_WAIVER: "Miễn phụ phí" };
+export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Phần trăm", FIXED: "Số tiền cố định", UNDEFINED: "Chưa xác định" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
 
 // Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
