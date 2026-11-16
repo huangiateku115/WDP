@@ -55,7 +55,8 @@ export function assertConfirmedRequest(config) {
   const warehouseRead =
     method === "GET" &&
     (path === "warehouse-map" ||
-      /^racks\/[a-f\d]{24}\/detail-map$/i.test(path));
+      /^racks\/[a-f\d]{24}\/detail-map$/i.test(path) ||
+      /^rack-cells\/[a-f\d]{24}\/stock$/i.test(path));
   const facilityManagedReadiness = method === 'GET' &&
     /^reservations\/managed\/[a-f\d]{24}\/closure-readiness$/i.test(path);
   const managedCustomer =
@@ -73,15 +74,19 @@ export function assertConfirmedRequest(config) {
     (method === "PATCH" || method === "DELETE") &&
     /^users\/[a-f\d]{24}\/facility-assignment$/i.test(path);
   const inventoryCustomer =
-    (method === "POST" &&
-      (path === "inventory-items" ||
-        /^inventory-items\/[a-f\d]{24}\/outbound-request$/i.test(
-          path,
-        ))) ||
+    (method === "POST" && path === "inventory-items") ||
     (method === "GET" &&
       (path === "inventory-items/me" ||
         /^inventory-items\/[a-f\d]{24}(\/placement-preview)?$/i.test(path))) ||
     (method === "PATCH" && /^inventory-items\/[a-f\d]{24}$/i.test(path));
+  const managedInventoryCatalog =
+    (method === "GET" && /^managed-inventory-catalog\/(categories|quantity-units)(\/active|\/[a-f\d]{24})?$/i.test(path)) ||
+    ((method === "POST") && /^managed-inventory-catalog\/(categories|quantity-units)$/i.test(path)) ||
+    ((method === "PATCH" || method === "DELETE") && /^managed-inventory-catalog\/(categories|quantity-units)\/[a-f\d]{24}$/i.test(path));
+  const customerSkuSpecifications =
+    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/specifications$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/specifications$/i.test(path)) ||
+    ((method === "PATCH" || method === "DELETE") && /^inventory-items\/[a-f\d]{24}\/specifications\/[a-f\d]{24}$/i.test(path));
   const facilityReviewAllowed =
     (method === "GET" &&
       /^(customers(\/[^/]+)?|reservations\/facility\/[^/]+|reservations\/managed\/[a-fA-F0-9]{24})$/.test(
@@ -123,18 +128,17 @@ export function assertConfirmedRequest(config) {
       /^contracts\/[a-f\d]{24}\/sign\/facility$/i.test(path));
   const managedV3Inventory =
     (method === "GET" &&
-      (/^inventory-items\/[a-f\d]{24}\/v3\/(physical-units|operations|stock|movements)$/i.test(path) ||
-        /^inventory-items\/managed-v3\/facility\/overview$/i.test(path))) ||
+      (/^inventory-items\/[a-f\d]{24}\/v3\/(physical-units|operations|stock|movements|cell-stock)$/i.test(path) ||
+        /^inventory-items\/[a-f\d]{24}\/v3\/inbound\/context$/i.test(path) ||
+        /^inventory-items\/[a-f\d]{24}\/v3\/specifications\/[a-f\d]{24}\/cell-stock$/i.test(path) ||
+        /^inventory-items\/managed-v3\/facility\/(overview|capacity-diagnostics)$/i.test(path))) ||
     (method === "POST" &&
       (/^inventory-items\/[a-f\d]{24}\/v3\/(physical-units|inbound|inbound\/preview)$/i.test(path)));
   const managedV3Outbound =
     (method === "GET" &&
-      (/^inventory-items\/[a-f\d]{24}\/v3\/outbound\/(context|operations)$/i.test(path) ||
-        /^inventory-items\/[a-f\d]{24}\/v3\/outbound-requests(\/[a-f\d]{24})?$/i.test(path) ||
-        /^inventory-items\/managed-v3\/facility\/outbound-requests(\/[a-f\d]{24})?$/i.test(path))) ||
+      /^inventory-items\/[a-f\d]{24}\/v3\/outbound\/(context|operations)$/i.test(path)) ||
     (method === "POST" &&
-      (/^inventory-items\/[a-f\d]{24}\/v3\/outbound-requests$/i.test(path) ||
-        /^inventory-items\/[a-f\d]{24}\/v3\/outbound-requests\/[a-f\d]{24}\/(cancel|preview|confirm)$/i.test(path)));
+      /^inventory-items\/[a-f\d]{24}\/v3\/outbound(?:\/preview)?$/i.test(path));
   const managedAccess =
     (method === "POST" &&
       (/^access\/managed-v3\/visits$/i.test(path) ||
@@ -178,18 +182,14 @@ export function assertConfirmedRequest(config) {
   // feature-gate, Idempotency-Key and If-Match enforcement.
   const customerInventoryRequests =
     (["GET", "POST"].includes(method) &&
-      /^inventory-items\/[a-f\d]{24}\/(inbound-requests|outbound-requests)$/i.test(
+      /^inventory-items\/[a-f\d]{24}\/inbound-requests$/i.test(
         path,
       )) ||
     (method === "GET" &&
       /^inventory-items\/[a-f\d]{24}\/stock-balance$/i.test(path)) ||
     (["GET", "PATCH"].includes(method) &&
       /^inbound-requests\/[a-f\d]{24}$/i.test(path)) ||
-    (method === "POST" &&
-      /^inbound-requests\/[a-f\d]{24}\/cancel$/i.test(path)) ||
-    (method === "GET" && /^outbound-requests\/[a-f\d]{24}$/i.test(path)) ||
-    (method === "POST" &&
-      /^outbound-requests\/[a-f\d]{24}\/cancel$/i.test(path));
+    (method === "POST" && /^inbound-requests\/[a-f\d]{24}\/cancel$/i.test(path));
   const bomAdminResource =
     (method === "GET" &&
       (/^facilities(\/[^/]+)?$/.test(path) ||
@@ -282,17 +282,16 @@ export function assertConfirmedRequest(config) {
     (method === "GET" &&
       (/^inbound-requests\/receiving-queue$/i.test(path) ||
         /^inbound-requests\/[a-f\d]{24}\/receiving$/i.test(path) ||
-        /^outbound-requests\/staff-queue$/i.test(path) ||
-        /^outbound-requests\/[a-f\d]{24}\/staff-detail$/i.test(path) ||
         /^inventory-items\/[a-f\d]{24}\/relocate-canonical\/context$/i.test(path))) ||
     (method === "POST" &&
       (/^inbound-requests\/[a-f\d]{24}\/(evidence-uploads|inspection|return-completed|confirm)$/i.test(path) ||
-        /^outbound-requests\/[a-f\d]{24}\/confirm$/i.test(path) ||
         /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
   const allowed =
     facilityManagedReadiness ||
     selfStorageCheckoutAndRenew ||
     managedAccess ||
+    managedInventoryCatalog ||
+    customerSkuSpecifications ||
     staffInventoryOperations ||
     customerInventoryRequests ||
     facilityHandover ||

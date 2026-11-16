@@ -6,8 +6,10 @@ process.env.MONGO_URL ||= 'mongodb://localhost:27017/wdp_test';
 process.env.KEYCLOAK_BASE_URL ||= 'http://localhost:8081';
 process.env.KEYCLOAK_CLIENT_SECRET ||= 'test-only';
 const Upload = require('../dist/models/inventory-items/inventory-image-upload.model').default;
-const ReservationModel = require('../dist/models/reservations/reservation.model').default;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
+const ItemSpecification = require('../dist/models/inventory-items/item-specification.model').default;
+const { ManagedSkuService } = require('../dist/services/inventory-items/managed-sku.service');
+const { ManagedInventoryCatalogService } = require('../dist/services/inventory-items/managed-inventory-catalog.service');
 const { CloudinaryService } = require('../dist/services/upload/cloudinary.service');
 const { ManagedInventoryImageService: service } = require('../dist/services/upload/managed-inventory-image.service');
 const { validateInventoryImage } = require('../dist/services/upload/inventory-image-validation.service');
@@ -15,6 +17,7 @@ const sharp = require('sharp');
 const customerId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439071');
 const reservationId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439021');
 const itemId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439031');
+const categoryId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439051');
 const session = { withTransaction: async work => work(), endSession: async () => {} };
 class Query {
   constructor(value) { this.value = value; }
@@ -22,6 +25,8 @@ class Query {
   sort() { return this; } limit() { return this; } select() { return this; } lean() { return this; }
   exec() { return Promise.resolve(this.value); }
 }
+// The image tests use isolated query mocks; no test opens a MongoDB connection.
+ItemSpecification.exists = () => new Query(null);
 const actor = { _id: customerId, role: 'CUSTOMER' };
 const existingUpload = (overrides = {}) => ({ _id: new mongoose.Types.ObjectId(), customerId, managedReservationId: reservationId, secureUrl: 'https://res.cloudinary.com/demo/image/upload/v1/a.jpg', publicId: 'wdp/managed-inventory/a', sha256: 'abc', width: 2, height: 2, format: 'jpg', status: 'UNATTACHED', itemId: undefined, expiresAt: new Date(Date.now() + 60000), ...overrides });
 
@@ -40,6 +45,27 @@ test('legacy URLs already on the same Item remain unchanged without upload looku
   const legacy = 'https://legacy.example.test/customer-item.jpg';
   t.mock.method(Upload, 'findOne', () => { throw Error('legacy image must not require upload metadata'); });
   await service.attachNewImages([legacy], [legacy], itemId, customerId, reservationId, session);
+});
+
+test('new Item Specification image attaches only an owned unexpired upload in the transaction', async t => {
+  const upload = existingUpload({ _id: new mongoose.Types.ObjectId() });
+  const specId = new mongoose.Types.ObjectId(); let update, filter, options;
+  t.mock.method(Upload, 'findOne', value => { filter = value; return { session: used => { assert.equal(used, session); return new Query(upload); } }; });
+  t.mock.method(Upload, 'updateOne', (...args) => { [filter, update, options] = args; return new Query({ modifiedCount: 1 }); });
+  await service.attachNewSpecificationImages([upload.secureUrl], [], specId, customerId, reservationId, session);
+  assert.equal(filter.status, 'UNATTACHED'); assert.equal(update.$set.status, 'ATTACHED'); assert.equal(update.$set.itemSpecificationId, specId); assert.equal(options.session, session);
+});
+
+test('cleanup retains an image referenced by Item Specification', async t => {
+  const original = ItemSpecification.exists;
+  ItemSpecification.exists = () => new Query({ _id: new mongoose.Types.ObjectId() });
+  const upload = existingUpload({ expiresAt: new Date(0) }); let update;
+  t.mock.method(mongoose, 'startSession', async () => session);
+  t.mock.method(Upload, 'findOne', () => new Query(upload));
+  t.mock.method(Item, 'exists', () => new Query(null));
+  t.mock.method(Upload, 'updateOne', (_filter, value) => { update = value; return new Query({ modifiedCount: 1 }); });
+  try { const claimed = await service.claimForCleanup(upload._id); assert.equal(claimed, null); assert.equal(update.$set.status, 'ATTACHED'); }
+  finally { ItemSpecification.exists = original; }
 });
 
 test('new image URL cannot be attached if it is not owned by this Customer and Reservation', async t => {
@@ -167,7 +193,7 @@ test('concurrent attachment attempts cannot claim one upload for two Items', asy
   assert.equal(results.filter(result => result.status === 'rejected' && result.reason.status === 409).length, 1);
 });
 
-test('create persists uploaded URL and ATTACHED metadata inside the same transaction session', async t => {
+test('SKU create persists uploaded URL and ATTACHED metadata inside the same transaction session', async t => {
   const reservationGuard = require('../dist/services/reservations/managed-inventory-reservation.guard');
   const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId(), customerId, serviceType: 'MANAGED_INVENTORY',
     status: 'CHECKIN_READY', bookingFlowVersion: 3, endDate: new Date('2030-01-01T00:00:00.000Z'), inventoryVersion: 0 };
@@ -175,22 +201,17 @@ test('create persists uploaded URL and ATTACHED metadata inside the same transac
   const transaction = { withTransaction: async work => work(), endSession: async () => {} };
   t.mock.method(mongoose, 'startSession', async () => transaction);
   t.mock.method(reservationGuard, 'requireManagedInventoryReservationForRegistration', async (_id, _customer, _facility, usedSession) => { assert.equal(usedSession, transaction); return reservation; });
-  t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update, options) => {
-    assert.equal(String(filter._id), String(reservationId)); assert.equal(String(filter.customerId), String(customerId));
-    assert.equal(filter.bookingFlowVersion, 3); assert.equal(filter.status, 'CHECKIN_READY'); assert.equal(options.session, transaction);
-    assert.equal(update.$inc.inventoryVersion, 1); return new Query({ ...reservation, inventoryVersion: 1 });
-  });
+  t.mock.method(ManagedInventoryCatalogService, 'requireActive', async (kind, id, usedSession) => { assert.equal(kind, 'category'); assert.equal(id, categoryId.toString()); assert.equal(usedSession, transaction); return { _id: categoryId, code: 'DOCS', name: 'Tài liệu' }; });
   t.mock.method(Upload, 'findOne', filter => { assert.equal(filter.secureUrl, upload.secureUrl); return { session: value => { assert.equal(value, transaction); return new Query(upload); } }; });
   t.mock.method(Upload, 'updateOne', (_filter, update, options) => { assert.equal(options.session, transaction); assert.equal(update.$set.status, 'ATTACHED'); return new Query({ modifiedCount: 1 }); });
   t.mock.method(Item.prototype, 'save', async function(options) { assert.equal(options.session, transaction); });
-  const saved = await require('../dist/services/inventory-items/inventory-item.service').InventoryItemService.create({
-    managedReservationId: reservationId.toString(), itemCode: 'IMAGE-01', name: 'Photo lot', category: 'DOCUMENTS', quantity: 1,
-    quantityUnit: 'box', unitWeightKg: 2, unitDimensionsM: { widthM: 1, depthM: 1, heightM: 1 }, images: [upload.secureUrl],
+  const saved = await ManagedSkuService.create({
+    managedReservationId: reservationId.toString(), itemCode: 'IMAGE-01', name: 'Photo lot', categoryId: categoryId.toString(), images: [upload.secureUrl],
   }, actor);
   assert.deepEqual(saved.images, [upload.secureUrl]);
 });
 
-test('item save failure aborts the mocked transaction and leaves upload unattached', async t => {
+test('SKU save failure aborts the mocked transaction and leaves upload unattached', async t => {
   const reservationGuard = require('../dist/services/reservations/managed-inventory-reservation.guard');
   const reservation = { _id: reservationId, facilityId: new mongoose.Types.ObjectId(), customerId, serviceType: 'MANAGED_INVENTORY',
     status: 'CHECKIN_READY', bookingFlowVersion: 3, endDate: new Date('2030-01-01T00:00:00.000Z'), inventoryVersion: 0 };
@@ -198,14 +219,13 @@ test('item save failure aborts the mocked transaction and leaves upload unattach
   const transaction = { withTransaction: async work => { try { await work(); } catch (error) { status = 'UNATTACHED'; throw error; } }, endSession: async () => {} };
   t.mock.method(mongoose, 'startSession', async () => transaction);
   t.mock.method(reservationGuard, 'requireManagedInventoryReservationForRegistration', async () => reservation);
-  t.mock.method(ReservationModel, 'findOneAndUpdate', (_filter, _update, options) => { assert.equal(options.session, transaction); return new Query({ ...reservation, inventoryVersion: 1 }); });
+  t.mock.method(ManagedInventoryCatalogService, 'requireActive', async () => ({ _id: categoryId, code: 'DOCS', name: 'Tài liệu' }));
   t.mock.method(Upload, 'findOne', () => ({ session: value => { assert.equal(value, transaction); return new Query({ ...upload, get status(){return status;} }); } }));
   t.mock.method(Upload, 'updateOne', (_filter, update, options) => { assert.equal(options.session, transaction); status = update.$set.status; return new Query({ modifiedCount: 1 }); });
   t.mock.method(Item.prototype, 'save', async function(options) { assert.equal(options.session, transaction); throw Error('simulated item write failure'); });
-  await assert.rejects(require('../dist/services/inventory-items/inventory-item.service').InventoryItemService.create({
-    managedReservationId: reservationId.toString(), itemCode: 'IMAGE-ROLLBACK', name: 'Photo lot', category: 'DOCUMENTS', quantity: 1,
-    quantityUnit: 'box', unitWeightKg: 2, unitDimensionsM: { widthM: 1, depthM: 1, heightM: 1 }, images: [upload.secureUrl],
-  }, actor), error => error.status === 500);
+  await assert.rejects(ManagedSkuService.create({
+    managedReservationId: reservationId.toString(), itemCode: 'IMAGE-ROLLBACK', name: 'Photo lot', categoryId: categoryId.toString(), images: [upload.secureUrl],
+  }, actor), /simulated item write failure/);
   assert.equal(status, 'UNATTACHED');
 });
 

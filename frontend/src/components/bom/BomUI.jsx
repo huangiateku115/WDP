@@ -6,7 +6,7 @@ import { Building2 } from 'lucide-react';
 // read-only value viewer. Backend role, facility scope and audit permissions stay authoritative.
 
 export function BomUnavailable() {
-  return <Panel title="Business record unavailable"><Link className="manager-link" to="/bom/dashboard">Back to BOM dashboard</Link></Panel>;
+  return <Panel title="Không xem được bản ghi"><Link className="manager-link" to="/bom/dashboard">Quay lại tổng quan</Link></Panel>;
 }
 
 export function Kpis({ items }) {
@@ -40,5 +40,5 @@ export function ReadOnlyValues({ value }) {
         ))}
       </dl>
     )
-    : <p className="text-sm text-slate-500">No prior value.</p>;
+    : <p className="text-sm text-slate-500">Chưa có giá trị trước đó.</p>;
 }

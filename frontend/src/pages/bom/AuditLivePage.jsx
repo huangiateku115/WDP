@@ -26,7 +26,7 @@ export default function AuditLivePage() {
   const [subjectId, setSubjectId] = useState("");
 
   const options = [
-    ["", "Select a customer account"],
+    ["", "Chọn tài khoản khách hàng"],
     ...(subjects.data || [])
       .map((profile) => [userIdOf(profile), accountLabel(profile)])
       .filter(([id]) => typeof id === "string" && id.length > 0),
@@ -44,19 +44,19 @@ export default function AuditLivePage() {
 
   return (
     <Screen
-      title="Audit review"
-      description="Sign-in events and audit actions for accounts you can review."
+      title="Rà soát nhật ký"
+      description="Lịch sử đăng nhập và hành động của các tài khoản bạn được phép xem."
     >
-      <Panel title="Reviewable account">
-        {subjects.loading && <p role="status" className="text-sm text-slate-500">Loading customer accounts…</p>}
+      <Panel title="Tài khoản có thể rà soát">
+        {subjects.loading && <p role="status" className="text-sm text-slate-500">Đang tải danh sách khách hàng…</p>}
         {subjects.error && <Message error={subjects.error} />}
         {!subjects.loading && !subjects.error && (
           <>
-            <Field label="Customer account">
-              <Select label="Customer account" value={subjectId} onChange={setSubjectId} options={options} />
+            <Field label="Tài khoản khách hàng">
+              <Select label="Tài khoản khách hàng" value={subjectId} onChange={setSubjectId} options={options} />
             </Field>
             {options.length <= 1 && (
-              <p className="mt-3 text-sm text-slate-500">No customer account is available to review.</p>
+              <p className="mt-3 text-sm text-slate-500">Chưa có tài khoản khách hàng nào để rà soát.</p>
             )}
           </>
         )}
@@ -64,41 +64,41 @@ export default function AuditLivePage() {
 
       {subjectId && (
         <>
-          <Panel title="Sign-in history">
+          <Panel title="Lịch sử đăng nhập">
             <AsyncBoundary
               state={records}
               render={({ history }) => (
                 <Table
-                  label="Sign-in history"
+                  label="Lịch sử đăng nhập"
                   rows={history.map((row) => ({ ...row, id: row._id }))}
                   columns={[
-                    { key: "createdAt", label: "When", render: (r) => when(r.createdAt) },
-                    { key: "eventType", label: "Event", render: (r) => r.eventType || "—" },
-                    { key: "status", label: "Result", render: (r) => <Status value={r.status || "—"} /> },
-                    { key: "failureReason", label: "Reason", render: (r) => r.failureReason || "—" },
+                    { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
+                    { key: "eventType", label: "Sự kiện", render: (r) => r.eventType || "—" },
+                    { key: "status", label: "Kết quả", render: (r) => <Status value={r.status || "—"} /> },
+                    { key: "failureReason", label: "Lý do", render: (r) => r.failureReason || "—" },
                     { key: "ip", label: "IP", render: (r) => r.ip || "—" },
-                    { key: "device", label: "Device", render: (r) => r.device || "—" },
+                    { key: "device", label: "Thiết bị", render: (r) => r.device || "—" },
                   ]}
-                  empty="No sign-in event was returned for this account."
+                  empty="Tài khoản này chưa có lần đăng nhập nào."
                 />
               )}
             />
           </Panel>
-          <Panel title="Audit actions">
+          <Panel title="Hành động đã thực hiện">
             <AsyncBoundary
               state={records}
               render={({ logs }) => (
                 <Table
-                  label="Audit actions"
+                  label="Hành động đã thực hiện"
                   rows={logs.map((row) => ({ ...row, id: row._id }))}
                   columns={[
-                    { key: "createdAt", label: "When", render: (r) => when(r.createdAt) },
-                    { key: "action", label: "Action", render: (r) => r.action || "—" },
-                    { key: "entityType", label: "Entity", render: (r) => r.entityType || "—" },
-                    { key: "entityId", label: "Entity id", render: (r) => r.entityId || "—" },
-                    { key: "reason", label: "Reason", render: (r) => r.reason || "—" },
+                    { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
+                    { key: "action", label: "Hành động", render: (r) => r.action || "—" },
+                    { key: "entityType", label: "Đối tượng", render: (r) => r.entityType || "—" },
+                    { key: "entityId", label: "Mã đối tượng", render: (r) => r.entityId || "—" },
+                    { key: "reason", label: "Lý do", render: (r) => r.reason || "—" },
                   ]}
-                  empty="No audit action was returned for this account."
+                  empty="Tài khoản này chưa có hành động nào được ghi nhận."
                 />
               )}
             />

@@ -61,26 +61,26 @@ export default function WarehouseStructurePage() {
   }
   function removeZone(zone) {
     setConfirm({
-      title: `Delete zone ${zone.code}?`,
-      summary: "A zone can only be deleted after all of its racks are deleted. Deleted rows are hidden from every list, so the console cannot restore them afterwards.",
-      label: "Delete zone",
+      title: `Xóa khu vực ${zone.code}?`,
+      summary: "Chỉ xóa được khu vực khi đã xóa hết kệ bên trong.",
+      label: "Xóa khu vực",
       run: async () => { await bomWarehouseApi.deleteZone(zone.id); reloadStructure(); },
     });
   }
 
   function removeRack(rack) {
     setConfirm({
-      title: `Delete rack ${rack.rackCode}?`,
-      summary: "A rack can only be deleted once every cell is blocked or under maintenance, and no cell holds inventory, holds or bookings.",
-      label: "Delete rack",
+      title: `Xóa kệ ${rack.rackCode}?`,
+      summary: "Chỉ xóa được kệ khi mọi ô đều đang bị chặn hoặc đang bảo trì, và không ô nào còn hàng, đang giữ hoặc đang được đặt.",
+      label: "Xóa kệ",
       run: async () => { await bomWarehouseApi.deleteRack(rack.id); if (rack.id === rackId) setRackId(""); reloadStructure(); },
     });
   }
 
   return (
     <Screen
-      title="Warehouse structure"
-      description="Zones, racks and rack cells of a Managed Inventory facility. Zones and racks are fully editable; cells accept limited updates."
+      title="Cấu trúc kho"
+      description="Khu vực, kệ và ô chứa của cơ sở lưu trữ hàng hóa."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);
@@ -88,59 +88,58 @@ export default function WarehouseStructurePage() {
         return (
           <>
             <Kpis items={[
-              ["Facilities shown", options.length, "Active facilities offering Managed Inventory"],
-              ["Zones", zones.data?.total ?? "—", "Zones in the selected facility"],
-              ["Racks", racks.data?.total ?? "—", "Racks in the selected facility"],
-              ["Cells", sumBy(racks.data?.rows || [], "cellCount") || "—", "Generated per rack"],
+              ["Số cơ sở hiển thị", options.length, "Cơ sở đang hoạt động có dịch vụ Lưu trữ hàng hóa"],
+              ["Khu vực", zones.data?.total ?? "—", "Khu vực của cơ sở đã chọn"],
+              ["Kệ", racks.data?.total ?? "—", "Kệ của cơ sở đã chọn"],
+              ["Ô chứa", sumBy(racks.data?.rows || [], "cellCount") || "—", "Tạo tự động theo kệ"],
             ]} />
 
             <Panel
-              title="Structure scope"
-              subtitle="The warehouse map only lists active facilities that offer Managed Inventory."
+              title="Phạm vi cấu trúc"
+              subtitle="Bản đồ kho chỉ liệt kê cơ sở đang hoạt động và có dịch vụ Lưu trữ hàng hóa."
             >
               <div className="manager-filters">
-                <Field label="Facility">
+                <Field label="Cơ sở">
                   <Select
-                    label="Warehouse facility"
+                    label="Cơ sở kho"
                     value={facilityId}
                     onChange={selectFacility}
-                    options={[["", "Select a facility"], ...options.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                    options={[["", "Chọn cơ sở"], ...options.map((f) => [f.id, `${f.name} (${f.code})`])]}
                   />
                 </Field>
-                <Field label="Zone filter" hint="Narrows the rack list only.">
+                <Field label="Lọc theo khu vực" hint="Chỉ ảnh hưởng danh sách kệ.">
                   <Select
-                    label="Zone filter"
+                    label="Lọc theo khu vực"
                     value={zoneFilter}
                     onChange={setZoneFilter}
                     disabled={!facilityId}
-                    options={[["", "All zones"], ...(zones.data?.rows || []).map((z) => [z.id, `${z.code} · ${z.name}`])]}
+                    options={[["", "Tất cả khu vực"], ...(zones.data?.rows || []).map((z) => [z.id, `${z.code} · ${z.name}`])]}
                   />
                 </Field>
               </div>
               {excluded > 0 && (
-                <p className="bom-warning mt-5">
-                  {excluded} other facilit{excluded === 1 ? "y is" : "ies are"} hidden: the warehouse map rejects a facility that is not
-                  ACTIVE or does not offer Managed Inventory with 409.
+                <p className="bom-note mt-5">
+                  Ẩn {excluded} cơ sở khác vì cơ sở không đang hoạt động hoặc không cung cấp dịch vụ Lưu trữ hàng hóa.
                 </p>
               )}
             </Panel>
 
             {!facilityId && (
-              <Panel title="Select a facility">
-                <p className="text-sm text-slate-500">Zones, racks and cells are scoped to one facility.</p>
+              <Panel title="Chọn cơ sở">
+                <p className="text-sm text-slate-500">Khu vực, kệ và ô chứa thuộc một cơ sở.</p>
               </Panel>
             )}
 
             {facilityId && (
               <>
                 <Panel
-                  title="Managed capacity"
-                  subtitle="Sellable quota the managed reservation flow can allocate, measured over the current calendar month."
-                  action={<Button onClick={() => setCapacityOpen(true)}>Configure capacity</Button>}
+                  title="Công suất lưu trữ"
+                  subtitle="Công suất có thể bán trong tháng hiện tại."
+                  action={<Button onClick={() => setCapacityOpen(true)}>Cấu hình công suất</Button>}
                 >
                   <AsyncBoundary state={capacity} render={(data) => (data ? (
                     <Details values={[
-                      ["Interval", `${String(data.interval?.startDate || window.startDate).slice(0, 10)} → ${String(data.interval?.endDate || window.endDate).slice(0, 10)}`],
+                      ["Khoảng thời gian", `${String(data.interval?.startDate || window.startDate).slice(0, 10)} → ${String(data.interval?.endDate || window.endDate).slice(0, 10)}`],
                       ["Sellable capacity", m3(data.sellableCapacityM3)],
                       ["Committed peak", m3(data.committedPeakCapacityM3)],
                       ["Available", m3(data.availableCapacityM3)],
@@ -148,21 +147,21 @@ export default function WarehouseStructurePage() {
                     ]} />
                   ) : (
                     <p className="bom-warning">
-                      No active capacity configuration for this facility yet, so
-                      Managed reservations cannot be created. Use Configure capacity to set the sellable capacity and hold duration.
+                      Cơ sở chưa có cấu hình công suất đang hoạt động nên chưa thể tạo đơn lưu trữ hàng hóa.
+                      Dùng Cấu hình công suất để đặt công suất bán được và thời gian giữ chỗ.
                     </p>
                   ))} />
                 </Panel>
 
                 <AsyncBoundary state={zones} render={(data) => (data ? (
                   <Panel
-                    title="Zones"
-                    subtitle={`${data.total} zone${data.total === 1 ? "" : "s"} · zones order the warehouse into logical areas`}
-                    action={<Button onClick={() => setZoneDialog("new")}>Create zone</Button>}
+                    title="Khu vực"
+                    subtitle={`${data.total} khu vực`}
+                    action={<Button onClick={() => setZoneDialog("new")}>Tạo khu vực</Button>}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                     <Table
-                      label="Warehouse zones"
+                      label="Khu vực kho"
                       rows={data.rows}
                       columns={[
                         { key: "code", label: "Code" },
@@ -175,33 +174,32 @@ export default function WarehouseStructurePage() {
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => setZoneDialog(r)}>Edit</Button>
-                              <Button size="sm" variant="outline" onClick={() => removeZone(r)}>Delete</Button>
+                            <Button size="sm" variant="outline" onClick={() => setZoneDialog(r)}>Sửa</Button>
+                            <Button size="sm" variant="outline" onClick={() => removeZone(r)}>Xóa</Button>
                             </div>
                           ),
                         },
                       ]}
-                      empty="No warehouse zone is configured for this facility."
+                      empty="Cơ sở này chưa cấu hình khu vực kho."
                     />
                   </Panel>
                 ) : null)} />
 
                 <AsyncBoundary state={racks} render={(data) => (data ? (
                   <Panel
-                    title="Racks"
-                    subtitle="Racks carry the physical dimensions, the level rating and the map position used by the customer map."
+                    title="Kệ"
                     action={(
                       <Button onClick={() => setRackDialog("new")} disabled={!(zones.data?.rows || []).length}>
-                        Create rack
+                        Tạo kệ
                       </Button>
                     )}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                     {!(zones.data?.rows || []).length && (
-                      <p className="bom-warning mb-4">Create an active zone before adding racks.</p>
+                      <p className="bom-warning mb-4">Hãy tạo một khu vực đang hoạt động trước khi thêm kệ.</p>
                     )}
                     <Table
-                      label="Warehouse racks"
+                      label="Kệ trong kho"
                       rows={data.rows.filter((rack) => !zoneFilter || rack.zoneId === zoneFilter)}
                       columns={[
                         { key: "rackCode", label: "Rack" },
@@ -217,14 +215,14 @@ export default function WarehouseStructurePage() {
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Cells</Button>
-                              <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Edit</Button>
-                              <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Delete</Button>
+                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Ô chứa</Button>
+                              <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Sửa</Button>
+                              <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Xóa</Button>
                             </div>
                           ),
                         },
                       ]}
-                      empty="No rack is registered in this facility (or the selected zone)."
+                      empty="Chưa có kệ nào trong cơ sở (hoặc khu vực đã chọn)."
                     />
                   </Panel>
                 ) : null)} />
@@ -232,9 +230,9 @@ export default function WarehouseStructurePage() {
                 {rackId && (
                   <AsyncBoundary state={cells} render={(data) => (data ? (
                     <Panel
-                      title="Rack cells"
-                      subtitle={`${data.total} cell${data.total === 1 ? "" : "s"} · cells are generated with the rack and only accept a limited patch`}
-                      action={<Button variant="outline" onClick={() => setRackId("")}>Close cells</Button>}
+                      title="Ô trên kệ"
+                      subtitle={`${data.total} ô chứa`}
+                      action={<Button variant="outline" onClick={() => setRackId("")}>Đóng danh sách ô</Button>}
                     >
                       <Details values={[
                         ["Rack", (racks.data?.rows || []).find((r) => r.id === rackId)?.rackCode || rackId],
@@ -244,7 +242,7 @@ export default function WarehouseStructurePage() {
                       ]} />
                       <div className="mt-5">
                         <Table
-                          label="Rack cells"
+                          label="Ô trên kệ"
                           rows={data.rows}
                           columns={[
                             { key: "code", label: "Cell" },
@@ -257,10 +255,10 @@ export default function WarehouseStructurePage() {
                             {
                               key: "actions",
                               label: "Actions",
-                              render: (r) => <Button size="sm" variant="outline" onClick={() => setCellDialog(r)}>Edit</Button>,
+                              render: (r) => <Button size="sm" variant="outline" onClick={() => setCellDialog(r)}>Sửa</Button>,
                             },
                           ]}
-                          empty="This rack has no cells."
+                          empty="Kệ này chưa có ô chứa nào."
                         />
                       </div>
                     </Panel>

@@ -9,7 +9,7 @@ export function cellPeriodStatus(cell){
   if(['RESERVED','OCCUPIED'].includes(cell?.periodStatus))return cell.periodStatus;
   if(cell?.periodStatus!=='AVAILABLE')return 'UNKNOWN';
   if(cell.isBookable===false)return 'UNAVAILABLE';
-  if(cell.isBookable!==true||cell.operationalStatus!=='AVAILABLE'||cell.physicalUsageKnown!==true||cell.usedWeightKg!==0||cell.usedVolumeM3!==0)return 'UNKNOWN';
+  if(cell.isBookable!==true||cell.operationalStatus!=='AVAILABLE')return 'UNKNOWN';
   return 'AVAILABLE';
 }
 

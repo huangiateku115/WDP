@@ -35,6 +35,19 @@ function iso(v: unknown, label: string) {
 }
 function audit(action: string, actor: Actor, at: Date, details?: Record<string, unknown>): ManagedAccessAudit { return { action, ...actorData(actor), at, ...(details ? { details } : {}) }; }
 function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+async function markMissedVisits(filter: Record<string, unknown>, now: Date, limit = 500) {
+  const rows = await VisitModel.find({ ...filter, status: VS.SCHEDULED, endsAt: { $lte: now } })
+    .select('_id').sort({ endsAt: 1, _id: 1 }).limit(limit).lean().exec();
+  if (!rows.length) return 0;
+  const result = await VisitModel.bulkWrite(rows.map(row => ({ updateOne: {
+    filter: { _id: row._id, status: VS.SCHEDULED, endsAt: { $lte: now } },
+    update: { $set: { status: VS.MISSED }, $inc: { revision: 1 }, $push: { audit: {
+      action: 'VISIT_MARKED_MISSED', actorRole: 'SYSTEM', at: now,
+      details: { reason: 'Scheduled window ended without Staff check-in' },
+    } } },
+  } })), { ordered: false });
+  return result.modifiedCount;
+}
 function windowInput(input: Record<string, unknown>, now: Date) {
   const startsAt = iso(input.startsAt, 'startsAt'), endsAt = iso(input.endsAt, 'endsAt');
   if (startsAt < new Date(now.getTime() - 5 * 60_000) || endsAt <= startsAt || endsAt.getTime() - startsAt.getTime() > 8 * 60 * 60_000) fail(400, 'INVALID_VISIT_WINDOW', 'Khung giờ phải hợp lệ, tối đa 8 tiếng và không bắt đầu quá 5 phút trong quá khứ.');
@@ -179,12 +192,18 @@ export class ManagedAccessService {
     if (!created) fail(503, 'VISIT_CREATE_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả tạo lịch. Hãy tải lại lịch trước khi gửi lại.');
     return created;
   }
-  static async myVisits(actor: Actor) { requireRole(actor, [UserRole.CUSTOMER]); return VisitModel.find({ customerId: actor._id }).sort({ startsAt: -1 }).populate('assignedStaffId', 'displayName').lean().exec(); }
+  static async myVisits(actor: Actor) {
+    requireRole(actor, [UserRole.CUSTOMER]);
+    await markMissedVisits({ customerId: actor._id }, new Date());
+    return VisitModel.find({ customerId: actor._id }).sort({ startsAt: -1 }).populate('assignedStaffId', 'displayName').lean().exec();
+  }
   static async visitDetail(visitId: unknown, actor: Actor) {
-    const id = asId(visitId, 'visitId'); const visit = await VisitModel.findById(id).populate('assignedStaffId', 'displayName').exec();
+    const id = asId(visitId, 'visitId'); let visit = await VisitModel.findById(id).populate('assignedStaffId', 'displayName').exec();
     if (!visit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
     if (actor.role === UserRole.CUSTOMER && !visit.customerId.equals(actor._id)) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
     if ([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) { scope(actor, visit.facilityId); if (actor.role === UserRole.FACILITY_STAFF && !visit.assignedStaffId?.equals(actor._id)) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch được giao.'); }
+    await markMissedVisits({ _id: id, facilityId: visit.facilityId }, new Date(), 1);
+    if (visit.status === VS.SCHEDULED && visit.endsAt <= new Date()) visit = await VisitModel.findById(id).populate('assignedStaffId', 'displayName').exec() ?? visit;
     return visit;
   }
   static async amendVisit(visitId: unknown, body: unknown, actor: Actor, expectedRevision: unknown, idempotencyHeader: unknown) {
@@ -192,6 +211,7 @@ export class ManagedAccessService {
     if (!Number.isSafeInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
     const key = reqKey(idempotencyHeader);
     const id = asId(visitId, 'visitId');
+    await markMissedVisits({ _id: id, customerId: actor._id }, new Date(), 1);
     const visit = await VisitModel.findOne({ _id: id, customerId: actor._id }).exec();
     if (!visit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
     const requestHash = hash({ visitId: String(id), payload: input });
@@ -202,6 +222,7 @@ export class ManagedAccessService {
       }
       return visit;
     }
+    if (visit.status === VS.MISSED) fail(409, 'VISIT_MISSED', 'Lịch đã quá giờ mà chưa check-in nên không thể điều chỉnh. Hãy đặt lịch mới.');
     if (visit.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_AMENDABLE', 'Chỉ có thể sửa lịch chưa check-in.');
     if (visit.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi sửa.');
     const window = windowInput({ startsAt: input.startsAt ?? visit.startsAt.toISOString(), endsAt: input.endsAt ?? visit.endsAt.toISOString() }, new Date());
@@ -224,6 +245,7 @@ export class ManagedAccessService {
           amended = latest; return;
         }
         if (latest.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_AMENDABLE', 'Chỉ có thể sửa lịch chưa check-in.');
+        if (latest.endsAt <= new Date()) fail(409, 'VISIT_MISSED', 'Lịch đã quá giờ mà chưa check-in nên không thể điều chỉnh. Hãy đặt lịch mới.');
         if (latest.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi sửa.');
         const reservation: any = await ReservationModel.findOne({ _id: latest.reservationId, customerId: actor._id,
           serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
@@ -248,6 +270,7 @@ export class ManagedAccessService {
         amended = await latest.save({ session: dbSession });
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
     } catch (error: any) {
+      if (error instanceof ManagedAccessError && error.code === 'VISIT_MISSED') await markMissedVisits({ _id: id, customerId: actor._id }, new Date(), 1);
       // Resolve an uncertain commit from the durable amendment audit before surfacing failure.
       const persisted = await VisitModel.findOne({ _id: id, customerId: actor._id }).exec().catch(() => null);
       const committed = (persisted?.audit ?? []).find((entry: ManagedAccessAudit) => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
@@ -265,12 +288,15 @@ export class ManagedAccessService {
     requireRole(actor, [UserRole.CUSTOMER]);
     if (!Number.isSafeInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
     const id = asId(visitId, 'visitId'), now = new Date(), revision = Number(expectedRevision);
-    const cancelled = await VisitModel.findOneAndUpdate({ _id: id, customerId: actor._id, status: VS.SCHEDULED, revision },
+    await markMissedVisits({ _id: id, customerId: actor._id }, now, 1);
+    const cancelled = await VisitModel.findOneAndUpdate({ _id: id, customerId: actor._id, status: VS.SCHEDULED, revision, endsAt: { $gt: new Date() } },
       { $set: { status: VS.CANCELLED }, $inc: { revision: 1 }, $push: { audit: audit('VISIT_CANCELLED', actor, now) } },
       { new: true, runValidators: true }).exec();
     if (cancelled) return cancelled;
+    await markMissedVisits({ _id: id, customerId: actor._id }, new Date(), 1);
     const current = await VisitModel.findOne({ _id: id, customerId: actor._id }).select('status revision').lean().exec();
     if (!current) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
+    if (current.status === VS.MISSED) fail(409, 'VISIT_MISSED', 'Lịch đã quá giờ và được ghi nhận là quá hạn; không thể hủy hoặc sửa.');
     if (current.status !== VS.SCHEDULED) fail(409, 'VISIT_NOT_CANCELLABLE', 'Lịch đã check-in hoặc kết thúc không thể hủy.');
     fail(412, 'STALE_REVISION', 'Lịch đã thay đổi; tải lại trước khi hủy.');
   }
@@ -278,6 +304,7 @@ export class ManagedAccessService {
     requireRole(actor, [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]); if (!actor.assignedFacilityId) fail(403, 'FACILITY_SCOPE_DENIED', 'Chưa được phân công Facility.');
     const filter: Record<string, unknown> = { facilityId: actor.assignedFacilityId };
     if (actor.role === UserRole.FACILITY_STAFF) filter.assignedStaffId = actor._id;
+    await markMissedVisits(filter, new Date());
     if (status && Object.values(VS).includes(status as VS)) filter.status = status;
     return VisitModel.find(filter).sort({ startsAt: 1 }).populate('customerId', 'displayName email').populate('assignedStaffId', 'displayName').lean().exec();
   }
@@ -285,11 +312,17 @@ export class ManagedAccessService {
     requireRole(actor, [UserRole.FACILITY_MANAGER]); if (!actor.assignedFacilityId) fail(403, 'FACILITY_SCOPE_DENIED', 'Chưa được phân công Facility.');
     return UserModel.find({ role: UserRole.FACILITY_STAFF, assignedFacilityId: actor.assignedFacilityId, isActive: true }).select('_id displayName email').sort({ displayName: 1 }).lean().exec();
   }
+  static async reconcileMissedVisits(now = new Date(), limit = 500): Promise<number> {
+    if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) fail(500, 'INVALID_RECONCILIATION_INPUT', 'Invalid missed visit reconciliation parameters.');
+    return markMissedVisits({}, now, limit);
+  }
   static async assignStaff(visitId: unknown, body: unknown, actor: Actor, expectedRevision: unknown) {
     requireRole(actor, [UserRole.FACILITY_MANAGER]); const input = plain(body, ['staffId', 'reason'], 'Phân công hộ tống');
     if (!Number.isSafeInteger(Number(expectedRevision))) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
     if (typeof input.reason !== 'string' || input.reason.trim().length < 3 || input.reason.length > 500) fail(400, 'INVALID_INPUT', 'Cần lý do phân công từ 3 đến 500 ký tự.');
     const visit = await VisitModel.findById(asId(visitId, 'visitId')).exec(); if (!visit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.'); scope(actor, visit.facilityId);
+    await markMissedVisits({ _id: visit._id }, new Date(), 1);
+    if (visit.status === VS.SCHEDULED && visit.endsAt <= new Date()) fail(409, 'VISIT_MISSED', 'Lịch đã quá giờ mà chưa check-in nên không thể phân công hộ tống.');
     if (visit.status !== VS.SCHEDULED || visit.revision !== Number(expectedRevision)) fail(412, 'STALE_REVISION', 'Lịch không còn ở revision có thể phân công.');
     const staffId = asId(input.staffId, 'staffId'), now = new Date(), dbSession = await mongoose.startSession(); let assigned;
     try {
@@ -351,6 +384,10 @@ export class ManagedAccessService {
     const id = asId(visitId, 'visitId'), initialVisit = await VisitModel.findById(id).exec();
     if (!initialVisit) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.'); scope(actor, initialVisit.facilityId);
     if (!initialVisit.assignedStaffId?.equals(actor._id)) fail(403, 'ASSIGNMENT_REQUIRED', 'Chỉ nhân viên hộ tống được phân công mới check-in.');
+    if (initialVisit.status === VS.SCHEDULED && initialVisit.endsAt <= new Date()) {
+      await markMissedVisits({ _id: id }, new Date(), 1);
+      fail(409, 'VISIT_MISSED', 'Lịch đã quá giờ mà chưa check-in; không thể xác minh đến kho.');
+    }
     const requestHash = hash({ identityVerified: input.identityVerified, customerPresent: input.customerPresent, safetyReviewed: input.safetyReviewed, safetyNotes: (input.safetyNotes as string).trim() });
     const dbSession = await mongoose.startSession(); let result: IManagedAccessSession | undefined; let replay = false;
     try {

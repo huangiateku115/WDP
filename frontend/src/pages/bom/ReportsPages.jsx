@@ -10,20 +10,20 @@ import { Screen, Panel, OpenLink, Button } from "@/components/manager/ManagerUI"
 const REPORTS = [
   {
     key: "utilization",
-    title: "Cross-facility utilization",
-    description: "Private unit occupancy and Managed Inventory volume.",
+    title: "Mức sử dụng toàn hệ thống",
+    description: "Tỷ lệ lấp đầy kho riêng và thể tích lưu trữ hàng hóa.",
     live: true,
   },
   {
     key: "rentals",
-    title: "Rental / customer history",
-    description: "Reservation lifecycle across every facility.",
+    title: "Lịch sử thuê kho",
+    description: "Vòng đời đơn đặt thuê trên mọi cơ sở.",
     live: true,
   },
   {
     key: "revenue",
-    title: "Cross-facility revenue",
-    description: "Collected revenue, payment status and period summaries.",
+    title: "Doanh thu toàn hệ thống",
+    description: "Doanh thu đã thu, trạng thái thanh toán và tổng hợp theo kỳ.",
     live: false,
   },
 ];
@@ -31,17 +31,17 @@ const REPORTS = [
 export function ReportsIndexPage({ basePath = "/bom" }) {
   return (
     <Screen
-      title="Business reports"
-      description="Compare facility performance with the correct units for each service model."
+      title="Báo cáo kinh doanh"
+      description="So sánh hiệu quả cơ sở theo đúng đơn vị của từng mô hình dịch vụ."
     >
       <div className="grid gap-5 md:grid-cols-3">
         {REPORTS.map((report) => (
           <Panel key={report.key} title={report.title}>
             <p className="mb-5 text-sm text-slate-500">{report.description}</p>
             {report.live ? (
-              <OpenLink to={`${basePath}/reports/${report.key}`}>Open report</OpenLink>
+              <OpenLink to={`${basePath}/reports/${report.key}`}>Mở báo cáo</OpenLink>
             ) : (
-              <p className="text-sm text-slate-500">No data available yet.</p>
+              <p className="text-sm text-slate-500">Chưa có dữ liệu.</p>
             )}
           </Panel>
         ))}
@@ -53,15 +53,15 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
 export function RevenueReportPendingPage({ basePath = "/bom" }) {
   return (
     <Screen
-      title="Cross-facility revenue"
-      description="Collected revenue, payment status and period summaries."
-      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Back to reports</Link></Button>}
+      title="Doanh thu toàn hệ thống"
+      description="Doanh thu đã thu, trạng thái thanh toán và tổng hợp theo kỳ."
+      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
     >
-      <Panel title="Cross-facility revenue">
-        <p className="text-sm text-slate-600">No revenue data is available yet.</p>
+      <Panel title="Doanh thu toàn hệ thống">
+        <p className="text-sm text-slate-600">Chưa có dữ liệu.</p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Open utilization report</Link></Button>
-          <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Open rental report</Link></Button>
+          <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Mở báo cáo sử dụng</Link></Button>
+          <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Mở báo cáo thuê kho</Link></Button>
         </div>
       </Panel>
     </Screen>
