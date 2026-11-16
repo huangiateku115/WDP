@@ -11,6 +11,7 @@ import {itemDto, mapItem, mapMovements, mapStock} from './contracts/inventory';
 import {mapMarkOneRead, mapNotifications} from './contracts/communications';
 
 import {rentalEndDate,termKey} from '../domain/liveBooking';
+import {isTodayOrFutureVietnamDate} from '../domain/vietnamDate';
 import {accountUpdate,profileUpdate} from './contracts/profile';
 
 const liveUnitDto=unitDto.extend({status:z.unknown()});
@@ -67,8 +68,8 @@ export const mobileRepo = {
   },
   async quote(facilityId:string,unitId:string,input:unknown,signal?:AbortSignal) {
     const period=bookingPeriod.parse(input);
-    if (Date.parse(period.start+'T00:00:00Z')<=Date.now() || rentalEndDate(period.start,{value:period.value,unit:period.unit})!==period.end) {
-      throw new MobileInputError('Ngày thuê phải ở tương lai và khớp với kỳ hạn đã chọn.');
+    if (!isTodayOrFutureVietnamDate(period.start) || rentalEndDate(period.start,{value:period.value,unit:period.unit})!==period.end) {
+      throw new MobileInputError('Ngày thuê phải từ hôm nay theo giờ Việt Nam và khớp với kỳ hạn đã chọn.');
     }
     const unit=await mobileRepo.unit(facilityId,unitId,signal);
     if(unit.status!=='AVAILABLE'&&unit.status!=='HELD'&&unit.status!=='OCCUPIED') {

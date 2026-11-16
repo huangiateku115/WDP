@@ -2,7 +2,7 @@ import {Pressable,StyleSheet,View} from 'react-native';
 import {AppText,Button,ui} from './ui';
 import {ResourceState,type useResource} from './liveUI';
 import type {mobileRepo} from '../api/mobileRepository';
-import {calendarDays,canStartOn,shiftMonth,utcToday} from '../domain/liveBooking';
+import {calendarDays,canStartOn,shiftMonth,todayInVietnam} from '../domain/liveBooking';
 import {colors,radius} from '../theme/tokens';
 
 export const bookingDateLabel=(value:string)=>value.split('-').reverse().join('/');
@@ -14,7 +14,7 @@ export function BookingCalendar({month,setMonth,selected,onSelect,resource}:{
 }){
   return <View style={{gap:8}}>
     <View style={ui.between}>
-      <Button label="Tháng trước" variant="quiet" disabled={month<=utcToday().slice(0,7)} onPress={()=>setMonth(shiftMonth(month,-1))}/>
+      <Button label="Tháng trước" variant="quiet" disabled={month<=todayInVietnam().slice(0,7)} onPress={()=>setMonth(shiftMonth(month,-1))}/>
       <AppText variant="label">{bookingDateLabel(month)}</AppText>
       <Button label="Tháng sau" variant="quiet" onPress={()=>setMonth(shiftMonth(month,1))}/>
     </View>
@@ -24,7 +24,7 @@ export function BookingCalendar({month,setMonth,selected,onSelect,resource}:{
       {['T2','T3','T4','T5','T6','T7','CN'].map(label=><View style={styles.slot} key={label}><AppText variant="label">{label}</AppText></View>)}
       {calendarDays(month).map((date,i)=>{
         if(!date)return <View style={styles.slot} key={'empty'+i}/>;
-        const enabled=resource?canStartOn(date,resource.data??undefined):date>utcToday();
+        const enabled=resource?canStartOn(date,resource.data??undefined):date>=todayInVietnam();
         const active=date===selected;
         return <Pressable key={date} accessibilityRole="button" accessibilityLabel={'Chọn ngày '+bookingDateLabel(date)}
           accessibilityState={{disabled:!enabled,selected:active}} disabled={!enabled} onPress={()=>onSelect(date)}

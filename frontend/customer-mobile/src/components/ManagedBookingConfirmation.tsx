@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {View} from 'react-native';
 import axios from 'axios';
 import {useRouter} from 'expo-router';
 import {apiIssue,MobileInputError} from '../api/client';
@@ -8,7 +9,7 @@ import {journal,newAttempt} from '../state/attemptJournal';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card} from './ui';
 import {ResourceState,useResource} from './liveUI';
-import {ManagedTermsAccordion} from './ManagedTermsAccordion';
+import {TermsModal,TermsReviewCard} from './TermsReview';
 import {hasManagedTermsAcceptance,managedTermsAcceptanceKey} from '../domain/managedTermsAcceptance';
 
 type Review=Extract<ManagedQuote,{bookingFlowVersion:3}>;
@@ -96,9 +97,17 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
     {attempt.data?<Button label="Khôi phục yêu cầu đặt kho đã lưu" loading={pending} onPress={()=>void submit(true)}/>:null}
     {review&&!attempt.data&&<><ResourceState {...policy}/>
       {policy.data&&<>
-        <ManagedTermsAccordion version={policy.data.version} groups={policy.data.groups} expanded={termsExpanded}
-          onToggleExpanded={()=>setTermsExpanded(value=>!value)} accepted={accepted===acceptance}
-          onToggleAcceptance={()=>setAccepted(hasManagedTermsAcceptance(accepted,scope,versionId)?'':acceptance)} disabled={pending}/>
+        <TermsReviewCard title="Điều khoản thuê kho ký gửi" version={policy.data.version}
+          accepted={hasManagedTermsAcceptance(accepted,scope,versionId)} onOpen={()=>setTermsExpanded(true)}/>
+        <TermsModal visible={termsExpanded} title="Điều khoản thuê kho ký gửi" version={policy.data.version} disabled={pending}
+          onClose={()=>setTermsExpanded(false)} onAccept={()=>{
+            if(versionId&&scope){setAccepted(managedTermsAcceptanceKey(scope,versionId));setTermsExpanded(false);}
+          }}>
+          {policy.data.groups.map(group=><View key={group.id} style={{gap:8}}>
+            <AppText variant="medium">{group.title}</AppText>
+            {group.sections.MANAGED_INVENTORY?.map((line,index)=><AppText key={`${group.id}:${index}`}>{line}</AppText>)}
+          </View>)}
+        </TermsModal>
         <Button label="Xác nhận tạo đơn thuê" loading={pending}
           disabled={attempt.loading||!!attempt.error||!hasManagedTermsAcceptance(accepted,scope,versionId)} onPress={()=>void submit(false)}/>
       </>}
