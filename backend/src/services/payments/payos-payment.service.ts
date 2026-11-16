@@ -1423,6 +1423,29 @@ export class PayosPaymentService {
               throw new PayosPaymentError(503, 'WEBHOOK_CONCURRENT_RETRY', 'Managed V3 Cell holds changed during settlement; provider should retry');
             }
           }
+        } else if (currentPayment.purpose === PaymentPurpose.RENEWAL) {
+          const extItem = (reservation.extendContract || []).find((e: any) =>
+            (currentPayment.metadata?.extensionId && String(e._id) === String(currentPayment.metadata.extensionId)) ||
+            (e.payosOrderCode && e.payosOrderCode === Number(verified.orderCode)) ||
+            (e.status === 'PENDING_PAYMENT')
+          );
+          if (extItem) {
+            extItem.status = 'PAID';
+            extItem.paymentId = currentPayment._id;
+            extItem.payosOrderCode = Number(verified.orderCode);
+            extItem.signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            extItem.updatedAt = time;
+            reservation.statusHistory.push({
+              status: reservation.status,
+              reason: `Thanh toán phí gia hạn ${extItem.extensionCode} qua PayOS thành công. Hạn ký giấy: ${extItem.signingDeadline.toLocaleDateString('vi-VN')}`,
+              createdAt: time
+            });
+            await reservation.save({ session });
+          }
+          currentPayment.applicationStatus = PaymentApplicationStatus.APPLIED;
+          await currentPayment.save({ session });
+          result = { applied: true, paymentId: currentPayment._id, purpose: currentPayment.purpose };
+          return;
         } else {
           const managed = managedV3(reservation);
           if ((managed ? reservation.status !== ReservationStatus.DEPOSIT_PAID : reservation.status !== ReservationStatus.CHECKIN_READY) || currentPayment.customerId == null) {

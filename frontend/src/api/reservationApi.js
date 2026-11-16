@@ -126,8 +126,13 @@ const reservationApi = {
   },
 
   requestCheckout: (id, note) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/checkout-request`, { note }),
-  renewQuote: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew-quote`, { durationMonths }),
+  mockPay: (id) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/mock-pay`),
+  renewQuote: (id, term) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew-quote`, typeof term === 'object' ? term : { durationMonths: term }),
   renewReservation: (id, durationMonths) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/renew`, { durationMonths }),
+  createExtensionRequest: (id, term) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/extension-request`, typeof term === 'object' ? term : { durationMonths: term }),
+  createExtensionPayosPayment: (id, extensionId) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/extension-payments/payos`, { extensionId }),
+  mockPayExtension: (id, extensionId) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/extension-payments/mock-pay`, { extensionId }),
+  cancelExtensionRequest: (id, extensionId, reason) => axiosClient.post(`/reservations/${encodeURIComponent(id)}/extension-contracts/${encodeURIComponent(extensionId)}/cancel`, { reason }),
 };
 
 export default reservationApi;

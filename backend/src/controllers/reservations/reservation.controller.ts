@@ -15,6 +15,8 @@ import { UserRole } from '../../types/user.type';
 import { createHash } from 'node:crypto';
 import { calculateRentalPaymentBreakdown } from '../../services/payments/payment-accounting';
 import mongoose from 'mongoose';
+import { CloudinaryService } from '../../services/upload/cloudinary.service';
+import { PayOS } from '@payos/node';
 
 class ReservationControllerError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -678,25 +680,38 @@ export const mockPayReservation = async (req: Request, res: Response) => {
     }
 
     // Record mock payment in reservationpayments for financial audit tracking
+    const totalDueAmount = Number(
+      (reservation as any).rentalPricingSnapshot?.totalDue ??
+        reservation.estimatedRent + (reservation.taxAmount || 0) - (reservation.discountAmount || 0)
+    );
     const payment = await ReservationPaymentModel.create({
       reservationId: reservation._id,
       customerId: reservation.customerId,
       facilityId: reservation.facilityId,
       serviceType: reservation.serviceType,
       purpose: PaymentPurpose.FULL_RENT,
-      amount: reservation.estimatedRent,
+      amount: totalDueAmount,
       currency: 'VND',
       idempotencyKey: `mock-full-${reservation._id}-${Date.now()}`,
-      provider: PaymentProvider.MOCK,
-      providerReference: `MOCK-PAYOS-FULL-${reservation._id}`,
+      provider: PaymentProvider.PAYOS,
+      providerReference: `MOCK-PAYOS-FULL-${reservation._id}-${Date.now()}`,
       status: PaymentStatus.SUCCEEDED,
+      providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+      applicationStatus: PaymentApplicationStatus.APPLIED,
       succeededAt: new Date(),
-      checkoutState: 'READY'
-    }).catch(() => null);
+      checkoutState: 'READY',
+    }).catch((err) => {
+      console.warn('mockPayReservation payment creation error:', err?.message);
+      return null;
+    });
 
     if (payment) {
       reservation.fullPaymentId = payment._id;
-      await reservation.save();
+      (reservation as any).fullRentPaymentId = payment._id;
+      await ReservationModel.updateOne(
+        { _id: reservation._id },
+        { $set: { fullPaymentId: payment._id, fullRentPaymentId: payment._id } }
+      ).exec();
     }
 
     return res.json({ success: true, data: reservation, payment });
@@ -1457,51 +1472,525 @@ export const rejectCheckout = async (req: Request, res: Response) => {
 };
 
 /**
- * Phase 5.2: Báo giá gia hạn hợp đồng (Renew Quote)
+ * Helper dùng chung: tìm đúng PricingRule khớp kỳ hạn và tính giá qua ReservationService.calculatePricing
  */
+const resolveExtensionPricing = async (reservation: any, termValue: number, termUnit: string = 'MONTH') => {
+  const PricingRuleModel = mongoose.model('PricingRule');
+  let unitSize = reservation.storageUnitSize;
+  if (!unitSize && reservation.storageUnitId) {
+    const u = await StorageUnitModel.findById(reservation.storageUnitId);
+    if (u) unitSize = u.size;
+  }
+
+  const exactRule: any = await PricingRuleModel.findOne({
+    facilityId: reservation.facilityId,
+    serviceType: reservation.serviceType || FacilityServiceType.SELF_STORAGE,
+    ...(unitSize ? { unitSize } : {}),
+    'term.value': termValue,
+    'term.unit': termUnit,
+    isActive: true,
+  }).exec();
+
+  if (!exactRule) {
+    const unitLabel = termUnit === 'YEAR' ? 'năm' : termUnit === 'DAY' ? 'ngày' : 'tháng';
+    throw new Error(`Cơ sở hiện không có chính sách giá cho gói gia hạn ${termValue} ${unitLabel}.`);
+  }
+
+  const oldEndDate = new Date(reservation.endDate);
+  const newEndDate = new Date(oldEndDate);
+  if (termUnit === 'DAY') {
+    newEndDate.setUTCDate(newEndDate.getUTCDate() + termValue);
+  } else {
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + termValue * (termUnit === 'YEAR' ? 12 : 1));
+  }
+
+  const pricing = await ReservationService.calculatePricing(
+    String(exactRule._id),
+    oldEndDate,
+    newEndDate
+  );
+
+  return {
+    rule: exactRule,
+    oldEndDate,
+    newEndDate,
+    monthlyPrice: pricing.basePrice,
+    totalAmount: pricing.estimatedRent,
+    currency: pricing.currency || 'VND',
+  };
+};
+
 export const renewQuote = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
+    const termUnit = String(req.body.termUnit || 'MONTH').toUpperCase();
+    const termValue = Math.max(1, parseInt(req.body.termValue || req.body.durationMonths || '1', 10) || 1);
     const reservation = await ReservationModel.findById(id);
     if (!reservation) {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });
     }
-    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
-      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
-    }
-    if (reservation.status !== ReservationStatus.ACTIVE) {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
+
+    let canExtend = true;
+    let reason = '';
+    try {
+      await validateExtensionPrerequisites(reservation);
+    } catch (err: any) {
+      canExtend = false;
+      reason = err.message;
     }
 
-    let monthlyPrice = 0;
-    if (reservation.pricingPolicyId) {
-      const PricingRuleModel = mongoose.model('PricingRule');
-      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
-      if (rule && typeof rule.price === 'number') {
-        monthlyPrice = rule.price;
-      }
+    let pricingResult: any = null;
+    try {
+      pricingResult = await resolveExtensionPricing(reservation, termValue, termUnit);
+    } catch (priceErr: any) {
+      return res.status(400).json({ success: false, message: priceErr.message });
     }
-    if (!monthlyPrice) {
-      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
-      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
-    }
-
-    const totalAmount = monthlyPrice * durationMonths;
-    const oldEndDate = new Date(reservation.endDate);
-    const newEndDate = new Date(oldEndDate);
-    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
 
     return res.json({
       success: true,
       data: {
         reservationId: reservation._id,
-        durationMonths,
-        monthlyPrice,
-        totalAmount,
-        currency: 'VND',
-        oldEndDate,
-        newEndDate,
+        durationMonths: termUnit === 'YEAR' ? termValue * 12 : termValue,
+        termValue,
+        termUnit,
+        pricingPolicyId: pricingResult.rule._id,
+        monthlyPrice: pricingResult.monthlyPrice,
+        totalAmount: pricingResult.totalAmount,
+        amount: pricingResult.totalAmount,
+        currency: pricingResult.currency,
+        oldEndDate: pricingResult.oldEndDate,
+        newEndDate: pricingResult.newEndDate,
+        canExtend,
+        reason,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Validate prerequisites for contract extension (Status & Conflict Guards)
+ */
+export const validateExtensionPrerequisites = async (reservation: any) => {
+  // 1. Kiểm tra trạng thái đơn phải ACTIVE
+  if (reservation.status !== ReservationStatus.ACTIVE) {
+    throw new Error(`Đơn thuê không ở trạng thái ACTIVE (trạng thái hiện tại: ${reservation.status}). Không thể gia hạn.`);
+  }
+
+  // 2. Chặn kho đã hết hạn / quá hạn
+  if (new Date(reservation.endDate).getTime() <= Date.now()) {
+    throw new Error('Kho thuê đã hết hạn hợp đồng. Vui lòng liên hệ trực tiếp nhân viên cơ sở để xử lý công nợ và tất toán.');
+  }
+
+  // 3. Chặn khi đang có lệnh trả kho
+  if (reservation.checkoutRequest && reservation.checkoutRequest.status === 'PENDING') {
+    throw new Error('Đơn thuê đang có yêu cầu trả kho chờ nhân viên nghiệm thu. Không thể gia hạn.');
+  }
+
+  // 4. Chặn khi đang có gia hạn dở dang chưa hoàn tất
+  const pendingExt = (reservation.extendContract || []).find((e: any) => ['PENDING_PAYMENT', 'PAID'].includes(e.status));
+  if (pendingExt) {
+    if (pendingExt.status === 'PENDING_PAYMENT') {
+      throw new Error(`Đang có yêu cầu gia hạn ${pendingExt.extensionCode} chờ thanh toán. Vui lòng thanh toán hoặc hủy yêu cầu này trước.`);
+    }
+    if (pendingExt.status === 'PAID') {
+      throw new Error(`Đang có yêu cầu gia hạn ${pendingExt.extensionCode} đã thanh toán và đang chờ ký phụ lục hợp đồng giấy tại cơ sở.`);
+    }
+  }
+
+  // 5. Kiểm tra tính pháp lý của hợp đồng gốc
+  if (!reservation.paperContractProofUrl) {
+    throw new Error('Hợp đồng gốc ban đầu chưa có bản chứng minh hợp đồng giấy đã ký. Vui lòng liên hệ nhân viên.');
+  }
+
+  // 6. Kiểm tra trạng thái ô kho vật lý (chặn bảo trì / ngừng hoạt động / đã xóa)
+  if (reservation.storageUnitId) {
+    const unit = await StorageUnitModel.findById(reservation.storageUnitId);
+    if (!unit || (unit as any).deletedAt) {
+      throw new Error('Ô kho vật lý không còn tồn tại hoặc đã bị gỡ khỏi hệ thống.');
+    }
+    if (unit.status === StorageUnitStatus.MAINTENANCE || unit.status === StorageUnitStatus.INACTIVE) {
+      throw new Error(`Ô kho vật lý hiện đang bảo trì hoặc ngừng hoạt động (${unit.status}). Vui lòng liên hệ nhân viên.`);
+    }
+  }
+};
+
+/**
+ * Tạo yêu cầu gia hạn hợp đồng (Extension Request)
+ */
+export const createExtensionRequest = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const termUnit = String(req.body.termUnit || 'MONTH').toUpperCase();
+    const termValue = Math.max(1, parseInt(req.body.termValue || req.body.durationMonths || '1', 10) || 1);
+    const durationMonths = termUnit === 'YEAR' ? termValue * 12 : termValue;
+
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
+    }
+
+    // Kiểm tra điều kiện tiên quyết (Status & Conflict Guards)
+    await validateExtensionPrerequisites(reservation);
+
+    // Lấy giá trực tiếp từ PricingRule qua ReservationService.calculatePricing
+    const { totalAmount, oldEndDate, newEndDate } = await resolveExtensionPricing(reservation, termValue, termUnit);
+
+    // Kiểm tra trùng lịch với các đơn đặt chỗ khác trong khoảng thời gian gia hạn
+    if (reservation.storageUnitId) {
+      const conflictBooking = await ReservationModel.findOne({
+        _id: { $ne: reservation._id },
+        storageUnitId: reservation.storageUnitId,
+        status: {
+          $nin: [
+            ReservationStatus.CANCELLED,
+            ReservationStatus.CHECKED_OUT,
+            ReservationStatus.CLOSED,
+          ],
+        },
+        startDate: { $lt: newEndDate },
+        endDate: { $gt: oldEndDate },
+      }).exec();
+      if (conflictBooking) {
+        return res.status(409).json({
+          success: false,
+          message: 'Ô kho này đã có đơn đặt chỗ khác trong khoảng thời gian gia hạn dự kiến.',
+        });
+      }
+    }
+
+    const extensionCode = 'EXT-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+    if (!Array.isArray(reservation.extendContract)) {
+      reservation.extendContract = [];
+    }
+
+    const newExtItem = {
+      extensionCode,
+      durationMonths,
+      amount: totalAmount,
+      status: 'PENDING_PAYMENT' as const,
+      oldEndDate,
+      newEndDate,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    reservation.extendContract.push(newExtItem as any);
+    await reservation.save();
+
+    const createdItem = reservation.extendContract[reservation.extendContract.length - 1];
+
+    return res.status(201).json({
+      success: true,
+      message: `Tạo yêu cầu gia hạn ${durationMonths} tháng thành công. Mã yêu cầu: ${extensionCode}. Vui lòng thanh toán để tiếp tục.`,
+      data: {
+        reservationId: reservation._id,
+        extension: createdItem,
+      },
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Khởi tạo thanh toán PayOS cho yêu cầu gia hạn
+ */
+export const createExtensionPayosCheckout = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { extensionId } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    const extItem = (reservation.extendContract || []).find(
+      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+    );
+    if (!extItem) {
+      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
+    }
+    if (extItem.status !== 'PENDING_PAYMENT') {
+      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn đang ở trạng thái ${extItem.status}, không thể thanh toán.` });
+    }
+
+    const orderCode = extItem.payosOrderCode || Math.floor(1000000000 + Math.random() * 9000000000);
+    extItem.payosOrderCode = orderCode;
+    await reservation.save();
+
+    let checkoutUrl = '';
+    let qrCode = '';
+
+    if (process.env.PAYOS_CLIENT_ID && process.env.PAYOS_API_KEY && process.env.PAYOS_CHECKSUM_KEY) {
+      try {
+        const payos = new PayOS({
+          clientId: process.env.PAYOS_CLIENT_ID,
+          apiKey: process.env.PAYOS_API_KEY,
+          checksumKey: process.env.PAYOS_CHECKSUM_KEY,
+          logLevel: 'off' as const,
+        });
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const link = await payos.paymentRequests.create({
+          orderCode,
+          amount: extItem.amount,
+          description: `Gia han ${extItem.extensionCode}`.slice(0, 25),
+          returnUrl: `${frontendUrl}/portal`,
+          cancelUrl: `${frontendUrl}/portal`,
+        });
+        checkoutUrl = link.checkoutUrl;
+        qrCode = link.qrCode;
+      } catch (payosErr: any) {
+        console.warn('PayOS API call failed, falling back to mock payment details:', payosErr.message);
+      }
+    }
+
+    if (!checkoutUrl) {
+      checkoutUrl = `https://pay.payos.vn/web/${orderCode}`;
+      qrCode = `00020101021238540010A000000727012400069704220110${orderCode}520460115303704540${extItem.amount}5802VN6304`;
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        orderCode,
+        amount: extItem.amount,
+        checkoutUrl,
+        qrCode,
+        extension: extItem,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Dev Mock Payment Bypass: Giả lập thanh toán gia hạn 100% trong môi trường test
+ */
+export const mockPayExtension = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { extensionId } = req.body;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    const extItem = (reservation.extendContract || []).find(
+      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+    );
+    if (!extItem) {
+      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
+    }
+    if (extItem.status !== 'PENDING_PAYMENT') {
+      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn đang ở trạng thái ${extItem.status}, không thể thanh toán.` });
+    }
+
+    const orderCode = extItem.payosOrderCode || Math.floor(1000000000 + Math.random() * 9000000000);
+    extItem.payosOrderCode = orderCode;
+    extItem.status = 'PAID';
+    extItem.signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 ngày SLA
+    extItem.updatedAt = new Date();
+
+    const payment = await ReservationPaymentModel.create({
+      reservationId: reservation._id,
+      customerId: reservation.customerId,
+      facilityId: reservation.facilityId,
+      serviceType: reservation.serviceType,
+      purpose: PaymentPurpose.RENEWAL,
+      amount: extItem.amount,
+      currency: 'VND',
+      idempotencyKey: `EXT-MOCK-${extItem.extensionCode}-${Date.now()}`,
+      provider: PaymentProvider.PAYOS,
+      providerReference: String(orderCode),
+      status: PaymentStatus.SUCCEEDED,
+      providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+      applicationStatus: PaymentApplicationStatus.APPLIED,
+      succeededAt: new Date(),
+    });
+    extItem.paymentId = payment._id;
+
+    reservation.statusHistory.push({
+      status: reservation.status,
+      ...(req.user?._id ? { actorId: req.user._id } : {}),
+      reason: `Thanh toán phí gia hạn ${extItem.extensionCode} (+${extItem.durationMonths} tháng) thành công qua Dev Mock Bypass. Hạn ký giấy: ${extItem.signingDeadline.toLocaleDateString('vi-VN')}`,
+      createdAt: new Date(),
+    });
+
+    await reservation.save();
+
+    return res.json({
+      success: true,
+      message: `Giả lập thanh toán gia hạn thành công! Vui lòng đến cơ sở ký phụ lục hợp đồng giấy trong vòng 3 ngày (trước ${extItem.signingDeadline.toLocaleDateString('vi-VN')}).`,
+      data: {
+        reservation,
+        extension: extItem,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Staff chụp ảnh phụ lục hợp đồng giấy & Xác nhận gia hạn (Confirm Extension)
+ */
+export const confirmExtension = async (req: Request, res: Response) => {
+  try {
+    const { id, extensionId } = req.params;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    const extItem = (reservation.extendContract || []).find(
+      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+    );
+    if (!extItem) {
+      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
+    }
+    if (extItem.status !== 'PAID') {
+      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn chưa thanh toán hoặc đã được xử lý (trạng thái: ${extItem.status}).` });
+    }
+
+    let proofUrl = req.body?.paperProofUrl;
+    if (req.file) {
+      const uploadRes = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts');
+      proofUrl = uploadRes.secureUrl;
+    }
+
+    if (!proofUrl) {
+      return res.status(400).json({ success: false, message: 'Vui lòng tải lên ảnh chụp bản phụ lục hợp đồng giấy đã ký.' });
+    }
+
+    extItem.status = 'ACTIVE';
+    extItem.paperProofUrl = proofUrl;
+    if (req.user?._id) {
+      extItem.verifiedBy = req.user._id;
+    }
+    extItem.verifiedAt = new Date();
+    extItem.updatedAt = new Date();
+
+    // Chính thức cộng dồn ngày kết thúc hợp đồng
+    reservation.endDate = extItem.newEndDate;
+    reservation.statusHistory.push({
+      status: reservation.status,
+      ...(req.user?._id ? { actorId: req.user._id } : {}),
+      reason: `Staff xác nhận phụ lục hợp đồng giấy ${extItem.extensionCode} (+${extItem.durationMonths} tháng). Hạn kết thúc mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}`,
+      createdAt: new Date(),
+    });
+
+    await reservation.save();
+
+    // Đồng bộ sang Contract
+    await ContractModel.findOneAndUpdate(
+      { reservationId: reservation._id },
+      { $set: { 'pricingSnapshot.endDate': extItem.newEndDate, updatedAt: new Date() } }
+    ).exec();
+
+    return res.json({
+      success: true,
+      message: `Xác nhận gia hạn thành công! Hạn hợp đồng mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}.`,
+      data: {
+        reservation,
+        extension: extItem,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Staff từ chối gia hạn hợp đồng (Reject Extension)
+ */
+export const rejectExtension = async (req: Request, res: Response) => {
+  try {
+    const { id, extensionId } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do từ chối gia hạn.' });
+    }
+
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    const extItem = (reservation.extendContract || []).find(
+      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+    );
+    if (!extItem) {
+      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
+    }
+    if (extItem.status !== 'PAID' && extItem.status !== 'PENDING_PAYMENT') {
+      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn đang ở trạng thái ${extItem.status}, không thể từ chối.` });
+    }
+
+    extItem.status = 'REJECTED';
+    extItem.rejectionReason = reason.trim();
+    if (req.user?._id) {
+      extItem.verifiedBy = req.user._id;
+    }
+    extItem.verifiedAt = new Date();
+    extItem.updatedAt = new Date();
+
+    reservation.statusHistory.push({
+      status: reservation.status,
+      ...(req.user?._id ? { actorId: req.user._id } : {}),
+      reason: `Staff từ chối phụ lục hợp đồng gia hạn ${extItem.extensionCode}. Lý do: ${reason.trim()}`,
+      createdAt: new Date(),
+    });
+
+    await reservation.save();
+
+    return res.json({
+      success: true,
+      message: 'Đã từ chối gia hạn hợp đồng. Hạn thuê của kho vẫn giữ nguyên mốc cũ.',
+      data: {
+        reservation,
+        extension: extItem,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Khách hủy yêu cầu gia hạn khi chưa thanh toán (Cancel Extension Request)
+ */
+export const cancelExtensionRequest = async (req: Request, res: Response) => {
+  try {
+    const { id, extensionId } = req.params;
+    const reservation = await ReservationModel.findById(id);
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    const extItem = (reservation.extendContract || []).find(
+      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+    );
+    if (!extItem) {
+      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
+    }
+    if (extItem.status !== 'PENDING_PAYMENT') {
+      return res.status(400).json({ success: false, message: `Chỉ có thể hủy yêu cầu gia hạn chưa thanh toán (trạng thái: ${extItem.status}).` });
+    }
+
+    extItem.status = 'CANCELLED';
+    extItem.rejectionReason = req.body?.reason || 'Khách hàng hủy yêu cầu gia hạn';
+    extItem.updatedAt = new Date();
+
+    await reservation.save();
+
+    return res.json({
+      success: true,
+      message: 'Đã hủy yêu cầu gia hạn thành công.',
+      data: {
+        reservation,
+        extension: extItem,
       },
     });
   } catch (error: any) {

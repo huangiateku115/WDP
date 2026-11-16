@@ -53,6 +53,7 @@ const reservationSchema = new Schema<IReservation>({
   depositPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   balancePaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   fullPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+  fullRentPaymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
   balanceSettlementKey: { type: String, minlength: 1, maxlength: 160, immutable: true },
   handoverByStaffId: { type: Schema.Types.ObjectId, ref: 'User' },
   handoverAt: { type: Date },
@@ -81,6 +82,28 @@ const reservationSchema = new Schema<IReservation>({
     paymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
     oldEndDate: { type: Date, required: true },
     newEndDate: { type: Date, required: true }
+  }],
+  extendContract: [{
+    extensionCode: { type: String, required: true },
+    durationMonths: { type: Number, required: true },
+    amount: { type: Number, required: true },
+    status: { 
+      type: String, 
+      enum: ['PENDING_PAYMENT', 'PAID', 'ACTIVE', 'CANCELLED', 'REJECTED'],
+      default: 'PENDING_PAYMENT',
+      required: true 
+    },
+    signingDeadline: { type: Date },
+    paperProofUrl: { type: String },
+    verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    verifiedAt: { type: Date },
+    rejectionReason: { type: String },
+    payosOrderCode: { type: Number },
+    paymentId: { type: Schema.Types.ObjectId, ref: 'ReservationPayment' },
+    oldEndDate: { type: Date, required: true },
+    newEndDate: { type: Date, required: true },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
   }],
   
   startDate: { type: Date, required: true },

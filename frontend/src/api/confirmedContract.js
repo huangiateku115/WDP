@@ -274,7 +274,7 @@ export function assertConfirmedRequest(config) {
   const selfStorageCheckoutAndRenew =
     (method === "GET" && /^reservations\/checkout-queue(?:\?[^#]*)?$/i.test(path)) ||
     (method === "POST" &&
-      /^reservations\/[^/]+\/(checkout-request|complete-checkout|reject-checkout|renew|renew-quote)(?:\?[^#]*)?$/i.test(
+      /^reservations\/[^/]+\/(checkout-request|complete-checkout|reject-checkout|renew|renew-quote|extension-request|extension-payments\/(?:payos|mock-pay)|extension-contracts\/[^/]+\/(?:confirm|reject|cancel))(?:\?[^#]*)?$/i.test(
         path,
       ));
   // Verified Staff MI-06 routes. Server authentication, Facility scope and gates remain authoritative.
