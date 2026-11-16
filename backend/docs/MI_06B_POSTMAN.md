@@ -1,5 +1,9 @@
 # MI-06B Repeated Inbound — API and Postman
 
+# HISTORICAL — MI-06B Postman collection notes
+
+The route table and relocation instructions in this document describe retired legacy workflows. They are not active APIs on the SKU / Item Specification redesign branch. Use the current V3 customer relocation route contract instead; do not execute the legacy relocation requests against current inventory.
+
 ## Manual verification scope
 
 Import `backend/postman/WDP_MI06B_Repeated_Inbound.postman_collection.json` and `backend/postman/WDP_MI06B_Development.postman_environment.json`. This collection is for manual Postman verification against an explicitly authorized development/test WDP backend. It does not connect to, start, migrate, or seed a database.

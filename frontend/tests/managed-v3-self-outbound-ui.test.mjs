@@ -22,14 +22,22 @@ test("V3 direct outbound API routes are mounted for Customer only with preview a
     "../../backend/src/routes/inventory-item.routes.ts",
   );
   for (const route of [
-    "router.get('/:id/v3/outbound/context', customer, v3OutboundController.context)",
-    "router.get('/:id/v3/outbound/operations', customer, v3OutboundController.operation)",
-    "router.post('/:id/v3/outbound/preview', customer, v3OutboundLimiter, v3OutboundController.preview)",
-    "router.post('/:id/v3/outbound', customer, v3OutboundLimiter, v3OutboundController.confirm)",
+    "router.get('/:skuId/v3/outbound/context', customer, v3OutboundController.context)",
+    "router.get('/:skuId/v3/outbound/operations', customer, v3OutboundController.operation)",
+    "router.post('/:skuId/v3/outbound/preview', customer, v3OutboundLimiter, v3OutboundController.preview)",
+    "router.post('/:skuId/v3/outbound', customer, v3OutboundLimiter, v3OutboundController.confirm)",
   ])
     assert.ok(source.includes(route), `missing ${route}`);
   assert.doesNotMatch(source, /v3\/outbound-requests/);
   assert.doesNotMatch(source, /router\.post\('\/:id\/v3\/outbound-requests/);
+  const controller = await readFile(new URL("../../backend/src/controllers/inventory-items/managed-inventory-v3-outbound.controller.ts", import.meta.url), "utf8");
+  assert.match(controller, /req\.params\.skuId \?\? req\.params\.id/);
+  assert.match(controller, /service\.confirm\(routeSkuId\(r\),/);
+});
+
+test("Customer outbound resolves SKU identity from canonical SKU wrappers", async () => {
+  const source = await read("../src/components/customer/inventory/ManagedSelfOutboundV3.jsx");
+  assert.match(source, /value\?\.skuId\?\._id \?\? value\?\.skuId \?\? value\?\._id/);
 });
 
 test("Customer direct outbound adapter keeps exact request identity for recovery", async () => {
@@ -40,6 +48,13 @@ test("Customer direct outbound adapter keeps exact request identity for recovery
   assert.match(source, /If-Match/);
   assert.match(source, /savePending/);
   assert.match(source, /payload: canonical\(payload\)/);
+});
+
+test("only a definitive invalid SKU path rejection releases the pending outbound", async () => {
+  const source = await read("../src/api/managedInventoryV3OutboundApi.js");
+  assert.match(source, /\[400, 422\]\.includes\(responseStatus\).*responseBody\?\.code === 'INVALID_INPUT'.*responseBody\?\.message === 'skuId không hợp lệ\.'/s);
+  assert.match(source, /removePending\(skuId\);\s*error\.code = 'OUTBOUND_REJECTED_NO_WRITE'/);
+  assert.match(source, /headers: \{ 'Idempotency-Key': pending\.key/);
 });
 
 test("Customer outbound UI previews before attested confirm and has no manager approval/request-hold flow", async () => {

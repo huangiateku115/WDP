@@ -1,5 +1,9 @@
 # MI-06D — Canonical Managed Inventory Relocation
 
+# RETIRED — historical MI-06 design
+
+This document describes the superseded MI-06 Staff whole-lot relocation flow. Its routes, feature gate, and instructions are no longer active on the SKU / Item Specification redesign branch. Do not use the legacy Postman steps below for current data. The active customer flow is the V3 relocation API documented by the Phase 5 implementation and uses schema-v4 canonical MOVE movements.
+
 ## Scope and compatibility
 
 `POST /api/v1/inventory-items/:id/relocate-canonical` is the explicit Facility Staff endpoint for moving the complete positive remaining stock of an Item whose movement history can be reconciled into the MI-06 stock ledger. The existing `POST /inventory-items/:id/relocate` route and its legacy contract remain unchanged for legacy-only Items. Canonical-history Items are never sent through the legacy whole-lot writer.

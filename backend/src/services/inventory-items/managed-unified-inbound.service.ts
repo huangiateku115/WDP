@@ -74,7 +74,7 @@ async function activeReservation(sku: any, actor: Actor, session?: mongoose.Clie
 function key(value: unknown): string { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value as string; }
 
 /** Replays canonical stock and reconciles only the Reservation + physical Rack/Level scope used by this operation. */
-export async function readManagedFacilityStockState(facilityId: Types.ObjectId, session?: mongoose.ClientSession, scope?: { reservationId: Types.ObjectId; cellIds?: Types.ObjectId[]; skuId?: Types.ObjectId }) {
+export async function readManagedFacilityStockState(facilityId: Types.ObjectId, session?: mongoose.ClientSession, scope?: { reservationId: Types.ObjectId; reservationIds?: Types.ObjectId[]; cellIds?: Types.ObjectId[]; skuId?: Types.ObjectId }) {
   // Attach the transaction session before execution. Calling .exec() first
   // returns a Promise, which has no .session() and would throw a TypeError.
   const query = (q: any) => session ? q.session(session).exec() : q.exec();
@@ -94,7 +94,8 @@ export async function readManagedFacilityStockState(facilityId: Types.ObjectId, 
   ]);
   if (allCells.length > 10000 || movements.length > 10000 || allStocks.length > 10000 || allInstances.length > 10000 || allocations.length > 20000 || reservations.length > 2000 || [legacyItems, legacyBalances, v3Projections, v3BatchPlacements, v3PhysicalUnits, v3Footprints].some(rows => rows.length > 10000)) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', 'Tồn kho hoặc Cell của Facility vượt giới hạn đối soát an toàn.');
   if (!scope || !scope.reservationId || !Array.isArray(scope.cellIds) || scope.cellIds.length === 0) fail(503, 'LEGACY_STOCK_SCOPE_UNKNOWN', 'Không xác định được phạm vi Reservation và Cell cần đối soát.');
-  const operationScope = scope as { reservationId: Types.ObjectId; cellIds: Types.ObjectId[]; skuId?: Types.ObjectId };
+  const operationScope = scope as { reservationId: Types.ObjectId; reservationIds?: Types.ObjectId[]; cellIds: Types.ObjectId[]; skuId?: Types.ObjectId };
+  const scopedReservationIds = [...new Set([operationScope.reservationId, ...(operationScope.reservationIds ?? [])].map(String))];
   const requestedScopeIds = new Set(operationScope.cellIds.map(String));
   const requestedScopeCells = allCells.filter((cell: any) => requestedScopeIds.has(String(cell._id)));
   if (requestedScopeCells.length !== requestedScopeIds.size || requestedScopeCells.some((cell: any) => !cell.rackId || !Number.isSafeInteger(cell.levelNumber) || cell.levelNumber < 1)) fail(503, 'LEGACY_STOCK_SCOPE_UNKNOWN', 'Một hoặc nhiều Cell không có Rack/Level xác định được.');
@@ -102,14 +103,15 @@ export async function readManagedFacilityStockState(facilityId: Types.ObjectId, 
   if ([...scopedLevelKeys].length === 0) fail(503, 'LEGACY_STOCK_SCOPE_UNKNOWN', 'Cell thuộc phạm vi đối soát không tồn tại trong Facility.');
   const capacityCells = allCells.filter((cell: any) => scopedLevelKeys.has(`${String(cell.rackId)}:${cell.levelNumber}`));
   const scopedCellIds = new Set(capacityCells.map((cell: any) => String(cell._id)));
-  const legacyImpact = classifyLegacyStockImpact({ reservationId: operationScope.reservationId, capacityCells, allCells,
-    movements, items: legacyItems, stockBalances: legacyBalances, v3Projections, v3BatchPlacements, v3PhysicalUnits, v3Footprints });
-  if (legacyImpact.status !== 'ISOLATED') fail(503, legacyImpact.status === 'CONFLICT' ? 'LEGACY_STOCK_UNRECONCILED' : 'LEGACY_STOCK_SCOPE_UNKNOWN',
+  const legacyImpacts = scopedReservationIds.map(reservationId => classifyLegacyStockImpact({ reservationId, capacityCells, allCells,
+    movements, items: legacyItems, stockBalances: legacyBalances, v3Projections, v3BatchPlacements, v3PhysicalUnits, v3Footprints }));
+  const legacyImpact = legacyImpacts.find(result => result.status !== 'ISOLATED');
+  if (legacyImpact) fail(503, legacyImpact.status === 'CONFLICT' ? 'LEGACY_STOCK_UNRECONCILED' : 'LEGACY_STOCK_SCOPE_UNKNOWN',
     legacyImpact.status === 'CONFLICT' ? 'Reservation hoặc Rack/Level đang dùng còn tồn kho lịch sử chưa đối soát.' : 'Không xác định được phạm vi của tồn kho lịch sử; cần đối soát Facility.', legacyImpact);
   const cells = capacityCells;
   const canonicalMovements = movements.filter((movement: any) => movement.schemaVersion === 4 && movement.stockEffect);
-  const relevantCanonicalMovements = canonicalMovements.filter((movement: any) => eq(movement.managedReservationId ?? movement.reservationId, operationScope.reservationId) ||
-    [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? [])].some((line: any) => scopedCellIds.has(String(line.cellId))));
+  const relevantCanonicalMovements = canonicalMovements.filter((movement: any) => scopedReservationIds.includes(String(movement.managedReservationId ?? movement.reservationId)) ||
+    [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? [])].some((line: any) => scopedCellIds.has(String(line.cellId)) || scopedReservationIds.includes(String(line.reservationId))));
   const relevantSkuIds = new Set(relevantCanonicalMovements.map((movement: any) => String(movement.itemId)));
   const stocks = allStocks.filter((row: any) => eq(row.reservationId, operationScope.reservationId) || scopedCellIds.has(String(row.cellId)) || relevantSkuIds.has(String(row.skuId)));
   const instances = allInstances.filter((row: any) => eq(row.reservationId, operationScope.reservationId) || (row.allocations ?? []).some((allocation: any) => scopedCellIds.has(String(allocation.cellId))) || relevantSkuIds.has(String(row.skuId)));
@@ -135,11 +137,13 @@ export async function readManagedFacilityStockState(facilityId: Types.ObjectId, 
   const reservationVolume = new Map<string, number>();
   for (const row of activeLots) reservationVolume.set(String(row.reservationId), round((reservationVolume.get(String(row.reservationId)) ?? 0) + row.totalVolumeM3, 6));
   for (const row of activeInstances) reservationVolume.set(String(row.reservationId), round((reservationVolume.get(String(row.reservationId)) ?? 0) + row.unitVolumeM3Snapshot, 6));
-  const targetReservation = reservations.find((reservation: any) => eq(reservation._id, operationScope.reservationId));
-  if (!targetReservation) fail(503, 'RESERVATION_COUNTER_RECONCILIATION_UNKNOWN', 'Không thể xác minh Reservation trong phạm vi đối soát.');
-  const used = reservationVolume.get(String(targetReservation._id)) ?? 0;
-  if (!Number.isFinite(targetReservation.allocatedCapacity) || targetReservation.allocatedCapacity <= 0 || !Number.isFinite(targetReservation.usedCapacityM3) || Math.abs(used - targetReservation.usedCapacityM3) > 0.000001) fail(503, 'RESERVATION_COUNTER_RECONCILIATION_UNKNOWN', `Counter Reservation ${targetReservation._id} chưa khớp tồn thực tế.`);
-  return { cells, movements: replayMovements, stocks, instances, allocations, reservations: [targetReservation], replay, byCell };
+  const scopedReservations = reservations.filter((reservation: any) => scopedReservationIds.includes(String(reservation._id)));
+  if (scopedReservations.length !== scopedReservationIds.length) fail(503, 'RESERVATION_COUNTER_RECONCILIATION_UNKNOWN', 'Không thể xác minh đầy đủ các Reservation trong phạm vi đối soát.');
+  for (const targetReservation of scopedReservations) {
+    const used = reservationVolume.get(String(targetReservation._id)) ?? 0;
+    if (!Number.isFinite(targetReservation.allocatedCapacity) || targetReservation.allocatedCapacity <= 0 || !Number.isFinite(targetReservation.usedCapacityM3) || Math.abs(used - targetReservation.usedCapacityM3) > 0.000001) fail(503, 'RESERVATION_COUNTER_RECONCILIATION_UNKNOWN', `Counter Reservation ${targetReservation._id} chưa khớp tồn thực tế.`);
+  }
+  return { cells, movements: replayMovements, stocks, instances, allocations, reservations: scopedReservations, replay, byCell };
 }
 
 async function prepareCandidate(sku: any, reservation: any, candidate: any, session?: mongoose.ClientSession) {

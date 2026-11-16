@@ -30,6 +30,7 @@ import InventoryItemForm from "./InventoryItemForm";
 import ItemSpecifications from "./ItemSpecifications";
 import ManagedUnifiedSelfInbound from "./ManagedUnifiedSelfInbound";
 import ManagedSelfOutboundV3 from "./ManagedSelfOutboundV3";
+import ManagedSelfRelocationV3 from "./ManagedSelfRelocationV3";
 import { inventoryCellLabels } from "./managedInventoryContext";
 import { formatInventoryDateTime } from "./inventoryUiFormat";
 
@@ -338,6 +339,7 @@ function Detail({ id }) {
           {item.inventorySchemaVersion===3&&<ItemSpecifications sku={item} readOnly={!editable} onChanged={refresh}/>}
           {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
           {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
+          {item.inventorySchemaVersion===3&&<ManagedSelfRelocationV3 item={item} rental={rental} onRefresh={refresh}/>}
           {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Thao tác tồn kho cho dữ liệu lịch sử được giữ ở chế độ tra cứu trong khi SKU V3 dùng luồng nhập kho hợp nhất.</p>}
         </>
       )}

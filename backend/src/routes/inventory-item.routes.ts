@@ -7,6 +7,7 @@ import { UserRole } from '../types/user.type';
 import * as checkinController from '../controllers/reservations/managed-checkin.controller';
 import * as v3Controller from '../controllers/inventory-items/managed-inventory-v3.controller';
 import * as v3OutboundController from '../controllers/inventory-items/managed-inventory-v3-outbound.controller';
+import * as v3RelocationController from '../controllers/inventory-items/managed-inventory-v3-relocation.controller';
 import rateLimit from 'express-rate-limit';
 import { uploadInventoryImageFile } from '../middlewares/upload.middleware';
 import * as skuController from '../controllers/inventory-items/managed-sku.controller';
@@ -18,6 +19,7 @@ const readers = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MAN
 const itemReaders = requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.CUSTOMER]);
 const inventoryImageUploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { success: false, message: 'Too many image uploads; try again later' } });
 const v3OutboundLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { success: false, code: 'RATE_LIMITED', message: 'Quá nhiều thao tác xuất kho; vui lòng thử lại sau.' } });
+const v3RelocationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { success: false, code: 'RATE_LIMITED', message: 'Quá nhiều thao tác chuyển vị trí; vui lòng thử lại sau.' } });
 
 router.use(requireAuth);
 const phaseOneNoStockMutation: import('express').RequestHandler = (_req, res) => res.status(410).json({ success: false, code: 'STOCK_WORKFLOW_NOT_AVAILABLE', message: 'Stock operations are paused during the SKU and Item Specification redesign.' });
@@ -28,10 +30,14 @@ router.delete('/:skuId/specifications/:specId', customer, skuController.deleteSp
 // V3 read-only facility oversight is intentionally mounted before the dynamic legacy /:id routes.
 router.get('/managed-v3/facility/overview', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), v3Controller.facilityOverview);
 router.get('/managed-v3/facility/capacity-diagnostics', requireRole([UserRole.FACILITY_MANAGER]), cellStockController.facilityDiagnostics);
-router.get('/:id/v3/outbound/context', customer, v3OutboundController.context);
-router.get('/:id/v3/outbound/operations', customer, v3OutboundController.operation);
-router.post('/:id/v3/outbound/preview', customer, v3OutboundLimiter, v3OutboundController.preview);
-router.post('/:id/v3/outbound', customer, v3OutboundLimiter, v3OutboundController.confirm);
+router.get('/:skuId/v3/outbound/context', customer, v3OutboundController.context);
+router.get('/:skuId/v3/outbound/operations', customer, v3OutboundController.operation);
+router.post('/:skuId/v3/outbound/preview', customer, v3OutboundLimiter, v3OutboundController.preview);
+router.post('/:skuId/v3/outbound', customer, v3OutboundLimiter, v3OutboundController.confirm);
+router.get('/:id/v3/relocation/context', customer, v3RelocationLimiter, v3RelocationController.context);
+router.get('/:id/v3/relocation/operations', customer, v3RelocationLimiter, v3RelocationController.operation);
+router.post('/:id/v3/relocation/preview', customer, v3RelocationLimiter, v3RelocationController.preview);
+router.post('/:id/v3/relocation', customer, v3RelocationLimiter, v3RelocationController.confirm);
 router.get('/:id/v3/physical-units', customer, phaseOneNoStockMutation);
 router.post('/:id/v3/physical-units', customer, phaseOneNoStockMutation);
 router.get('/:id/v3/inbound/context', customer, v3Controller.inboundContext);
@@ -57,9 +63,6 @@ router.get('/:itemId/receiving-inspection/context', requireRole([UserRole.FACILI
 router.post('/:itemId/receiving-inspection/image-uploads', requireRole([UserRole.FACILITY_STAFF]), inventoryImageUploadLimiter, uploadInventoryImageFile, checkinController.uploadReceivingEvidence);
 router.post('/:itemId/receiving-inspection', requireRole([UserRole.FACILITY_STAFF]), phaseOneNoStockMutation);
 router.post('/:id/reject-inbound', requireRole([UserRole.FACILITY_STAFF]), phaseOneNoStockMutation);
-router.get('/:id/relocate-canonical/context', requireRole([UserRole.FACILITY_STAFF]), controller.canonicalRelocationContext);
-router.post('/:id/relocate-canonical', requireRole([UserRole.FACILITY_STAFF]), phaseOneNoStockMutation);
-router.post('/:id/relocate', requireRole([UserRole.FACILITY_STAFF]), phaseOneNoStockMutation);
 router.get('/:id/movements', itemReaders, controller.movements);
 router.get('/:id', itemReaders, (req, res, next) => req.user?.role === UserRole.CUSTOMER ? skuController.get(req, res, next) : controller.get(req, res, next));
 router.patch('/:id', customer, skuController.update);
