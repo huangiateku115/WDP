@@ -50,7 +50,8 @@ test('staff can select and load managed reservations when its backend role is au
 test('staff managed permission failure stays visible and provides permitted workspace links',()=>{
   const html=renderDirectory(true,'staff','Không có quyền xem Managed Inventory');
   assert.match(html,/role="alert"/);
-  assert.match(html,/backend cần cấp quyền đọc/);
+  assert.match(html,/Bạn chưa có quyền xem đơn này/);
+  assert.match(html,/Vui lòng liên hệ quản lý cơ sở/);
   assert.match(html,/href="\/staff\/managed"/);
   assert.doesNotMatch(html,/BKG-TEST/);
 });

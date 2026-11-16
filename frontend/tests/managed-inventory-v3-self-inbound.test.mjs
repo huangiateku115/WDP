@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildA2InboundPayload, inboundErrorMessage, inboundFieldErrors } from '../src/components/customer/inventory/managedSelfInboundV3Validation.js';
+import { buildA2InboundPayload, inboundErrorMessage, inboundFieldErrors, inboundPreviewProofCurrent } from '../src/components/customer/inventory/managedSelfInboundV3Validation.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const component = read('../src/components/customer/inventory/ManagedSelfInboundV3.jsx');
@@ -30,14 +30,39 @@ test('A1 Self-Inbound sends explicit pose and explains unsupported multi-Cell pl
 });
 
 test('A2 UI payload normalizes numeric strings and preserves the verified screen field names', () => {
-  const result = buildA2InboundPayload({ sessionId:'session-1', sessionRevision:3, selectedCells:['cell-1'], quantities:{'cell-1':'1'}, quantity:'1', quantityUnit:'piece', weight:'70', dimensions:{widthM:'0.2',depthM:'0.3',heightM:'0.1'} });
+  const result = buildA2InboundPayload({ sessionId:'session-1', selectedCells:['cell-1'], quantities:{'cell-1':'1'}, quantity:'1', quantityUnit:'piece', weight:'70', dimensions:{widthM:'0.2',depthM:'0.3',heightM:'0.1'} });
   assert.deepEqual(result.errors, {});
-  assert.deepEqual(result.payload, { itemKind:'A2_BATCH', accessSessionId:'session-1', sessionRevision:3, cellIds:['cell-1'], quantity:1, quantityUnit:'piece', actualUnitWeightKg:70, dimensionsM:{widthM:0.2,depthM:0.3,heightM:0.1}, placements:[{cellId:'cell-1',quantity:1}] });
+  assert.deepEqual(result.payload, { itemKind:'A2_BATCH', accessSessionId:'session-1', cellIds:['cell-1'], quantity:1, quantityUnit:'piece', actualUnitWeightKg:70, dimensionsM:{widthM:0.2,depthM:0.3,heightM:0.1}, placements:[{cellId:'cell-1',quantity:1}] });
   for (const value of [result.payload.quantity, result.payload.actualUnitWeightKg, result.payload.dimensionsM.widthM, result.payload.placements[0].quantity]) assert.equal(typeof value, 'number');
 });
 
+test('Web A1/A2 preview DTOs exclude sessionRevision, while Confirm uses Backend preview revision proof', () => {
+  assert.match(component, /const a1Payload = \(\) => \(\{ itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: sessionId, cellIds:/);
+  assert.match(component, /buildA2InboundPayload\(\{ sessionId, selectedCells/);
+  assert.match(component, /sessionRevision: proof\.sessionRevision/);
+  assert.match(component, /previewRevision: proof\.previewRevision/);
+  assert.match(component, /inboundPreviewProofCurrent\(proof, selectedSession/);
+  assert.doesNotMatch(component, /previewInbound\([^)]*sessionRevision/);
+  const payload=buildA2InboundPayload({sessionId:'session-1',selectedCells:['cell-1'],quantities:{'cell-1':'1'},quantity:'1',quantityUnit:'piece',weight:'70',dimensions:{widthM:'0.2',depthM:'0.3',heightM:'0.1'}}).payload;
+  assert.equal(Object.hasOwn(payload,'sessionRevision'),false);
+  assert.deepEqual(Object.keys(payload).sort(),['accessSessionId','actualUnitWeightKg','cellIds','dimensionsM','itemKind','placements','quantity','quantityUnit'].sort());
+});
+
+test('Confirm proof must match current session revision, reservation, SKU, cells and expiry', () => {
+  const now=Date.parse('2026-11-13T00:00:00.000Z');
+  const session={revision:4};
+  const expected={sessionId:'session-1',reservationId:'reservation-1',skuId:'sku-1',cellIds:['cell-1']};
+  const proof={accessSessionId:'session-1',reservationId:'reservation-1',skuId:'sku-1',sessionRevision:4,previewRevision:2,
+    expiresAt:'2026-11-13T00:05:00.000Z',cellIds:['cell-1']};
+  assert.equal(inboundPreviewProofCurrent(proof,session,expected,now),true);
+  assert.equal(inboundPreviewProofCurrent({...proof,sessionRevision:3},session,expected,now),false);
+  assert.equal(inboundPreviewProofCurrent({...proof,expiresAt:'2026-11-12T23:59:00.000Z'},session,expected,now),false);
+  assert.equal(inboundPreviewProofCurrent({...proof,cellIds:['cell-2']},session,expected,now),false);
+  assert.equal(inboundPreviewProofCurrent(null,session,expected,now),false);
+});
+
 test('A2 validation rejects malformed numeric values and placement totals before preview', () => {
-  const invalid = buildA2InboundPayload({ sessionId:'session-1', sessionRevision:3, selectedCells:['cell-1','cell-2'], quantities:{'cell-1':'1','cell-2':'1'}, quantity:'1', quantityUnit:'piece', weight:'not-a-number', dimensions:{widthM:'0.2',depthM:'',heightM:'0.1'} });
+  const invalid = buildA2InboundPayload({ sessionId:'session-1', selectedCells:['cell-1','cell-2'], quantities:{'cell-1':'1','cell-2':'1'}, quantity:'1', quantityUnit:'piece', weight:'not-a-number', dimensions:{widthM:'0.2',depthM:'',heightM:'0.1'} });
   assert.equal(invalid.errors.placementsTotal, 'Tổng số lượng tại các ô kệ phải bằng số lượng dự kiến.');
   assert.ok(invalid.errors.actualUnitWeightKg);
   assert.ok(invalid.errors['dimensionsM.depthM']);

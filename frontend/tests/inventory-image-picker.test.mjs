@@ -27,6 +27,6 @@ test('picker aborts active uploads during unmount and exposes per-upload cancel'
 
 test('session changes during upload move the row out of uploading so it can be retried', async () => {
   const picker = await readFile(pickerPath, 'utf8');
-  assert.equal((picker.match(/getAccessToken\(\) !== token/g) || []).length, 2);
-  assert.equal((picker.match(/status:\s*'cancelled',\s*error:\s*'Session changed during upload/g) || []).length, 2);
+  assert.equal((picker.match(/getAccessToken\(\)\s*!==\s*token/g) || []).length, 4);
+  assert.equal((picker.match(/status:\s*'cancelled',\s*error:\s*'Phiên đăng nhập đã đổi khi tải ảnh/g) || []).length, 2);
 });

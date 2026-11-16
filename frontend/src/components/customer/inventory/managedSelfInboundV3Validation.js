@@ -1,11 +1,21 @@
 const positiveFinite = value => Number.isFinite(Number(value)) && Number(value) > 0;
 
-export function buildA2InboundPayload({ sessionId, sessionRevision, selectedCells, quantities, quantity, quantityUnit, weight, dimensions }) {
+export function inboundPreviewProofCurrent(proof, session, { sessionId, reservationId, skuId, cellIds }, now = Date.now()) {
+  const ref = value => value?._id || value?.id || value;
+  if (!proof || !session || ref(proof.accessSessionId) !== sessionId || ref(proof.reservationId) !== reservationId || ref(proof.skuId) !== skuId ||
+    proof.sessionRevision !== session.revision || !Number.isInteger(proof.previewRevision) ||
+    !Number.isFinite(Date.parse(proof.expiresAt)) || Date.parse(proof.expiresAt) <= now ||
+    !Array.isArray(proof.cellIds) || proof.cellIds.length !== cellIds.length) return false;
+  const selected = new Set(cellIds);
+  return proof.cellIds.every(cellId => selected.has(String(ref(cellId))));
+}
+
+export function buildA2InboundPayload({ sessionId, selectedCells, quantities, quantity, quantityUnit, weight, dimensions }) {
   const placements = selectedCells.map(cellId => ({ cellId, quantity: Number(quantities[cellId] ?? 0) })).filter(line => line.quantity > 0);
   const totalQuantity = placements.reduce((sum, line) => sum + line.quantity, 0);
   return {
     payload: {
-      itemKind: 'A2_BATCH', accessSessionId: sessionId, sessionRevision, cellIds: selectedCells,
+      itemKind: 'A2_BATCH', accessSessionId: sessionId, cellIds: selectedCells,
       quantity: totalQuantity, quantityUnit, actualUnitWeightKg: Number(weight),
       dimensionsM: { widthM: Number(dimensions.widthM), depthM: Number(dimensions.depthM), heightM: Number(dimensions.heightM) },
       placements,

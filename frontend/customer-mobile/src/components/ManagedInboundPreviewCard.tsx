@@ -10,10 +10,12 @@ import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,Filter,Input} from './ui';
 import {ResourceState,useResource} from './liveUI';
 
+const sessionTime=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'});
+
 type Item=Awaited<ReturnType<typeof mobileRepo.item>>;
-export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void}){
-  const [open,setOpen]=useState(false),[kind,setKind]=useState<'A1_PHYSICAL_UNIT'|'A2_BATCH'>('A2_BATCH');
-  const [sessionId,setSession]=useState(''),[unitId,setUnit]=useState(''),[cellId,setCell]=useState('');
+export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessionId}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void;initialSessionId?:string}){
+  const [open,setOpen]=useState(!!initialSessionId),[kind,setKind]=useState<'A1_PHYSICAL_UNIT'|'A2_BATCH'>('A2_BATCH');
+  const [sessionId,setSession]=useState(initialSessionId??''),[unitId,setUnit]=useState(''),[cellId,setCell]=useState('');
   const [counts,setCounts]=useState<Record<string,string>>({});
   const [rotation,setRotation]=useState<0|90>(0);
   const [fields,setFields]=useState({serial:'',weight:String(item.unitWeightKg),width:String(item.unitDimensionsM.widthM),
@@ -22,12 +24,13 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;
   const [error,setError]=useState(''),[pending,setPending]=useState(false);
   const lock=useRef(false),mounted=useRef(false);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{if(initialSessionId){setSession(initialSessionId);setOpen(true);}},[initialSessionId]);
   const scope=owner+':'+item._id;
   const [committed,setCommitted]=useState('');
   const attempts=useResource(scope,()=>journal('managed-v3-inbound',owner,item._id).then(store=>store.read()));
   const units=useResource(open?scope:'',signal=>open?managedInboundPreview.units(item,r,owner,signal):Promise.resolve(null));
   const sessions=useResource(open?scope:'',signal=>open?managedReservationReads.sessions(r,owner,signal):Promise.resolve(null));
-  const usable=sessions.data?.filter(session=>eligibleInboundCells(r,session).length>0)??[];
+  const usable=sessions.data?.filter(session=>eligibleInboundCells(r,session).length>0&&(!initialSessionId||session._id===initialSessionId))??[];
   const session=usable.find(row=>row._id===sessionId);
   const cells=session?eligibleInboundCells(r,session):[];
   const number=(value:string)=>value.trim()?Number(value.replace(',','.')):NaN;
@@ -122,7 +125,7 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;
       </>}
       <ResourceState {...sessions}/>
       {sessions.data&&usable.length===0&&<AppText>Cần phiên INBOUND đang hoạt động với ô thuộc đơn thuê.</AppText>}
-      {usable.map(row=><Filter key={row._id} label={'Phiên '+row._id.slice(-6)} selected={sessionId===row._id}
+      {usable.map(row=><Filter key={row._id} label={'Phiên nhập hàng · đến '+sessionTime.format(new Date(row.expiresAt))} selected={sessionId===row._id}
         onPress={()=>{if(!pending){setSession(row._id);setCell('');setCounts({});setProof(undefined);}}}/>)}
       {kind==='A1_PHYSICAL_UNIT'?<>
         {cells.map(id=><Filter key={id} label={'Ô '+id} selected={cellId===id} onPress={()=>{if(!pending){setCell(id);setProof(undefined);}}}/>)}
@@ -130,10 +133,10 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted}:{item:Item;
         <Button label={'Góc xoay '+rotation+'°'} variant="quiet" disabled={pending} onPress={()=>{setRotation(rotation===0?90:0);setProof(undefined);}}/>
       </>:cells.map(id=><Input key={id} label={'Số lượng cho ô '+id} value={counts[id]??''} keyboardType="number-pad" editable={!pending}
         onChangeText={value=>{setCounts({...counts,[id]:value});setProof(undefined);}}/>)}
-      <Button label="Kiểm tra vị trí trên máy chủ" loading={pending} disabled={!session||!cells.length||
+      <Button label="Kiểm tra vị trí" loading={pending} disabled={!session||!cells.length||
         (kind==='A1_PHYSICAL_UNIT'?(!unitId||!cellId||!fields.x.trim()||!fields.y.trim()):!cells.some(id=>!!counts[id]?.trim()))}
         onPress={()=>void run('preview')}/>
-      {proof&&session&&proof.sessionRevision===session.revision&&Date.parse(proof.expiresAt)>Date.now()&&<><AppText>Kết quả kiểm tra: {proof.quantity} · {proof.weightKg} kg · {proof.volumeM3} m³.</AppText><AppText>Phiên bản kiểm tra SKU: {proof.previewRevision}</AppText></>}
+      {proof&&session&&proof.sessionRevision===session.revision&&Date.parse(proof.expiresAt)>Date.now()&&<AppText>Kết quả kiểm tra: {proof.quantity} · {proof.weightKg} kg · {proof.volumeM3} m³.</AppText>}
       </>}
       <ResourceState {...attempts}/>
       {attempts.data?<Button label="Kiểm tra thao tác nhập đã gửi" loading={pending} onPress={()=>void confirm(true)}/>:null}
