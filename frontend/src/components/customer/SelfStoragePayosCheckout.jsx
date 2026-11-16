@@ -4,6 +4,8 @@ import { CustomerScreen } from "@/components/common/CustomerScreen";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import paymentApi from "@/api/paymentApi";
+import reservationApi from "@/api/reservationApi";
+import { Zap } from "lucide-react";
 import { getAccessToken, useAuthSession } from "@/lib/authSession";
 import {
   assessPayosEligibility,
@@ -656,6 +658,28 @@ export default function SelfStoragePayosCheckout({
     if (appliedPaymentId && historyLoaded) goToHistory(appliedPaymentId, true);
   }, [historyLoaded, appliedPaymentId]);
 
+  async function handleDevMockPay() {
+    if (busy.current) return;
+    busy.current = true;
+    setPending("mock");
+    setError("");
+    setNotice("");
+    try {
+      await reservationApi.mockPay(reservationId);
+      if (!alive.current) return;
+      setNotice("Giả lập thanh toán 100% thành công! Đơn thuê đã chuyển sang trạng thái PAID.");
+      context.retry();
+      navigate(`/portal/reservations/${encodeURIComponent(reservationId)}`);
+    } catch (cause) {
+      if (alive.current) {
+        setError(cause?.response?.data?.message || cause?.message || "Lỗi khi giả lập thanh toán.");
+      }
+    } finally {
+      busy.current = false;
+      if (alive.current) setPending("");
+    }
+  }
+
   return (
     <CustomerScreen title={purpose === "FULL_RENT" ? "Thanh toán 100% tiền thuê" : purpose === "BALANCE" ? "Thanh toán tiền thuê còn lại" : "Thanh toán tiền thuê"} description="Thanh toán an toàn tại trang Hosted Checkout chính thức của PayOS.">
       <LoadState resource={context} />
@@ -675,6 +699,22 @@ export default function SelfStoragePayosCheckout({
                 {pending === "checkout" ? "Đang tạo liên kết thanh toán…" : dualPayment ? "Tạo mã thanh toán PayOS" : "Tiếp tục thanh toán qua PayOS"}
               </Button>
             </div>
+          </div>
+        )}
+        {!managedInventory && reservation.status === "CONTRACTED" && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
+            <p className="text-xs font-medium text-amber-800 mb-2 flex items-center justify-center gap-1">
+              <Zap size={14} /> Chế độ kiểm thử (Local Dev Mock):
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-amber-400 bg-white text-amber-800 hover:bg-amber-100 font-semibold inline-flex items-center gap-2"
+              disabled={!!pending}
+              onClick={() => void handleDevMockPay()}
+            >
+              <Zap size={16} /> {pending === "mock" ? "Đang giả lập thanh toán…" : "⚡ Giả lập thanh toán 100% (Dev Mock)"}
+            </Button>
           </div>
         )}
         {dualPayment && ["CHECKIN_READY", "ACTIVE"].includes(reservation.status) && <p role="status" className="mt-4 text-emerald-800">

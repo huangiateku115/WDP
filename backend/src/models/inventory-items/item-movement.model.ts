@@ -55,6 +55,8 @@ const v3EffectSchema = new Schema({
 const stockEffectLineSchema = new Schema({
   lineId: { type: String, trim: true, maxlength: 80, immutable: true },
   itemSpecId: { type: Schema.Types.ObjectId, ref: 'ItemSpecification', required: true, immutable: true },
+  // Omitted on historical events; V3 MOVE lines can change Reservation attribution.
+  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', immutable: true },
   receiptId: { type: String, required: true, trim: true, minlength: 1, maxlength: 160, immutable: true },
   itemInstanceId: { type: String, trim: true, minlength: 1, maxlength: 160, immutable: true },
   cellId: { type: Schema.Types.ObjectId, ref: 'WarehouseCell', required: true, immutable: true },
@@ -75,6 +77,10 @@ const stockEffectSchema = new Schema({
   ledgerRevision: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
   contractVersion: { type: Number, enum: [2] },
   accessSessionId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessSession' },
+  reason: { type: String, trim: true, maxlength: 240, immutable: true },
+  notes: { type: String, trim: true, maxlength: 1000, immutable: true },
+  customerAttestation: { customerId: { type: Schema.Types.ObjectId, ref: 'User', immutable: true },
+    attestedAt: { type: Date, immutable: true }, statement: { type: String, trim: true, maxlength: 500, immutable: true } },
   source: { type: [stockEffectLineSchema] }, destination: { type: [stockEffectLineSchema] },
 }, { _id: false, strict: 'throw', immutable: true });
 
@@ -158,12 +164,20 @@ schema.pre('validate', function () {
     const effect = this.stockEffect, source: any[] = effect?.source ?? [], destination: any[] = effect?.destination ?? [], action = effect?.action;
     const expectedType = action === 'ADD' ? ItemMovementType.INBOUND : action === 'REMOVE' ? ItemMovementType.OUTBOUND : ItemMovementType.RELOCATION;
     const eventRows: any[] = action === 'ADD' ? destination : action === 'REMOVE' ? source : source;
-    const uniqueKey = (line: any) => `${line.itemInstanceId ? `I:${line.itemInstanceId}` : `R:${line.receiptId}`}:${line.cellId}`;
     const multiLineContract = effect?.contractVersion === 2;
-    const validLine = (line: any) => !!this.itemSpecId && (multiLineContract || !!line.itemSpecId?.equals?.(this.itemSpecId)) &&
+    const attestation = effect?.customerAttestation;
+    const validMoveAttestation = !this.isNew || action !== 'MOVE' || !multiLineContract ||
+      (!!attestation?.customerId?.equals?.(this.customerId) && attestation.attestedAt instanceof Date && Number.isFinite(attestation.attestedAt.getTime()) &&
+        typeof attestation.statement === 'string' && attestation.statement.trim().length >= 10);
+    // One schema-v4 MOVE may contain multiple logical lines that touch the same receipt/Cell.
+    // Keep legacy ADD/REMOVE uniqueness strict, and identify each v2 contract line explicitly.
+    const uniqueKey = (line: any) => `${multiLineContract ? `${line.lineId}:` : ''}${line.itemInstanceId ? `I:${line.itemInstanceId}` : `R:${line.receiptId}`}:${line.cellId}`;
+    const validLine = (line: any, direction: 'SOURCE' | 'DESTINATION') => !!this.itemSpecId && (line.reservationId == null || mongoose.Types.ObjectId.isValid(line.reservationId)) && (multiLineContract || !!line.itemSpecId?.equals?.(this.itemSpecId)) &&
       (!multiLineContract || typeof line.lineId === 'string' && !!line.lineId.trim() && typeof line.quantityUnitSnapshot === 'string' && !!line.quantityUnitSnapshot.trim()) && !!line.receiptId?.trim() && !!line.cellId &&
       Number.isSafeInteger(line.quantity) && line.quantity > 0 && (!line.itemInstanceId || line.quantity === 1) &&
-      (line.quantityBefore == null && line.quantityAfter == null || Number.isSafeInteger(line.quantityBefore) && Number.isSafeInteger(line.quantityAfter) && line.quantityBefore >= line.quantity && line.quantityAfter === line.quantityBefore - line.quantity) &&
+      (line.quantityBefore == null && line.quantityAfter == null || Number.isSafeInteger(line.quantityBefore) && Number.isSafeInteger(line.quantityAfter) &&
+        (direction === 'SOURCE' ? line.quantityBefore >= line.quantity && line.quantityAfter === line.quantityBefore - line.quantity
+          : line.quantityAfter === line.quantityBefore + line.quantity)) &&
       [line.unitWeightKgSnapshot, line.unitVolumeM3Snapshot, line.allocatedWeightKg, line.allocatedVolumeM3, line.unitDimensionsSnapshot?.widthM, line.unitDimensionsSnapshot?.depthM, line.unitDimensionsSnapshot?.heightM].every((value: number) => Number.isFinite(value) && value > 0) &&
       near(line.unitVolumeM3Snapshot, round(line.unitDimensionsSnapshot.widthM * line.unitDimensionsSnapshot.depthM * line.unitDimensionsSnapshot.heightM, 6), 0.000001) &&
       (line.itemInstanceId ? line.allocatedWeightKg <= line.unitWeightKgSnapshot + 0.001 && line.allocatedVolumeM3 <= line.unitVolumeM3Snapshot + 0.000001 :
@@ -178,14 +192,17 @@ schema.pre('validate', function () {
     const shape = effect && this.itemSpecId && this.operationId === effect.operationId && !!effect.requestHash && !!this.idempotencyKey &&
       (!multiLineContract || !!effect.accessSessionId && !!this.movementCode && !!this.referenceCode) && !this.v3Effect && !this.batchLines && this.arithmeticPolicy == null &&
       (action === 'ADD' ? !source.length && destination.length > 0 : action === 'REMOVE' ? source.length > 0 && !destination.length : action === 'MOVE' && source.length > 0 && destination.length > 0) &&
-      [source, destination].every(lines => new Set(lines.map(uniqueKey)).size === lines.length && lines.every(validLine) && validInstances(lines));
+      new Set(source.map(uniqueKey)).size === source.length && new Set(destination.map(uniqueKey)).size === destination.length &&
+      source.every((line: any) => validLine(line, 'SOURCE')) && destination.every((line: any) => validLine(line, 'DESTINATION')) && validInstances(source) && validInstances(destination);
     const uniqueInstances = new Set(eventRows.filter(line => line.itemInstanceId).map(line => line.itemInstanceId)).size;
     const quantity = eventRows.filter(line => !line.itemInstanceId).reduce((sum, line) => sum + line.quantity, 0) + uniqueInstances;
     const weight = eventRows.reduce((sum, line) => sum + line.allocatedWeightKg, 0), volume = eventRows.reduce((sum, line) => sum + line.allocatedVolumeM3, 0);
     const moveConserves = action !== 'MOVE' || near(source.reduce((sum, line) => sum + line.allocatedWeightKg, 0), destination.reduce((sum, line) => sum + line.allocatedWeightKg, 0), 0.001) && near(source.reduce((sum, line) => sum + line.allocatedVolumeM3, 0), destination.reduce((sum, line) => sum + line.allocatedVolumeM3, 0), 0.000001);
     const refs = (rows: any[]) => { const totals = new Map<string, number>(); for (const row of rows) if (!row.itemInstanceId) { const key = `${row.itemSpecId}|${row.receiptId}`; totals.set(key, (totals.get(key) ?? 0) + row.quantity); } return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, qty]) => `${key}:${qty}`).join('|'); };
     const moveIdentityMatches = action !== 'MOVE' || source.filter(line => line.itemInstanceId).map(line => line.itemInstanceId).sort().join('|') === destination.filter(line => line.itemInstanceId).map(line => line.itemInstanceId).sort().join('|') && refs(source) === refs(destination);
-    if (this.type !== expectedType || !shape || !Number.isSafeInteger(this.quantity) || this.quantity !== quantity || !near(this.actualTotalWeightKg, weight, 0.001) || !near(this.actualTotalVolumeM3, volume, 0.000001) || !moveConserves || !moveIdentityMatches) this.invalidate('stockEffect', 'Schema v4 Item Specification stock effects, quantities and physical totals are invalid');
+    const moveReservationScopesValid = action !== 'MOVE' || new Set(source.map(line => String(line.reservationId ?? this.managedReservationId))).size === 1 &&
+      new Set(destination.map(line => String(line.reservationId ?? this.managedReservationId))).size === 1;
+    if (this.type !== expectedType || !shape || !Number.isSafeInteger(this.quantity) || this.quantity !== quantity || !near(this.actualTotalWeightKg, weight, 0.001) || !near(this.actualTotalVolumeM3, volume, 0.000001) || !moveConserves || !moveIdentityMatches || !moveReservationScopesValid || !validMoveAttestation) this.invalidate('stockEffect', 'Schema v4 Item Specification stock effects, quantities and physical totals are invalid');
     if (this.sourceCellId != null || this.destinationCellId != null || this.v3Effect != null) this.invalidate('stockEffect', 'Schema v4 cannot use legacy single-Cell or A1/A2 placement fields');
   } else if (this.stockEffect != null || this.itemSpecId != null) {
     this.invalidate('stockEffect', 'V4 stock effect fields require schema version 4');

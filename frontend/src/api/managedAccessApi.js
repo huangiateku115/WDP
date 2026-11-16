@@ -51,17 +51,22 @@ export const managedAccessApi = {
       error.code = 'IDEMPOTENCY_PAYLOAD_MISMATCH'; throw error;
     }
     if (!pending) {
+      const expectedRevision = Number(revision);
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        const error = new Error('Không có revision gốc hợp lệ cho yêu cầu sửa lịch. Hãy tải lại lịch trước khi sửa.');
+        error.code = 'AMEND_REVISION_UNAVAILABLE'; throw error;
+      }
       const key = globalThis.crypto?.randomUUID?.() || `mi-access-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      pending = { key, fingerprint: requestFingerprint, payload: canonical(payload), expectedRevision: Number(revision) };
+      pending = { key, fingerprint: requestFingerprint, payload: canonical(payload), expectedRevision };
       savePending(slot, pending);
     }
-    const originalRevision = Number.isSafeInteger(pending.expectedRevision) ? pending.expectedRevision : Number(revision);
+    const originalRevision = Number(pending.expectedRevision);
     if (!Number.isSafeInteger(originalRevision) || originalRevision < 0) {
       const error = new Error('Không có revision gốc đáng tin cậy cho yêu cầu sửa lịch. Hãy hủy yêu cầu đang treo và tải lại lịch.');
       error.code = 'AMEND_REVISION_UNAVAILABLE'; throw error;
     }
     try {
-      const response = await client.patch(`/access/managed-v3/visits/${id(visitId)}`, payload, { headers: { 'If-Match': String(originalRevision), 'Idempotency-Key': pending.key } });
+      const response = await client.patch(`/access/managed-v3/visits/${id(visitId)}`, pending.payload, { headers: { 'If-Match': String(originalRevision), 'Idempotency-Key': pending.key } });
       clearKey(slot); return response;
     } catch (error) {
       throw error;

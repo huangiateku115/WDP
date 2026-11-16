@@ -7,6 +7,7 @@ export enum ManagedAccessSessionStatus { ACTIVE = 'ACTIVE', CHECKED_OUT = 'CHECK
 export type ManagedAccessAudit = { action: string; actorId?: Types.ObjectId; actorRole: string; at: Date; details?: Record<string, unknown> };
 export interface IManagedAccessVisit extends Document {
   reservationId: Types.ObjectId; customerId: Types.ObjectId; facilityId: Types.ObjectId;
+  scopedReservationIds?: Types.ObjectId[];
   purpose: ManagedAccessPurpose; startsAt: Date; endsAt: Date; note?: string;
   status: ManagedAccessVisitStatus; assignedStaffId?: Types.ObjectId;
   idempotencyKey: string; requestHash: string; revision: number;
@@ -18,6 +19,7 @@ export interface IManagedAccessVisit extends Document {
 }
 export interface IManagedAccessSession extends Document {
   visitId: Types.ObjectId; reservationId: Types.ObjectId; customerId: Types.ObjectId; facilityId: Types.ObjectId;
+  scopedReservationIds?: Types.ObjectId[];
   assignedStaffId: Types.ObjectId; allowedCellIds: Types.ObjectId[]; allowedPurposes: ManagedAccessPurpose[];
   startedAt: Date; expiresAt: Date; endedAt?: Date; revokedAt?: Date; revokedBy?: Types.ObjectId; revokeReason?: string;
   status: ManagedAccessSessionStatus; revision: number; checkInIdempotencyKey: string; checkInRequestHash?: string;

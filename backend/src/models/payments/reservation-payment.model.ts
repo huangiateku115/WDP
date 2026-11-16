@@ -62,10 +62,14 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
 
 // One key represents one logical payment request across both reservation services.
 reservationPaymentSchema.index({ idempotencyKey: 1 }, { unique: true });
-// A reservation has at most one successfully captured deposit and one balance payment.
+// A reservation has at most one successfully captured deposit, balance, or full_rent payment.
+// RENEWAL allows multiple successful payments for multiple contract extensions.
 reservationPaymentSchema.index({ reservationId: 1, purpose: 1 }, {
   unique: true,
-  partialFilterExpression: { status: PaymentStatus.SUCCEEDED },
+  partialFilterExpression: {
+    status: PaymentStatus.SUCCEEDED,
+    purpose: { $in: [PaymentPurpose.DEPOSIT, PaymentPurpose.BALANCE, PaymentPurpose.FULL_RENT] },
+  },
 });
 reservationPaymentSchema.index({ provider: 1, providerReference: 1 }, {
   unique: true,

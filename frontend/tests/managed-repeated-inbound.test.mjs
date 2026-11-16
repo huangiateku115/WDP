@@ -9,7 +9,9 @@ const customerPath = fileURLToPath(new URL('../src/components/customer/inventory
 const staffPath = fileURLToPath(new URL('../src/pages/staff/RepeatedInboundQueuePage.jsx', import.meta.url));
 const routesPath = fileURLToPath(new URL('../src/routes/StaffRoutes.jsx', import.meta.url));
 const facilityOutboundPath = fileURLToPath(new URL('../src/components/facility/FacilityOutboundRequests.jsx', import.meta.url));
-const relocationPath = fileURLToPath(new URL('../src/pages/staff/CanonicalRelocationPage.jsx', import.meta.url));
+const relocationApiPath = fileURLToPath(new URL('../src/api/managedInventoryV3RelocationApi.js', import.meta.url));
+const relocationCustomerPath = fileURLToPath(new URL('../src/components/customer/inventory/ManagedSelfRelocationV3.jsx', import.meta.url));
+const inventoryIntegrationPath = fileURLToPath(new URL('../src/components/customer/inventory/InventoryIntegration.jsx', import.meta.url));
 const workspacePath = fileURLToPath(new URL('../src/lib/facilityWorkspace.js', import.meta.url));
 const roleOutletPath = fileURLToPath(new URL('../src/components/common/RoleWorkspaceOutlet.jsx', import.meta.url));
 const facilityGatePath = fileURLToPath(new URL('../src/components/common/FacilitySessionGate.jsx', import.meta.url));
@@ -62,29 +64,33 @@ test('Facility Outbound view is read-only and observes committed V3 REMOVE movem
   assert.doesNotMatch(component, /confirmCanonicalOutbound|cancelCanonicalOutbound|router\.post|outbound-requests/i);
 });
 
-test('Canonical relocation screen loads allocated destinations and calls the existing canonical MOVE endpoint', async () => {
-  const [api, page] = await Promise.all([readFile(apiPath, 'utf8'), readFile(relocationPath, 'utf8')]);
-  assert.match(api, /canonicalRelocationContext:/);
-  assert.match(api, /relocateCanonical:/);
-  assert.match(page, /sourceCellId: context\.currentCellId/);
-  assert.match(page, /destinationCellId: destination/);
-  assert.match(page, /physicalPackingConfirmed: true/);
-  assert.match(page, /Idempotency-Key|operationKey/);
-  assert.match(page, /JSON\.stringify\(\{ key, payload \}\)/);
-  assert.match(page, /Chưa rõ kết quả di chuyển trước/);
-  assert.match(page, /stockBalance/);
-  assert.match(page, /warehouseMapApi\.getWarehouseMap/);
-  assert.match(page, /repeatedInboundQueue/);
-  assert.match(page, /canonicalOutboundStaffQueue/);
-  assert.match(page, /Biến động di chuyển đã lưu/);
+test('Customer Managed V3 relocation uses scoped session, receipt-aware preview and replay-safe MOVE API', async () => {
+  const [api, component, integration, routes] = await Promise.all([
+    readFile(relocationApiPath, 'utf8'), readFile(relocationCustomerPath, 'utf8'),
+    readFile(inventoryIntegrationPath, 'utf8'), readFile(routesPath, 'utf8'),
+  ]);
+  assert.match(api, /v3\/relocation/);
+  assert.match(api, /Idempotency-Key/);
+  assert.match(api, /If-Match/);
+  assert.match(api, /sessionStorage/);
+  assert.match(api, /operation:/);
+  assert.match(component, /allowedPurposes\?\.includes\('RELOCATION'\)/);
+  assert.match(component, /managedInventoryV3RelocationApi\.preview/);
+  assert.match(component, /managedInventoryV3RelocationApi\.confirm/);
+  assert.match(component, /customerAttestation: attested \? 'CONFIRMED'/);
+  assert.match(component, /itemInstanceId/);
+  assert.match(component, /sourceCellId/);
+  assert.match(component, /quantity: Number\(line\.quantity\)/);
+  assert.match(integration, /ManagedSelfRelocationV3 item=\{item\} rental=\{rental\}/);
+  assert.doesNotMatch(routes, /CanonicalRelocationPage/);
 });
 
-test('Remaining Facility workflows retain authenticated role gating and explicit loading, error and retry states', async () => {
+test('Customer relocation keeps explicit error and retry states; Facility routes remain role-gated', async () => {
   const [relocation, outlet, facilityGate, workspace] = await Promise.all([
-    readFile(relocationPath, 'utf8'), readFile(roleOutletPath, 'utf8'), readFile(facilityGatePath, 'utf8'), readFile(workspacePath, 'utf8'),
+    readFile(relocationCustomerPath, 'utf8'), readFile(roleOutletPath, 'utf8'), readFile(facilityGatePath, 'utf8'), readFile(workspacePath, 'utf8'),
   ]);
   assert.match(relocation, /role="alert"/);
-  assert.match(relocation, /Tải dữ liệu di chuyển/);
+  assert.match(relocation, /Tải lại tồn và vị trí/);
   assert.match(outlet, /FacilitySessionGate role=\{role\}/);
   assert.match(facilityGate, /<Navigate to="\/login"/);
   assert.match(facilityGate, /expected=role==='staff'\?'FACILITY_STAFF'/);

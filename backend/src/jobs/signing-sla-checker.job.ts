@@ -5,6 +5,9 @@ import { IReservation, ReservationStatus } from '../types/reservation.type';
 import { StorageUnitStatus } from '../types/storage-unit.type';
 import { ContractStatus } from '../types/contract.type';
 import { FacilityServiceType } from '../types/facility.type';
+import { EmailService } from '../services/email/email.service';
+
+const sleep = (ms: number) => (process.env.NODE_ENV === 'test' ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
 
 export interface SlaCheckResult {
   checkedAt: Date;
@@ -68,6 +71,46 @@ export async function checkSigningSla(checkTime: Date = new Date()): Promise<Sla
       signingDeadline: reservation.signingDeadline!,
       penaltyPercent: 10
     });
+
+    await EmailService.sendSigningSlaExpiredRentalEmail(reservation).catch(() => {});
+    await sleep(200);
+  }
+
+  // Quét các yêu cầu gia hạn đã thanh toán (PAID) nhưng quá hạn 3 ngày chưa ký phụ lục giấy
+  const expiredExtensionReservations = (await ReservationModel.find({
+    'extendContract': {
+      $elemMatch: {
+        status: 'PAID',
+        signingDeadline: { $lte: checkTime },
+        paperProofUrl: { $in: [null, undefined, ''] }
+      }
+    }
+  }).exec()) as any[];
+
+  for (const res of expiredExtensionReservations) {
+    let modified = false;
+    const cancelledExts: any[] = [];
+    for (const ext of res.extendContract || []) {
+      if (ext.status === 'PAID' && ext.signingDeadline && ext.signingDeadline <= checkTime && !ext.paperProofUrl) {
+        ext.status = 'CANCELLED';
+        ext.rejectionReason = 'SIGNING_SLA_EXPIRED';
+        ext.updatedAt = checkTime;
+        res.statusHistory.push({
+          status: res.status,
+          reason: `Yêu cầu gia hạn ${ext.extensionCode} bị hủy do quá hạn 3 ngày không đến ký phụ lục giấy (Phạt 10%, hoàn 90% ngoài hệ thống)`,
+          createdAt: checkTime
+        });
+        cancelledExts.push(ext);
+        modified = true;
+      }
+    }
+    if (modified) {
+      await res.save();
+      for (const ext of cancelledExts) {
+        await EmailService.sendSigningSlaExpiredExtensionEmail(res, ext).catch(() => {});
+        await sleep(200);
+      }
+    }
   }
 
   return {

@@ -108,7 +108,7 @@ export function placementsHaveCellAllocations(placements: any[], allocations: an
 }
 
 const movementFail = (code: string, message: string): never => { throw Object.assign(new Error(message), { code }); };
-const movementLineKey = (line: any) => `${safeId(line.itemSpecId)}:${line.receiptId}:${safeId(line.cellId)}`;
+const movementLineKey = (line: any, movement?: any) => `${safeId(line.reservationId ?? movement?.managedReservationId)}:${safeId(line.itemSpecId)}:${line.receiptId}:${safeId(line.cellId)}`;
 function sameSnapshot(left: any, right: any) {
   return left.unitWeightKgSnapshot === right.unitWeightKgSnapshot && left.unitVolumeM3Snapshot === right.unitVolumeM3Snapshot &&
     left.unitDimensionsSnapshot?.widthM === right.unitDimensionsSnapshot?.widthM && left.unitDimensionsSnapshot?.depthM === right.unitDimensionsSnapshot?.depthM && left.unitDimensionsSnapshot?.heightM === right.unitDimensionsSnapshot?.heightM &&
@@ -161,6 +161,9 @@ export function replayManagedStockMovements(movements: any[]) {
     };
     for (const group of [...sourceInstances.values(), ...destInstances.values()]) validateInstance(group);
     if (action === 'MOVE') {
+      const sourceReservationIds = new Set(source.map((line: any) => safeId(line.reservationId ?? movement.managedReservationId)));
+      const destinationReservationIds = new Set(destination.map((line: any) => safeId(line.reservationId ?? movement.managedReservationId)));
+      if (sourceReservationIds.size !== 1 || destinationReservationIds.size !== 1) movementFail('INVALID_STOCK_MOVEMENT', 'MOVE must use one source and one destination Reservation scope');
       const stockQuantity = (rows: any[]) => rows.filter(row => !row.itemInstanceId).reduce((sum, row) => sum + row.quantity, 0) + new Set(rows.filter(row => row.itemInstanceId).map(row => row.itemInstanceId)).size;
       if (stockQuantity(source) !== stockQuantity(destination) || [...sourceInstances.keys()].sort().join('|') !== [...destInstances.keys()].sort().join('|')) movementFail('NON_CONSERVING_MOVE', 'Move must preserve receipt quantities and complete Item Instance identity');
       const batchRefs = (rows: any[]) => { const totals = new Map<string, number>(); for (const row of rows) if (!row.itemInstanceId) { const key = `${safeId(row.itemSpecId)}|${row.receiptId}`; totals.set(key, (totals.get(key) ?? 0) + row.quantity); } return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, qty]) => `${key}:${qty}`).join('|'); };
@@ -171,33 +174,37 @@ export function replayManagedStockMovements(movements: any[]) {
     if (action === 'ADD') {
       for (const [instanceId, group] of destInstances) {
         if (instances.has(instanceId)) movementFail('DUPLICATE_ITEM_INSTANCE', 'Item Instance already exists in canonical history');
-        const first = group[0]; instances.set(instanceId, { itemInstanceId: instanceId, skuId: movement.itemId, itemSpecId: first.itemSpecId, reservationId: movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, sourceReceiptId: first.receiptId, quantity: 1, unitWeightKgSnapshot: first.unitWeightKgSnapshot, unitVolumeM3Snapshot: first.unitVolumeM3Snapshot, unitDimensionsSnapshot: first.unitDimensionsSnapshot, allocations: group.map(line => ({ cellId: line.cellId, weightKg: line.allocatedWeightKg, volumeM3: line.allocatedVolumeM3 })), status: 'PLACED' });
+        const first = group[0]; instances.set(instanceId, { itemInstanceId: instanceId, skuId: movement.itemId, itemSpecId: first.itemSpecId, reservationId: first.reservationId ?? movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, sourceReceiptId: first.receiptId, quantity: 1, unitWeightKgSnapshot: first.unitWeightKgSnapshot, unitVolumeM3Snapshot: first.unitVolumeM3Snapshot, unitDimensionsSnapshot: first.unitDimensionsSnapshot, allocations: group.map(line => ({ cellId: line.cellId, weightKg: line.allocatedWeightKg, volumeM3: line.allocatedVolumeM3 })), status: 'PLACED' });
       }
       for (const line of destination.filter((row: any) => !row.itemInstanceId)) {
-        const key = movementLineKey(line); if (lots.has(key)) movementFail('DUPLICATE_RECEIPT_ALLOCATION', 'Receipt already has stock in this Cell');
-        lots.set(key, { skuId: movement.itemId, itemSpecId: line.itemSpecId, reservationId: movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, cellId: line.cellId, receiptId: line.receiptId, quantityUnitSnapshot: line.quantityUnitSnapshot, quantityOnHand: line.quantity, quantityHeld: 0, quantityAvailable: line.quantity, unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot, unitDimensionsSnapshot: line.unitDimensionsSnapshot, ...linePhysical(line, line.quantity), ledgerRevision: effect.ledgerRevision, revision: 0 });
+        const key = movementLineKey(line, movement); if (lots.has(key)) movementFail('DUPLICATE_RECEIPT_ALLOCATION', 'Receipt already has stock in this Cell');
+        lots.set(key, { skuId: movement.itemId, itemSpecId: line.itemSpecId, reservationId: line.reservationId ?? movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, cellId: line.cellId, receiptId: line.receiptId, quantityUnitSnapshot: line.quantityUnitSnapshot, quantityOnHand: line.quantity, quantityHeld: 0, quantityAvailable: line.quantity, unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot, unitDimensionsSnapshot: line.unitDimensionsSnapshot, ...linePhysical(line, line.quantity), ledgerRevision: effect.ledgerRevision, revision: 0 });
       }
     } else if (action === 'REMOVE' || action === 'MOVE') {
       for (const [instanceId, group] of sourceInstances) {
         const current = instances.get(instanceId); if (!current || current.status !== 'PLACED') movementFail('ITEM_INSTANCE_NOT_AVAILABLE', 'Whole Item Instance does not exist or is not placed');
+        if (group.some((line: any) => safeId(line.reservationId ?? movement.managedReservationId) !== safeId(current.reservationId))) movementFail('ITEM_INSTANCE_SOURCE_MISMATCH', 'Whole Item Instance Reservation scope changed');
         if (!sameAllocationSet(current.allocations, group)) movementFail('ITEM_INSTANCE_SOURCE_MISMATCH', 'Whole Item Instance source allocation changed');
         if (action === 'REMOVE') instances.set(instanceId, { ...current, status: 'REMOVED', allocations: [] });
         else {
           const destinationGroup = destInstances.get(instanceId); if (!destinationGroup) movementFail('ITEM_INSTANCE_DESTINATION_MISSING', 'Whole Item Instance destination allocation is missing');
-          instances.set(instanceId, { ...current, allocations: destinationGroup!.map(line => ({ cellId: line.cellId, weightKg: line.allocatedWeightKg, volumeM3: line.allocatedVolumeM3 })) });
+          const destinationReservationIds = new Set(destinationGroup!.map(line => safeId(line.reservationId ?? movement.managedReservationId)));
+          if (destinationReservationIds.size !== 1) movementFail('INVALID_ITEM_INSTANCE_MOVEMENT', 'One Physical Instance cannot belong to multiple Reservations after a MOVE');
+          instances.set(instanceId, { ...current, reservationId: destinationGroup![0].reservationId ?? movement.managedReservationId,
+            allocations: destinationGroup!.map(line => ({ cellId: line.cellId, weightKg: line.allocatedWeightKg, volumeM3: line.allocatedVolumeM3 })) });
         }
       }
       for (const line of source.filter((row: any) => !row.itemInstanceId)) {
-        const key = movementLineKey(line), current = lots.get(key); if (!current || line.quantity > current.quantityAvailable || !sameSnapshot(current, line)) movementFail('INSUFFICIENT_CELL_STOCK', 'Removal source does not match available receipt stock');
+        const key = movementLineKey(line, movement), current = lots.get(key); if (!current || line.quantity > current.quantityAvailable || !sameSnapshot(current, line)) movementFail('INSUFFICIENT_CELL_STOCK', 'Removal source does not match available receipt stock');
         const remaining = current.quantityOnHand - line.quantity;
         if (!remaining) lots.delete(key); else lots.set(key, { ...current, quantityOnHand: remaining, quantityAvailable: remaining - current.quantityHeld, ...linePhysical(line, remaining), ledgerRevision: effect.ledgerRevision, revision: current.revision + 1 });
       }
       if (action === 'MOVE') {
         for (const line of destination.filter((row: any) => !row.itemInstanceId)) {
-          const key = movementLineKey(line), existing = lots.get(key);
+          const key = movementLineKey(line, movement), existing = lots.get(key);
           if (existing && !sameSnapshot(existing, line)) movementFail('RECEIPT_SNAPSHOT_CONFLICT', 'A receipt cannot merge incompatible physical snapshots');
           const quantityOnHand = (existing?.quantityOnHand ?? 0) + line.quantity, totals = linePhysical(line, quantityOnHand);
-          lots.set(key, { skuId: movement.itemId, itemSpecId: line.itemSpecId, reservationId: movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, cellId: line.cellId, receiptId: line.receiptId, quantityUnitSnapshot: line.quantityUnitSnapshot ?? existing?.quantityUnitSnapshot, quantityOnHand, quantityHeld: existing?.quantityHeld ?? 0, quantityAvailable: quantityOnHand - (existing?.quantityHeld ?? 0), unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot, unitDimensionsSnapshot: line.unitDimensionsSnapshot, ...totals, ledgerRevision: effect.ledgerRevision, revision: (existing?.revision ?? -1) + 1 });
+          lots.set(key, { skuId: movement.itemId, itemSpecId: line.itemSpecId, reservationId: line.reservationId ?? movement.managedReservationId, facilityId: movement.facilityId, customerId: movement.customerId, cellId: line.cellId, receiptId: line.receiptId, quantityUnitSnapshot: line.quantityUnitSnapshot ?? existing?.quantityUnitSnapshot, quantityOnHand, quantityHeld: existing?.quantityHeld ?? 0, quantityAvailable: quantityOnHand - (existing?.quantityHeld ?? 0), unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot, unitDimensionsSnapshot: line.unitDimensionsSnapshot, ...totals, ledgerRevision: effect.ledgerRevision, revision: (existing?.revision ?? -1) + 1 });
         }
       }
     }

@@ -1,3 +1,4 @@
+import QRCode from "qrcode";
 import LoadState from "./CustomerResourceState";
 import { PortalEmptyState } from "./CustomerPortalUI";
 import ContractPrintAction from "./ContractPrintAction";
@@ -34,7 +35,8 @@ import managedReservationApi from "@/api/managedReservationApi";
 import contractApi from "@/api/contractApi";
 import facilityApi from "@/api/facilityApi";
 import storageApi from "@/api/storageApi";
-import { accessApi } from "@/api/customerRentalApi";
+import { accessApi, pricingApi } from "@/api/customerRentalApi";
+import { matchingRentalTerms, termKey } from "@/lib/rentalPeriod";
 import { Input } from "@/components/ui/input";
 import { Dialog } from "@/components/ui/dialog";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
@@ -54,6 +56,7 @@ import {
   Warehouse,
   RefreshCw,
   Download,
+  Zap,
   ExternalLink,
 } from "lucide-react";
 import { CustomerScreen } from "@/components/common/CustomerScreen";
@@ -651,7 +654,16 @@ export function ReservationDetailIntegration() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutNote, setCheckoutNote] = useState("");
   const [showRenew, setShowRenew] = useState(false);
-  const [renewMonths, setRenewMonths] = useState(1);
+  const [renewStep, setRenewStep] = useState('CONFIG'); // 'CONFIG' | 'PAYMENT' | 'DONE'
+  const [availableExtendTerms, setAvailableExtendTerms] = useState([]);
+  const [selectedExtendTerm, setSelectedExtendTerm] = useState(null);
+  const [extendTermError, setExtendTermError] = useState("");
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [renewQuoteData, setRenewQuoteData] = useState(null);
+  const [activeExtension, setActiveExtension] = useState(null);
+  const [paymentInfo, setPaymentInfo] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
 
@@ -681,27 +693,151 @@ export function ReservationDetailIntegration() {
     }
   };
 
-  const handleRenew = async (e) => {
-    e.preventDefault();
+  const fetchQuote = async (term) => {
+    if (!term) return;
+    setQuoteLoading(true);
+    setExtendTermError("");
+    try {
+      const res = await reservationApi.renewQuote(id, { termValue: term.value, termUnit: term.unit });
+      setRenewQuoteData(res.data?.data || null);
+    } catch (e) {
+      setRenewQuoteData(null);
+      setExtendTermError(e.response?.data?.message || e.message || "Không lấy được báo giá gia hạn.");
+    } finally {
+      setQuoteLoading(false);
+    }
+  };
+
+  const openRenewModal = async () => {
+    setRenewStep('CONFIG');
+    setRenewQuoteData(null);
+    setExtendTermError("");
+    setAvailableExtendTerms([]);
+    setSelectedExtendTerm(null);
+    setShowRenew(true);
+    setTermsLoading(true);
+    try {
+      const facilityId = recordId(resource.data.facilityId);
+      const unitId = recordId(resource.data.storageUnitId);
+      let unitSize = resource.data.storageUnitId?.size || resource.data.storageUnit?.size || resource.data.storageUnitSize;
+      if (!unitSize && unitId) {
+        const uRes = await storageApi.unitDetail(unitId);
+        unitSize = uRes?.data?.data?.size;
+      }
+      const pRes = await pricingApi.list({ facilityId, serviceType: 'SELF_STORAGE', unitSize, isActive: true, page: 1, limit: 100 });
+      const rulesList = rows(pRes);
+      const matched = matchingRentalTerms(rulesList, {
+        facilityId,
+        unitSize,
+        serviceType: 'SELF_STORAGE',
+        at: resource.data.endDate,
+      });
+      if (!matched.terms || matched.terms.length === 0) {
+        setExtendTermError(matched.reason || "Cơ sở này chưa cấu hình bảng giá gia hạn cho loại kho hiện tại.");
+      } else {
+        setAvailableExtendTerms(matched.terms);
+        setSelectedExtendTerm(matched.terms[0]);
+        await fetchQuote(matched.terms[0]);
+      }
+    } catch (err) {
+      setExtendTermError(err.response?.data?.message || err.message || "Không tải được danh sách gói gia hạn từ PricingRule.");
+    } finally {
+      setTermsLoading(false);
+    }
+  };
+
+  const handleTermChange = (keyStr) => {
+    const found = availableExtendTerms.find(t => termKey(t) === keyStr);
+    if (found) {
+      setSelectedExtendTerm(found);
+      fetchQuote(found);
+    }
+  };
+
+  const handleCreateExtension = async (e) => {
+    if (e) e.preventDefault();
+    if (actionPending || !selectedExtendTerm) return;
+    setActionPending(true);
+    setActionFeedback(null);
+    try {
+      const res = await reservationApi.createExtensionRequest(id, {
+        termValue: selectedExtendTerm.value,
+        termUnit: selectedExtendTerm.unit,
+      });
+      const ext = res.data?.data?.extension;
+      setActiveExtension(ext);
+      const payRes = await reservationApi.createExtensionPayosPayment(id, ext._id);
+      const payData = payRes.data?.data;
+      setPaymentInfo(payData);
+      if (payData?.qrCode) {
+        try {
+          const url = await QRCode.toDataURL(payData.qrCode, { margin: 2, width: 280 });
+          setQrDataUrl(url);
+        } catch (qrErr) {
+          console.warn('QR gen err:', qrErr);
+        }
+      }
+      setRenewStep('PAYMENT');
+      resource.retry();
+    } catch (err) {
+      setActionFeedback({
+        error: err.response?.data?.message || err.message || "Lỗi khi tạo yêu cầu gia hạn.",
+      });
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const handleMockPay = async (extId) => {
     if (actionPending) return;
     setActionPending(true);
     setActionFeedback(null);
     try {
-      const res = await reservationApi.renewReservation(id, renewMonths);
-      setShowRenew(false);
-      setActionFeedback({
-        success: res.data?.message || "Gia hạn hợp đồng thành công!",
-      });
+      const res = await reservationApi.mockPayExtension(id, extId);
+      setActiveExtension(res.data?.data?.extension);
+      setRenewStep('DONE');
       resource.retry();
     } catch (err) {
       setActionFeedback({
-        error:
-          err.response?.data?.message ||
-          err.message ||
-          "Lỗi khi gia hạn hợp đồng.",
+        error: err.response?.data?.message || err.message || "Lỗi khi giả lập thanh toán.",
       });
     } finally {
       setActionPending(false);
+    }
+  };
+
+  const handleCancelExtension = async (extId) => {
+    if (actionPending) return;
+    setActionPending(true);
+    try {
+      await reservationApi.cancelExtensionRequest(id, extId, "Khách hàng hủy yêu cầu");
+      setShowRenew(false);
+      setActiveExtension(null);
+      setActionFeedback({ success: "Đã hủy yêu cầu gia hạn thành công." });
+      resource.retry();
+    } catch (err) {
+      setActionFeedback({
+        error: err.response?.data?.message || err.message || "Lỗi khi hủy yêu cầu gia hạn.",
+      });
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const resumeExtensionPayment = async (ext) => {
+    setActiveExtension(ext);
+    setRenewStep('PAYMENT');
+    setShowRenew(true);
+    try {
+      const payRes = await reservationApi.createExtensionPayosPayment(id, ext._id);
+      const payData = payRes.data?.data;
+      setPaymentInfo(payData);
+      if (payData?.qrCode) {
+        const url = await QRCode.toDataURL(payData.qrCode, { margin: 2, width: 280 });
+        setQrDataUrl(url);
+      }
+    } catch (err) {
+      console.warn('Resume payment err:', err);
     }
   };
   return (
@@ -924,7 +1060,7 @@ export function ReservationDetailIntegration() {
                       Mô phỏng truy cập kho
                     </Link>
                   </Button>
-                  <Button variant="outline" onClick={() => setShowRenew(true)}>
+                  <Button variant="outline" onClick={openRenewModal}>
                     Gia hạn thuê kho
                   </Button>
                   {resource.data.checkoutRequest?.status === "PENDING" ? (
@@ -948,6 +1084,115 @@ export function ReservationDetailIntegration() {
             {actionFeedback && (
               <div className="w-full mt-3">
                 <Message {...actionFeedback} />
+              </div>
+            )}
+          </div>
+
+          {/* Banner gia hạn đang chờ thanh toán */}
+          {(() => {
+            const pendingExt = (resource.data.extendContract || []).find(e => e.status === 'PENDING_PAYMENT');
+            if (!pendingExt) return null;
+            return (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-sm">⚠️ Bạn có một yêu cầu gia hạn chưa thanh toán (Mã: {pendingExt.extensionCode}, +{pendingExt.durationMonths} tháng)</p>
+                  <p className="text-xs text-amber-800 mt-0.5">Số tiền: {pendingExt.amount?.toLocaleString('vi-VN')} đ | Hạn hợp đồng mới: {new Date(pendingExt.newEndDate).toLocaleDateString('vi-VN')}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => resumeExtensionPayment(pendingExt)}>Tiếp tục thanh toán</Button>
+                  <Button size="sm" variant="outline" onClick={() => handleCancelExtension(pendingExt._id)}>Hủy yêu cầu</Button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Banner gia hạn đang chờ ký phụ lục tại cơ sở */}
+          {(() => {
+            const paidExt = (resource.data.extendContract || []).find(e => e.status === 'PAID');
+            if (!paidExt) return null;
+            return (
+              <div className="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sky-950 space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-sm flex items-center gap-1.5">
+                    <Clock3 className="text-sky-600" size={18} />
+                    Đang chờ ký phụ lục hợp đồng giấy tại cơ sở (Mã: {paidExt.extensionCode})
+                  </p>
+                  <span className="rounded bg-sky-200 px-2.5 py-0.5 text-xs font-bold text-sky-800">Đã thanh toán</span>
+                </div>
+                <p className="text-sm text-sky-900">
+                  Bạn đã thanh toán phí gia hạn <strong>+{paidExt.durationMonths} tháng</strong> ({paidExt.amount?.toLocaleString('vi-VN')} đ).
+                  Vui lòng đến trực tiếp cơ sở trước ngày <strong>{paidExt.signingDeadline ? new Date(paidExt.signingDeadline).toLocaleDateString('vi-VN') : '—'}</strong> để nhân viên in và ký phụ lục hợp đồng.
+                </p>
+                <p className="text-xs text-sky-700">
+                  * Trong thời gian này, kho và mã PIN mở cửa của bạn vẫn hoạt động bình thường. Sau 3 ngày nếu chưa ký phụ lục giấy, hệ thống sẽ tự động hủy yêu cầu (phạt 10%).
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Section Lịch sử hợp đồng & Phụ lục */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FileText size={18} className="text-emerald-600" />
+                Hợp đồng & Phụ lục gia hạn
+              </h3>
+              <span className="text-xs text-slate-500">
+                {resource.data.extendContract?.length || 0} lần gia hạn
+              </span>
+            </div>
+
+            {/* Hợp đồng chính */}
+            <div className="flex flex-wrap items-center justify-between rounded-xl bg-slate-50 p-3 text-sm">
+              <div>
+                <span className="font-semibold text-slate-900">Hợp đồng thuê kho chính</span>
+                <p className="text-xs text-slate-500">Mã đơn: {resource.data.reservationCode || id}</p>
+              </div>
+              {resource.data.paperContractProofUrl ? (
+                <a href={resource.data.paperContractProofUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
+                  Xem hợp đồng giấy ↗
+                </a>
+              ) : (
+                <span className="text-xs text-slate-400">Đã lưu điện tử</span>
+              )}
+            </div>
+
+            {/* Các phụ lục gia hạn */}
+            {resource.data.extendContract?.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-600">Danh sách phụ lục hợp đồng gia hạn:</p>
+                {resource.data.extendContract.map((ext, idx) => (
+                  <div key={ext._id || idx} className="rounded-xl border border-slate-200 p-3 text-xs space-y-1 bg-white">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">{ext.extensionCode}</span>
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                        ext.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                        ext.status === 'PAID' ? 'bg-sky-100 text-sky-800' :
+                        ext.status === 'PENDING_PAYMENT' ? 'bg-amber-100 text-amber-800' :
+                        ext.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {ext.status === 'ACTIVE' ? 'Đã hiệu lực' :
+                         ext.status === 'PAID' ? 'Chờ ký tại cơ sở' :
+                         ext.status === 'PENDING_PAYMENT' ? 'Chờ thanh toán' :
+                         ext.status === 'REJECTED' ? 'Từ chối' : 'Đã hủy'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-between text-slate-600 pt-1">
+                      <span>Thời gian: +{ext.durationMonths} tháng ({ext.amount?.toLocaleString('vi-VN')} đ)</span>
+                      <span>Hạn hợp đồng mới: {new Date(ext.newEndDate).toLocaleDateString('vi-VN')}</span>
+                    </div>
+                    {ext.rejectionReason && (
+                      <p className="text-rose-600 text-[11px] pt-1">Lý do từ chối: {ext.rejectionReason}</p>
+                    )}
+                    {ext.paperProofUrl && (
+                      <div className="pt-1.5 border-t border-slate-100 mt-1">
+                        <a href={ext.paperProofUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-sky-600 hover:underline text-xs">
+                          Xem phụ lục hợp đồng đã ký ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -996,63 +1241,193 @@ export function ReservationDetailIntegration() {
           )}
           {showRenew && (
             <Dialog
-              title="Gia hạn hợp đồng thuê kho"
+              title={
+                renewStep === 'CONFIG' ? "Gia hạn hợp đồng thuê kho" :
+                renewStep === 'PAYMENT' ? "Thanh toán phí gia hạn" :
+                "Gia hạn thành công"
+              }
               onClose={() => setShowRenew(false)}
             >
-              <form onSubmit={handleRenew} className="space-y-4">
-                <p className="text-sm text-slate-600">
-                  Chọn số tháng bạn muốn gia hạn tiếp theo. Hợp đồng hiện tại và
-                  mã PIN mở cửa của bạn sẽ được giữ nguyên.
-                </p>
-                <div>
-                  <label className="text-sm font-medium">
-                    Thời gian gia hạn
-                  </label>
-                  <select
-                    className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm"
-                    value={renewMonths}
-                    onChange={(e) => setRenewMonths(Number(e.target.value))}
-                  >
-                    {[1, 2, 3, 4, 5, 6].map((m) => (
-                      <option key={m} value={m}>
-                        {m} tháng
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                  <p>
-                    Hạn hợp đồng hiện tại:{" "}
-                    <strong>
-                      {new Date(resource.data.endDate).toLocaleDateString(
-                        "vi-VN",
-                      )}
-                    </strong>
+              {renewStep === 'CONFIG' && (
+                <form onSubmit={handleCreateExtension} className="space-y-4">
+                  <p className="text-sm text-slate-600">
+                    Chọn gói kỳ hạn gia hạn được cơ sở hỗ trợ theo chính sách giá hiện hành. Hợp đồng hiện tại và
+                    mã PIN mở cửa của bạn sẽ được giữ nguyên hoạt động.
                   </p>
-                  <p className="mt-1">
-                    Hạn hợp đồng mới sau gia hạn:{" "}
-                    <strong>
-                      {(() => {
-                        const d = new Date(resource.data.endDate);
-                        d.setUTCMonth(d.getUTCMonth() + renewMonths);
-                        return d.toLocaleDateString("vi-VN");
-                      })()}
-                    </strong>
-                  </p>
+                  {termsLoading ? (
+                    <p className="text-sm text-slate-500 py-2">Đang tải các gói gia hạn từ chính sách giá...</p>
+                  ) : extendTermError && availableExtendTerms.length === 0 ? (
+                    <Message error={extendTermError} />
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">
+                          Gói thời gian gia hạn
+                        </label>
+                        <select
+                          className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm"
+                          value={selectedExtendTerm ? termKey(selectedExtendTerm) : ""}
+                          onChange={(e) => handleTermChange(e.target.value)}
+                        >
+                          {availableExtendTerms.map((t) => (
+                            <option key={termKey(t)} value={termKey(t)}>
+                              {t.value} {t.unit === 'YEAR' ? 'năm' : t.unit === 'DAY' ? 'ngày' : 'tháng'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {extendTermError && <Message error={extendTermError} />}
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 space-y-1">
+                        <p>
+                          Hạn hợp đồng hiện tại:{" "}
+                          <strong>
+                            {new Date(resource.data.endDate).toLocaleDateString("vi-VN")}
+                          </strong>
+                        </p>
+                        <p>
+                          Hạn hợp đồng mới sau gia hạn:{" "}
+                          <strong>
+                            {renewQuoteData?.newEndDate
+                              ? new Date(renewQuoteData.newEndDate).toLocaleDateString("vi-VN")
+                              : "—"}
+                          </strong>
+                        </p>
+                        <p className="pt-1 text-emerald-950 font-semibold border-t border-emerald-200">
+                          Số tiền gia hạn:{" "}
+                          {quoteLoading ? (
+                            <span className="text-slate-500 font-normal">Đang tải...</span>
+                          ) : renewQuoteData ? (
+                            <span>{(renewQuoteData.totalAmount ?? renewQuoteData.amount ?? 0).toLocaleString("vi-VN")} đ</span>
+                          ) : (
+                            <span className="text-slate-500 font-normal">—</span>
+                          )}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowRenew(false)}
+                    >
+                      Hủy
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={actionPending || quoteLoading || termsLoading || !selectedExtendTerm || !renewQuoteData}
+                    >
+                      {actionPending ? "Đang khởi tạo…" : "Tiếp tục thanh toán"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {renewStep === 'PAYMENT' && (
+                <div className="space-y-4">
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm space-y-1">
+                    <p>Mã yêu cầu: <strong>{activeExtension?.extensionCode}</strong></p>
+                    <p>Gia hạn thêm: <strong>+{activeExtension?.durationMonths} tháng</strong></p>
+                    <p className="text-emerald-700 font-bold text-base">
+                      Số tiền: {activeExtension?.amount?.toLocaleString("vi-VN")} đ
+                    </p>
+                  </div>
+
+                  {qrDataUrl ? (
+                    <div className="text-center p-3 border rounded-xl bg-white shadow-inner">
+                      <img src={qrDataUrl} alt="VietQR PayOS" className="mx-auto max-w-[200px]" />
+                      <p className="text-xs text-slate-500 mt-2">Quét mã VietQR bằng app Ngân hàng để thanh toán</p>
+                    </div>
+                  ) : paymentInfo?.checkoutUrl ? (
+                    <div className="text-center p-4">
+                      <a
+                        href={paymentInfo.checkoutUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                      >
+                        Mở cổng PayOS thanh toán ↗
+                      </a>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 text-center">Đang tải thông tin thanh toán PayOS...</p>
+                  )}
+
+                  {/* Nút Bypass PayOS phục vụ test theo yêu cầu */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <p className="text-xs text-amber-700 font-medium mb-1.5 flex items-center gap-1">
+                      <Zap size={14} /> Chế độ kiểm thử (Local Dev Mock):
+                    </p>
+                    <Button
+                      type="button"
+                      variant="orange"
+                      className="w-full font-bold flex items-center justify-center gap-2 shadow-sm"
+                      onClick={() => handleMockPay(activeExtension?._id)}
+                      disabled={actionPending}
+                    >
+                      <Zap size={16} /> {actionPending ? "Đang xử lý…" : "⚡ Giả lập thanh toán 100% (Dev Mock)"}
+                    </Button>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-slate-500"
+                      onClick={() => handleCancelExtension(activeExtension?._id)}
+                      disabled={actionPending}
+                    >
+                      Hủy yêu cầu này
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowRenew(false)}
+                    >
+                      Đóng
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowRenew(false)}
-                  >
-                    Hủy
-                  </Button>
-                  <Button type="submit" disabled={actionPending}>
-                    {actionPending ? "Đang xử lý…" : "Xác nhận gia hạn"}
-                  </Button>
+              )}
+
+              {renewStep === 'DONE' && (
+                <div className="space-y-4 text-center py-2">
+                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                    ✓
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-emerald-950 text-base">Thanh toán gia hạn thành công!</h4>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Mã phụ lục: <strong>{activeExtension?.extensionCode}</strong> (+{activeExtension?.durationMonths} tháng)
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 text-left space-y-1">
+                    <p className="font-semibold">📋 Bước tiếp theo (SLA 3 ngày):</p>
+                    <p>
+                      Vui lòng đến trực tiếp cơ sở trước ngày{" "}
+                      <strong>
+                        {activeExtension?.signingDeadline
+                          ? new Date(activeExtension.signingDeadline).toLocaleDateString("vi-VN")
+                          : (() => {
+                              const d = new Date();
+                              d.setDate(d.getDate() + 3);
+                              return d.toLocaleDateString("vi-VN");
+                            })()}
+                      </strong>{" "}
+                      để nhân viên in và ký xác nhận bản phụ lục hợp đồng gia hạn giấy.
+                    </p>
+                    <p className="text-slate-500">
+                      * Mã PIN và kho của bạn vẫn hoạt động bình thường trong thời gian này.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <Button className="w-full" onClick={() => setShowRenew(false)}>
+                      Đã hiểu & Hoàn tất
+                    </Button>
+                  </div>
                 </div>
-              </form>
+              )}
             </Dialog>
           )}
         </>
