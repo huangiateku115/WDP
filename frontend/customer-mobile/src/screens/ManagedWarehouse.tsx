@@ -1,32 +1,35 @@
 import {ManagedBookingConfirmation} from '../components/ManagedBookingConfirmation';
 import {CardHeading,TintedPanel} from '../components/livePresentation';
 import {useState} from 'react';
-import {View} from 'react-native';
+import {StyleSheet,View} from 'react-native';
 import {useLocalSearchParams,useRouter} from 'expo-router';
 import {managedInventory,type ManagedRange,type ManagedTerm} from '../api/managedInventory';
 import {WarehouseRack2D} from '../components/WarehouseRack2D';
 import {warehouseRackLayout} from '../domain/warehouseRackLayout';
 import {managedCellState} from '../domain/managedCellSelection';
 import {useLiveSession} from '../state/useLiveSession';
-import {AppText,Button,Card,Filter,ui} from '../components/ui';
+import {AppText,Button,Card,Chip,Filter,ui} from '../components/ui';
 import {dateLabel,LiveScreen,money,ResourceState,useResource} from '../components/liveUI';
+import {ManagedFacilityVisual} from '../components/ManagedFacilityVisual';
+import {colors,radius} from '../theme/tokens';
+
+const periodDateLabel=(value:string)=>value.slice(0,10).split('-').reverse().join('/');
 
 export function ManagedMap(){
   const {facilityId}=useLocalSearchParams<{facilityId:string}>();
   const router=useRouter();
   const facility=useResource(facilityId,signal=>managedInventory.facility(facilityId,signal));
-  return <LiveScreen title="Sơ đồ kho ký gửi" eyebrow="KHÔNG GIAN LƯU TRỮ" onRefresh={facility.reload} refreshing={facility.loading}>
+  return <LiveScreen title="Sơ đồ kho" eyebrow="KHO KÝ GỬI · MANAGED V3" subtitle="Khám phá cấu trúc khu, kệ và trạng thái các ô." onRefresh={facility.reload} refreshing={facility.loading}>
     <Button label="Quay lại" variant="quiet" onPress={()=>router.back()}/>
     <ResourceState {...facility}/>
     {facility.data&&<>
-      <AppText variant="card">{facility.data.name}</AppText>
-      <AppText>Xem cấu trúc và trạng thái hiện tại của kho.</AppText>
+      <Card style={styles.facilityCard}><ManagedFacilityVisual facility={facility.data}/></Card>
       <ManagedMapPanel key={facilityId} facilityId={facilityId}/>
     </>}
   </LiveScreen>;
 }
 
-export function ManagedMapPanel({facilityId,range,term}:{facilityId:string;range?:ManagedRange;term?:ManagedTerm}){
+export function ManagedMapPanel({facilityId,range,term,onChangePeriod}:{facilityId:string;range?:ManagedRange;term?:ManagedTerm;onChangePeriod?:()=>void}){
   const owner=useLiveSession(s=>s.user?._id??'');
   const [zoneId,setZone]=useState(''),[rackId,setRack]=useState(''),[level,setLevel]=useState(0);
   const [cellId,setCell]=useState(''),[selected,setSelected]=useState<string[]>([]),[request,setRequest]=useState('');
@@ -62,41 +65,63 @@ export function ManagedMapPanel({facilityId,range,term}:{facilityId:string;range
   const status=selectedCell?managedCellState(selectedCell,!!range,rackAvailable):null;
 
   return <>
-    <Card>
-      <CardHeading icon="grid-outline" title="Sơ đồ khu vực và kệ" subtitle="Chọn khu vực, chọn kệ rồi chạm ô để xem chi tiết."/>
+    {range&&term&&<TintedPanel>
+      <View style={styles.periodContext}><View style={{flex:1,gap:3}}>
+        <AppText variant="label">KỲ THUÊ ĐANG XEM</AppText>
+        <AppText variant="medium">{term.value} {term.unit==='MONTH'?'tháng':term.unit==='YEAR'?'năm':'ngày'}</AppText>
+        <AppText variant="caption">{periodDateLabel(range.startDate)} – {periodDateLabel(range.endDate)}</AppText>
+      </View>
+      {onChangePeriod&&<Button label="Đổi kỳ thuê" variant="outline" onPress={onChangePeriod}/>}
+      </View>
+    </TintedPanel>}
+    <Card style={styles.mapCard}>
+      <CardHeading icon="grid-outline" title="Bản đồ kho trực quan" subtitle="Dữ liệu khu, kệ, tầng và ô được tải từ sơ đồ kho."/>
       <Button label="Làm mới sơ đồ" icon="refresh-outline" variant="quiet" onPress={reload}/>
       <ResourceState {...map}/>
       {map.data?.zones.length===0&&<AppText>Chưa có khu vực trên sơ đồ.</AppText>}
-      {map.data&&<View style={ui.wrap}>{map.data.zones.map(item=><Filter key={item._id}
-        label={item.name+' · '+item.code} selected={zone?._id===item._id}
-        onPress={()=>{setZone(item._id);setRack('');setLevel(0);reset();}}/>)}</View>}
-      {zone&&<AppText>Khu vực: {zone.name}</AppText>}
+      {map.data&&<View style={styles.selectorBlock}>
+        <View style={styles.selectorHeading}><AppText variant="label" style={styles.eyebrow}>PHÂN KHU</AppText><AppText variant="caption" style={styles.caption}>Chọn khu vực</AppText></View>
+        <View style={ui.wrap}>{map.data.zones.map(item=><Filter key={item._id}
+          label={item.name+' · '+item.code} selected={zone?._id===item._id}
+          onPress={()=>{setZone(item._id);setRack('');setLevel(0);reset();}}/>)}</View>
+      </View>}
+      {zone&&<View style={styles.context}><Chip label={zone.name}/><AppText variant="caption" style={styles.caption}>Khu vực đang xem</AppText></View>}
       {zone&&!racks.length&&<AppText>Chưa có kệ trong khu vực này.</AppText>}
-      <View style={ui.wrap}>{racks.map(item=><Filter key={item._id} label={'Kệ '+item.rackCode} selected={rack?._id===item._id}
-        onPress={()=>{setRack(item._id);setLevel(0);reset();}}/>)}</View>
+      {!!racks.length&&<View style={styles.selectorBlock}>
+        <View style={styles.selectorHeading}><AppText variant="label" style={styles.eyebrow}>DÃY KỆ</AppText><AppText variant="caption" style={styles.caption}>{racks.length} kệ</AppText></View>
+        <View style={ui.wrap}>{racks.map(item=><Filter key={item._id} label={'Kệ '+item.rackCode} selected={rack?._id===item._id}
+          onPress={()=>{setRack(item._id);setLevel(0);reset();}}/>)}</View>
+      </View>}
       {rack&&<ResourceState {...detail} reload={reload}/>}
       {detail.data?.levels.length===0&&<AppText>Kệ chưa có tầng.</AppText>}
-      {detail.data&&levels.length>0&&<WarehouseRack2D key={rack?._id} levels={levels} layout={layout} levelIndex={levelIndex}
-        hasPeriod={!!range} rackAvailable={rackAvailable} inspectedId={cellId}
-        selectedIds={new Set(activeCells.map(cell=>cell._id))}
-        onInspect={(id,index)=>{
-          if(index!==levelIndex){setLevel(index);reset();}
-          setCell(id);
-        }}/>}
+      {detail.data&&levels.length>0&&<View style={styles.mapStage}>
+        <View style={styles.mapHeading}><View style={{flex:1}}><AppText variant="card">Kệ {rack?.rackCode}</AppText><AppText variant="caption" style={styles.caption}>{levels.length} tầng · chạm ô để xem thông tin</AppText></View><Chip label={layout?'Sơ đồ vật lý':'Danh sách theo tầng'} tone="neutral"/></View>
+        <WarehouseRack2D key={rack?._id} levels={levels} layout={layout} levelIndex={levelIndex}
+          hasPeriod={!!range} rackAvailable={rackAvailable} inspectedId={cellId}
+          selectedIds={new Set(activeCells.map(cell=>cell._id))}
+          onInspect={(id,index)=>{
+            if(index!==levelIndex){setLevel(index);reset();}
+            setCell(id);
+          }}/>
+      </View>}
     </Card>
     {selectedCell&&status&&<Card>
-      <CardHeading icon="cube-outline" title={`Ô ${selectedCell.code}`}/>
-      <AppText>Kệ {rack?.rackCode} · Tầng {currentLevel?.levelNumber??'chưa xác minh'} · Vị trí {selectedCell.cellNumber??'chưa xác minh'}</AppText>
-      <AppText>{status.label}{selectedCell.isMine?' · Ô của bạn':''}{selectedCell.hasMyInventory?' · Có hàng của bạn':''}</AppText>
-      <AppText>Rộng {selectedCell.dimensions.widthM} m · Sâu {selectedCell.dimensions.depthM} m</AppText>
-      {selectedCell.dimensions.usableHeightM!==undefined&&<AppText>Cao sử dụng {selectedCell.dimensions.usableHeightM} m</AppText>}
-      {selectedCell.maxWeightKg!==undefined&&<AppText>Tải trọng tối đa {selectedCell.maxWeightKg} kg</AppText>}
+      <CardHeading icon="cube-outline" title={`Thông tin ô ${selectedCell.code}`} subtitle={`Kệ ${rack?.rackCode} · Tầng ${currentLevel?.levelNumber??'chưa xác minh'} · Vị trí ${selectedCell.cellNumber??'chưa xác minh'}`}/>
+      <View style={styles.statusRow}><Chip label={status.label} tone={status.kind==='RESERVED'?'orange':status.kind==='OCCUPIED'||status.kind==='MAINTENANCE'?'danger':status.kind==='AVAILABLE'?'green':'neutral'}/>
+        {selectedCell.isMine&&<Chip label="Ô của bạn" tone="neutral"/>}{selectedCell.hasMyInventory&&<Chip label="Có hàng của bạn" tone="neutral"/>}</View>
+      <View style={styles.metricGrid}>
+        <View style={styles.metric}><AppText variant="caption" style={styles.caption}>Kích thước</AppText><AppText variant="medium">{selectedCell.dimensions.widthM} × {selectedCell.dimensions.depthM}{selectedCell.dimensions.usableHeightM!==undefined?' × '+selectedCell.dimensions.usableHeightM:''} m</AppText></View>
+        {selectedCell.maxVolumeM3!=null&&<View style={styles.metric}><AppText variant="caption" style={styles.caption}>Dung tích tối đa</AppText><AppText variant="medium">{selectedCell.maxVolumeM3} m³</AppText></View>}
+        {selectedCell.maxWeightKg!==undefined&&<View style={styles.metric}><AppText variant="caption" style={styles.caption}>Tải trọng tối đa</AppText><AppText variant="medium">{selectedCell.maxWeightKg} kg</AppText></View>}
+        {selectedCell.physicalUsageKnown===true&&<View style={styles.metric}><AppText variant="caption" style={styles.caption}>Đang sử dụng</AppText><AppText variant="medium">{selectedCell.usedVolumeM3!==undefined?selectedCell.usedVolumeM3+' m³':'Chưa có số liệu thể tích'}{selectedCell.usedWeightKg!==undefined?' · '+selectedCell.usedWeightKg+' kg':''}</AppText></View>}
+      </View>
       {range&&<Button label={selected.includes(selectedCell._id)?'Bỏ chọn ô':'Thêm ô vào kỳ thuê'} disabled={!layout||!status.selectable||
         (selected.length>=100&&!selected.includes(selectedCell._id))} onPress={()=>toggle(selectedCell._id)}/>}
     </Card>}
     {range&&<Card>
-      <CardHeading icon="layers-outline" title="Các ô chọn để thuê"/>
-      <AppText>{dateLabel(range.startDate)} – {dateLabel(range.endDate)}</AppText>
+      <CardHeading icon="layers-outline" title="Tóm tắt lựa chọn" subtitle="Chỉ gồm các ô hiện còn đủ điều kiện theo Backend."/>
+      <View style={styles.selectionStats}><Chip label={`${activeCells.length} ô đã chọn`}/><Chip label={`${volume} m³`} tone="neutral"/></View>
+      <AppText>{periodDateLabel(range.startDate)} – {periodDateLabel(range.endDate)}</AppText>
       <AppText>Chọn nhiều ô trong tầng hiện tại để kiểm tra báo giá thuê. Việc chọn ô ở đây chưa giữ chỗ hay xác nhận vị trí đặt hàng vật lý.</AppText>
       {activeCells.map(cell=><AppText key={cell._id}>{cell.code} · {cell.maxVolumeM3} m³</AppText>)}
       {activeCells.length!==selected.length&&<AppText>Khả dụng đã thay đổi. Hãy xóa lựa chọn rồi chọn lại.</AppText>}
@@ -124,4 +149,21 @@ export function ManagedMapPanel({facilityId,range,term}:{facilityId:string;range
     </Card>}
   </>;
 }
+
+const styles=StyleSheet.create({
+  facilityCard:{padding:12},
+  mapCard:{gap:14},
+  selectorBlock:{gap:8,padding:12,borderRadius:radius.md,backgroundColor:colors.soft,borderWidth:1,borderColor:colors.line},
+  selectorHeading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  eyebrow:{color:colors.primary,letterSpacing:1},
+  caption:{color:colors.muted},
+  context:{flexDirection:'row',alignItems:'center',gap:8},
+  mapStage:{gap:10,padding:10,borderRadius:radius.md,backgroundColor:colors.soft,borderWidth:1,borderColor:colors.line},
+  mapHeading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  statusRow:{flexDirection:'row',flexWrap:'wrap',gap:8},
+  metricGrid:{flexDirection:'row',flexWrap:'wrap',gap:8},
+  metric:{flexGrow:1,flexBasis:'44%',minWidth:130,padding:10,borderRadius:radius.sm,backgroundColor:colors.soft,gap:3},
+  selectionStats:{flexDirection:'row',alignItems:'center',gap:8},
+  periodContext:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},
+});
 

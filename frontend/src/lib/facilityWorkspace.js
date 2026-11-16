@@ -17,6 +17,7 @@ export const facilityApiPages = {
     "warehouse-map",
     "maintenance",
     "support",
+    "notifications",
   ],
   manager: [
     "managed",
@@ -37,6 +38,7 @@ export const facilityApiPages = {
     "work/CHECKOUT",
     "maintenance",
     "support",
+    "notifications",
   ],
 };
 export const facilityHome = (role) => `/${role}/reservations`;

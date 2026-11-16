@@ -75,7 +75,7 @@ function ManagedPaperContent({ reservation, onRefresh }) {
       if (getAccessToken() === token) { setUncertain(sent); setFeedback({ error: reviewError(cause) + (sent ? ' Tải lại và đối chiếu trạng thái trước khi gửi tiếp.' : '') }); }
     } finally { busy.current = false; setSaving(false); }
   }
-  if (!permitted) return <Panel title="Hợp đồng và bàn giao hàng hóa"><p>Chỉ quản lý thuộc cơ sở này có thể tải đơn qua API hiện tại. Quyền nhân viên đọc đơn hàng hóa cần được backend bổ sung.</p></Panel>;
+  if (!permitted) return <Panel title="Hợp đồng và bàn giao hàng hóa"><p>Bạn chưa có quyền xử lý hợp đồng và bàn giao cho đơn này. Vui lòng liên hệ quản lý cơ sở.</p></Panel>;
   return <Panel title="Hợp đồng giấy và bàn giao hàng hóa" action={<Button variant="outline" disabled={saving} onClick={() => { setAction(null); setFile(null); setUncertain(false); resource.reload(); }}>Tải lại và đối chiếu</Button>}>
     <Message {...feedback} /><Message error={resource.error} />{resource.loading && <p role="status">Đang tải hợp đồng hàng hóa…</p>}
     {data && <div className="space-y-4">

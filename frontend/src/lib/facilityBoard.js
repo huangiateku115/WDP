@@ -11,7 +11,7 @@ export function buildFacilityBoard({reservations=[], inspections=[], maintenance
   const byId = new Map(rentals.map(r => [idOf(r), r]));
   const rows = [];
   for (const r of rentals) {
-    const type = r.status === 'PAID' ? 'CHECK_IN' : ['ACTIVE','OVERDUE'].includes(r.status) ? 'CHECK_OUT' : null;
+    const type = ['PAID','CHECKIN_READY'].includes(r.status) ? 'CHECK_IN' : ['ACTIVE','OVERDUE'].includes(r.status) ? 'CHECK_OUT' : null;
     if (!type) continue;
     rows.push({id:`${type}:${idOf(r)}`, title:r.reservationCode || idOf(r), type, status:r.status, date:facilityDay(type === 'CHECK_IN' ? r.startDate : r.endDate), dateLabel:type === 'CHECK_IN' ? 'Rental start date' : 'Rental end date', assignee:'', assignable:false, priority:'', to:`/${role}/reservations/${idOf(r)}`});
   }

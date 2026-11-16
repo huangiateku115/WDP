@@ -16,4 +16,13 @@
 .manager-shell:not(.admin-shell):not(.bom-shell) .manager-link svg{flex-shrink:0}
 .manager-shell:not(.admin-shell):not(.bom-shell) .manager-scope span{overflow-wrap:anywhere}
 .facility-outbound button{max-width:100%;min-height:44px;white-space:normal}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-filters{align-items:end}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-filters>select{align-self:end}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a{min-width:0}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a svg{flex:0 0 auto}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-dialog{max-height:calc(100dvh - 32px);overflow-y:auto}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-identity{min-width:0}
+.manager-shell:not(.admin-shell):not(.bom-shell) .manager-identity b{overflow-wrap:anywhere}
+.manager-shell:not(.admin-shell):not(.bom-shell) [data-connection-placeholder="true"]{display:none}
+@media(max-width:760px){.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a{flex:0 0 auto;min-width:max-content}.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar{max-width:100%;overflow-x:auto}}
 @media(max-width:640px){.facility-outbound select{min-width:0}.facility-outbound .manager-link{align-self:center}}

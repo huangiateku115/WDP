@@ -37,8 +37,8 @@ export function WarehouseRack2D({levels,layout,levelIndex,hasPeriod,rackAvailabl
     const tone=statuses[status.kind];
     const selected=selectedIds.has(cell._id);
     const inspected=inspectedId===cell._id;
-    return <Pressable key={cell._id} accessibilityRole="button" accessibilityLabel={'Xem ô '+cell.code}
-      accessibilityHint={status.label+(selected?', đã chọn':'')+'. Mở chi tiết ô lưu trữ.'}
+    return <Pressable key={cell._id} accessibilityRole="button" accessibilityLabel={cell.code+', '+status.label+(selected?', đã chọn':'')}
+      accessibilityHint="Mở chi tiết ô lưu trữ."
       accessibilityState={{selected}}
       onPress={()=>onInspect(cell._id,index)}
       style={({pressed})=>[styles.tile,width===undefined?styles.listTile:{width},
@@ -48,6 +48,13 @@ export function WarehouseRack2D({levels,layout,levelIndex,hasPeriod,rackAvailabl
       <AppText variant="caption" style={{color:tone.ink,textAlign:'center'}}>{tone.label}</AppText>
       {selected&&<AppText variant="caption" style={styles.picked}>✓ Đã chọn</AppText>}
       {inspected&&<AppText variant="caption" style={styles.picked}>Đang xem</AppText>}
+      {(cell.maxVolumeM3!=null||cell.maxWeightKg!==undefined||cell.physicalUsageKnown===true)&&<View style={styles.tileMetrics}>
+        {cell.maxVolumeM3!=null&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>Tối đa {cell.maxVolumeM3} m³</AppText>}
+        {cell.maxWeightKg!==undefined&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>{cell.maxWeightKg} kg</AppText>}
+        {cell.physicalUsageKnown===true&&(cell.usedVolumeM3!==undefined||cell.usedWeightKg!==undefined)&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>
+          Đang dùng {cell.usedVolumeM3!==undefined?cell.usedVolumeM3+' m³':cell.usedWeightKg+' kg'}
+        </AppText>}
+      </View>}
     </Pressable>;
   }
 
@@ -108,11 +115,12 @@ const styles=StyleSheet.create({
   row:{flexDirection:'row',alignItems:'stretch',gap:4,backgroundColor:colors.soft,borderRadius:radius.sm,padding:3},
   currentRow:{backgroundColor:colors.mint},
   level:{width:50,alignSelf:'center',textAlign:'center',color:colors.deep},
-  tile:{minHeight:72,flexShrink:0,justifyContent:'center',alignItems:'center',padding:4,gap:2,borderRadius:radius.sm,borderWidth:1},
+  tile:{minHeight:92,flexShrink:0,justifyContent:'center',alignItems:'center',padding:5,gap:2,borderRadius:radius.md,borderWidth:1},
   listTile:{width:'100%'},
   selected:{borderWidth:3},
   inspected:{borderStyle:'dashed',borderWidth:2},
   pressed:{opacity:.8},
   picked:{color:colors.deep,fontWeight:'700'},
-  gap:{minHeight:72},
+  gap:{minHeight:92},
+  tileMetrics:{width:'100%',marginTop:3,paddingTop:3,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:colors.line,alignItems:'center'},
 });

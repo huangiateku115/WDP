@@ -37,6 +37,14 @@ export function sameManagedQuote(reviewed:V3Quote,fresh:ManagedQuote){
     fresh.payment.currency===reviewed.payment.currency;
 }
 
+export function managedCreationPriceReview(quotedAmount:number,reservation:ReservationDto){
+  const authoritativeAmount=(reservation as ReservationDto&{estimatedRent?:unknown}).estimatedRent;
+  if(!Number.isFinite(quotedAmount)||quotedAmount<0||typeof authoritativeAmount!=='number'||!Number.isFinite(authoritativeAmount)||authoritativeAmount<0||authoritativeAmount===quotedAmount)return undefined;
+  return {quotedAmount,authoritativeAmount,accepted:false as const};
+}
+
+export function managedPriceNeedsAcceptance(review?:{accepted:boolean}|null){return !!review&&!review.accepted;}
+
 export function verifyManagedCreation(r:ReservationDto,body:ManagedCreateBody,endDate:string){
   if(r.serviceType!=='MANAGED_INVENTORY'||r.bookingFlowVersion!==3||r.rentalPaymentFlow!=='FULL_UPFRONT_V1'||
     refId(r.facilityId)!==body.facilityId||Date.parse(r.startDate)!==Date.parse(body.startDate)||

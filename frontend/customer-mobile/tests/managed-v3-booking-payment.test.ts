@@ -2,7 +2,7 @@ import {eligibleInboundCells,managedInboundPreview} from '../src/api/managedInbo
 import {managedReservationReads,mapManagedAccessRows} from '../src/api/managedReservationReads';
 import {managedSkuEligible,saveManagedSku} from '../src/api/managedSkuV3';
 import {apiClient,configureApiSession} from '../src/api/client';
-import {createManagedBooking,managedBookingPolicy,sameManagedQuote} from '../src/api/managedBookingV3';
+import {createManagedBooking,managedBookingPolicy,managedCreationPriceReview,managedPriceNeedsAcceptance,sameManagedQuote} from '../src/api/managedBookingV3';
 import {managedCheckoutAction,managedPayment,managedPaymentApplied} from '../src/api/managedPaymentV3';
 import {mapManagedQuote} from '../src/api/contracts/booking';
 
@@ -57,6 +57,14 @@ test('reconfirmation rejects a changed V3 price or pricing version',()=>{
   expect(sameManagedQuote(reviewed,reviewed)).toBe(true);
   expect(sameManagedQuote(reviewed,{...reviewed,pricing:{...reviewed.pricing,version:2}})).toBe(false);
   expect(sameManagedQuote(reviewed,{...reviewed,payment:{...reviewed.payment,amount:1200}})).toBe(false);
+});
+
+test('server-created Managed rent difference requires explicit local consent before PayOS can continue',()=>{
+  expect(managedCreationPriceReview(1000,{...rental,estimatedRent:1000})).toBeUndefined();
+  const review=managedCreationPriceReview(1000,{...rental,estimatedRent:1200});
+  expect(review).toEqual({quotedAmount:1000,authoritativeAmount:1200,accepted:false});
+  expect(managedPriceNeedsAcceptance(review)).toBe(true);
+  expect(managedPriceNeedsAcceptance({...review!,accepted:true})).toBe(false);
 });
 
 test('Managed checkout uses FULL_RENT with the Web callback default and verifies settlement',async()=>{
@@ -142,6 +150,10 @@ test('A1 and A2 preview omit confirm-only fields and validate scoped, current pr
     }}};
   };
   expect(eligibleInboundCells(r,{...session,status:'EXPIRED'})).toEqual([]);
+  expect(eligibleInboundCells(r,{...session,allowedPurposes:['OUTBOUND']})).toEqual([]);
+  expect(eligibleInboundCells(r,{...session,reservationId:facilityId})).toEqual([]);
+  expect(eligibleInboundCells(r,{...session,facilityId:paymentId})).toEqual([]);
+  expect(eligibleInboundCells({...r,endDate:'2025-01-02T00:00:00.000Z'},session)).toEqual([]);
   await expect(managedInboundPreview.preview(item,r,owner,session,{...a1,cellIds:[cellId,facilityId]})).rejects.toThrow();
   await expect(managedInboundPreview.preview(item,r,owner,session,a1)).resolves.toMatchObject({itemKind:'A1_PHYSICAL_UNIT',quantity:1});
   await expect(managedInboundPreview.preview(item,r,owner,session,a2)).resolves.toMatchObject({itemKind:'A2_BATCH',quantity:2});

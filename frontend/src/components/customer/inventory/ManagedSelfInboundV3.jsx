@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { managedAccessApi } from '@/api/managedAccessApi';
 import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
 import { formatInventoryDateTime } from './inventoryUiFormat';
-import { buildA2InboundPayload, inboundErrorMessage, inboundFieldErrors } from './managedSelfInboundV3Validation';
+import { buildA2InboundPayload, inboundErrorMessage, inboundFieldErrors, inboundPreviewProofCurrent } from './managedSelfInboundV3Validation';
 
 const valueOf = row => row?._id || row?.id || row;
 const errorText = inboundErrorMessage;
@@ -47,8 +47,8 @@ export default function ManagedSelfInboundV3({ item, rental, cellLabels = {}, on
   const selectedCells = cellIds.filter(cellId => allocated.includes(cellId));
   const a2Lines = selectedCells.map(cellId => ({ cellId, quantity: Number(quantities[cellId] || 0) })).filter(line => line.quantity > 0);
   const totalQuantity = a2Lines.reduce((sum, line) => sum + line.quantity, 0);
-  const a2Payload = () => buildA2InboundPayload({ sessionId, sessionRevision: selectedSession?.revision, selectedCells, quantities, quantity, quantityUnit: item.quantityUnit, weight, dimensions });
-  const a1Payload = () => ({ itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: sessionId, sessionRevision: selectedSession?.revision, cellIds: selectedCells,
+  const a2Payload = () => buildA2InboundPayload({ sessionId, selectedCells, quantities, quantity, quantityUnit: item.quantityUnit, weight, dimensions });
+  const a1Payload = () => ({ itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: sessionId, cellIds: selectedCells,
     physicalUnitId, pose: { xStartM: Number(pose.xStartM), yStartM: Number(pose.yStartM), rotationDeg: Number(pose.rotationDeg) }, placements: selectedCells.map(cellId => ({ cellId })) });
   const prepareUnit = async event => {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
@@ -69,7 +69,12 @@ export default function ManagedSelfInboundV3({ item, rental, cellLabels = {}, on
   const confirm = async (payload = preview?.candidate, proof = preview?.result, allowBusy = false) => {
     if (!payload || (busy && !allowBusy)) return; setBusy(true); setError(''); setNotice('');
     try {
-      const body = { ...payload, previewRevision: proof?.previewRevision ?? payload.previewRevision,
+      if (!inboundPreviewProofCurrent(proof, selectedSession, { sessionId, reservationId: String(valueOf(rental)), skuId, cellIds: selectedCells })) {
+        setError('Kết quả kiểm tra đã hết hạn hoặc phiên bản phiên đã thay đổi. Hãy tải lại phiên và chạy kiểm tra vị trí lần nữa.');
+        return;
+      }
+      const body = { ...payload, sessionRevision: proof.sessionRevision,
+        previewRevision: proof.previewRevision,
         ...(proof?.topologyCertificationIds ? { topologyCertificationIds: proof.topologyCertificationIds } : {}),
         ...(proof?.topologyRevisions ? { topologyRevisions: proof.topologyRevisions } : {}),
         ...(proof?.topologyCertificationId ? { topologyCertificationId: proof.topologyCertificationId, topologyRevision: proof.topologyRevision } : {}) };

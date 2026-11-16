@@ -2,18 +2,21 @@ import {useEffect,useRef,useState} from 'react';
 import axios from 'axios';
 import {useRouter} from 'expo-router';
 import {apiIssue,MobileInputError} from '../api/client';
-import {createManagedBooking,managedBookingPolicy,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
+import {createManagedBooking,managedBookingPolicy,managedCreationPriceReview,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
 import {managedInventory,type ManagedQuote} from '../api/managedInventory';
 import {journal,newAttempt} from '../state/attemptJournal';
 import {useLiveSession} from '../state/useLiveSession';
-import {AppText,Button,Card,Filter} from './ui';
+import {AppText,Button,Card} from './ui';
 import {ResourceState,useResource} from './liveUI';
+import {ManagedTermsAccordion} from './ManagedTermsAccordion';
+import {hasManagedTermsAcceptance,managedTermsAcceptanceKey} from '../domain/managedTermsAcceptance';
 
 type Review=Extract<ManagedQuote,{bookingFlowVersion:3}>;
 
 export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner:string;review?:Review;onReviewChanged:()=>void}){
   const router=useRouter();
   const [accepted,setAccepted]=useState('');
+  const [termsExpanded,setTermsExpanded]=useState(false);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState('');
   const busy=useRef(false),mounted=useRef(false);
@@ -23,9 +26,9 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
   const attempt=useResource(owner,()=>journal('managed-v3-booking',owner,'active').then(store=>store.read()));
   const policy=useResource(owner+':'+scope,signal=>review?managedBookingPolicy(signal):Promise.resolve(null));
   const versionId=policy.data?.versionId;
-  const acceptance=scope+':'+versionId;
+  const acceptance=managedTermsAcceptanceKey(scope,versionId);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  useEffect(()=>{setAccepted('');setError('');},[scope]);
+  useEffect(()=>{setAccepted('');setError('');setTermsExpanded(false);},[scope,versionId]);
 
   async function submit(recover:boolean){
     if(busy.current)return;
@@ -38,7 +41,7 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
       if(!current())return;
       if(!recover){
         if(saved)throw new MobileInputError('Hãy kiểm tra yêu cầu tạo đơn đã lưu trước khi tạo đơn mới.');
-        if(!review||!versionId||accepted!==acceptance)return;
+        if(!review||!hasManagedTermsAcceptance(accepted,scope,versionId))return;
         const range={startDate:review.startDate,endDate:review.endDate};
         const input={facilityId:review.facilityId,startDate:review.startDate,term:review.term,
           allocatedCapacityM3:review.allocatedCapacityM3,cellIds:review.cellIds};
@@ -48,7 +51,7 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
           setAccepted('');policy.reload();onReviewChanged();
           throw new MobileInputError('Báo giá hoặc điều khoản đã thay đổi. Hãy xem lại trước khi đặt kho.');
         }
-        saved={...newAttempt(),managedBooking:{body:{...input,termsAccepted:true,termsVersionId:versionId},endDate:review.endDate}};
+        saved={...newAttempt(),managedBooking:{body:{...input,termsAccepted:true,termsVersionId:versionId},endDate:review.endDate,quotedAmount:review.payment.amount}};
         if(!await store.claim(saved))throw new MobileInputError('Yêu cầu tạo đơn đang được xử lý.');
       }
       if(!saved?.managedBooking||!current()||(!recover&&activeScope.current!==scope))return;
@@ -68,8 +71,15 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
         }
       }
       if(!current())return;
-      verifyManagedCreation(await managedInventory.rental(resourceId,owner,body.facilityId),body,endDate);
+      const authoritative=verifyManagedCreation(await managedInventory.rental(resourceId,owner,body.facilityId),body,endDate);
       if(!current())return;
+      const quotedAmount=saved.managedBooking.quotedAmount;
+      const priceReview=quotedAmount===undefined?undefined:managedCreationPriceReview(quotedAmount,authoritative);
+      if(priceReview){
+        const priceStore=await journal('managed-v3-price-consent',owner,resourceId);
+        const existing=await priceStore.read();
+        if(!existing?.priceReview)await priceStore.write({...newAttempt(),resourceId,priceReview});
+      }
       await store.clear();
       if(current())router.replace({pathname:'/managed/[facilityId]/confirmation',params:{facilityId:body.facilityId,reservationId:resourceId}});
     }catch(cause){
@@ -86,16 +96,14 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
     {attempt.data?<Button label="Khôi phục yêu cầu đặt kho đã lưu" loading={pending} onPress={()=>void submit(true)}/>:null}
     {review&&!attempt.data&&<><ResourceState {...policy}/>
       {policy.data&&<>
-        <AppText variant="card">Điều khoản kho ký gửi · v{policy.data.version}</AppText>
-        {policy.data.groups.map(group=><Card key={group.id}><AppText variant="medium">{group.title}</AppText>
-          {group.sections.MANAGED_INVENTORY?.map((line,index)=><AppText key={index}>{line}</AppText>)}
-        </Card>)}
-        <Filter label="Tôi chấp nhận điều khoản kho ký gửi" selected={accepted===acceptance}
-          onPress={()=>{if(!pending)setAccepted(accepted===acceptance?'':acceptance);}}/>
+        <ManagedTermsAccordion version={policy.data.version} groups={policy.data.groups} expanded={termsExpanded}
+          onToggleExpanded={()=>setTermsExpanded(value=>!value)} accepted={accepted===acceptance}
+          onToggleAcceptance={()=>setAccepted(hasManagedTermsAcceptance(accepted,scope,versionId)?'':acceptance)} disabled={pending}/>
         <Button label="Xác nhận tạo đơn thuê" loading={pending}
-          disabled={attempt.loading||!!attempt.error||accepted!==acceptance} onPress={()=>void submit(false)}/>
+          disabled={attempt.loading||!!attempt.error||!hasManagedTermsAcceptance(accepted,scope,versionId)} onPress={()=>void submit(false)}/>
       </>}
     </>}
     {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}
   </Card>;
 }
+
