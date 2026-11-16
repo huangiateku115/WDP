@@ -1,4 +1,4 @@
-import {eligibleInboundCells,managedInboundPreview} from '../src/api/managedInboundPreview';
+import {eligibleInboundCells,buildUnifiedInboundRequest,managedInboundPreview} from '../src/api/managedInboundPreview';
 import {managedReservationReads,mapManagedAccessRows} from '../src/api/managedReservationReads';
 import {managedSkuEligible,saveManagedSku} from '../src/api/managedSkuV3';
 import {apiClient,configureApiSession} from '../src/api/client';
@@ -124,40 +124,59 @@ test('SKU registration sends only metadata after verifying eligible V3 reservati
   expect(paths).toEqual(['get /reservations/managed/'+id,'get /reservations/managed/'+id,'post /inventory-items']);
 });
 
-test('A1 and A2 preview omit confirm-only fields and validate scoped, current proof',async()=>{
-  const r={...rental,status:'ACTIVE' as const,startDate:'2025-01-01T00:00:00.000Z'};
-  const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3,
-    itemCode:'BOX',name:'Box',category:'Boxes',quantity:2,quantityUnit:'box',unitWeightKg:1,
-    unitDimensionsM:{widthM:1,depthM:1,heightM:1},status:'REGISTERED' as const};
+test('unified inbound uses the current V3 context, numeric allocations and revision proof',async()=>{
+  const now=Date.now(),start=new Date(now-60_000).toISOString(),end=new Date(now+3_600_000).toISOString();
+  const r={...rental,status:'ACTIVE' as const,startDate:start,endDate:end};
+  const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3 as const,
+    itemCode:'SKU-BOX',name:'Box',category:'Boxes',status:'ACTIVE' as const,revision:4,currentCellId:null};
+  const specId='6'.repeat(24),unitId='7'.repeat(24);
   const session={_id:paymentId,visitId:id,reservationId:id,customerId:owner,facilityId,assignedStaffId:owner,
     allowedCellIds:[cellId],allowedPurposes:['INBOUND' as const],status:'ACTIVE' as const,revision:2,
-    startedAt:r.startDate,expiresAt:endDate};
-  const a1={accessSessionId:session._id,itemKind:'A1_PHYSICAL_UNIT',physicalUnitId:owner,cellIds:[cellId],
-    pose:{xStartM:0,yStartM:0,rotationDeg:90}};
-  const a2={accessSessionId:session._id,itemKind:'A2_BATCH',cellIds:[cellId],
-    quantity:2,quantityUnit:'box',actualUnitWeightKg:1,dimensionsM:item.unitDimensionsM,placements:[{cellId,quantity:2}]};
-  let calls=0;
+    startedAt:start,expiresAt:end};
+  const request={accessSessionId:paymentId,sessionRevision:2,skuRevision:4,lines:[{
+    lineId:'mobile-inbound-1',itemSpecId:specId,itemSpecRevision:3,quantity:2,measurementMode:'SPECIFICATION' as const,
+    cellAllocations:[{cellId,quantity:2}],
+  }]};
+  let previewCalls=0;
   apiClient.defaults.adapter=async config=>{
-    calls++;
+    if(config.method==='get'){
+      expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound/context');
+      return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{skuId:cellId,reservationId:id,facilityId,
+        skuRevision:4,apiVersion:3,specifications:[{_id:specId,itemSpecId:specId,skuId:cellId,code:'BOX-S',name:'Small box',
+          quantityUnitId:unitId,quantityUnit:'box',quantityUnitCode:'BOX',dimensionsM:{widthM:0.2,depthM:0.3,heightM:0.1},
+          unitWeightKg:1,unitVolumeM3:0.006,revision:3,status:'ACTIVE'}]}}};
+    }
+    previewCalls++;
     expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound/preview');
-    const body=JSON.parse(config.data);
-    expect(body).not.toHaveProperty('sessionRevision');
+    expect(JSON.parse(config.data)).toEqual(request);
     return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{
-      status:'READY',skuId:cellId,reservationId:id,accessSessionId:session._id,itemKind:body.itemKind,cellIds:[cellId],
-      sessionRevision:2,previewRevision:0,expiresAt:endDate,quantity:calls===1?1:2,weightKg:2,volumeM3:2,
-      physicalUnitId:owner,topologyCertificationId:paymentId,topologyRevision:1,
-      topologyCertificationIds:[paymentId],topologyRevisions:[1],
+      status:'READY',skuId:cellId,reservationId:id,facilityId,
+      accessSession:{sessionId:paymentId,purpose:'INBOUND',expiresAt:end,revision:2},
+      lines:[{lineId:'mobile-inbound-1',itemSpecId:specId,itemName:'Small box',itemCode:'BOX-S',itemSpecRevision:3,
+        quantity:2,quantityUnit:'box',unitWeightKg:1,dimensionsM:{widthM:0.2,depthM:0.3,heightM:0.1},unitVolumeM3:0.006,
+        totalWeightKg:2,totalVolumeM3:0.012,cellAllocations:[{cellId,cellCode:'R1-L1-C1',addedWeightKg:2,
+          addedVolumeM3:0.012,usedWeightKg:0,usedVolumeM3:0,remainingWeightAfterKg:8,remainingVolumeAfterM3:0.088}]}],
+      totalQuantity:2,totalWeightKg:2,totalVolumeM3:0.012,
+      previewRevision:{skuRevision:4,sessionRevision:2,inventoryRevision:1},warnings:[],
     }}};
   };
+  const context=await managedInboundPreview.context(item,r,owner);
+  expect(context.specifications).toHaveLength(1);
+  expect(eligibleInboundCells(r,session)).toEqual([cellId]);
   expect(eligibleInboundCells(r,{...session,status:'EXPIRED'})).toEqual([]);
   expect(eligibleInboundCells(r,{...session,allowedPurposes:['OUTBOUND']})).toEqual([]);
   expect(eligibleInboundCells(r,{...session,reservationId:facilityId})).toEqual([]);
   expect(eligibleInboundCells(r,{...session,facilityId:paymentId})).toEqual([]);
-  expect(eligibleInboundCells({...r,endDate:'2025-01-02T00:00:00.000Z'},session)).toEqual([]);
-  await expect(managedInboundPreview.preview(item,r,owner,session,{...a1,cellIds:[cellId,facilityId]})).rejects.toThrow();
-  await expect(managedInboundPreview.preview(item,r,owner,session,a1)).resolves.toMatchObject({itemKind:'A1_PHYSICAL_UNIT',quantity:1});
-  await expect(managedInboundPreview.preview(item,r,owner,session,a2)).resolves.toMatchObject({itemKind:'A2_BATCH',quantity:2});
-  expect(calls).toBe(2);
+  const body=buildUnifiedInboundRequest(request);
+  expect(body).toEqual(request);
+  await expect(managedInboundPreview.preview(item,r,owner,{...session,allowedCellIds:[facilityId]},body)).rejects.toThrow();
+  await expect(managedInboundPreview.preview(item,r,owner,session,body)).resolves.toMatchObject({
+    proof:{status:'READY',previewRevision:{skuRevision:4,sessionRevision:2}},request:body,
+  });
+  expect(previewCalls).toBe(1);
+  const line=request.lines[0]!;
+  expect(()=>buildUnifiedInboundRequest({...request,lines:[{...line,quantity:'2' as unknown as number}]})).toThrow();
+  expect(()=>buildUnifiedInboundRequest({...request,lines:[{...line,cellAllocations:[{cellId,quantity:1}]}]})).toThrow();
 });
 
 test('visit cancellation sends the server revision and verifies the returned visit',async()=>{
@@ -173,26 +192,30 @@ test('visit cancellation sends the server revision and verifies the returned vis
   await expect(managedReservationReads.cancelVisit(rental,cellId,visit)).rejects.toThrow();
 });
 
-test('inbound confirm and committed lookup use the same key and reject mismatched operation evidence',async()=>{
-  const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3,
-    itemCode:'BOX',name:'Box',category:'Boxes',quantity:2,quantityUnit:'box',unitWeightKg:1,
-    unitDimensionsM:{widthM:1,depthM:1,heightM:1},status:'REGISTERED' as const};
+test('unified inbound confirm and committed lookup use one key and schema v4 ADD proof',async()=>{
+  const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3 as const,
+    itemCode:'BOX',name:'Box',category:'Boxes',revision:4,currentCellId:null,status:'ACTIVE' as const};
   const key='fixture-inbound';
   let returnedKey=key;
+  const body=buildUnifiedInboundRequest({accessSessionId:paymentId,sessionRevision:2,skuRevision:4,lines:[{
+    lineId:'mobile-inbound-1',itemSpecId:'6'.repeat(24),itemSpecRevision:3,quantity:1,measurementMode:'SPECIFICATION',
+    cellAllocations:[{cellId,quantity:1}],
+  }]});
   apiClient.defaults.adapter=async config=>{
     if(config.method==='post'){
       expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound');
       expect(config.headers.get('Idempotency-Key')).toBe(key);
+      expect(JSON.parse(config.data)).toEqual(body);
       return {config,status:201,statusText:'OK',headers:{},data:{success:true}};
     }
     expect(config.params).toEqual({key});
     return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{status:'COMMITTED',movement:{
-      _id:paymentId,itemId:cellId,managedReservationId:id,facilityId,customerId:owner,schemaVersion:3,
+      _id:paymentId,itemId:cellId,managedReservationId:id,facilityId,customerId:owner,schemaVersion:4,
       idempotencyKey:returnedKey,operationId:'fixture-op',performedAt:startDate,quantity:1,quantityUnit:'box',
-      v3Effect:{action:'ADD',itemKind:'A1_PHYSICAL_UNIT'},
+      stockEffect:{action:'ADD',operationId:'fixture-op',ledgerRevision:1,destination:[{cellId,quantity:1}]},
     }}}};
   };
-  await managedInboundPreview.confirm(item,rental,owner,{previewRevision:1},key);
+  await managedInboundPreview.confirm(item,rental,owner,body,key);
   await expect(managedInboundPreview.operation(item,rental,owner,key)).resolves.toMatchObject({operationId:'fixture-op'});
   returnedKey='different';
   await expect(managedInboundPreview.operation(item,rental,owner,key)).rejects.toThrow();

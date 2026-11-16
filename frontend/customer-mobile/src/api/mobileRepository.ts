@@ -237,6 +237,7 @@ export const mobileRepo = {
     if(!/^[A-Za-z0-9_.:\/-]{8,128}$/.test(key)||await mobileRepo.inventoryLedgerVersion(item,owner,signal)!=='V3') {
       throw new MobileInputError('Mã thao tác không hợp lệ cho sổ kho V3.');
     }
+    if(item.inventorySchemaVersion!==3)throw new MobileInputError('SKU không khớp schema kho V3.');
     const response=await wire('GET','/inventory-items/'+id(item._id)+'/v3/operations',{params:{key},signal});
     const operation=readData(z.object({status:z.literal('COMMITTED'),movement:z.unknown()}),response);
     const movement=mapV3Movements({success:true,data:[operation.movement]},item,owner)[0];
@@ -245,24 +246,30 @@ export const mobileRepo = {
   },
   async inventoryStock(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     if(await mobileRepo.inventoryLedgerVersion(item,owner,signal)==='V3'){
+      if(item.inventorySchemaVersion!==3)throw new MobileInputError('SKU không khớp schema kho V3.');
       return {kind:'V3' as const,stock:mapV3Stock(await wire('GET','/inventory-items/'+id(item._id)+'/v3/stock',{signal}),item,owner)};
     }
+    if(item.inventorySchemaVersion===3)throw new MobileInputError('SKU V3 không thể dùng sổ tồn kho legacy.');
     return {kind:'LEGACY' as const,stock:await mobileRepo.stock(item,owner,signal)};
   },
   async inventoryMovements(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     if(await mobileRepo.inventoryLedgerVersion(item,owner,signal)==='V3'){
+      if(item.inventorySchemaVersion!==3)throw new MobileInputError('SKU không khớp schema kho V3.');
       return {kind:'V3' as const,rows:mapV3Movements(await wire('GET','/inventory-items/'+id(item._id)+'/v3/movements',{signal}),item,owner)};
     }
+    if(item.inventorySchemaVersion===3)throw new MobileInputError('SKU V3 không thể dùng lịch sử legacy.');
     return {kind:'LEGACY' as const,rows:await mobileRepo.movements(item,owner,signal)};
   },
   async stock(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     assertOwner(item,owner);
+    if(item.inventorySchemaVersion===3) throw new MobileInputError('SKU V3 phải đọc tồn kho bằng sổ V3.');
     const response=await wire('GET','/inventory-items/'+id(item._id)+'/stock-balance',{signal});
     const stock=mapStock(response,item,owner);
     return {...stock,availableQuantity:readData(z.object({availableQuantity:whole.optional()}),response).availableQuantity};
   },
   async movements(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     assertOwner(item,owner);
+    if(item.inventorySchemaVersion===3) throw new MobileInputError('SKU V3 phải đọc lịch sử từ sổ V3.');
     return mapMovements(await wire('GET','/inventory-items/'+id(item._id)+'/movements',{signal}),item,owner);
   },
   async profile(owner:string,signal?:AbortSignal) {
