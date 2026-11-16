@@ -14,8 +14,16 @@ function fixture(){const now=Date.now();const visit={_id:visitId,facilityId,rese
 const actor=role=>({id:role==='staff'?staffId:managerId,role:role==='staff'?'FACILITY_STAFF':'FACILITY_MANAGER',assignedFacilityId:facilityId});
 test('access lists reject foreign facility, staff assignment, duplicate and malformed revisions',()=>{
  const data=fixture(),user=actor('staff');assert.equal(access.accessRows(response(data.visits),'visit',user).length,1);
- for(const override of [{facilityId:cellId},{assignedStaffId:customerId},{revision:-1},{status:'UNKNOWN'}])assert.throws(()=>access.accessRows(response([{...data.visits[0],...override}]),'visit',user));
+ for(const override of [{facilityId:cellId},{assignedStaffId:customerId},{revision:-1},{status:''}])assert.throws(()=>access.accessRows(response([{...data.visits[0],...override}]),'visit',user));
  assert.throws(()=>access.accessRows(response([data.visits[0],data.visits[0]]),'visit',user));
+});
+test('unknown historical access status stays visible as read-only and cannot expose assignment actions',()=>{
+ const data=fixture();data.visits[0].status='MISSED';
+ const parsed=access.accessRows(response(data.visits),'visit',actor('manager'));
+ assert.equal(parsed[0].statusNeedsReconciliation,true);
+ assert.equal(access.accessLabel(parsed[0].status),'Cần đối soát trạng thái');
+ const ui=harness('manager',data);
+ assert.equal(ui.button('Phân công hộ tống'),undefined);
 });
 test('visit window, effective session expiry and stale revisions prevent outdated actions',()=>{
  const data=fixture(),now=Date.now();assert.equal(access.visitInWindow(data.visits[0],now),true);

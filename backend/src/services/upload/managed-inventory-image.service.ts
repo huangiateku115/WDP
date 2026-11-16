@@ -2,6 +2,7 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import InventoryImageUploadModel from '../../models/inventory-items/inventory-image-upload.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import ItemSpecificationModel from '../../models/inventory-items/item-specification.model';
 import { UserRole } from '../../types/user.type';
 import { requireManagedInventoryReservationForRegistration } from '../reservations/managed-inventory-reservation.guard';
 import { InventoryItemError } from '../inventory-items/inventory-item.validation';
@@ -133,7 +134,7 @@ export class ManagedInventoryImageService {
       if (!scheduled) throw new InventoryItemError(409, 'Image upload changed; refresh and retry');
       return { deleted: false, scheduledFor: scheduled.expiresAt };
     }
-    if (await InventoryItemModel.exists({ images: upload.secureUrl }).exec()) throw new InventoryItemError(409, 'This image is referenced by an Item and will be retained');
+    if (await this.isReferenced(upload.secureUrl)) throw new InventoryItemError(409, 'This image is referenced by an Item or Item Specification and will be retained');
     return { deleted: false, scheduledFor: upload.nextDeleteAt };
   }
 
@@ -156,6 +157,33 @@ export class ManagedInventoryImageService {
     }
   }
 
+  static async attachNewSpecificationImages(urls: string[], currentUrls: string[], itemSpecificationId: Types.ObjectId, customerId: Types.ObjectId, reservationId: Types.ObjectId, session: ClientSession) {
+    if (urls.length > INVENTORY_IMAGE_MAX_COUNT) throw new InventoryItemError(400, 'At most 10 Item Specification images are allowed');
+    const old = new Set(currentUrls);
+    for (const url of [...new Set(urls)]) {
+      if (old.has(url)) continue;
+      const upload = await InventoryImageUploadModel.findOne({ secureUrl: url, customerId, managedReservationId: reservationId }).session(session).exec();
+      if (!upload) throw new InventoryItemError(403, 'New image URL is not an upload owned by this Customer and Reservation');
+      if (upload.status === 'ATTACHED') {
+        if (!upload.itemSpecificationId?.equals(itemSpecificationId)) throw new InventoryItemError(409, 'Image is already attached to another record');
+        continue;
+      }
+      if (upload.status !== 'UNATTACHED' || upload.discardRequestedAt || upload.expiresAt <= new Date()) throw new InventoryItemError(409, 'Image upload is expired or unavailable');
+      const claimed = await InventoryImageUploadModel.updateOne({ _id: upload._id, customerId, managedReservationId: reservationId, status: 'UNATTACHED', discardRequestedAt: { $exists: false }, expiresAt: { $gt: new Date() } }, {
+        $set: { status: 'ATTACHED', itemSpecificationId }, $unset: { quotaSlot: 1, nextDeleteAt: 1 },
+      }, { session }).exec();
+      if (claimed.modifiedCount !== 1) throw new InventoryItemError(409, 'Image upload was attached or claimed for cleanup concurrently; reload and retry');
+    }
+  }
+
+  private static async isReferenced(url: string, session?: ClientSession) {
+    const itemQuery = InventoryItemModel.exists({ images: url });
+    const specQuery = ItemSpecificationModel.exists({ images: url });
+    if (session) { itemQuery.session(session); specQuery.session(session); }
+    const [item, spec] = await Promise.all([itemQuery.exec(), specQuery.exec()]);
+    return !!item || !!spec;
+  }
+
   static async cleanupExpired(limit = 50) {
     const now = new Date();
     const candidates = await InventoryImageUploadModel.find({
@@ -169,7 +197,7 @@ export class ManagedInventoryImageService {
     for (let attempt = 0; attempt < limit; attempt += 1) {
       const claimed = await this.claimDeleteRetry();
       if (!claimed) break;
-      if (claimed.secureUrl && await InventoryItemModel.exists({ images: claimed.secureUrl }).exec()) {
+      if (claimed.secureUrl && await this.isReferenced(claimed.secureUrl)) {
         const retainFilter: any = { _id: claimed._id, status: 'DELETE_PENDING', cleanupLeaseToken: claimed.cleanupLeaseToken };
         await InventoryImageUploadModel.updateOne(retainFilter, {
           $set: { status: 'ATTACHED', lastDeleteError: 'Referenced by an InventoryItem; retained' },
@@ -192,7 +220,7 @@ export class ManagedInventoryImageService {
           _id: id, status: { $in: ['UPLOADING', 'UNATTACHED'] }, expiresAt: { $lte: now }, nextDeleteAt: { $lte: now }, ...ACTIVE_UPLOAD_LEASE(now),
         }).session(session).exec();
         if (!upload) return;
-        if (upload.secureUrl?.startsWith('http') && await InventoryItemModel.exists({ images: upload.secureUrl }).session(session).exec()) {
+        if (upload.secureUrl?.startsWith('http') && await this.isReferenced(upload.secureUrl, session)) {
           await InventoryImageUploadModel.updateOne({ _id: upload._id, status: upload.status }, {
             $set: { status: 'ATTACHED', lastDeleteError: 'Referenced by an InventoryItem; retained' },
             $unset: { quotaSlot: 1, uploadLeaseToken: 1, uploadLeaseUntil: 1, nextDeleteAt: 1 },

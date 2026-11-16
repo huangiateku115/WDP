@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as controller from '../controllers/warehouse-map/warehouse-map.controller';
+import * as stockController from '../controllers/inventory-items/managed-cell-stock.controller';
 import { requireAuth } from '../middlewares/auth/requireAuth';
 import { requireRole } from '../middlewares/auth/requireRole';
 import { UserRole } from '../types/user.type';
@@ -27,6 +28,7 @@ router.delete('/racks/:id', requireAuth, requireRole(managers), controller.delet
 router.post('/racks/:id/restore', requireAuth, requireRole(managers), controller.restoreRack);
 
 router.get('/rack-cells', requireAuth, requireRole(readers), controller.listCells);
+router.get('/rack-cells/:id/stock', requireAuth, requireRole(readers), stockController.cellStock);
 router.get('/rack-cells/:id', requireAuth, requireRole(readers), controller.getCell);
 router.patch('/rack-cells/:id', requireAuth, requireRole(managers), controller.updateCell);
 

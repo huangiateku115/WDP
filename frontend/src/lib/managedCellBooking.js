@@ -38,20 +38,18 @@ export function cellVolume(cell) {
   const result=values.reduce((a,b)=>a*b,1);if(!Number.isFinite(result)||result<=0)throw Error('Invalid measured Cell volume.');return result;
 }
 export function cellBookingReason(cell,rack,range,now=Date.now()) {
-  if(!range)return 'Choose a rental start date and term before selecting Cells.';
-  try{canonicalRange(range);}catch{return 'Choose a valid UTC rental interval.';}
-  if(!managedBookingDateAllowed(range.startDate,now))return 'Choose today or a future start date in Vietnam time.';
-  if(!id(cell?._id)||!id(rack?._id)||!id(rack?.facilityId))return 'Cell identity or Facility is unavailable.';
-  if(rack.operationalStatus!=='AVAILABLE')return 'Parent Rack is not AVAILABLE.';
-  if(cell.facilityId!=null&&cell.facilityId!==rack.facilityId)return 'Cell belongs to a different Facility.';
-  if(cell.operationalStatus!=='AVAILABLE')return `Cell operation: ${cell.operationalStatus||'unknown'}.`;
-  if(!['AVAILABLE','RESERVED','OCCUPIED'].includes(cell.bookingStatus)||!['AVAILABLE','RESERVED','OCCUPIED','BLOCKED','MAINTENANCE'].includes(cell.displayStatus))return 'Booking status is missing or unknown; refresh availability.';
-  if(cell.bookingStatus!=='AVAILABLE'||cell.displayStatus!=='AVAILABLE')return `Cell is ${cell.displayStatus} for this interval.`;
-  if(cell.physicalUsageKnown!==true)return 'Physical usage is unknown; this Cell cannot be booked.';
-  if(cell.isBookable!==true)return 'Cell is not confirmed bookable for this interval.';
-  if(cell.periodStatus!=='AVAILABLE')return 'Cell reservation-period availability is missing or unavailable. Refresh the selected interval.';
-  if(typeof cell.usedWeightKg!=='number'||typeof cell.usedVolumeM3!=='number'||cell.usedWeightKg!==0||cell.usedVolumeM3!==0)return 'Physical usage is unknown or this Cell contains inventory.';
-  try{cellVolume(cell);}catch(e){return e.message;}return '';
+  if(!range)return 'Chọn ngày bắt đầu và thời hạn thuê trước khi chọn ô.';
+  try{canonicalRange(range);}catch{return 'Khoảng thời gian thuê không hợp lệ.';}
+  if(!managedBookingDateAllowed(range.startDate,now))return 'Vui lòng chọn ngày hôm nay hoặc ngày tương lai theo giờ Việt Nam.';
+  if(!id(cell?._id)||!id(rack?._id)||!id(rack?.facilityId))return 'Chưa xác minh được ô lưu trữ hoặc cơ sở.';
+  if(rack.operationalStatus!=='AVAILABLE')return 'Kệ hiện không thể sử dụng.';
+  if(cell.facilityId!=null&&cell.facilityId!==rack.facilityId)return 'Ô không thuộc cơ sở đang chọn.';
+  if(cell.operationalStatus!=='AVAILABLE')return 'Ô hiện không thể sử dụng.';
+  if(!['AVAILABLE','RESERVED','OCCUPIED'].includes(cell.bookingStatus)||!['AVAILABLE','RESERVED','OCCUPIED','BLOCKED','MAINTENANCE'].includes(cell.displayStatus))return 'Chưa xác nhận được tình trạng đặt chỗ. Vui lòng tải lại sơ đồ.';
+  if(cell.bookingStatus!=='AVAILABLE'||cell.displayStatus!=='AVAILABLE')return 'Ô đã được đặt hoặc hiện không thể sử dụng.';
+  if(cell.isBookable!==true)return 'Ô chưa được xác nhận là có thể đặt trong thời hạn này.';
+  if(cell.periodStatus!=='AVAILABLE')return 'Ô không còn khả dụng trong thời hạn đã chọn. Vui lòng tải lại sơ đồ.';
+  try{cellVolume(cell);}catch{return 'Thiếu kích thước ô hợp lệ để tính dung lượng thuê.';}return '';
 }
 export function selectedPayload(facilityId,selection,range,term) {
   canonicalRange(range);

@@ -10,6 +10,10 @@ async function start(): Promise<void> {
   const { ManagedReceivingEvidenceService } = await import('./services/upload/managed-receiving-evidence.service');
   const { ManagedAccessService } = await import('./services/access/managed-access.service');
   const server = http.createServer(app);
+  const managedVisitMissedTimer = setInterval(() => {
+    void ManagedAccessService.reconcileMissedVisits().catch(() => console.error('Managed access missed-visit reconciliation will retry on the next interval'));
+  }, 60 * 1000);
+  managedVisitMissedTimer.unref();
   const managedAccessExpiryTimer = setInterval(() => {
     void ManagedAccessService.reconcileExpiredSessions().catch(() => console.error('Managed access session expiry reconciliation will retry on the next interval'));
   }, 60 * 1000);
@@ -25,6 +29,7 @@ async function start(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(imageCleanupTimer);
+    clearInterval(managedVisitMissedTimer);
     clearInterval(managedAccessExpiryTimer);
     const timeout = setTimeout(() => {
       console.error('Shutdown timed out');
@@ -56,6 +61,8 @@ async function start(): Promise<void> {
   process.on('SIGTERM', () => { void shutdown(0); });
   try {
     await connectDatabase();
+    try { await ManagedAccessService.reconcileMissedVisits(); }
+    catch { console.error('Managed access missed-visit reconciliation will retry on the next interval'); }
     try { await ManagedAccessService.reconcileExpiredSessions(); }
     catch { console.error('Managed access session expiry reconciliation will retry on the next interval'); }
     if (shuttingDown) return;

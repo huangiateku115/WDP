@@ -4,7 +4,7 @@ const id = value => { if (!/^[a-f\d]{24}$/i.test(value || '')) throw new Error('
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const fingerprint = value => JSON.stringify(canonical(value));
-const slot = skuId => `managed-v3-inbound:${skuId}`;
+const slot = skuId => `managed-v3-unified-inbound:${skuId}`;
 function pending(skuId) { try { const value = sessionStorage.getItem(slot(skuId)); return value ? JSON.parse(value) : null; } catch { return null; } }
 function savePending(skuId, value) { try { sessionStorage.setItem(slot(skuId), JSON.stringify(value)); } catch { const error = new Error('Không thể lưu khóa đối soát trong phiên trình duyệt. Hãy bật session storage trước khi xác nhận nhập hàng.'); error.code = 'IDEMPOTENCY_STORAGE_UNAVAILABLE'; throw error; } }
 function removePending(skuId) { try { sessionStorage.removeItem(slot(skuId)); } catch { /* Storage can become unavailable after a completed request. */ } }
@@ -19,6 +19,8 @@ function keyFor(skuId, payload) {
   return key;
 }
 export const managedInventoryV3Api = {
+  inboundContext: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/v3/inbound/context`),
+  specifications: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/specifications`),
   preparePhysicalUnit: (skuId, payload) => axiosClient.post(`/inventory-items/${id(skuId)}/v3/physical-units`, payload),
   physicalUnits: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/v3/physical-units`),
   previewInbound: (skuId, payload) => axiosClient.post(`/inventory-items/${id(skuId)}/v3/inbound/preview`, payload),
@@ -29,8 +31,11 @@ export const managedInventoryV3Api = {
   },
   operation: (skuId, key) => axiosClient.get(`/inventory-items/${id(skuId)}/v3/operations`, { params: { key } }),
   stock: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/v3/stock`),
+  cellStock: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/v3/cell-stock`),
+  itemSpecificationStock: (skuId, itemSpecId) => axiosClient.get(`/inventory-items/${id(skuId)}/v3/specifications/${id(itemSpecId)}/cell-stock`),
   movements: skuId => axiosClient.get(`/inventory-items/${id(skuId)}/v3/movements`),
   facilityOverview: () => axiosClient.get('/inventory-items/managed-v3/facility/overview'),
+  facilityCapacityDiagnostics: (config = {}) => axiosClient.get('/inventory-items/managed-v3/facility/capacity-diagnostics', config),
   pending: skuId => pending(skuId),
   clearPending: removePending,
 };

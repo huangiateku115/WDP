@@ -5,6 +5,7 @@ import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model'
 import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import ItemMovementModel from '../../models/inventory-items/item-movement.model';
 import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { IWarehouseCell, IWarehouseRack, IWarehouseZone, RackDimensions, UtilizationStatus, WarehouseOperationalStatus, WarehouseUsageSnapshot } from '../../types/warehouse-map.type';
@@ -204,29 +205,41 @@ function parseBookingRange(value: unknown, actor: Actor) {
 
 async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { startDate: Date; endDate: Date }) {
   const rows = new Map<string, any[]>();
-  if (!cells.length) return { rows, myInventoryCells: new Set<string>() };
+  if (!cells.length) return { rows, myInventoryCells: new Set<string>(), movementHistoryCells: new Set<string>() };
   const ids = cells.map(cell => cell._id);
   const now = new Date();
   const current = { startDate: { $lte: now }, endDate: { $gt: now } };
   const period = range ? { startDate: { $lt: range.endDate }, endDate: { $gt: range.startDate } } : current;
-  const allocations = await CellAllocationModel.find({ cellId: { $in: ids },
+  const [allocations, movements] = await Promise.all([CellAllocationModel.find({ cellId: { $in: ids },
     $or: [
       { status: CellAllocationStatus.OCCUPIED },
       { status: CellAllocationStatus.RESERVED, $or: [current, period] },
       { status: CellAllocationStatus.HOLD, holdExpiresAt: { $gt: now }, $or: [current, period] },
     ],
-  }).select('cellId reservationId customerId status startDate endDate holdExpiresAt').lean().exec();
+  }).select('cellId reservationId customerId status startDate endDate holdExpiresAt').lean().exec(),
+  ItemMovementModel.find({ $or: [
+    { sourceCellId: { $in: ids } }, { destinationCellId: { $in: ids } },
+    { 'v3Effect.source.cellId': { $in: ids } }, { 'v3Effect.destination.cellId': { $in: ids } },
+    { 'stockEffect.source.cellId': { $in: ids } }, { 'stockEffect.destination.cellId': { $in: ids } },
+  ] }).select('sourceCellId destinationCellId v3Effect.source.cellId v3Effect.destination.cellId stockEffect.source.cellId stockEffect.destination.cellId').limit(10001).lean().exec()]);
   for (const row of allocations) rows.set(String(row.cellId), [...(rows.get(String(row.cellId)) ?? []), row]);
+  const movementHistoryCells = new Set<string>();
+  if (movements.length > 10000) ids.forEach(cellId => movementHistoryCells.add(String(cellId)));
+  else for (const movement of movements) {
+    for (const cellId of [movement.sourceCellId, movement.destinationCellId, ...(movement.v3Effect?.source ?? []).map((line: any) => line.cellId), ...(movement.v3Effect?.destination ?? []).map((line: any) => line.cellId), ...(movement.stockEffect?.source ?? []).map((line: any) => line.cellId), ...(movement.stockEffect?.destination ?? []).map((line: any) => line.cellId)]) {
+      if (cellId) movementHistoryCells.add(String(cellId));
+    }
+  }
   const myInventoryCells = new Set<string>();
   if (actor?.role === UserRole.CUSTOMER) {
     const customerId = actor._id as Types.ObjectId;
     const items = await InventoryItemModel.find({ customerId, currentCellId: { $in: ids }, status: 'IN_STORAGE', deletedAt: { $exists: false } } as any).select('currentCellId').lean().exec();
     for (const item of items) if (item.currentCellId) myInventoryCells.add(String(item.currentCellId));
   }
-  return { rows, myInventoryCells };
+  return { rows, myInventoryCells, movementHistoryCells };
 }
 
-function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true) {
+function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true, hasMovementHistory = false) {
   const physicalUsageKnown = typeof cell.usedWeightKg === 'number' && Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 &&
     typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0;
   const usedWeightKg = Number(cell.usedWeightKg ?? 0), usedVolumeM3 = Number(cell.usedVolumeM3 ?? 0);
@@ -242,11 +255,29 @@ function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory
     : cell.operationalStatus === WarehouseOperationalStatus.BLOCKED ? 'BLOCKED' : bookingStatus;
   const widthM = Number(cell.dimensions?.widthM), depthM = Number(cell.dimensions?.depthM), usableHeightM = Number(cell.dimensions?.usableHeightM);
   const validUsableDimensions = Number.isFinite(widthM) && widthM > 0 && Number.isFinite(depthM) && depthM > 0 && Number.isFinite(usableHeightM) && usableHeightM > 0;
-  const isBookable = cell.operationalStatus === WarehouseOperationalStatus.AVAILABLE && rackAvailable && validUsableDimensions && physicalUsageKnown && !physicallyOccupied && !activePeriod;
-  const maxVolumeM3 = validUsableDimensions ? widthM * depthM * usableHeightM : null;
-  return { bookingStatus, displayStatus, periodStatus, isBookable, physicalUsageKnown, isMine, hasMyInventory, usedWeightKg, maxWeightKg: cell.maxWeightKg,
-    remainingWeightKg: physicalUsageKnown ? validRemaining(cell.maxWeightKg, usedWeightKg) : null, usedVolumeM3, maxVolumeM3,
-    remainingVolumeM3: maxVolumeM3 === null || !physicalUsageKnown ? null : validRemaining(maxVolumeM3, usedVolumeM3) };
+  const maxVolumeCandidate = validUsableDimensions ? widthM * depthM * usableHeightM : NaN;
+  const maxVolumeM3 = Number.isFinite(maxVolumeCandidate) && maxVolumeCandidate > 0 ? maxVolumeCandidate : null;
+  const validWeightCapacity = typeof cell.maxWeightKg === 'number' && Number.isFinite(cell.maxWeightKg) && cell.maxWeightKg > 0;
+  const validVolumeCapacity = maxVolumeM3 !== null;
+  const capacityConfigured = validWeightCapacity && validVolumeCapacity;
+  const stockHistoryUnreconciled = hasMovementHistory && physicalUsageKnown && usedWeightKg === 0 && usedVolumeM3 === 0;
+  const exceedsCapacity = capacityConfigured && physicalUsageKnown &&
+    (usedWeightKg > cell.maxWeightKg + 0.001 || usedVolumeM3 > maxVolumeM3! + 0.000001);
+  const isBookable = cell.operationalStatus === WarehouseOperationalStatus.AVAILABLE && rackAvailable && validUsableDimensions &&
+    capacityConfigured && physicalUsageKnown && !exceedsCapacity && !physicallyOccupied && !activePeriod && !stockHistoryUnreconciled;
+  const bookingReasonCode = cell.operationalStatus !== WarehouseOperationalStatus.AVAILABLE ? 'CELL_UNAVAILABLE'
+    : !rackAvailable ? 'RACK_UNAVAILABLE'
+      : !validUsableDimensions ? 'CELL_DIMENSIONS_NOT_CONFIGURED'
+        : !validWeightCapacity ? 'CELL_WEIGHT_CAPACITY_NOT_CONFIGURED'
+          : !validVolumeCapacity ? 'CELL_VOLUME_CAPACITY_INVALID'
+            : !physicalUsageKnown ? 'PHYSICAL_USAGE_UNKNOWN'
+              : exceedsCapacity ? 'CAPACITY_COUNTER_EXCEEDS_LIMIT'
+                : stockHistoryUnreconciled ? 'STOCK_RECONCILIATION_REQUIRED'
+                  : physicallyOccupied ? 'CELL_PHYSICALLY_OCCUPIED'
+                    : activePeriod ? 'CELL_RESERVED_FOR_PERIOD' : null;
+  return { bookingStatus, displayStatus, periodStatus, isBookable, bookingReasonCode, physicalUsageKnown, isMine, hasMyInventory, usedWeightKg, maxWeightKg: validWeightCapacity ? cell.maxWeightKg : null,
+    remainingWeightKg: validWeightCapacity && physicalUsageKnown ? validRemaining(cell.maxWeightKg, usedWeightKg) : null, usedVolumeM3, maxVolumeM3,
+    remainingVolumeM3: validVolumeCapacity && physicalUsageKnown ? validRemaining(maxVolumeM3!, usedVolumeM3) : null };
 }
 
 async function assertRecordAccess(actor: Actor, facilityId: Types.ObjectId, write = false, session?: ClientSession) {
@@ -688,7 +719,7 @@ export class WarehouseMapService {
             const ratedCapacityKg = rack.levelCount * rack.maxWeightKgPerLevel;
             const allocatableCapacityKg = rackCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
             const usage = await usageForRack(rack as IWarehouseRack, rackCells);
-            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE));
+            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())));
             return {
               _id: rack._id,
               rackCode: rack.rackCode,
@@ -764,7 +795,7 @@ export class WarehouseMapService {
             dimensions: cell.dimensions,
             operationalStatus: cell.operationalStatus,
             utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg),
-            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE),
+            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())),
           })),
         });
       }

@@ -19,6 +19,7 @@ export default {
     ...config, params: { ...params, facilityId: id(facilityId) },
   }),
   detail: (kind, recordId, config) => client.get(`/${resource(kind)}/${id(recordId)}`, config),
+  cellStock: (cellId, config = {}) => client.get(`/rack-cells/${id(cellId)}/stock`, config),
   create: (kind, body) => client.post(`/${resource(kind)}`, body),
   update: (kind, recordId, body) => client.patch(`/${resource(kind)}/${id(recordId)}`, body),
 };
