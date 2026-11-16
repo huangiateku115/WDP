@@ -15,6 +15,7 @@ const schema = new Schema({
   format: { type: String, enum: ['jpg', 'png', 'webp'], required: true },
   status: { type: String, enum: ['UPLOADING', 'UNATTACHED', 'ATTACHED', 'DELETE_PENDING', 'DELETED'], default: 'UPLOADING', required: true, index: true },
   itemId: { type: Schema.Types.ObjectId, ref: 'InventoryItem' },
+  itemSpecificationId: { type: Schema.Types.ObjectId, ref: 'ItemSpecification' },
   quotaSlot: { type: Number, min: 0, max: 19 },
   folder: { type: String, required: true },
   generatedPublicId: { type: String, required: true },

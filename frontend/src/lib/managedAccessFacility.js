@@ -1,14 +1,14 @@
 import {apiRows, objectId, recordId} from './facilityReview.js';
 
 export const accessLabels = {
-  SCHEDULED:'Chờ đến kho', CHECKED_IN:'Đang ở kho', COMPLETED:'Đã hoàn tất lượt đến', CANCELLED:'Đã hủy',
+  SCHEDULED:'Chờ đến kho', CHECKED_IN:'Đang ở kho', COMPLETED:'Đã hoàn tất lượt đến', CANCELLED:'Đã hủy', MISSED:'Quá hạn · khách chưa check-in',
   ACTIVE:'Đang hoạt động', CHECKED_OUT:'Đã rời kho', REVOKED:'Đã thu hồi', EXPIRED:'Đã hết hạn', NOT_STARTED:'Chưa bắt đầu',
   INBOUND:'Nhập hàng', OUTBOUND:'Xuất hàng', RELOCATION:'Di chuyển hàng', INSPECTION:'Kiểm tra',
   VISIT_CREATED:'Tạo lịch', VISIT_AMENDED:'Sửa lịch', STAFF_ASSIGNED:'Phân công hộ tống',
   SESSION_CREATED:'Bắt đầu phiên', SESSION_CHECKED_OUT:'Kết thúc phiên', SESSION_REVOKED:'Thu hồi phiên',
   SESSION_EXPIRED:'Phiên hết hạn', CUSTOMER_CHECKED_OUT:'Khách rời kho', ACCESS_SESSION_EXPIRED:'Hết thời gian truy cập',
 };
-export const accessLabel = value => accessLabels[value] || value || 'Chưa có';
+export const accessLabel = value => value ? accessLabels[value] || 'Cần đối soát trạng thái' : 'Chưa có';
 export function scopedAccess(row, kind, user) {
   if (!row || !objectId(recordId(row)) || recordId(row.facilityId) !== user.assignedFacilityId ||
       !Number.isSafeInteger(row.revision) || row.revision < 0 || !objectId(recordId(row.reservationId)) ||
@@ -16,12 +16,14 @@ export function scopedAccess(row, kind, user) {
       (user.role === 'FACILITY_STAFF' && recordId(row.assignedStaffId) !== recordId(user))) {
     throw Error('Bản ghi truy cập không khớp cơ sở, người được phân công hoặc phiên bản dữ liệu.');
   }
-  const allowed = kind === 'visit' ? ['SCHEDULED','CHECKED_IN','COMPLETED','CANCELLED'] : ['ACTIVE','CHECKED_OUT','REVOKED','EXPIRED'];
-  if (!allowed.includes(row.status)) throw Error('Trạng thái truy cập không hợp lệ.');
+  const allowed = kind === 'visit' ? ['SCHEDULED','CHECKED_IN','COMPLETED','CANCELLED','MISSED'] : ['ACTIVE','CHECKED_OUT','REVOKED','EXPIRED'];
+  if (typeof row.status !== 'string' || !row.status.trim() || row.status.length > 40) throw Error('Bản ghi thiếu trạng thái truy cập hợp lệ.');
   const dates = kind === 'visit' ? [row.startsAt,row.endsAt] : [row.startedAt,row.expiresAt];
   if (dates.some(date => !Number.isFinite(Date.parse(date))) || Date.parse(dates[1]) <= Date.parse(dates[0])) throw Error('Thời gian truy cập không hợp lệ.');
   if (kind === 'session' && (!objectId(recordId(row.visitId)) || !Array.isArray(row.allowedCellIds) || !row.allowedCellIds.length || row.allowedCellIds.some(id => !objectId(recordId(id))))) throw Error('Phiên chưa có phạm vi ô lưu trữ hợp lệ.');
-  return row;
+  // Unknown historical statuses remain visible for diagnosis, but all mutation
+  // controls and service guards require exact known values such as SCHEDULED/ACTIVE.
+  return allowed.includes(row.status) ? row : { ...row, statusNeedsReconciliation: true };
 }
 export function accessRows(response, kind, user) {
   const rows = apiRows(response).map(row => scopedAccess(row,kind,user));

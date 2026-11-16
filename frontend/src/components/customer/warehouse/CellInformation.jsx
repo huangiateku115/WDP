@@ -2,13 +2,25 @@ import { useEffect, useId, useLayoutEffect, useState } from "react";
 
 import { createPortal } from "react-dom";
 
-import { weightText, measurementText, cellPeriodStatus } from "@/lib/warehouseMap";
+import { measurementText, weightText, cellPeriodStatus } from "@/lib/warehouseMap";
 
 import { cellBookingReason, volumeText } from "@/lib/managedCellBooking";
 
 import { Button } from "@/components/ui/button";
 
 
+
+const statusLabels = {
+  AVAILABLE: "Còn chỗ",
+  RESERVED: "Đã được đặt",
+  OCCUPIED: "Đang sử dụng",
+  BLOCKED: "Tạm thời chưa thể đặt ô này",
+  UNAVAILABLE: "Tạm thời chưa thể đặt ô này",
+  MAINTENANCE: "Đang bảo trì",
+  UNKNOWN: "Vui lòng liên hệ cơ sở",
+};
+const isCapacityValue = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+const capacityText = (value, formatter, fallback) => isCapacityValue(value) ? formatter(value) : fallback;
 
 export function WarehouseStatus({ status }) {
 
@@ -23,6 +35,7 @@ export function WarehouseStatus({ status }) {
     "BLOCKED",
 
     "MAINTENANCE",
+    "UNAVAILABLE",
 
   ].includes(status)
 
@@ -30,11 +43,7 @@ export function WarehouseStatus({ status }) {
 
     : "unknown";
 
-  return (
-
-    <span className={`wm-status wm-${kind}`}>{status || "Not returned"}</span>
-
-  );
+  return <span className={`wm-status wm-${kind}`}>{statusLabels[status] || statusLabels.UNKNOWN}</span>;
 
 }
 
@@ -42,31 +51,40 @@ function CellPeriodStatus({ cell }) {
 
   const status = cellPeriodStatus(cell);
 
-  return <span className="inline-flex flex-wrap items-center gap-1" aria-label={`${status}${cell.isMine === true ? ' · YOURS' : ''}`}><WarehouseStatus status={status} />{cell.isMine === true && <span className="wm-owned-chip">· CỦA BẠN</span>}</span>;
+  return <span className="inline-flex flex-wrap items-center gap-1"><WarehouseStatus status={status} /></span>;
 
 }
 
-export function CellInformation({ cell, level, rack }) {
+export function CellInformation({ cell, level = {}, rack = {} }) {
+  if (!cell || typeof cell !== "object") return <p role="status">Thông tin ô lưu trữ hiện chưa có.</p>;
+  const configuredWeight = isCapacityValue(cell.maxWeightKg) && cell.maxWeightKg > 0;
+  const configuredVolume = isCapacityValue(cell.maxVolumeM3) && cell.maxVolumeM3 > 0;
+  const usageKnown = cell.physicalUsageKnown === true;
+  const measuredValue = (value, formatter) => usageKnown ? capacityText(value, formatter, "Chưa xác định") : "Chưa xác định";
 
   const fields = [
 
-    ["Zone", rack.zoneCode],
+    ["Khu vực", rack?.zoneCode],
 
-    ["Aisle", rack.aisleCode],
+    ["Lối đi", rack?.aisleCode],
 
-    ["Rack", rack.rackCode],
+    ["Kệ", rack?.rackCode],
 
-    ["Level", level.levelNumber],
+    ["Tầng", level?.levelNumber],
 
     ["Cell", cell.cellNumber],
 
-    [
+    ["Tải trọng tối đa", configuredWeight ? weightText(cell.maxWeightKg) : "Chưa cấu hình"],
 
-      "Maximum capacity",
+    ["Tải trọng đang sử dụng", measuredValue(cell.usedWeightKg, weightText)],
 
-      cell.maxWeightKg == null ? null : weightText(cell.maxWeightKg),
+    ["Tải trọng còn lại", !configuredWeight ? "Chưa cấu hình" : measuredValue(cell.remainingWeightKg, weightText)],
 
-    ],
+    ["Thể tích tối đa", configuredVolume ? volumeText(cell.maxVolumeM3) : "Chưa cấu hình"],
+
+    ["Thể tích đang sử dụng", measuredValue(cell.usedVolumeM3, volumeText)],
+
+    ["Thể tích còn lại", !configuredVolume ? "Chưa cấu hình" : measuredValue(cell.remainingVolumeM3, volumeText)],
 
     [
 
@@ -104,43 +122,7 @@ export function CellInformation({ cell, level, rack }) {
 
     ],
 
-    ["Weight utilization", cell.utilizationStatus],
-
-    [
-
-      "Physical used weight",
-
-      cell.usedWeightKg == null ? null : weightText(cell.usedWeightKg),
-
-    ],
-
   ];
-
-  fields.push(
-
-    ["Operational status", cell.operationalStatus || "Unknown"],
-
-    ["Reservation-period status", cell.periodStatus || "Unknown"],
-
-    ["Current booking status (now)", cell.bookingStatus || "Unknown"],
-
-    ["Bookable for interval", cell.isBookable === true ? "Yes" : "Not confirmed"],
-
-    ["Physical usage verified", cell.physicalUsageKnown === true ? "Yes" : "Unknown — booking unavailable"],
-
-    ["Backend display status (now)", cell.displayStatus || "Unknown"],
-
-    ["Ownership", cell.isMine === true ? "Yours" : "No ownership confirmed"],
-
-    ["Your stored inventory", cell.hasMyInventory === true ? "Yes" : cell.hasMyInventory === false ? "No" : "Unknown"],
-
-    ["Physical volume", volumeText(cell.usedVolumeM3)],
-
-    ["Maximum volume", volumeText(cell.maxVolumeM3)],
-
-    ["Remaining volume", volumeText(cell.remainingVolumeM3)],
-
-  );
 
   return (
 
@@ -174,13 +156,17 @@ export function CellInformation({ cell, level, rack }) {
 
       </dl>
 
-      <p className="wm-baseline-note">
-
-        Physical usage counters are separate from rental allocation. Yours does
-
-        not permit rebooking.
-
-      </p>
+      <p className="wm-baseline-note">{!usageKnown
+        ? "Thông tin dung lượng hiện chưa được xác minh. Vui lòng liên hệ cơ sở nếu bạn cần biết thêm."
+        : cell.isBookable === false
+          ? ({
+            CELL_WEIGHT_CAPACITY_NOT_CONFIGURED: "Ô này chưa được cơ sở cấu hình tải trọng tối đa nên hiện chưa thể đặt.",
+            CELL_VOLUME_CAPACITY_INVALID: "Kích thước sử dụng của ô này chưa hợp lệ nên hiện chưa thể đặt.",
+            CELL_DIMENSIONS_NOT_CONFIGURED: "Kích thước sử dụng của ô này chưa được cấu hình nên hiện chưa thể đặt.",
+            CAPACITY_COUNTER_EXCEEDS_LIMIT: "Số liệu sức chứa của ô cần được cơ sở kiểm tra trước khi đặt.",
+            STOCK_RECONCILIATION_REQUIRED: "Cơ sở cần kiểm tra lại lịch sử sử dụng ô này trước khi cho đặt.",
+          }[cell.bookingReasonCode] || "Ô này hiện chưa thể đặt trong thời hạn đã chọn. Vui lòng thử ô khác hoặc liên hệ cơ sở.")
+          : "Trạng thái khả dụng được xác nhận theo thời hạn thuê bạn đã chọn."}</p>
 
     </>
 
@@ -216,7 +202,7 @@ export default function WarehouseCells({
 
     if (!selected) setHover(null);
 
-  }, [selected?.cell._id]);
+  }, [selected?.cell?._id]);
 
   useLayoutEffect(() => {
 
@@ -282,15 +268,18 @@ export default function WarehouseCells({
 
   }, [hover, id]);
 
-  const levels = [...data.levels].sort((a, b) => b.levelNumber - a.levelNumber),
+  if (!data || !data.rack || !Array.isArray(data.levels)) {
+    return <section className="wm-cell-area" role="status">Chưa tải được thông tin kệ và ô lưu trữ. Vui lòng thử lại.</section>;
+  }
 
-    context = [data.rack.rackCode, data.rack.zoneCode, data.rack.aisleCode]
-
-      .join(" ")
-
-      .toLowerCase(),
-
-    q = query.trim().toLowerCase();
+  const sourceLevels = data.levels.filter((level) => level && Number.isSafeInteger(level.levelNumber) && Array.isArray(level.cells));
+  const levels = sourceLevels
+    .map((level) => ({ ...level, cells: level.cells.filter((cell) => cell && typeof cell === "object" && typeof cell._id === "string" && Number.isSafeInteger(cell.cellNumber)) }))
+    .sort((a, b) => b.levelNumber - a.levelNumber);
+  const sourceCellCount = sourceLevels.reduce((count, level) => count + level.cells.length, 0);
+  const validCellCount = levels.reduce((count, level) => count + level.cells.length, 0);
+  const context = [data.rack.rackCode, data.rack.zoneCode, data.rack.aisleCode].join(" ").toLowerCase();
+  const q = String(query ?? "").trim().toLowerCase();
 
   return (
 
@@ -308,11 +297,13 @@ export default function WarehouseCells({
 
         <span>
 
-          {data.levels.reduce((n, l) => n + l.cells.length, 0)} ô trong kệ
+          {validCellCount} ô trong kệ
 
         </span>
 
       </div>
+
+      {(sourceLevels.length !== data.levels.length || sourceCellCount !== validCellCount) && <p role="status" className="wm-muted">Một phần thông tin ô chưa đầy đủ nên không thể hiển thị.</p>}
 
       {!levels.some((l) => l.cells.length) && (
 
@@ -352,9 +343,9 @@ export default function WarehouseCells({
 
               {cells.map((cell) => {
 
-                const status = cellPeriodStatus(cell), picked = booking?.selection.some(
+                const status = cellPeriodStatus(cell), picked = Array.isArray(booking?.selection) && booking.selection.some(
 
-                  (x) => x.cell._id === cell._id,
+                  (x) => x?.cell?._id === cell._id,
 
                 ),
 
@@ -364,7 +355,7 @@ export default function WarehouseCells({
 
                     data.rack,
 
-                    booking?.period.range,
+                    booking?.period?.range,
 
                   );
 
@@ -386,15 +377,15 @@ export default function WarehouseCells({
 
                       type="button"
 
-                      className={`wm-cell wm-${["AVAILABLE", "RESERVED", "OCCUPIED", "BLOCKED", "MAINTENANCE"].includes(status) ? status.toLowerCase() : "unknown"} ${selected?.cell._id === cell._id ? "is-selected" : ""}`}
+                      className={`wm-cell wm-${["AVAILABLE", "RESERVED", "OCCUPIED", "BLOCKED", "MAINTENANCE"].includes(status) ? status.toLowerCase() : "unknown"} ${selected?.cell?._id === cell._id ? "is-selected" : ""}`}
 
-                      aria-pressed={selected?.cell._id === cell._id}
+                      aria-pressed={selected?.cell?._id === cell._id}
 
-                      aria-label={`Inspect ${cell.code || `Cell C${cell.cellNumber}`}, Level ${level.levelNumber}, ${status}${cell.isMine === true ? ' · YOURS' : ''}`}
+                      aria-label={`Xem ${cell.code || `Ô C${cell.cellNumber}`}, tầng ${level.levelNumber}, ${statusLabels[status] || statusLabels.UNKNOWN}`}
 
                       aria-describedby={
 
-                        hover?.cell._id === cell._id ? id : undefined
+                        hover?.cell?._id === cell._id ? id : undefined
 
                       }
 
@@ -412,7 +403,7 @@ export default function WarehouseCells({
 
                         setHover((current) =>
 
-                          selected?.cell._id === current?.cell._id
+                          selected?.cell?._id === current?.cell?._id
 
                             ? current
 
@@ -432,7 +423,7 @@ export default function WarehouseCells({
 
                       onClick={(e) => {
 
-                        onSelect({ cell, level });
+                        onSelect?.({ cell, level });
 
                         setHover(
 
@@ -465,13 +456,9 @@ export default function WarehouseCells({
                       {picked && <span>Trong giỏ thuê</span>}
 
                       <small>
-
-                        {cell.maxWeightKg == null
-
-                          ? ""
-
-                          : weightText(cell.maxWeightKg)}
-
+                        {isCapacityValue(cell.maxWeightKg) && cell.maxWeightKg > 0
+                          ? weightText(cell.maxWeightKg)
+                          : "Chưa cấu hình tải trọng"}
                       </small>
 
                     </button>
@@ -502,7 +489,7 @@ export default function WarehouseCells({
 
                           }
 
-                          onClick={() => booking.toggle(cell, level, data.rack)}
+                          onClick={() => booking.toggle?.(cell, level, data.rack)}
 
                         >
 
@@ -512,9 +499,9 @@ export default function WarehouseCells({
 
                         <small
                           className="wm-booking-reason"
-                          title={booking.period.range ? reason || undefined : undefined}
+                          title={booking.period?.range ? reason || undefined : undefined}
                         >
-                          {!booking.period.range || picked
+                          {!booking.period?.range || picked
                             ? ""
                             : status === "RESERVED" ? "Đã được đặt trong kỳ này"
                               : status === "OCCUPIED" ? "Ô đang được sử dụng"

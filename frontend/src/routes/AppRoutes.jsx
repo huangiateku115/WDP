@@ -39,7 +39,6 @@ import RentalExtensionPage from '@/pages/customer/RentalExtensionPage';
 import RentalAccessPage from '@/pages/customer/RentalAccessPage';
 import InventoryRegisterPage from '@/pages/customer/InventoryRegisterPage';
 import InventoryDetailPage from '@/pages/customer/InventoryDetailPage';
-import InventoryMovementRequestPage from '@/pages/customer/InventoryMovementRequestPage';
 import InventoryHistoryPage from '@/pages/customer/InventoryHistoryPage';
 import FinancialDetailPage from '@/pages/customer/FinancialDetailPage';
 import ManagedAccessVisitsPage from '@/pages/customer/ManagedAccessVisitsPage';
@@ -82,7 +81,7 @@ export default function AppRoutes() {
         <Route path="managed-access" element={<ManagedAccessVisitsPage />} />
         <Route path="inventory/register" element={<InventoryRegisterPage />} />
         <Route path="inventory/:id" element={<InventoryDetailPage />} />
-        <Route path="inventory/:id/outbound" element={<InventoryMovementRequestPage type="OUTBOUND" />} />
+        <Route path="inventory/:id/outbound" element={<Navigate to="/portal/inventory" replace />} />
         <Route path="inventory/:id/history" element={<InventoryHistoryPage />} />
         <Route path="refunds/:id" element={<FinancialDetailPage kind="refund" />} />
         <Route path="charges/:id" element={<FinancialDetailPage kind="charge" />} />

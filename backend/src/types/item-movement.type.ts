@@ -37,6 +37,36 @@ export interface V3MovementEffect {
   evidenceIds?: Types.ObjectId[];
 }
 
+/** V4 uses SKU Item Specification + receipt/instance identity; no A1/A2 or topology dependency. */
+export interface ManagedStockEffectLine {
+  /** Stable logical inbound row; several cell allocations may share one lineId. */
+  lineId?: string;
+  itemSpecId: Types.ObjectId;
+  receiptId: string;
+  itemInstanceId?: string;
+  cellId: Types.ObjectId;
+  quantity: number;
+  quantityUnitSnapshot?: string;
+  unitWeightKgSnapshot: number;
+  unitVolumeM3Snapshot: number;
+  unitDimensionsSnapshot: { widthM: number; depthM: number; heightM: number };
+  allocatedWeightKg: number;
+  allocatedVolumeM3: number;
+  quantityBefore?: number;
+  quantityAfter?: number;
+}
+export interface ManagedStockMovementEffect {
+  action: MovementBatchAction;
+  operationId: string;
+  requestHash: string;
+  ledgerRevision: number;
+  /** Additive line contract version; absent on historical v4 events. */
+  contractVersion?: 2;
+  accessSessionId?: Types.ObjectId;
+  source?: ManagedStockEffectLine[];
+  destination?: ManagedStockEffectLine[];
+}
+
 export interface MovementBatchLine {
   /** Stable receipt batch identity. New batches use an ObjectId string. */
   batchId: string;
@@ -70,19 +100,23 @@ export interface ItemMovementFields {
   actualTotalVolumeM3: number;
   performedBy: Types.ObjectId;
   performedAt: Date;
+  movementCode?: string;
+  referenceCode?: string;
   inspectionNote: string;
   handoverNote?: string;
   relocationNote?: string;
   physicalPackingConfirmed?: boolean;
   idempotencyKey: string;
   /** Missing on MI-03B/MI-04/MI-05 records, which are interpreted as schema v1. */
-  schemaVersion?: 1 | 2 | 3;
+  schemaVersion?: 1 | 2 | 3 | 4;
   /** Missing/null means historical tolerance; new v2 writes must set CANONICAL_V1. */
   arithmeticPolicy?: ItemMovementArithmeticPolicy | null;
   /** Present and immutable for schema v2 events. */
   batchLines?: MovementBatchLine[];
   operationId?: string;
   v3Effect?: V3MovementEffect;
+  itemSpecId?: Types.ObjectId;
+  stockEffect?: ManagedStockMovementEffect;
 }
 
 export interface IItemMovement extends Document, ItemMovementFields {

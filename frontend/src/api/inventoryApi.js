@@ -8,18 +8,17 @@ const inventoryItemId = (value) => {
   return encodeURIComponent(value);
 };
 export const inventoryApi = {
+  categories: (config = {}) => axiosClient.get('/managed-inventory-catalog/categories/active', { ...config, params: { ...config.params, limit: 100 } }),
+  quantityUnits: (config = {}) => axiosClient.get('/managed-inventory-catalog/quantity-units/active', { ...config, params: { ...config.params, limit: 100 } }),
+  specifications: (skuId, config = {}) => axiosClient.get(`/inventory-items/${inventoryItemId(skuId)}/specifications`, config),
+  createSpecification: (skuId, payload, config = {}) => axiosClient.post(`/inventory-items/${inventoryItemId(skuId)}/specifications`, payload, config),
+  updateSpecification: (skuId, specId, payload, revision, config = {}) => axiosClient.patch(`/inventory-items/${inventoryItemId(skuId)}/specifications/${inventoryItemId(specId)}`, payload, { ...config, headers: { ...config.headers, 'If-Match': `"${revision}"` } }),
+  deleteSpecification: (skuId, specId, revision, config = {}) => axiosClient.delete(`/inventory-items/${inventoryItemId(skuId)}/specifications/${inventoryItemId(specId)}`, { ...config, headers: { ...config.headers, 'If-Match': `"${revision}"` } }),
   createRepeatedInbound: (itemId, payload, idempotencyKey, config = {}) =>
     axiosClient.post(`/inventory-items/${inventoryItemId(itemId)}/inbound-requests`, payload, { ...config, headers: { ...config.headers, 'Idempotency-Key': idempotencyKey } }),
   repeatedInboundHistory: (itemId, params = {}, config = {}) =>
     axiosClient.get(`/inventory-items/${inventoryItemId(itemId)}/inbound-requests`, { ...config, params }),
   repeatedInboundDetail: (requestId, config = {}) => axiosClient.get(`/inbound-requests/${inventoryItemId(requestId)}`, config),
-  createCanonicalOutbound: (itemId, payload, idempotencyKey, config = {}) => axiosClient.post(`/inventory-items/${inventoryItemId(itemId)}/outbound-requests`, payload, { ...config, headers: { ...config.headers, 'Idempotency-Key': idempotencyKey } }),
-  canonicalOutboundHistory: (itemId, params = {}, config = {}) => axiosClient.get(`/inventory-items/${inventoryItemId(itemId)}/outbound-requests`, { ...config, params }),
-  canonicalOutboundDetail: (requestId, config = {}) => axiosClient.get(`/outbound-requests/${inventoryItemId(requestId)}`, config),
-  cancelCanonicalOutbound: (requestId, version, idempotencyKey, config = {}) => axiosClient.post(`/outbound-requests/${inventoryItemId(requestId)}/cancel`, {}, { ...config, headers: { ...config.headers, 'If-Match': `"${version}"`, 'Idempotency-Key': idempotencyKey } }),
-  canonicalOutboundStaffQueue: (params = {}, config = {}) => axiosClient.get('/outbound-requests/staff-queue', { ...config, params }),
-  canonicalOutboundStaffDetail: (requestId, config = {}) => axiosClient.get(`/outbound-requests/${inventoryItemId(requestId)}/staff-detail`, config),
-  confirmCanonicalOutbound: (requestId, payload, version, idempotencyKey, config = {}) => axiosClient.post(`/outbound-requests/${inventoryItemId(requestId)}/confirm`, payload, { ...config, headers: { ...config.headers, 'If-Match': `"${version}"`, 'Idempotency-Key': idempotencyKey } }),
   canonicalRelocationContext: (itemId, config = {}) => axiosClient.get(`/inventory-items/${inventoryItemId(itemId)}/relocate-canonical/context`, config),
   relocateCanonical: (itemId, payload, idempotencyKey, config = {}) => axiosClient.post(`/inventory-items/${inventoryItemId(itemId)}/relocate-canonical`, payload, { ...config, headers: { ...config.headers, 'Idempotency-Key': idempotencyKey } }),
   amendRepeatedInbound: (requestId, payload, version, idempotencyKey, config = {}) =>
@@ -61,19 +60,13 @@ export const inventoryApi = {
       config,
     ),
   create: (payload) => axiosClient.post("/inventory-items", payload),
-  requestOutbound: (id, config) =>
-    axiosClient.post(
-      `/inventory-items/${inventoryItemId(id)}/outbound-request`,
-      {},
-      config,
-    ),
   requestInbound: (id) =>
     axiosClient.post(
       `/inventory-items/${inventoryItemId(id)}/inbound-request`,
       {},
     ),
-  update: (id, payload) =>
-    axiosClient.patch(`/inventory-items/${inventoryItemId(id)}`, payload),
+  update: (id, payload, revision = 0) =>
+    axiosClient.patch(`/inventory-items/${inventoryItemId(id)}`, payload, { headers: { 'If-Match': `"${revision}"` } }),
   preview: (id, cellId, config = {}) =>
     axiosClient.get(
       `/inventory-items/${inventoryItemId(id)}/placement-preview`,

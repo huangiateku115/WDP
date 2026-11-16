@@ -2,7 +2,7 @@ import { Document, Types } from 'mongoose';
 
 export const ACCESS_SESSION_MAX_DURATION_MINUTES = 60;
 export enum ManagedAccessPurpose { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND', RELOCATION = 'RELOCATION', INSPECTION = 'INSPECTION' }
-export enum ManagedAccessVisitStatus { SCHEDULED = 'SCHEDULED', CHECKED_IN = 'CHECKED_IN', COMPLETED = 'COMPLETED', CANCELLED = 'CANCELLED' }
+export enum ManagedAccessVisitStatus { SCHEDULED = 'SCHEDULED', CHECKED_IN = 'CHECKED_IN', COMPLETED = 'COMPLETED', CANCELLED = 'CANCELLED', MISSED = 'MISSED' }
 export enum ManagedAccessSessionStatus { ACTIVE = 'ACTIVE', CHECKED_OUT = 'CHECKED_OUT', REVOKED = 'REVOKED', EXPIRED = 'EXPIRED' }
 export type ManagedAccessAudit = { action: string; actorId?: Types.ObjectId; actorRole: string; at: Date; details?: Record<string, unknown> };
 export interface IManagedAccessVisit extends Document {
