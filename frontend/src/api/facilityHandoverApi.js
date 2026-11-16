@@ -12,4 +12,10 @@ export default {
  reject: (reservationId, reason) => client.patch(`/reservations/${encodeURIComponent(reservationId)}/cancel`, { reason }),
  completeCheckout: (reservationId, condition = 'GOOD', note = '') => client.post(`/reservations/${encodeURIComponent(reservationId)}/complete-checkout`, { condition, note }),
  rejectCheckout: (reservationId, reason) => client.post(`/reservations/${encodeURIComponent(reservationId)}/reject-checkout`, { reason }),
+ confirmExtensionPaper: (reservationId, extensionId, file) => {
+  const body = new FormData();
+  body.append('file', file);
+  return client.post(`/reservations/${encodeURIComponent(reservationId)}/extension-contracts/${encodeURIComponent(extensionId)}/confirm`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+ },
+ rejectExtension: (reservationId, extensionId, reason) => client.post(`/reservations/${encodeURIComponent(reservationId)}/extension-contracts/${encodeURIComponent(extensionId)}/reject`, { reason }),
 };

@@ -6,6 +6,7 @@ import { UserRole } from '../types/user.type';
 import * as ManagedReservationController from '../controllers/reservations/managed-reservation.controller';
 import * as ManagedCheckinController from '../controllers/reservations/managed-checkin.controller';
 import * as PayosPaymentController from '../controllers/payments/payos-payment.controller';
+import { uploadProofMiddleware } from '../middlewares/upload.middleware';
 
 const router = Router();
 
@@ -76,6 +77,14 @@ router.post('/:id/complete-checkout', requireRole(staffAndFmRoles), ReservationC
 router.post('/:id/reject-checkout', requireRole(staffAndFmRoles), ReservationController.rejectCheckout);
 router.post('/:id/renew-quote', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewQuote);
 router.post('/:id/renew', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewReservation);
+
+// Contract Extension Routes (4-step lifecycle with paper proof)
+router.post('/:id/extension-request', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.createExtensionRequest);
+router.post('/:id/extension-payments/payos', requireRole([UserRole.CUSTOMER]), ReservationController.createExtensionPayosCheckout);
+router.post('/:id/extension-payments/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.mockPayExtension);
+router.post('/:id/extension-contracts/:extensionId/confirm', requireRole(staffAndFmRoles), uploadProofMiddleware.single('file'), ReservationController.confirmExtension);
+router.post('/:id/extension-contracts/:extensionId/reject', requireRole(staffAndFmRoles), ReservationController.rejectExtension);
+router.post('/:id/extension-contracts/:extensionId/cancel', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.cancelExtensionRequest);
 
 // View Reservation Detail (Customer xem đơn của mình, Staff/Admin/BOM xem toàn bộ)
 router.get('/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ReservationController.getReservationById);

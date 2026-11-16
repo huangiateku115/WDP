@@ -63,6 +63,7 @@ export interface IReservation extends Document {
   depositPaymentId?: Types.ObjectId;
   balancePaymentId?: Types.ObjectId;
   fullPaymentId?: Types.ObjectId;
+  fullRentPaymentId?: Types.ObjectId;
   /** Idempotency identity for a Backend-confirmed zero-balance V3 settlement. */
   balanceSettlementKey?: string;
   handoverByStaffId?: Types.ObjectId;
@@ -92,6 +93,24 @@ export interface IReservation extends Document {
     paymentId?: Types.ObjectId;
     oldEndDate: Date;
     newEndDate: Date;
+  }>;
+  extendContract?: Array<{
+    _id?: Types.ObjectId;
+    extensionCode: string;
+    durationMonths: number;
+    amount: number;
+    status: 'PENDING_PAYMENT' | 'PAID' | 'ACTIVE' | 'CANCELLED' | 'REJECTED';
+    signingDeadline?: Date;
+    paperProofUrl?: string;
+    verifiedBy?: Types.ObjectId;
+    verifiedAt?: Date;
+    rejectionReason?: string;
+    payosOrderCode?: number;
+    paymentId?: Types.ObjectId;
+    oldEndDate: Date;
+    newEndDate: Date;
+    createdAt: Date;
+    updatedAt?: Date;
   }>;
   
   startDate: Date;
