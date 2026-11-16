@@ -2,21 +2,18 @@ import { useState } from "react";
 import { Dialog, Button, Panel, Message } from "@/components/manager/ManagerUI";
 import { apiErrorMessage } from "@/lib/apiError";
 
-export const LIVE_NOTICE =
-  "Live backend data · Changes are saved to the server through the confirmed ADMIN/BOM APIs. Existing rentals, contracts and payments are never rewritten.";
-
 export function AsyncBoundary({ state, render }) {
   if (state.loading)
     return (
-      <Panel title="Loading">
-        <p role="status" className="text-sm text-slate-500">Loading live data…</p>
+      <Panel title="Đang tải">
+        <p role="status" className="text-sm text-slate-500">Đang tải…</p>
       </Panel>
     );
   if (state.error)
     return (
-      <Panel title="Unable to load">
-        <p role="alert" className="text-sm text-red-700">{state.error}</p>
-        <Button variant="outline" className="mt-4" onClick={state.reload}>Try again</Button>
+      <Panel title="Không tải được dữ liệu">
+        <p role="alert" className="bom-error">{state.error}</p>
+        <Button variant="outline" className="mt-4" onClick={state.reload}>Thử lại</Button>
       </Panel>
     );
   return render(state.data);
@@ -24,13 +21,13 @@ export function AsyncBoundary({ state, render }) {
 
 export function TruncatedNotice({ total, shown }) {
   return (
-    <p role="status" className="bom-warning mb-4">
-      Showing the first {shown} of {total} records. Refine the filters to narrow the result set.
+    <p role="status" className="bom-note mb-4">
+      Đang hiển thị {shown} / {total} bản ghi. Hãy thu hẹp bộ lọc để xem đủ dữ liệu.
     </p>
   );
 }
 
-export function ConfirmDialog({ title, summary, confirmLabel = "Confirm", onConfirm, onClose, children }) {
+export function ConfirmDialog({ title, summary, confirmLabel = "Xác nhận", onConfirm, onClose, children }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   async function submit() {
@@ -55,8 +52,8 @@ export function ConfirmDialog({ title, summary, confirmLabel = "Confirm", onConf
         {summary}
         <Message error={error} />
         <div className="flex flex-wrap gap-3">
-          <Button variant="orange" disabled={pending} onClick={submit}>{pending ? "Saving…" : confirmLabel}</Button>
-          <Button variant="outline" disabled={pending} onClick={onClose}>Cancel</Button>
+          <Button variant="orange" disabled={pending} onClick={submit}>{pending ? "Đang lưu…" : confirmLabel}</Button>
+          <Button variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
         </div>
       </div>
     </Dialog>

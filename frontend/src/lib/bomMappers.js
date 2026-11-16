@@ -1,6 +1,7 @@
 // Live BOM DTO mapping between the backend API contract (WDP-Backend.postman_collection.json)
 // and the BOM view models used by the live Facility / Pricing / Policy pages.
 import { money } from "@/components/manager/ManagerUI";
+import { facilityLabel } from "@/lib/facilityLabels";
 
 export const BOM_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 export const BOM_UNIT_SIZES = ["SMALL", "MEDIUM", "LARGE"];
@@ -9,19 +10,26 @@ export const BOM_CURRENCY = "VND";
 
 // Only policy types confirmed by the backend PolicyType enum are offered live.
 export const BOM_POLICY_TYPES = [
-  { key: "DEPOSIT", label: "Deposit" },
-  { key: "CANCELLATION", label: "Cancellation" },
-  { key: "REFUND", label: "Refund" },
-  { key: "OVERDUE", label: "Overdue" },
-  { key: "SHELF_CONSTRAINT", label: "Shelf constraints" },
+  { key: "DEPOSIT", label: "Đặt cọc" },
+  { key: "CANCELLATION", label: "Hủy đơn" },
+  { key: "REFUND", label: "Hoàn tiền" },
+  { key: "OVERDUE", label: "Quá hạn" },
+  { key: "SHELF_CONSTRAINT", label: "Ràng buộc kệ" },
 ];
 export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
 
 // Display labels for backend enum values rendered in the console (never show raw codes).
-export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Self Storage", MANAGED_INVENTORY: "Managed Inventory" };
-export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Promotional", LOYALTY: "Loyalty", FEE_WAIVER: "Fee waiver" };
-export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Percentage", FIXED: "Fixed amount", UNDEFINED: "Not defined" };
+export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Thuê kho riêng", MANAGED_INVENTORY: "Lưu trữ hàng hóa" };
+export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Khuyến mại", LOYALTY: "Khách hàng thân thiết", FEE_WAIVER: "Miễn phụ phí" };
+export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Phần trăm", FIXED: "Số tiền cố định", UNDEFINED: "Chưa xác định" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
+
+// Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
+// (facility.model.ts / storage-unit.model.ts). The console renders `images` only in that
+// order and treats the first entry as the public catalog cover.
+export function httpImages(value) {
+  return Array.isArray(value) ? value.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url)) : [];
+}
 
 export const responseData = (response) => response?.data?.data ?? response?.data ?? null;
 export function responseList(response) {
@@ -138,6 +146,7 @@ export function cellFromDto(d) {
 }
 
 export function unitFromDto(d) {
+  const images = httpImages(d?.images);
   return {
     id: d?._id,
     code: d?.unitCode || "",
@@ -146,6 +155,8 @@ export function unitFromDto(d) {
     volumeM3: d?.volumeM3 ?? 0,
     dimensions: d?.dimensions || {},
     description: d?.description || "",
+    images,
+    coverImage: images[0] || "",
   };
 }
 
@@ -217,7 +228,8 @@ export function facilityFromDto(d) {
     openingHours: d?.operatingHours || "",
     description: d?.description || "",
     serviceTypes: Array.isArray(d?.serviceTypes) ? d.serviceTypes : [],
-    images: Array.isArray(d?.images) ? d.images : [],
+    images: httpImages(d?.images),
+    coverImage: httpImages(d?.images)[0] || "",
     status: d?.status || "ACTIVE",
     managedVisitSchedule: d?.managedVisitSchedule || null,
     deleted: Boolean(d?.deletedAt),
@@ -305,8 +317,10 @@ export function pricingFromDto(d) {
   };
 }
 export function pricingLabel(row) {
-  const scope = row.service === "MANAGED_INVENTORY" ? "Managed capacity" : `${row.unitSize || ""} private unit`.trim();
-  return `${scope} · every ${row.billingMonths} month(s)`;
+  const scope = row.service === "MANAGED_INVENTORY"
+    ? "Công suất lưu trữ"
+    : `Kho riêng ${facilityLabel(row.unitSize || "")}`.trim();
+  return `${scope} · chu kỳ ${row.billingMonths} tháng`;
 }
 export function pricingBody(form) {
   const body = {
@@ -542,6 +556,8 @@ export function reservationFromDto(d) {
     code: d?.reservationCode || "",
     facilityId: facility && typeof facility === "object" ? facility._id : facility,
     service: d?.serviceType,
+    // Managed reservations have their own detail route (GET /reservations/managed/:id).
+    isManaged: d?.serviceType === "MANAGED_INVENTORY",
     customerName: (customer && typeof customer === "object"
       ? customer.displayName || customer.fullName || customer.email
       : null) || "Customer",

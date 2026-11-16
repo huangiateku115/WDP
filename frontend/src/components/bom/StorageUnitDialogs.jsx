@@ -12,7 +12,7 @@ import { BOM_UNIT_SIZES } from "@/lib/bomMappers";
 // Volume is always derived by the backend from dimensions, and HELD / OCCUPIED belong to the
 // reservation lifecycle, so the console only offers AVAILABLE / MAINTENANCE / INACTIVE.
 
-export const MANAGEMENT_STATUSES = [["AVAILABLE", "Available"], ["MAINTENANCE", "Maintenance"], ["INACTIVE", "Inactive"]];
+export const MANAGEMENT_STATUSES = [["AVAILABLE", "Sẵn sàng"], ["MAINTENANCE", "Bảo trì"], ["INACTIVE", "Ngừng hoạt động"]];
 
 const number = (value) => (String(value).trim() ? Number(value) : NaN);
 const isPositive = (value) => Number.isFinite(number(value)) && number(value) > 0;
@@ -40,17 +40,17 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
     if (pending) return;
     setError("");
     if (!form.unitCode.trim() || form.unitCode.trim().length > 100) {
-      setError("Unit code is required and must be at most 100 characters.");
+      setError("Mã kho là bắt buộc và tối đa 100 ký tự.");
       return;
     }
-    for (const [label, key] of [["length", "lengthM"], ["width", "widthM"], ["height", "heightM"]]) {
+    for (const [label, key] of [["chiều dài", "lengthM"], ["chiều rộng", "widthM"], ["chiều cao", "heightM"]]) {
       if (!isPositive(form[key])) {
-        setError(`Unit ${label} must be a positive number of metres.`);
+        setError(`Kích thước ${label} phải là số dương (mét).`);
         return;
       }
     }
     if (form.description.trim().length > 2000) {
-      setError("Description must be at most 2000 characters.");
+      setError("Mô tả tối đa 2000 ký tự.");
       return;
     }
     setPending(true);
@@ -73,40 +73,40 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Edit unit ${unit.code}` : "Create storage unit"} onClose={onClose}>
+    <Dialog title={editing ? `Sửa kho ${unit.code}` : "Tạo kho riêng"} onClose={onClose}>
       <form className="space-y-5" onSubmit={submit}>
         <div className="manager-filters">
-          <Field label="Unit code" hint="Uppercased; unique inside the facility.">
-            <Input aria-label="Unit code" required value={form.unitCode} onChange={(e) => change("unitCode", e.target.value)} />
+          <Field label="Mã kho" hint="Phải là duy nhất trong cơ sở.">
+            <Input aria-label="Mã kho" required value={form.unitCode} onChange={(e) => change("unitCode", e.target.value)} />
           </Field>
-          <Field label="Size">
-            <Select label="Unit size" value={form.size} onChange={(value) => change("size", value)} options={BOM_UNIT_SIZES} />
+          <Field label="Kích cỡ">
+            <Select label="Kích cỡ kho" value={form.size} onChange={(value) => change("size", value)} options={BOM_UNIT_SIZES} />
           </Field>
-          <Field label="Length (m)">
-            <Input aria-label="Unit length in metres" inputMode="decimal" required value={form.lengthM} onChange={(e) => change("lengthM", e.target.value)} />
+          <Field label="Chiều dài (m)">
+            <Input aria-label="Chiều dài kho (mét)" inputMode="decimal" required value={form.lengthM} onChange={(e) => change("lengthM", e.target.value)} />
           </Field>
-          <Field label="Width (m)">
-            <Input aria-label="Unit width in metres" inputMode="decimal" required value={form.widthM} onChange={(e) => change("widthM", e.target.value)} />
+          <Field label="Chiều rộng (m)">
+            <Input aria-label="Chiều rộng kho (mét)" inputMode="decimal" required value={form.widthM} onChange={(e) => change("widthM", e.target.value)} />
           </Field>
-          <Field label="Height (m)">
-            <Input aria-label="Unit height in metres" inputMode="decimal" required value={form.heightM} onChange={(e) => change("heightM", e.target.value)} />
+          <Field label="Chiều cao (m)">
+            <Input aria-label="Chiều cao kho (mét)" inputMode="decimal" required value={form.heightM} onChange={(e) => change("heightM", e.target.value)} />
           </Field>
-          <Field label="Derived volume" hint="Volume is derived from the dimensions.">
-            <Input aria-label="Derived volume" readOnly value={volume ? `${volume.toFixed(3)} m³` : "—"} />
+          <Field label="Thể tích tính toán" hint="Thể tích được tính từ kích thước.">
+            <Input aria-label="Thể tích tính toán" readOnly value={volume ? `${volume.toFixed(3)} m³` : "—"} />
           </Field>
         </div>
-        <Field label="Description" hint="Optional, up to 2000 characters.">
-          <Input aria-label="Unit description" value={form.description} onChange={(e) => change("description", e.target.value)} />
+        <Field label="Mô tả" hint="Không bắt buộc, tối đa 2000 ký tự.">
+          <Input aria-label="Mô tả kho" value={form.description} onChange={(e) => change("description", e.target.value)} />
         </Field>
         <p className="bom-warning">
           {editing
-            ? "A held or occupied unit cannot be edited; finish or release its reservation first."
-            : "Units can only be created in an active facility that offers Self Storage."}
+            ? "Không sửa được kho đang được giữ hoặc đang sử dụng; hãy hoàn tất hoặc giải phóng đơn trước."
+            : "Chỉ tạo được kho trong cơ sở đang hoạt động và có dịch vụ Thuê kho riêng."}
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : editing ? "Save unit" : "Create unit"}</Button>
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : editing ? "Lưu kho" : "Tạo kho"}</Button>
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
         </div>
       </form>
     </Dialog>
@@ -135,20 +135,20 @@ export function UnitStatusDialog({ unit, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={`Unit status ${unit.code}`} onClose={onClose}>
+    <Dialog title={`Trạng thái kho ${unit.code}`} onClose={onClose}>
       <form className="space-y-5" onSubmit={submit}>
         <div className="manager-filters">
-          <Field label="Status" hint="Held and occupied states are set by reservations and rentals.">
-            <Select label="Unit status" value={status} onChange={setStatus} options={MANAGEMENT_STATUSES} />
+          <Field label="Trạng thái" hint="Trạng thái Đang giữ / Đang sử dụng do đơn đặt thuê quyết định.">
+            <Select label="Trạng thái kho" value={status} onChange={setStatus} options={MANAGEMENT_STATUSES} />
           </Field>
         </div>
         <p className="bom-warning">
-          Marking a unit AVAILABLE requires the facility to still be ACTIVE and to offer SELF_STORAGE, otherwise the change is rejected.
+          Để chuyển kho sang AVAILABLE, cơ sở phải đang hoạt động và còn cung cấp dịch vụ Thuê kho riêng.
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : "Save status"}</Button>
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : "Lưu trạng thái"}</Button>
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
         </div>
       </form>
     </Dialog>

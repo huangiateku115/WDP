@@ -15,12 +15,12 @@ function toRow(notification) {
   const sentVia = Array.isArray(notification?.sentVia) ? notification.sentVia : [];
   return {
     id: notification?._id,
-    title: notification?.title || "Notification",
+    title: notification?.title || "Thông báo",
     type: notification?.type || "",
     content: notification?.content || "",
     channel: sentVia.length ? sentVia.join(", ") : "—",
     isRead: Boolean(notification?.isRead),
-    at: notification?.createdAt ? new Date(notification.createdAt).toLocaleString("en-GB") : "—",
+    at: notification?.createdAt ? new Date(notification.createdAt).toLocaleString("vi-VN") : "—",
     atRaw: notification?.createdAt || "",
   };
 }
@@ -46,7 +46,7 @@ export default function NotificationsPage() {
     try {
       await notificationApi.markRead(row.id);
       setRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, isRead: true } : item)));
-      setNotice(`“${row.title}” is now marked as read.`);
+      setNotice(`“${row.title}” đã được đánh dấu là đã đọc.`);
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -56,55 +56,55 @@ export default function NotificationsPage() {
 
   return (
     <Screen
-      title="Notifications"
-      description="Alerts delivered to your own account. Mark them as read once handled."
-      action={<Button variant="outline" disabled={state.loading} onClick={state.reload}>Refresh</Button>}
+      title="Thông báo"
+      description="Thông báo gửi tới tài khoản của bạn. Hãy đánh dấu đã đọc sau khi xử lý."
+      action={<Button variant="outline" disabled={state.loading} onClick={state.reload}>Tải lại</Button>}
     >
       <AsyncBoundary state={state} render={() => (
         <>
           <Kpis items={[
-            ["Notifications", rows.length, "Delivered to this account"],
-            ["Unread", unread, "Not opened yet"],
-            ["Read", rows.length - unread, "Acknowledged"],
-            ["Oldest", rows.length ? rows[rows.length - 1].at.slice(0, 10) : "—", "Oldest message in the inbox"],
+            ["Thông báo", rows.length, "Gửi tới tài khoản này"],
+            ["Chưa đọc", unread, "Chưa mở"],
+            ["Đã đọc", rows.length - unread, "Đã xác nhận"],
+            ["Cũ nhất", rows.length ? rows[rows.length - 1].at.slice(0, 10) : "—", "Thông báo cũ nhất trong hộp thư"],
           ]} />
 
-          <Panel title="Inbox" subtitle="Newest notifications first.">
+          <Panel title="Hộp thư" subtitle="Thông báo mới nhất ở trên cùng.">
             <div className="manager-filters">
-              <Field label="Read state">
+              <Field label="Trạng thái đọc">
                 <Select
-                  label="Read state filter"
+                  label="Lọc theo trạng thái đọc"
                   value={scope}
                   onChange={setScope}
-                  options={[["", "All notifications"], ["UNREAD", "Unread only"], ["READ", "Read only"]]}
+                  options={[["", "Tất cả thông báo"], ["UNREAD", "Chưa đọc"], ["READ", "Đã đọc"]]}
                 />
               </Field>
             </div>
             <Message error={error} success={notice} />
             <div className="mt-5">
               <Table
-                label="Notifications"
+                label="Thông báo"
                 rows={visible}
                 columns={[
-                  { key: "title", label: "Title" },
-                  { key: "type", label: "Type" },
-                  { key: "content", label: "Message" },
-                  { key: "channel", label: "Channel" },
-                  { key: "state", label: "State", render: (r) => (r.isRead ? "Read" : "Unread") },
-                  { key: "at", label: "Received" },
+                  { key: "title", label: "Tiêu đề" },
+                  { key: "type", label: "Loại" },
+                  { key: "content", label: "Nội dung" },
+                  { key: "channel", label: "Kênh" },
+                  { key: "state", label: "Trạng thái", render: (r) => (r.isRead ? "Đã đọc" : "Chưa đọc") },
+                  { key: "at", label: "Thời điểm nhận" },
                   {
                     key: "action",
-                    label: "Action",
+                    label: "Thao tác",
                     render: (r) => (r.isRead
                       ? "—"
                       : (
                         <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => markRead(r)}>
-                          {busy === r.id ? "Saving…" : "Mark as read"}
+                          {busy === r.id ? "Đang lưu…" : "Đánh dấu đã đọc"}
                         </Button>
                       )),
                   },
                 ]}
-                empty="No notification matches this filter."
+                empty="Không có thông báo phù hợp bộ lọc này."
               />
             </div>
           </Panel>

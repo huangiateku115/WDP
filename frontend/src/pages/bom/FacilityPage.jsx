@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { ResourceGallery, ResourceThumb } from "@/components/bom/ResourceImages";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -24,7 +25,7 @@ const EMPTY_FORM = {
   visitScheduleEnabled: false,
   visitScheduleDraft: { slotDurationMinutes: 60, weeklyHours: Array.from({ length: 7 }, (_, weekday) => ({ weekday, enabled: false, opensAt: "09:00", closesAt: "18:00" })) },
 };
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
 // Single "opening hours" field: validates a `HH:MM - HH:MM` range (en-dash accepted).
 const HOURS_PATTERN = /^\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*$/;
@@ -33,10 +34,10 @@ function hoursError(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const match = HOURS_PATTERN.exec(raw);
-  if (!match) return "Use the HH:MM - HH:MM format (for example 08:00 - 18:00).";
+  if (!match) return "Dùng định dạng HH:MM - HH:MM (ví dụ 08:00 - 18:00).";
   const [h1, m1, h2, m2] = match.slice(1).map(Number);
-  if (h1 > 23 || m1 > 59 || h2 > 23 || m2 > 59) return "Hour or minute is out of range.";
-  if (toMinutes(h2, m2) <= toMinutes(h1, m1)) return "Closing time must be later than opening time.";
+  if (h1 > 23 || m1 > 59 || h2 > 23 || m2 > 59) return "Giờ hoặc phút không hợp lệ.";
+  if (toMinutes(h2, m2) <= toMinutes(h1, m1)) return "Giờ đóng phải sau giờ mở.";
   return "";
 }
 function formatHours(value) {
@@ -77,37 +78,38 @@ function FacilityList({ basePath }) {
 
   return (
     <Screen
-      title="Facilities"
-      description="Create, edit, activate, deactivate or delete facilities."
-      action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Create facility</Link></Button>}
+      title="Cơ sở"
+      description="Tạo mới, sửa, kích hoạt, ngừng hoạt động hoặc xóa cơ sở."
+      action={<Button asChild variant="orange"><Link to={`${basePath}/new`}>Tạo cơ sở</Link></Button>}
     >
-      <Panel title="Facility filters">
+      <Panel title="Bộ lọc cơ sở">
         <div className="manager-filters">
-          <Field label="Search">
-            <Input aria-label="Search facilities" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Field label="Tìm kiếm">
+            <Input aria-label="Tìm cơ sở" value={search} onChange={(e) => setSearch(e.target.value)} />
           </Field>
-          <Field label="Status">
-            <Select label="Status filter" value={status} onChange={setStatus} options={[["", "All statuses"], "ACTIVE", "INACTIVE"]} />
+          <Field label="Trạng thái">
+            <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
           </Field>
-          <Field label="City">
-            <Select label="City filter" value={city} onChange={setCity} options={[["", "All cities"], ...cities]} />
+          <Field label="Thành phố">
+            <Select label="Lọc theo thành phố" value={city} onChange={setCity} options={[["", "Tất cả thành phố"], ...cities]} />
           </Field>
-            <Field label="Records" hint="Only administrators and business operations can list deleted facilities.">
+            <Field label="Bản ghi">
             <Select
-              label="Record filter"
+              label="Lọc bản ghi"
               value={showDeleted ? "deleted" : "live"}
               onChange={(value) => setShowDeleted(value === "deleted")}
-              options={[["live", "Active facilities"], ["deleted", "Deleted facilities"]]}
+              options={[["live", "Cơ sở đang hoạt động"], ["deleted", "Cơ sở đã xóa"]]}
             />
           </Field>
         </div>
       </Panel>
       <AsyncBoundary state={state} render={() => (
-        <Panel title="Facility records" subtitle={`${rows.length} of ${facilities.length} facilities`}>
+        <Panel title="Danh sách cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`}>
           <Table
-            label="Facilities"
+            label="Cơ sở"
             rows={rows}
             columns={[
+              { key: "cover", label: "Photo", render: (f) => <ResourceThumb src={f.coverImage} alt={`${f.name} cover`} /> },
               { key: "name", label: "Facility", render: (f) => (f.deleted
                 ? f.name
                 : <OpenLink to={`${basePath}/${f.id}`}>{f.name}</OpenLink>) },
@@ -121,18 +123,18 @@ function FacilityList({ basePath }) {
                 key: "actions",
                 label: "Actions",
                 render: (f) => (f.deleted
-                  ? <Button size="sm" variant="outline" onClick={() => setRestoreTarget(f)}>Restore</Button>
-                  : <OpenLink to={`${basePath}/${f.id}`}>Open</OpenLink>),
+                  ? <Button size="sm" variant="outline" onClick={() => setRestoreTarget(f)}>Khôi phục</Button>
+                  : <OpenLink to={`${basePath}/${f.id}`}>Mở</OpenLink>),
               },
             ]}
-            empty={showDeleted ? "No deleted facility." : "No facility matches the current filters."}
+            empty={showDeleted ? "Không có cơ sở đã xóa." : "Không có cơ sở phù hợp bộ lọc."}
           />
         </Panel>
       )} />
       {restoreTarget && (
         <ConfirmDialog
-          title={`Restore ${restoreTarget.code}?`}
-          confirmLabel="Restore facility"
+          title={`Khôi phục ${restoreTarget.code}?`}
+          confirmLabel="Khôi phục cơ sở"
           onClose={() => setRestoreTarget(null)}
           onConfirm={async () => {
             await bomFacilityApi.restore(restoreTarget.id);
@@ -141,7 +143,7 @@ function FacilityList({ basePath }) {
           }}
         >
           <p className="text-sm text-slate-500">
-            <b>{restoreTarget.name}</b> becomes visible again and can accept reservations once it is ACTIVE.
+            <b>{restoreTarget.name}</b> sẽ hiển thị trở lại và có thể nhận đơn khi đang ở trạng thái ACTIVE.
           </p>
         </ConfirmDialog>
       )}
@@ -155,10 +157,10 @@ function FacilityList({ basePath }) {
 function facilityNav(location, { basePath = "/bom/facilities", oversightRoot = "/bom/oversight" } = {}) {
   const pathname = location?.pathname || "";
   if (pathname === oversightRoot || pathname.startsWith(`${oversightRoot}/`)) {
-    return { base: `${oversightRoot}/facilities`, backTo: oversightRoot, backLabel: "Back to oversight" };
+    return { base: `${oversightRoot}/facilities`, backTo: oversightRoot, backLabel: "Quay lại giám sát" };
   }
   const backTo = location?.state?.from || basePath;
-  const backLabel = backTo.endsWith("/dashboard") ? "Back to dashboard" : "Back to facilities";
+  const backLabel = backTo.endsWith("/dashboard") ? "Quay lại tổng quan" : "Quay lại danh sách cơ sở";
   return { base: basePath, backTo, backLabel };
 }
 
@@ -177,8 +179,8 @@ function FacilityDetail({ basePath, oversightRoot }) {
 
   return (
     <Screen
-      title="Facility detail"
-      description="Facility details and status."
+      title="Chi tiết cơ sở"
+      description="Thông tin và trạng thái cơ sở."
       action={<Button asChild variant="outline"><Link to={backTo}>{backLabel}</Link></Button>}
     >
       <AsyncBoundary state={state} render={(facility) => {
@@ -186,11 +188,11 @@ function FacilityDetail({ basePath, oversightRoot }) {
         return (
           <>
             <Panel
-              title="Facility information"
+              title="Thông tin cơ sở"
               action={(
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Edit facility</Link></Button>
-                  <Button variant="outline" onClick={() => setDeleteOpen(true)}>Delete facility</Button>
+                  <Button asChild variant="outline"><Link to={`${base}/${id}/edit`} state={{ from: backTo }}>Sửa cơ sở</Link></Button>
+                  <Button variant="outline" onClick={() => setDeleteOpen(true)}>Xóa cơ sở</Button>
                 </div>
               )}
             >
@@ -203,58 +205,58 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],
-                ["Managed visit schedule", facility.managedVisitSchedule ? `${facility.managedVisitSchedule.timeZone} · ${facility.managedVisitSchedule.slotDurationMinutes} min slots · ${facility.managedVisitSchedule.weeklyHours?.length || 0} configured days` : "Not configured (Customer visit booking is unavailable)"],
+                ["Managed visit schedule", facility.managedVisitSchedule ? `${facility.managedVisitSchedule.timeZone} · khung ${facility.managedVisitSchedule.slotDurationMinutes} phút · ${facility.managedVisitSchedule.weeklyHours?.length || 0} ngày đã cấu hình` : "Chưa cấu hình"],
                 ["Business status", <Status value={facility.status} />],
                 ["Contact phone", facility.contact?.phone],
                 ["Contact email", facility.contact?.email],
                 ["Description", facility.description],
               ]} />
-              <p className="bom-warning mt-5">
-                Deactivation only blocks new reservations. Existing active rentals are preserved.
-              </p>
               <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
-                  {nextStatus === "ACTIVE" ? "Activate facility" : "Deactivate facility"}
+                  {nextStatus === "ACTIVE" ? "Kích hoạt cơ sở" : "Ngừng hoạt động cơ sở"}
                 </Button>
               </div>
+            </Panel>
+            <Panel title="Hình ảnh cơ sở">
+              <ResourceGallery images={facility.images} alt={`${facility.name} photo`} />
             </Panel>
             <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
               const cells = sumBy(racks, "cellCount");
               const availableCells = sumBy(racks, "availableCellCount");
               return (
-                <Panel title="Warehouse structure" subtitle="Zones → aisles → racks → cells.">
+                <Panel title="Cấu trúc kho" subtitle="Khu vực → lối đi → kệ → ô chứa.">
                   {!available && (
-                    <p className="bom-warning mb-5">
-                      The warehouse map does not apply to this facility: {reason || "this facility does not offer Managed Inventory"}.
-                      Storage units are the storage model that applies here.
+                    <p className="bom-note mb-5">
+                      Cơ sở này không thuộc bản đồ kho: {reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
+                      Kho riêng là mô hình lưu trữ áp dụng cho cơ sở này.
                     </p>
                   )}
                   <Details values={[
                     ["Zones", zones.length],
                     ["Racks", racks.length],
-                    ["Cells", cells ? `${availableCells} of ${cells} available` : "—"],
+                    ["Cells", cells ? `${availableCells} / ${cells} ô trống` : "—"],
                     ["Rated / allocatable weight", `${kg(sumBy(racks, "ratedCapacityKg"))} / ${kg(sumBy(racks, "allocatableCapacityKg"))}`],
                   ]} />
                   <div className="mt-5">
                     <Table
-                      label="Facility racks"
+                      label="Kệ của cơ sở"
                       rows={racks}
                       columns={[
                         { key: "rackCode", label: "Rack" },
                         { key: "zone", label: "Zone", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
                         { key: "aisleCode", label: "Aisle" },
                         { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-                        { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} available` },
+                        { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
                         { key: "ratedCapacityKg", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
                       ]}
-                      empty="No warehouse zone, rack or cell is configured for this facility."
+                      empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
                     />
                   </div>
                 </Panel>
               );
             }} />
             <AsyncBoundary state={units} render={({ rows, total, truncated }) => (
-              <Panel title="Private storage units" subtitle={`${rows.length} of ${total} units`}>
+              <Panel title="Kho riêng" subtitle={`${rows.length} / ${total} kho`}>
                 {truncated && <TruncatedNotice total={total} shown={rows.length} />}
                 <Details values={[
                   ["Occupied", countBy(rows, "status", "OCCUPIED")],
@@ -264,7 +266,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ]} />
                 <div className="mt-5">
                   <Table
-                    label="Facility storage units"
+                    label="Kho riêng của cơ sở"
                     rows={rows}
                     columns={[
                       { key: "code", label: "Unit" },
@@ -272,15 +274,15 @@ function FacilityDetail({ basePath, oversightRoot }) {
                       { key: "volumeM3", label: "Volume", render: (r) => m3(r.volumeM3) },
                       { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
                     ]}
-                    empty="No storage unit is registered for this facility."
+                    empty="Cơ sở này chưa đăng ký kho riêng nào."
                   />
                 </div>
               </Panel>
             )} />
             {confirmOpen && (
               <ConfirmDialog
-                title="Confirm facility status"
-                confirmLabel={`Set ${nextStatus}`}
+                title="Xác nhận trạng thái cơ sở"
+                confirmLabel={`Chuyển sang ${nextStatus === "ACTIVE" ? "ACTIVE" : "INACTIVE"}`}
                 onClose={() => setConfirmOpen(false)}
                 onConfirm={async () => {
                   await bomFacilityApi.setStatus(id, nextStatus);
@@ -289,14 +291,14 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  The facility <b>{facility.name}</b> will be set to <b>{nextStatus}</b>.
+                  Cơ sở <b>{facility.name}</b> sẽ được chuyển sang trạng thái <b>{nextStatus}</b>.
                 </p>
               </ConfirmDialog>
             )}
             {deleteOpen && (
               <ConfirmDialog
-                title="Delete facility"
-                confirmLabel="Delete facility"
+                title="Xóa cơ sở"
+                confirmLabel="Xóa cơ sở"
                 onClose={() => setDeleteOpen(false)}
                 onConfirm={async () => {
                   await bomFacilityApi.remove(id);
@@ -305,9 +307,8 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 }}
               >
                 <p className="text-sm text-slate-500">
-                  <b>{facility.name}</b> is soft deleted: it leaves every list, the warehouse map and the rent wizard, and only
-                  ADMIN/BOM can list and restore it again. The delete is blocked while storage units or warehouse zones still
-                  reference the facility.
+                  <b>{facility.name}</b> sẽ bị gỡ khỏi mọi danh sách, bản đồ kho và luồng đặt thuê. Không thể xóa khi còn kho riêng
+                  hoặc khu vực kho tham chiếu tới cơ sở.
                 </p>
               </ConfirmDialog>
             )}
@@ -367,13 +368,13 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
     setError("");
     setPending(true);
     try {
-      if (!form.country) throw new Error("Select a country.");
-      if (!form.city) throw new Error("Select a city / province.");
-      if (!form.ward.trim()) throw new Error("Select or enter a ward / commune.");
-      if (!form.district.trim()) throw new Error("Enter the street / area.");
-      if (!form.line1.trim()) throw new Error("Enter the address / house number.");
+      if (!form.country) throw new Error("Hãy chọn quốc gia.");
+      if (!form.city) throw new Error("Hãy chọn tỉnh / thành phố.");
+      if (!form.ward.trim()) throw new Error("Hãy chọn hoặc nhập phường / xã.");
+      if (!form.district.trim()) throw new Error("Hãy nhập đường / khu vực.");
+      if (!form.line1.trim()) throw new Error("Hãy nhập địa chỉ / số nhà.");
       if (form.contactEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contactEmail.trim())) {
-        throw new Error("Enter a valid contact email address.");
+        throw new Error("Email liên hệ không hợp lệ.");
       }
       const hours = form.allDay ? "" : form.openingHours.trim();
       if (hours) {
@@ -383,13 +384,13 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       const openingHours = form.allDay ? "24/7" : (hours ? formatHours(hours) : "");
       if (form.visitScheduleEnabled) {
         const configuredDays = form.visitScheduleDraft?.weeklyHours?.filter((entry) => entry.enabled) || [];
-        if (!configuredDays.length) throw new Error("Select at least one day for Managed Inventory visits.");
+        if (!configuredDays.length) throw new Error("Hãy chọn ít nhất một ngày cho lịch thăm kho.");
         const duration = Number(form.visitScheduleDraft.slotDurationMinutes);
-        if (!Number.isSafeInteger(duration) || duration < 30 || duration > 480 || duration % 15) throw new Error("Visit slot duration must be 30–480 minutes in 15-minute increments.");
-        if (configuredDays.some((entry) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.opensAt) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.closesAt) || entry.opensAt >= entry.closesAt)) throw new Error("Each visit day needs valid opening and closing times.");
+        if (!Number.isSafeInteger(duration) || duration < 30 || duration > 480 || duration % 15) throw new Error("Khung giờ thăm phải từ 30–480 phút, theo bước 15 phút.");
+        if (configuredDays.some((entry) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.opensAt) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(entry.closesAt) || entry.opensAt >= entry.closesAt)) throw new Error("Mỗi ngày thăm cần giờ mở và giờ đóng hợp lệ.");
       }
       const imageUrls = (form.images || []).map((url) => String(url).trim()).filter(Boolean);
-      if (imageUrls.length > 10) throw new Error("At most 10 facility images are allowed.");
+      if (imageUrls.length > 10) throw new Error("Chỉ cho phép tối đa 10 ảnh cơ sở.");
       if (imageUrls.some((url) => {
         try {
           const parsed = new URL(url);
@@ -397,7 +398,7 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
         } catch {
           return true;
         }
-      })) throw new Error("Each facility image must be a valid HTTP(S) URL.");
+      })) throw new Error("Mỗi ảnh cơ sở phải là URL HTTP(S) hợp lệ.");
       const body = facilityBody({ ...form, openingHours, images: imageUrls }, { includeCode: !isEdit });
       if (isEdit) await bomFacilityApi.update(id, body);
       else await bomFacilityApi.create(body);
@@ -412,65 +413,64 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
 
   return (
     <Screen
-      title={isEdit ? "Edit facility" : "Create facility"}
-      description="Code is required on create and is immutable afterwards."
+      title={isEdit ? "Sửa cơ sở" : "Tạo cơ sở"}
     >
       <AsyncBoundary
         state={isEdit ? state : { loading: false, data: null, error: "" }}
         render={() => (
-          <Panel title="Facility form">
+          <Panel title="Thông tin cơ sở">
             <form className="bom-form" onSubmit={submit}>
               {!isEdit && (
-                <Field label="Facility code" hint="Trimmed and uppercased; must be unique.">
-                  <Input aria-label="Facility code" required value={form.code} onChange={(e) => change("code", e.target.value)} />
+                <Field label="Mã cơ sở" hint="Phải là duy nhất.">
+                  <Input aria-label="Mã cơ sở" required value={form.code} onChange={(e) => change("code", e.target.value)} />
                 </Field>
               )}
-              <Field label="Facility name">
-                <Input aria-label="Facility name" required value={form.name} onChange={(e) => change("name", e.target.value)} />
+              <Field label="Tên cơ sở">
+                <Input aria-label="Tên cơ sở" required value={form.name} onChange={(e) => change("name", e.target.value)} />
               </Field>
-              <Field label="Country" hint="Country where the facility is located.">
+              <Field label="Quốc gia">
                 <Select
-                  label="Country"
+                  label="Quốc gia"
                   value={form.country}
                   onChange={(v) => setForm((f) => ({ ...f, country: v, city: "", ward: "", wardCustom: false, district: "", line1: "" }))}
-                  options={[["", "Select a country"], ...COUNTRIES]}
+                  options={[["", "Chọn quốc gia"], ...COUNTRIES]}
                 />
               </Field>
-              <Field label="City / Province" hint="Select the city or province.">
+              <Field label="Tỉnh / Thành phố">
                 <Select
-                  label="City / Province"
+                  label="Tỉnh / Thành phố"
                   value={form.city}
                   disabled={!form.country}
                   onChange={(v) => setForm((f) => ({ ...f, city: v, ward: "", wardCustom: false, district: "", line1: "" }))}
-                  options={[["", form.country ? "Select a city / province" : "Select a country first"], ...citiesFor(form.country)]}
+                  options={[["", form.country ? "Chọn tỉnh / thành phố" : "Chọn quốc gia trước"], ...citiesFor(form.country)]}
                 />
               </Field>
-              <Field label="Ward / Commune" hint="Select the ward or commune.">
+              <Field label="Phường / Xã">
                 <Select
-                  label="Ward / Commune"
+                  label="Phường / Xã"
                   value={form.wardCustom ? CUSTOM_WARD : form.ward}
                   disabled={!form.city}
                   onChange={(v) => setForm((f) => ({ ...f, wardCustom: v === CUSTOM_WARD, ward: v === CUSTOM_WARD ? "" : v, district: "", line1: "" }))}
-                  options={[["", form.city ? "Select a ward / commune" : "Select a city / province first"], ...wards, [CUSTOM_WARD, "Other (enter manually)"]]}
+                  options={[["", form.city ? "Chọn phường / xã" : "Chọn tỉnh / thành phố trước"], ...wards, [CUSTOM_WARD, "Khác (nhập tay)"]]}
                 />
               </Field>
               {form.wardCustom && (
-                <Field label="Ward / Commune (manual)" hint="Enter the ward or commune.">
-                  <Input aria-label="Ward / Commune" required value={form.ward} onChange={(e) => change("ward", e.target.value)} />
+                <Field label="Phường / Xã (nhập tay)">
+                  <Input aria-label="Phường / Xã" required value={form.ward} onChange={(e) => change("ward", e.target.value)} />
                 </Field>
               )}
-              <Field label="Street / Area" hint="Street name or area.">
+              <Field label="Đường / Khu vực">
                 <Input
-                  aria-label="Street / Area"
+                  aria-label="Đường / Khu vực"
                   required
                   disabled={!wardChosen}
                   value={form.district}
                   onChange={(e) => change("district", e.target.value)}
                 />
               </Field>
-              <Field label="Address / House number" hint="House number and detail address.">
+              <Field label="Địa chỉ / Số nhà">
                 <Input
-                  aria-label="Address / House number"
+                  aria-label="Địa chỉ / Số nhà"
                   required
                   disabled={!form.district.trim()}
                   value={form.line1}
@@ -480,11 +480,11 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
               {/* Not <Field/>: a <label> would forward clicks from the custom trigger
                   to the first labelable child (the 24/7 checkbox input). */}
               <div className="manager-field">
-                <span>Opening hours</span>
+                <span>Giờ mở cửa</span>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="min-w-[240px] flex-1">
                     <TimeRangePicker
-                      ariaLabel="Opening hours"
+                      ariaLabel="Giờ mở cửa"
                       placeholder="08:00 - 18:00"
                       disabled={form.allDay}
                       value={form.openingHours}
@@ -492,40 +492,40 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                     />
                   </div>
                   <span className="flex items-center gap-2 text-sm">
-                    <Checkbox aria-label="Open 24/7" checked={form.allDay} onCheckedChange={(v) => setForm((f) => ({ ...f, allDay: v === true }))} />
-                    Open 24/7
+                    <Checkbox aria-label="Mở cửa 24/7" checked={form.allDay} onCheckedChange={(v) => setForm((f) => ({ ...f, allDay: v === true }))} />
+                    Mở cửa 24/7
                   </span>
                 </div>
-                <small>Pick the opening and closing time, or mark the facility as open 24/7.</small>
+                <small>Chọn giờ mở và giờ đóng, hoặc đánh dấu cơ sở mở cửa 24/7.</small>
                 {!form.allDay && hoursError(form.openingHours) && (
                   <small role="alert" className="text-xs text-red-700">{hoursError(form.openingHours)}</small>
                 )}
               </div>
               {form.serviceTypes.includes("MANAGED_INVENTORY") && <div className="manager-field">
-                <span>Managed Inventory visit schedule</span>
-                <small>Separate from general facility opening hours. Customer availability is estimated from active Staff accounts and overlapping visits; a Manager must still assign a specific escort. Times use Asia/Ho_Chi_Minh.</small>
-                <label className="mt-2 flex items-center gap-2 text-sm"><Checkbox aria-label="Configure Managed Inventory visit schedule" checked={form.visitScheduleEnabled} onCheckedChange={(checked) => change("visitScheduleEnabled", checked === true)} />Configure Customer visit booking schedule</label>
+                <span>Lịch thăm kho</span>
+                <small>Tách biệt với giờ mở cửa cơ sở. Giờ dùng múi giờ Asia/Ho_Chi_Minh.</small>
+                <label className="mt-2 flex items-center gap-2 text-sm"><Checkbox aria-label="Cấu hình lịch thăm kho" checked={form.visitScheduleEnabled} onCheckedChange={(checked) => change("visitScheduleEnabled", checked === true)} />Cấu hình lịch đặt thăm kho cho khách</label>
                 {form.visitScheduleEnabled && <div className="mt-3 space-y-3">
-                  <Field label="Visit slot duration" hint="30–480 minutes in 15-minute increments. Access Session still ends after at most 60 minutes or earlier at Visit/rental end.">
-                    <Select label="Visit slot duration" value={String(form.visitScheduleDraft.slotDurationMinutes)} onChange={(value) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, slotDurationMinutes: Number(value) } }))} options={Array.from({ length: 31 }, (_, index) => String(30 + index * 15))} />
+                  <Field label="Thời lượng khung thăm" hint="30–480 phút, theo bước 15 phút.">
+                    <Select label="Thời lượng khung thăm" value={String(form.visitScheduleDraft.slotDurationMinutes)} onChange={(value) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, slotDurationMinutes: Number(value) } }))} options={Array.from({ length: 31 }, (_, index) => String(30 + index * 15))} />
                   </Field>
                   {form.visitScheduleDraft.weeklyHours.map((day, index) => <div key={day.weekday} className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr]">
-                    <label className="flex items-center gap-2 text-sm"><Checkbox aria-label={`${WEEKDAYS[day.weekday]} visit day`} checked={day.enabled} onCheckedChange={(checked) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, enabled: checked === true } : entry) } }))} />{WEEKDAYS[day.weekday]}</label>
-                    <Field label={`${WEEKDAYS[day.weekday]} opens`}><Input aria-label={`${WEEKDAYS[day.weekday]} opens`} type="time" disabled={!day.enabled} value={day.opensAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, opensAt: event.target.value } : entry) } }))} /></Field>
-                    <Field label={`${WEEKDAYS[day.weekday]} closes`}><Input aria-label={`${WEEKDAYS[day.weekday]} closes`} type="time" disabled={!day.enabled} value={day.closesAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, closesAt: event.target.value } : entry) } }))} /></Field>
+                    <label className="flex items-center gap-2 text-sm"><Checkbox aria-label={`${WEEKDAYS[day.weekday]} có lịch thăm`} checked={day.enabled} onCheckedChange={(checked) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, enabled: checked === true } : entry) } }))} />{WEEKDAYS[day.weekday]}</label>
+                    <Field label={`${WEEKDAYS[day.weekday]} mở`}><Input aria-label={`${WEEKDAYS[day.weekday]} mở`} type="time" disabled={!day.enabled} value={day.opensAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, opensAt: event.target.value } : entry) } }))} /></Field>
+                    <Field label={`${WEEKDAYS[day.weekday]} đóng`}><Input aria-label={`${WEEKDAYS[day.weekday]} đóng`} type="time" disabled={!day.enabled} value={day.closesAt} onChange={(event) => setForm((current) => ({ ...current, visitScheduleDraft: { ...current.visitScheduleDraft, weeklyHours: current.visitScheduleDraft.weeklyHours.map((entry, i) => i === index ? { ...entry, closesAt: event.target.value } : entry) } }))} /></Field>
                   </div>)}
                 </div>}
               </div>}
-              <Field label="Business status">
-                <Select label="Business status" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
+              <Field label="Trạng thái hoạt động">
+                <Select label="Trạng thái hoạt động" value={form.status} onChange={(v) => change("status", v)} options={["ACTIVE", "INACTIVE"]} />
               </Field>
-              <Field label="Contact phone" hint="Optional. Sent as contact.phone.">
-                <Input aria-label="Contact phone" value={form.contactPhone || ""} onChange={(e) => change("contactPhone", e.target.value)} />
+              <Field label="Số điện thoại liên hệ">
+                <Input aria-label="Số điện thoại liên hệ" value={form.contactPhone || ""} onChange={(e) => change("contactPhone", e.target.value)} />
               </Field>
-              <Field label="Contact email" hint="Optional. Sent as contact.email and must be a valid address.">
-                <Input aria-label="Contact email" type="email" value={form.contactEmail || ""} onChange={(e) => change("contactEmail", e.target.value)} />
+              <Field label="Email liên hệ" hint="Không bắt buộc.">
+                <Input aria-label="Email liên hệ" type="email" value={form.contactEmail || ""} onChange={(e) => change("contactEmail", e.target.value)} />
               </Field>
-              <Field label="Service models" hint="At least one service model is required.">
+              <Field label="Mô hình dịch vụ" hint="Cần chọn ít nhất một mô hình dịch vụ.">
                 <div className="flex flex-wrap gap-4 py-2">
                   {BOM_SERVICE_TYPES.map((service) => (
                     <label key={service} className="flex items-center gap-2 text-sm">
@@ -536,37 +536,37 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                 </div>
               </Field>
               <div className="manager-field">
-                <span>Facility images</span>
+                <span>Hình ảnh cơ sở</span>
                 <div className="space-y-2">
                   {images.map((url, index) => (
                     <div key={index} className="flex flex-wrap items-center gap-2">
                       <div className="min-w-[240px] flex-1">
                         <Input
-                          aria-label={`Facility image URL ${index + 1}`}
+                          aria-label={`URL ảnh cơ sở ${index + 1}`}
                           placeholder="https://res.cloudinary.com/..."
                           value={url}
                           onChange={(event) => setImage(index, event.target.value)}
                         />
                       </div>
-                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Remove</Button>
+                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Gỡ</Button>
                     </div>
                   ))}
                   {images.length < 10 && (
-                    <Button type="button" variant="outline" onClick={addImage}>Add image URL</Button>
+                    <Button type="button" variant="outline" onClick={addImage}>Thêm URL ảnh</Button>
                   )}
                 </div>
-                <small>Optional. Up to 10 HTTP(S) image URLs; the first image is used as the public catalog cover.</small>
+                <small>Không bắt buộc. Tối đa 10 URL ảnh; ảnh đầu tiên là ảnh bìa.</small>
               </div>
               <div className="bom-wide">
-                <Field label="Description">
-                  <Textarea aria-label="Description" value={form.description} onChange={(e) => change("description", e.target.value)} />
+                <Field label="Mô tả">
+                  <Textarea aria-label="Mô tả" value={form.description} onChange={(e) => change("description", e.target.value)} />
                 </Field>
                 {form.status === "INACTIVE" && (
-                  <p className="bom-warning mb-5">New reservations are blocked. Existing active rentals are NOT automatically terminated.</p>                )}
-                {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+                  <p className="bom-warning mb-5">Cơ sở đang ngừng hoạt động nên không nhận đơn mới.</p>                )}
+                {error && <p role="alert" className="bom-error">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
-                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : isEdit ? "Save facility" : "Create facility"}</Button>
-                  <Button type="button" variant="outline" onClick={() => nav(backTo)}>Cancel</Button>
+                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : isEdit ? "Lưu cơ sở" : "Tạo cơ sở"}</Button>
+                  <Button type="button" variant="outline" onClick={() => nav(backTo)}>Hủy</Button>
                 </div>
               </div>
             </form>

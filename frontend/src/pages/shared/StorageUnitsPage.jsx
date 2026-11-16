@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
+import { ResourceThumb } from "@/components/bom/ResourceImages";
 import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadFacilityUnits } from "@/lib/bomApiData";
@@ -41,17 +42,17 @@ export default function StorageUnitsPage() {
 
   function removeUnit(unit) {
     setConfirm({
-      title: `Delete unit ${unit.code}?`,
-      summary: "Units are soft deleted: held and occupied units cannot be deleted. Deleted units disappear from every list and cannot be restored from this console.",
-      label: "Delete unit",
+      title: `Xóa kho ${unit.code}?`,
+      summary: "Không thể xóa kho đang được giữ hoặc đang sử dụng.",
+      label: "Xóa kho",
       run: async () => { await bomUnitApi.remove(unit.id); units.reload(); },
     });
   }
 
   return (
     <Screen
-      title="Storage units"
-      description="Private storage units per facility. Create, edit, change status or delete the units of a facility."
+      title="Kho riêng"
+      description="Quản lý kho riêng theo từng cơ sở: tạo mới, sửa, đổi trạng thái hoặc xóa."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);
@@ -60,71 +61,72 @@ export default function StorageUnitsPage() {
         return (
           <>
             <Kpis items={[
-              ["Facilities", facilities.length, "Across all facilities"],
-              ["Units loaded", units.data?.total ?? "—", "Matches the current filters"],
-              ["Available", countBy(rows, "status", "AVAILABLE"), "Ready to rent"],
-              ["Registered volume", m3(sumBy(rows, "volumeM3")), "Derived from unit dimensions"],
+              ["Cơ sở", facilities.length, "Trên toàn hệ thống"],
+              ["Số kho đã tải", units.data?.total ?? "—", "Theo bộ lọc hiện tại"],
+              ["Sẵn sàng", countBy(rows, "status", "AVAILABLE"), "Có thể cho thuê"],
+              ["Tổng thể tích đã đăng ký", m3(sumBy(rows, "volumeM3")), "Tính từ kích thước kho"],
             ]} />
 
             <Panel
-              title="Unit scope"
-              subtitle="Creating units requires an active facility that offers Self Storage."
+              title="Phạm vi kho"
+              subtitle="Chỉ tạo được kho khi cơ sở đang hoạt động và có dịch vụ Thuê kho riêng."
             >
               <div className="manager-filters">
-                <Field label="Facility">
+                <Field label="Cơ sở">
                   <Select
-                    label="Unit facility"
+                    label="Cơ sở của kho"
                     value={facilityId}
                     onChange={selectFacility}
-                    options={[["", "Select a facility"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                    options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                   />
                 </Field>
-                <Field label="Status">
+                <Field label="Trạng thái">
                   <Select
-                    label="Unit status filter"
+                    label="Lọc theo trạng thái kho"
                     value={status}
                     onChange={setStatus}
-                    options={[["", "All statuses"], ["AVAILABLE", "Available"], ["MAINTENANCE", "Maintenance"], ["INACTIVE", "Inactive"], ["HELD", "Held"], ["OCCUPIED", "Occupied"]]}
+                    options={[["", "Tất cả trạng thái"], ["AVAILABLE", "Sẵn sàng"], ["MAINTENANCE", "Bảo trì"], ["INACTIVE", "Ngừng hoạt động"], ["HELD", "Đang giữ"], ["OCCUPIED", "Đang sử dụng"]]}
                   />
                 </Field>
-                <Field label="Size">
+                <Field label="Kích cỡ">
                   <Select
-                    label="Unit size filter"
+                    label="Lọc theo kích cỡ kho"
                     value={size}
                     onChange={setSize}
-                    options={[["", "All sizes"], ...BOM_UNIT_SIZES.map((s) => [s, s])]}
+                    options={[["", "Tất cả kích cỡ"], ...BOM_UNIT_SIZES.map((s) => [s, s])]}
                   />
                 </Field>
-                <Field label="Search" hint="Matches the unit code.">
-                  <Input aria-label="Search storage units" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <Field label="Tìm kiếm" hint="Theo mã kho.">
+                  <Input aria-label="Tìm kho riêng" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </Field>
               </div>
               {facility && !canWrite && (
                 <p className="bom-warning mt-5">
-                  {facility.name} is {facility.status} and does not offer SELF_STORAGE, so unit creation is disabled.
+                  {facility.name} đang ở trạng thái {facility.status} và không cung cấp dịch vụ Thuê kho riêng, nên không thể tạo kho.
                 </p>
               )}
             </Panel>
 
             {!facilityId && (
-              <Panel title="Select a facility">
-                <p className="text-sm text-slate-500">Storage units belong to one facility.</p>
+              <Panel title="Chọn cơ sở">
+                <p className="text-sm text-slate-500">Mỗi kho riêng thuộc một cơ sở.</p>
               </Panel>
             )}
 
             {facilityId && (
               <AsyncBoundary state={units} render={(data) => (data ? (
                 <Panel
-                  title="Unit register"
-                  subtitle={`${data.total} unit${data.total === 1 ? "" : "s"} · ${countBy(data.rows, "status", "AVAILABLE")} available`}
-                  action={<Button onClick={() => setUnitDialog("new")} disabled={!canWrite}>Create unit</Button>}
+                  title="Danh sách kho"
+                  subtitle={`${data.total} kho · ${countBy(data.rows, "status", "AVAILABLE")} đang sẵn sàng`}
+                  action={<Button onClick={() => setUnitDialog("new")} disabled={!canWrite}>Tạo kho</Button>}
                 >
                   {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                   <div className="mt-5">
                     <Table
-                      label="Storage units"
+                      label="Kho riêng"
                       rows={data.rows}
                       columns={[
+                        { key: "photo", label: "Photo", render: (r) => <ResourceThumb src={r.coverImage} alt={`${r.code} photo`} /> },
                         { key: "code", label: "Unit" },
                         { key: "size", label: "Size" },
                         { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
@@ -145,15 +147,15 @@ export default function StorageUnitsPage() {
                             const locked = r.status === "HELD" || r.status === "OCCUPIED";
                             return (
                               <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setUnitDialog(r)}>Edit</Button>
-                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setStatusDialog(r)}>Status</Button>
-                                <Button size="sm" variant="outline" disabled={locked} onClick={() => removeUnit(r)}>Delete</Button>
+                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setUnitDialog(r)}>Sửa</Button>
+                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setStatusDialog(r)}>Trạng thái</Button>
+                                <Button size="sm" variant="outline" disabled={locked} onClick={() => removeUnit(r)}>Xóa</Button>
                               </div>
                             );
                           },
                         },
                       ]}
-                      empty="No storage unit matches the current filters."
+                      empty="Không có kho phù hợp bộ lọc hiện tại."
                     />
                   </div>
                 </Panel>

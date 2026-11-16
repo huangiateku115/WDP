@@ -25,16 +25,16 @@ export function ManagedCapacityDialog({ facilityId, facilityLabel, configured, o
     setError("");
     const capacity = Number(form.sellableCapacityM3);
     if (!form.sellableCapacityM3.trim() || !Number.isFinite(capacity) || capacity <= 0) {
-      setError("Enter a sellable capacity greater than 0 m³.");
+      setError("Hãy nhập công suất bán được lớn hơn 0 m³.");
       return;
     }
     const hold = form.holdDurationMinutes.trim();
     if (requiresHold && !hold) {
-      setError("Hold duration is required for the first configuration.");
+      setError("Thời gian giữ chỗ là bắt buộc cho lần cấu hình đầu.");
       return;
     }
     if (hold && (!Number.isSafeInteger(Number(hold)) || Number(hold) <= 0)) {
-      setError("Hold duration must be a whole number of minutes greater than 0.");
+      setError("Thời gian giữ chỗ phải là số nguyên phút lớn hơn 0.");
       return;
     }
     setPending(true);
@@ -52,49 +52,48 @@ export function ManagedCapacityDialog({ facilityId, facilityLabel, configured, o
   }
 
   return (
-    <Dialog title="Configure managed capacity" onClose={onClose}>
+    <Dialog title="Cấu hình công suất lưu trữ" onClose={onClose}>
       <form className="space-y-5" onSubmit={submit}>
         <p className="text-sm text-slate-500">
           <b>{facilityLabel}</b> · {configured
-            ? "A capacity row already exists. Leave the hold duration blank to keep the current value."
-            : "First configuration: sellable capacity and hold duration are both required."}
+            ? "Đã có cấu hình công suất. Để trống thời gian giữ chỗ để giữ nguyên giá trị hiện tại."
+            : "Cấu hình lần đầu: cần cả công suất bán được và thời gian giữ chỗ."}
         </p>
         <div className="manager-filters">
-          <Field label="Sellable capacity (m³)" hint="Cannot be reduced below the current committed peak.">
+          <Field label="Công suất bán được (m³)" hint="Không được giảm dưới mức đã cam kết hiện tại.">
             <Input
-              aria-label="Sellable capacity in cubic metres"
+              aria-label="Công suất bán được (mét khối)"
               inputMode="decimal"
               required
               value={form.sellableCapacityM3}
               onChange={(e) => change("sellableCapacityM3", e.target.value)}
             />
           </Field>
-          <Field label="Hold duration (minutes)" hint={requiresHold ? "Required for the first configuration." : "Blank keeps the current value."}>
+          <Field label="Thời gian giữ chỗ (phút)" hint={requiresHold ? "Bắt buộc cho lần cấu hình đầu." : "Để trống để giữ nguyên giá trị hiện tại."}>
             <Input
-              aria-label="Hold duration in minutes"
+              aria-label="Thời gian giữ chỗ (phút)"
               inputMode="numeric"
               required={requiresHold}
               value={form.holdDurationMinutes}
               onChange={(e) => change("holdDurationMinutes", e.target.value)}
             />
           </Field>
-          <Field label="Capacity state" hint="Turn this off to stop new Managed reservations.">
+          <Field label="Trạng thái công suất" hint="Tắt để dừng nhận đơn lưu trữ hàng hóa mới.">
             <Select
-              label="Capacity state"
+              label="Trạng thái công suất"
               value={form.isActive}
               onChange={(value) => change("isActive", value)}
-              options={[["true", "Active"], ["false", "Inactive"]]}
+              options={[["true", "Đang áp dụng"], ["false", "Ngừng áp dụng"]]}
             />
           </Field>
         </div>
         <p className="bom-warning">
-          Saving stores the quota configuration and increments the booking version. Capacity is only read for a
-          facility that is ACTIVE, offers Managed Inventory and has an active capacity row.
+          Công suất chỉ áp dụng khi cơ sở đang hoạt động, có dịch vụ Lưu trữ hàng hóa và có cấu hình công suất đang hoạt động.
         </p>
         <Message error={error} />
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : "Save configuration"}</Button>
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : "Lưu cấu hình"}</Button>
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
         </div>
       </form>
     </Dialog>

@@ -62,12 +62,12 @@ function maintenanceRow(d) {
 const CONFIGS = {
   support: {
     basePath: "/admin/support",
-    title: "Support requests",
-    label: "Subject",
+    title: "Yêu cầu hỗ trợ",
+    label: "Tiêu đề",
     list: (config) => supportApi.listReal(config).then(unwrapList),
     get: (id, config) => supportApi.detailReal(id, config).then(unwrap),
     messages: (id, config) => supportApi.messagesReal(id, config).then(unwrapList),
-    assigneeLabel: "Staff",
+    assigneeLabel: "Nhân viên",
     assign: (id, assignee) => supportApi.assign(id, assignee),
     unassign: (id) => supportApi.unassign(id),
     setStatus: (id, payload) => supportApi.setStatus(id, payload),
@@ -76,11 +76,11 @@ const CONFIGS = {
   },
   maintenance: {
     basePath: "/admin/maintenance",
-    title: "Maintenance tickets",
-    label: "Title",
+    title: "Phiếu bảo trì",
+    label: "Tiêu đề",
     list: (config) => maintenanceApi.list(config).then(unwrapList),
     get: (id, config) => maintenanceApi.get(id, config).then(unwrap),
-    assigneeLabel: "Assignee",
+    assigneeLabel: "Người phụ trách",
     assign: (id, assignee) => maintenanceApi.assign(id, assignee),
     unassign: (id) => maintenanceApi.unassign(id),
     setStatus: (id, payload) => maintenanceApi.setStatus(id, payload),
@@ -102,7 +102,7 @@ function configFor(kind, basePath) {
 
 export default function ServiceConsolePage({ kind, mode = "list", basePath = "/admin" }) {
   const config = configFor(kind, basePath);
-  if (!config) return <Panel title="Service console unavailable"><p>Unknown console kind.</p></Panel>;
+  if (!config) return <Panel title="Không hỗ trợ loại màn hình này"><p>Loại màn hình không hợp lệ.</p></Panel>;
   return mode === "detail"
     ? <ServiceDetail config={config} />
     : <ServiceList config={config} />;
@@ -113,26 +113,26 @@ function ServiceList({ config }) {
   return (
     <Screen
       title={config.title}
-      description={`All ${config.title.toLowerCase()}.`}
-      action={<Button variant="outline" onClick={state.reload}>Refresh</Button>}
+      description={`Toàn bộ ${config.title.toLowerCase()}.`}
+      action={<Button variant="outline" onClick={state.reload}>Tải lại</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
         const rows = records.map(config.toRow);
         return (
-          <Panel title={config.title} subtitle={`${rows.length} record(s)`}>
+          <Panel title={config.title} subtitle={`${rows.length} bản ghi`}>
             <Table
               label={config.title}
               rows={rows}
               columns={[
                 { key: "code", label: config.label, render: (r) => <OpenLink to={`${config.basePath}/${r.id}`}>{r.subject || r.title}</OpenLink> },
-                { key: "customer", label: "Opened by" },
-                { key: "category", label: "Category" },
-                { key: "priority", label: "Priority", render: (r) => <Status value={r.priority} /> },
-                { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-                { key: "assignedTo", label: "Assigned to" },
-                { key: "createdAt", label: "Created" },
+                { key: "customer", label: "Người gửi" },
+                { key: "category", label: "Danh mục" },
+                { key: "priority", label: "Mức ưu tiên", render: (r) => <Status value={r.priority} /> },
+                { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+                { key: "assignedTo", label: "Người phụ trách" },
+                { key: "createdAt", label: "Ngày tạo" },
               ]}
-              empty="No records to show."
+              empty="Chưa có bản ghi nào."
             />
           </Panel>
         );
@@ -151,40 +151,40 @@ function ServiceDetail({ config }) {
 
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error))
     return (
-      <Screen title="Record unavailable">
-        <Panel title="Record unavailable"><Link className="manager-link" to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Panel>
+      <Screen title="Không xem được bản ghi">
+        <Panel title="Không xem được bản ghi"><Link className="manager-link" to={config.basePath}>Quay lại danh sách</Link></Panel>
       </Screen>
     );
 
   return (
     <Screen
-      title={config.title.replace(/s$/, "") + " detail"}
-      description={`${config.title.replace(/s$/, "")} detail.`}
-      action={<Button asChild variant="outline"><Link to={config.basePath}>Back to {config.title.toLowerCase()}</Link></Button>}
+      title="Chi tiết bản ghi"
+      description={config.title}
+      action={<Button asChild variant="outline"><Link to={config.basePath}>Quay lại danh sách</Link></Button>}
     >
       <AsyncBoundary state={state} render={(record) => {
         const row = config.toRow(record);
         return (
           <>
-            <Panel title="Record">
+            <Panel title="Thông tin bản ghi">
               <Details values={[
-                ["Reference", row.id],
+                ["Mã tham chiếu", row.id],
                 [config.label, row.subject || row.title],
-                ["Opened by", row.customer],
-                ["Category", row.category],
-                ["Priority", <Status value={row.priority} />],
-                ["Status", <Status value={row.status} />],
-                ["Assigned to", row.assignedTo],
-                ["Related entity", row.relatedEntity || "—"],
-                ["Created", row.createdAt],
-                ["Description", row.description],
-                ["Resolution note", row.resolutionNote || "—"],
+                ["Người gửi", row.customer],
+                ["Danh mục", row.category],
+                ["Mức ưu tiên", <Status value={row.priority} />],
+                ["Trạng thái", <Status value={row.status} />],
+                ["Người phụ trách", row.assignedTo],
+                ["Đối tượng liên quan", row.relatedEntity || "—"],
+                ["Ngày tạo", row.createdAt],
+                ["Mô tả", row.description],
+                ["Ghi chú xử lý", row.resolutionNote || "—"],
               ]} />
             </Panel>
             <ServiceActions config={config} row={row} onDone={state.reload} />
             {config.messages && (
-              <Panel title="Conversation" subtitle="Internal messages are hidden from customers.">
-                {messages.loading && <p role="status" className="text-sm text-slate-500">Loading messages…</p>}
+              <Panel title="Hội thoại" subtitle="Tin nhắn nội bộ không hiển thị với khách hàng.">
+                {messages.loading && <p role="status" className="text-sm text-slate-500">Đang tải tin nhắn…</p>}
                 {messages.error && <Message error={messages.error} />}
                 {messages.data && (
                   <ul className="space-y-3">
@@ -198,7 +198,7 @@ function ServiceDetail({ config }) {
                         {m.isInternal && <Status value="INTERNAL" />}
                       </li>
                     ))}
-                    {!messages.data.length && <li className="text-sm text-slate-500">No messages yet.</li>}
+                    {!messages.data.length && <li className="text-sm text-slate-500">Chưa có tin nhắn nào.</li>}
                   </ul>
                 )}
               </Panel>
@@ -238,26 +238,26 @@ function ServiceAdminActions({ config, row, onDone }) {
   const assigneeName = assignees.find(([id]) => id === assignee)?.[1] || assignee;
 
   return (
-    <Panel title="Actions" subtitle="Every change is saved immediately and validated before it is applied.">
+    <Panel title="Thao tác">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
         <Field
           label={config.assigneeLabel}
-          hint={assignees.length ? undefined : "No facility staff account is available."}
+          hint={assignees.length ? undefined : "Chưa có tài khoản nhân viên nào khả dụng."}
         >
           <Select
-            label={`${config.assigneeLabel} to assign`}
+            label={`${config.assigneeLabel} cần giao`}
             value={assignee}
             onChange={setAssignee}
             disabled={!assignees.length}
-            options={assignees.length ? [["", `Select a ${config.assigneeLabel.toLowerCase()}`], ...assignees] : [["", "No assignable account"]]}
+            options={assignees.length ? [["", `Chọn ${config.assigneeLabel.toLowerCase()}`], ...assignees] : [["", "Không có tài khoản để giao"]]}
           />
         </Field>
-        <Field label="New status">
-          <Select label="New status" value={status} onChange={setStatus} options={[["", "Select a status"], ...SERVICE_STATUSES]} />
+        <Field label="Trạng thái mới">
+          <Select label="Trạng thái mới" value={status} onChange={setStatus} options={[["", "Chọn trạng thái"], ...SERVICE_STATUSES]} />
         </Field>
-        <Field label="Resolution note" hint="Sent only when the new status is RESOLVED.">
-          <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+        <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là RESOLVED.">
+          <Input aria-label="Ghi ch� x? l?" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
       <div className="mt-5 flex flex-wrap gap-3">
@@ -266,12 +266,12 @@ function ServiceAdminActions({ config, row, onDone }) {
           disabled={!assignees.length}
           onClick={() => (assignee
             ? open({
-              title: `Assign ${config.assigneeLabel.toLowerCase()}`,
-              confirmLabel: "Assign",
-              summary: <Details values={[["Record", row.subject || row.title], [config.assigneeLabel, assigneeName]]} />,
-              execute: confirmed(() => config.assign(row.id, assignee), "Assignment saved."),
-            })
-            : setError(`Select a ${config.assigneeLabel.toLowerCase()} first.`))}
+                title: `Giao ${config.assigneeLabel.toLowerCase()}`,
+                confirmLabel: "Giao việc",
+                summary: <Details values={[["Bản ghi", row.subject || row.title], [config.assigneeLabel, assigneeName]]} />,
+                execute: confirmed(() => config.assign(row.id, assignee), "Đã lưu phân công."),
+              })
+              : setError(`Hãy chọn ${config.assigneeLabel.toLowerCase()} trước.`))}
         >
           Assign
         </Button>
@@ -282,7 +282,7 @@ function ServiceAdminActions({ config, row, onDone }) {
             title: "Remove assignment",
             confirmLabel: "Unassign",
             summary: <Details values={[["Record", row.subject || row.title], ["Currently assigned to", row.assignedTo]]} />,
-            execute: confirmed(() => config.unassign(row.id), "Assignment removed."),
+              execute: confirmed(() => config.unassign(row.id), "Đã gỡ phân công."),
           })}
         >
           Unassign
@@ -294,7 +294,7 @@ function ServiceAdminActions({ config, row, onDone }) {
               title: "Escalate request",
               confirmLabel: "Escalate",
               summary: <Details values={[["Record", row.subject || row.title], ["Current status", row.status]]} />,
-              execute: confirmed(() => config.escalate(row.id), "Request escalated."),
+              execute: confirmed(() => config.escalate(row.id), "Đã chuyển cấp yêu cầu."),
             })}
           >
             Escalate
@@ -304,25 +304,25 @@ function ServiceAdminActions({ config, row, onDone }) {
           variant="orange"
           onClick={() => (status
             ? open({
-              title: "Change status",
-              confirmLabel: "Save status",
+              title: "Đổi trạng thái",
+              confirmLabel: "Lưu trạng thái",
               summary: <Details values={[
-                ["Record", row.subject || row.title],
-                ["From", row.status],
-                ["To", status],
-                ["Resolution note", status === "RESOLVED" ? note.trim() || "—" : "Not sent"],
+                ["Bản ghi", row.subject || row.title],
+                ["Từ", row.status],
+                ["Sang", status],
+                ["Ghi chú xử lý", status === "RESOLVED" ? note.trim() || "—" : "Không gửi"],
               ]} />,
               execute: confirmed(
                 () => config.setStatus(row.id, {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 }),
-                "Status saved.",
+                "Đã lưu trạng thái.",
               ),
             })
-            : setError("Select the new status first."))}
+            : setError("Hãy chọn trạng thái mới trước."))}
         >
-          Save status
+          Lưu trạng thái
         </Button>
       </div>
       {dialog && (
@@ -333,7 +333,6 @@ function ServiceAdminActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>
@@ -351,14 +350,14 @@ function ServiceStatusActions({ config, row, onDone }) {
   const open = (next) => { setError(""); setNotice(""); setDialog(next); };
 
   return (
-    <Panel title="Actions" subtitle="Status changes are saved immediately. Assignment is an admin action.">
+    <Panel title="Thao tác">
       <Message error={error} success={notice} />
       <div className="manager-filters mt-4">
-        <Field label="New status">
-          <Select label="New status" value={status} onChange={setStatus} options={[["", "Select a status"], ...SERVICE_STATUSES]} />
+        <Field label="Trạng thái mới">
+          <Select label="Trạng thái mới" value={status} onChange={setStatus} options={[["", "Chọn trạng thái"], ...SERVICE_STATUSES]} />
         </Field>
-        <Field label="Resolution note" hint="Sent only when the new status is RESOLVED.">
-          <Input aria-label="Resolution note" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+        <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là RESOLVED.">
+          <Input aria-label="Ghi ch� x? l?" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
       <div className="mt-5 flex flex-wrap gap-3">
@@ -366,26 +365,26 @@ function ServiceStatusActions({ config, row, onDone }) {
           variant="orange"
           onClick={() => (status
             ? open({
-              title: "Change status",
-              confirmLabel: "Save status",
+              title: "Đổi trạng thái",
+              confirmLabel: "Lưu trạng thái",
               summary: <Details values={[
-                ["Record", row.subject || row.title],
-                ["From", row.status],
-                ["To", status],
-                ["Resolution note", status === "RESOLVED" ? note.trim() || "—" : "Not sent"],
+                ["Bản ghi", row.subject || row.title],
+                ["Từ", row.status],
+                ["Sang", status],
+                ["Ghi chú xử lý", status === "RESOLVED" ? note.trim() || "—" : "Không gửi"],
               ]} />,
               execute: async () => {
                 await config.setStatus(row.id, {
                   status,
                   ...(status === "RESOLVED" && note.trim() ? { resolutionNote: note.trim() } : {}),
                 });
-                setNotice("Status saved.");
+                setNotice("Đã lưu trạng thái.");
                 onDone?.();
               },
             })
-            : setError("Select the new status first."))}
+            : setError("Hãy chọn trạng thái mới trước."))}
         >
-          Save status
+          Lưu trạng thái
         </Button>
       </div>
       {dialog && (
@@ -396,7 +395,6 @@ function ServiceStatusActions({ config, row, onDone }) {
           onConfirm={dialog.execute}
           onClose={() => setDialog(null)}
         >
-          <p className="text-sm text-slate-500">The record is reloaded after the change.</p>
         </ConfirmDialog>
       )}
     </Panel>

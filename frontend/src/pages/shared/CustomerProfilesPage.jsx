@@ -47,17 +47,17 @@ function CustomerList({ basePath }) {
 
   return (
     <Screen
-      title="Customer profiles"
-      description="Customer identity and verification details."
+      title="Hồ sơ khách hàng"
+      description="Thông tin định danh và xác minh của khách hàng."
     >
-      <Panel title="Filters">
+      <Panel title="Bộ lọc">
         <div className="manager-filters">
-          <Field label="Search">
-            <Input aria-label="Search customers" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Field label="Tìm kiếm">
+            <Input aria-label="Tìm khách hàng" value={search} onChange={(e) => setSearch(e.target.value)} />
           </Field>
-          <Field label="Verification">
-            <Select label="Verification filter" value={status} onChange={setStatus}
-              options={[["", "All statuses"], ...VERIFICATION_STATUSES]} />
+          <Field label="Xác minh">
+            <Select label="Lọc theo trạng thái xác minh" value={status} onChange={setStatus}
+              options={[["", "Tất cả trạng thái"], ...VERIFICATION_STATUSES]} />
           </Field>
         </div>
       </Panel>
@@ -66,9 +66,9 @@ function CustomerList({ basePath }) {
           (!status || row.status === status) &&
           (!search || `${row.name} ${row.email} ${row.phone} ${row.identityCard}`.toLowerCase().includes(search.toLowerCase())));
         return (
-          <Panel title="Customer profiles" subtitle={`${rows.length} of ${profiles.length} profiles`}>
+          <Panel title="Hồ sơ khách hàng" subtitle={`${rows.length} / ${profiles.length} hồ sơ`}>
             <Table
-              label="Customer profiles"
+              label="Hồ sơ khách hàng"
               rows={rows}
               columns={[
                 { key: "name", label: "Customer", render: (r) => <OpenLink to={`${basePath}/${r.id}`}>{r.name}</OpenLink> },
@@ -78,7 +78,7 @@ function CustomerList({ basePath }) {
                 { key: "status", label: "Verification", render: (r) => <Status value={r.status} /> },
                 { key: "verifiedAt", label: "Verified at" },
               ]}
-              empty="No customer profiles were returned."
+              empty="Không có hồ sơ khách hàng nào."
             />
           </Panel>
         );
@@ -97,9 +97,9 @@ function CustomerDetail({ id, basePath }) {
 
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error))
     return (
-      <Screen title="Customer unavailable">
-        <Panel title="Customer unavailable">
-          <Link className="manager-link" to={basePath}>Back to customers</Link>
+      <Screen title="Không xem được khách hàng">
+        <Panel title="Không xem được khách hàng">
+          <Link className="manager-link" to={basePath}>Quay lại danh sách khách hàng</Link>
         </Panel>
       </Screen>
     );
@@ -112,10 +112,10 @@ function CustomerDetail({ id, basePath }) {
     setSuccess("");
     try {
       await customerProfileApi.verify(id, { status: decision, note });
-      setSuccess("Verification updated.");
+      setSuccess("Đã cập nhật xác minh.");
       state.reload();
     } catch (err) {
-      setError(apiErrorMessage(err, "Unable to verify this profile."));
+      setError(apiErrorMessage(err, "Không xác minh được hồ sơ này."));
     } finally {
       setPending(false);
     }
@@ -123,37 +123,37 @@ function CustomerDetail({ id, basePath }) {
 
   return (
     <Screen
-      title="Customer profile"
-      description="Identity and verification details."
-      action={<Button asChild variant="outline"><Link to={basePath}>Back to customers</Link></Button>}
+      title="Hồ sơ khách hàng"
+      description="Thông tin định danh và xác minh."
+      action={<Button asChild variant="outline"><Link to={basePath}>Quay lại danh sách khách hàng</Link></Button>}
     >
       <AsyncBoundary state={state} render={(profile) => {
         const row = toRow(profile);
         return (
           <>
-            <Panel title="Identity">
+            <Panel title="Định danh">
               <Details values={[
-                ["Customer", row.name],
+                ["Khách hàng", row.name],
                 ["Email", row.email],
-                ["Phone", row.phone],
-                ["Identity card", row.identityCard || "Not provided"],
-                ["Address", row.address],
-                ["Tax code", row.taxCode],
-                ["Verification", <Status value={row.status} />],
-                ["Verified at", row.verifiedAt],
-                ["Note", row.note],
+                ["Số điện thoại", row.phone],
+                ["Giấy tờ định danh", row.identityCard || "Chưa cung cấp"],
+                ["Địa chỉ", row.address],
+                ["Mã số thuế", row.taxCode],
+                ["Xác minh", <Status value={row.status} />],
+                ["Xác minh lúc", row.verifiedAt],
+                ["Ghi chú", row.note],
               ]} />
             </Panel>
-            <Panel title="Verification decision" subtitle="Approve or reject this customer profile.">
+            <Panel title="Quyết định xác minh" subtitle="Duyệt hoặc từ chối hồ sơ khách hàng này.">
               <form className="space-y-5" onSubmit={submit}>
-                <Field label="Decision">
-                  <Select label="Verification decision" value={decision} onChange={setDecision} options={VERIFY_DECISIONS} />
+                <Field label="Quyết định">
+                  <Select label="Quyết định xác minh" value={decision} onChange={setDecision} options={VERIFY_DECISIONS} />
                 </Field>
-                <Field label="Note">
-                  <Textarea aria-label="Verification note" value={note} onChange={(e) => setNote(e.target.value)} />
+                <Field label="Ghi chú">
+                  <Textarea aria-label="Ghi chú xác minh" value={note} onChange={(e) => setNote(e.target.value)} />
                 </Field>
                 <Message error={error} success={success} />
-                <Button type="submit" variant="orange" disabled={pending}>{pending ? "Saving…" : "Save verification"}</Button>
+                <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : "Lưu xác minh"}</Button>
               </form>
             </Panel>
           </>
