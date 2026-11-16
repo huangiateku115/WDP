@@ -133,14 +133,14 @@ function UserDetail({ state, id }) {
       <Panel title="Trạng thái tài khoản" subtitle={inactive ? "Ngừng hoạt động" : "Đang hoạt động"}>
         {inactive
           ? <ApiConfirmation
-              label="Reactivate account"
-              title="Confirm account reactivation"
+              label="Kích hoạt lại tài khoản"
+              title="Xác nhận kích hoạt lại tài khoản"
               summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Reactivate"]]} />}
               run={() => reactivateAdminUser(id)}
             />
           : <ApiConfirmation
-              label="Deactivate account"
-              title="Confirm account deactivation"
+              label="Ngừng tài khoản"
+              title="Xác nhận ngừng tài khoản"
               summary={<Details values={[["Account", row.email || userId(row)], ["Action", "Deactivate"]]} />}
               run={() => deactivateAdminUser(id)}
             />}

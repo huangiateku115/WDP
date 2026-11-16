@@ -15,12 +15,12 @@ function toRow(notification) {
   const sentVia = Array.isArray(notification?.sentVia) ? notification.sentVia : [];
   return {
     id: notification?._id,
-    title: notification?.title || "Notification",
+    title: notification?.title || "Thông báo",
     type: notification?.type || "",
     content: notification?.content || "",
     channel: sentVia.length ? sentVia.join(", ") : "—",
     isRead: Boolean(notification?.isRead),
-    at: notification?.createdAt ? new Date(notification.createdAt).toLocaleString("en-GB") : "—",
+    at: notification?.createdAt ? new Date(notification.createdAt).toLocaleString("vi-VN") : "—",
     atRaw: notification?.createdAt || "",
   };
 }
@@ -56,7 +56,7 @@ export default function NotificationsPage() {
 
   return (
     <Screen
-      title="Notifications"
+      title="Thông báo"
       description="Thông báo gửi tới tài khoản của bạn. Hãy đánh dấu đã đọc sau khi xử lý."
       action={<Button variant="outline" disabled={state.loading} onClick={state.reload}>Tải lại</Button>}
     >
@@ -71,9 +71,9 @@ export default function NotificationsPage() {
 
           <Panel title="Hộp thư" subtitle="Thông báo mới nhất ở trên cùng.">
             <div className="manager-filters">
-              <Field label="Read state">
+              <Field label="Trạng thái đọc">
                 <Select
-                  label="Read state filter"
+                  label="Lọc theo trạng thái đọc"
                   value={scope}
                   onChange={setScope}
                   options={[["", "Tất cả thông báo"], ["UNREAD", "Chưa đọc"], ["READ", "Đã đọc"]]}
@@ -83,18 +83,18 @@ export default function NotificationsPage() {
             <Message error={error} success={notice} />
             <div className="mt-5">
               <Table
-                label="Notifications"
+                label="Thông báo"
                 rows={visible}
                 columns={[
-                  { key: "title", label: "Title" },
-                  { key: "type", label: "Type" },
-                  { key: "content", label: "Message" },
-                  { key: "channel", label: "Channel" },
-                  { key: "state", label: "State", render: (r) => (r.isRead ? "Read" : "Unread") },
-                  { key: "at", label: "Received" },
+                  { key: "title", label: "Tiêu đề" },
+                  { key: "type", label: "Loại" },
+                  { key: "content", label: "Nội dung" },
+                  { key: "channel", label: "Kênh" },
+                  { key: "state", label: "Trạng thái", render: (r) => (r.isRead ? "Đã đọc" : "Chưa đọc") },
+                  { key: "at", label: "Thời điểm nhận" },
                   {
                     key: "action",
-                    label: "Action",
+                    label: "Thao tác",
                     render: (r) => (r.isRead
                       ? "—"
                       : (

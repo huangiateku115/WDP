@@ -11,7 +11,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
-  bomFutureDate, responseData, serviceLabel,
+  bomFutureDate, isEffectiveRecord, responseData, serviceLabel,
   pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
   policyFromDto,
 } from "@/lib/bomMappers";
@@ -108,20 +108,20 @@ function RecordList({ kind, config }) {
               label={config.title}
               rows={rows}
               columns={kind === "pricing" ? [
-                { key: "scope", label: "Scope", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{pricingLabel(r)}</OpenLink> },
-                { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
-                { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
-                { key: "rate", label: "Price", render: (r) => `${money(r.rate)} ${r.currency}` },
-                { key: "effectiveFrom", label: "Effective from" },
-                { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-                { key: "revision", label: "Version" },
+                { key: "scope", label: "Phạm vi", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{pricingLabel(r)}</OpenLink> },
+                { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
+                { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+                { key: "rate", label: "Đơn giá", render: (r) => `${money(r.rate)} ${r.currency}` },
+                { key: "effectiveFrom", label: "Hiệu lực từ" },
+                { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+                { key: "revision", label: "Phiên bản" },
               ] : [
-                { key: "name", label: "Policy", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-                { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
-                { key: "rule", label: "Rule" },
-                { key: "effectiveFrom", label: "Effective from" },
-                { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-                { key: "revision", label: "Version" },
+                { key: "name", label: "Chính sách", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
+                { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+                { key: "rule", label: "Quy tắc" },
+                { key: "effectiveFrom", label: "Hiệu lực từ" },
+                { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+                { key: "revision", label: "Phiên bản" },
               ]}
             />
           </Panel>
@@ -151,6 +151,8 @@ function RecordDetail({ kind, config }) {
       <AsyncBoundary state={state} render={(record) => {
         const nextStatus = record.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
         const futurePricing = kind === "pricing" && record.effectiveFrom && new Date(record.effectiveFrom) > new Date();
+        // The API rejects status changes once a rule is effective; only a new price revision is accepted.
+        const effectiveRule = kind === "pricing" && isEffectiveRecord(record);
         return (
           <>
             <Panel
@@ -158,32 +160,37 @@ function RecordDetail({ kind, config }) {
               action={kind === "pricing" ? <Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Sửa</Link></Button> : undefined}
             >
               <Details values={kind === "pricing" ? [
-                ["Scope", pricingLabel(record)],
-                ["Service", serviceLabel(record.service)],
-                ["Private unit size", record.unitSize || "—"],
-                ["Billing term", `${record.billingMonths} month(s)`],
-                ["Price", `${money(record.rate)} ${record.currency}`],
-                ["Effective from", record.effectiveFrom],
-                ["Effective end", record.effectiveTo || "Open-ended"],
-                ["Status", <Status value={record.status} />],
-                ["Version", record.revision],
+                ["Phạm vi", pricingLabel(record)],
+                ["Dịch vụ", serviceLabel(record.service)],
+                ["Kích cỡ kho riêng", record.unitSize || "—"],
+                ["Kỳ tính phí", `${record.billingMonths} tháng`],
+                ["Đơn giá", `${money(record.rate)} ${record.currency}`],
+                ["Hiệu lực từ", record.effectiveFrom],
+                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
+                ["Trạng thái", <Status value={record.status} />],
+                ["Phiên bản", record.revision],
               ] : [
-                ["Policy", record.name],
-                ["Policy type", record.type],
-                ["Service", record.service ? serviceLabel(record.service) : "Any"],
-                ["Description", record.description],
-                ["Rule", record.rule],
-                ["Effective from", record.effectiveFrom],
-                ["Effective end", record.effectiveTo || "Open-ended"],
-                ["Status", <Status value={record.status} />],
-                ["Version", record.revision],
+                ["Chính sách", record.name],
+                ["Loại chính sách", record.type],
+                ["Dịch vụ", record.service ? serviceLabel(record.service) : "Mọi loại"],
+                ["Mô tả", record.description],
+                ["Quy tắc", record.rule],
+                ["Hiệu lực từ", record.effectiveFrom],
+                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
+                ["Trạng thái", <Status value={record.status} />],
+                ["Phiên bản", record.revision],
               ]} />
-              {futurePricing && <p className="mt-4 text-sm text-slate-600">Scheduled for {record.effectiveFrom}.</p>}
-              {kind === "pricing" && <div className="mt-5">
+              {futurePricing && <p className="mt-4 text-sm text-slate-600">Bắt đầu áp dụng từ {record.effectiveFrom}.</p>}
+              {kind === "pricing" && !effectiveRule && <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
                   {nextStatus === "ACTIVE" ? "Kích hoạt" : "Ngừng áp dụng"}
                 </Button>
               </div>}
+              {effectiveRule && record.status === "ACTIVE" && (
+                <p className="mt-4 text-sm text-slate-600">
+                  Quy tắc đã có hiệu lực nên không thể ngừng áp dụng. Hãy hẹn mức giá mới bằng nút Sửa.
+                </p>
+              )}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
               <Panel title="Ước tính theo công suất">
@@ -241,7 +248,7 @@ function RecordForm({ kind, config, mode }) {
   }, [state.data, isEdit, config]);
 
   const change = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-  // An already-effective rule is immutable except for a prospective effectiveTo.
+  // An already-effective rule accepts one edit only: a new price revision starting on a future date.
   const locked = isEdit && isEffectiveRecord(form);
 
   async function submit(event) {
@@ -263,7 +270,7 @@ function RecordForm({ kind, config, mode }) {
 
   const minDate = bomFutureDate(1);
   const lockNotice = locked
-    ? "Bản ghi đã có hiệu lực. Chỉ có thể thay đổi ngày kết thúc hiệu lực trong tương lai."
+    ? "Quy tắc đã có hiệu lực nên giá hiện tại không sửa được. Lưu biểu mẫu này sẽ tạo mức giá mới bắt đầu từ ngày bạn chọn trong tương lai."
     : "";
 
   return (
@@ -305,17 +312,17 @@ function RecordForm({ kind, config, mode }) {
                       options={BOM_TERM_MONTHS.map((m) => [m, `${m} tháng`])} />
                   </Field>}
                   <Field label={form.service === "MANAGED_INVENTORY" ? "Đơn giá mỗi m³ mỗi kỳ (VND)" : "Giá mỗi kỳ thanh toán (VND)"}>
-                    <Input aria-label="Đơn giá" type="number" min="0" step="any" required disabled={locked} value={form.rate} onChange={(e) => change("rate", e.target.value)} />
+                    <Input aria-label="Đơn giá" type="number" min="0" step="any" required value={form.rate} onChange={(e) => change("rate", e.target.value)} />
                   </Field>
                   <Field label="Tiền tệ">
-                    <Input aria-label="Tiền tệ" maxLength={3} disabled={locked} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
+                    <Input aria-label="Tiền tệ" maxLength={3} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
                   </Field>
                 </>
               )}
-              <Field label="Hiệu lực từ" hint={`Chọn từ ${minDate} trở đi.`}>
+              <Field label="Hiệu lực từ" hint={locked ? "Bắt buộc chọn ngày trong tương lai — đây là ngày bắt đầu của mức giá mới." : `Chọn từ ${minDate} trở đi.`}>
                 <Input aria-label="Hiệu lực từ" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
-              <Field label="Hiệu lực đến (không bắt buộc)" hint={locked ? "Bắt buộc khi đóng một bản ghi đang hiệu lực; phải ở tương lai." : undefined}>
+              <Field label="Hiệu lực đến (không bắt buộc)" hint={locked ? "Nếu nhập, phải sau ngày bắt đầu của mức giá mới." : undefined}>
                 <Input aria-label="Hiệu lực đến" type="date" min={form.effectiveFrom || minDate} value={form.effectiveTo} onChange={(e) => change("effectiveTo", e.target.value)} />
               </Field>
               {!isEdit && <Field label="Trạng thái">

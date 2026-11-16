@@ -116,7 +116,7 @@ export function LoginHistoryPage() {
             : history.loading
               ? <p role="status" className="text-sm text-slate-500">Đang tải lịch sử đăng nhập…</p>
               : (
-                <Table label="Login history" rows={rows} columns={[
+                <Table label="Lịch sử đăng nhập" rows={rows} columns={[
                   { key: "event", label: "Event", render: (r) => r.source.eventType || "—" },
                   { key: "status", label: "Result", render: (r) => <Status value={r.source.status} /> },
                   { key: "reason", label: "Failure reason", render: (r) => r.source.failureReason || "—" },
@@ -162,7 +162,7 @@ export function AuditPage() {
               : logs.loading
                 ? <p role="status" className="text-sm text-slate-500">Đang tải nhật ký…</p>
                 : (
-                  <Table label="Audit logs" rows={rows} columns={[
+                  <Table label="Nhật ký kiểm toán" rows={rows} columns={[
                     { key: "action", label: "Action", render: (r) => (r.source._id === openId ? <b>{r.source.action}</b> : r.source.action) },
                     { key: "role", label: "Actor role", render: (r) => <Status value={r.source.actorRole} /> },
                     { key: "entity", label: "Entity", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },

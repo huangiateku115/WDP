@@ -51,9 +51,12 @@ test('Admin and BOM Policy pages expose read-only routes and omit mutation contr
   const policyPages=readFileSync(new URL('../src/pages/bom/PolicyRecordsPage.jsx',import.meta.url),'utf8');
   assert.match(generic,/Quy tắc giá đã lên lịch/);
   assert.match(generic,/new Date\(record\.effectiveFrom\) > new Date\(\)/);
-  assert.match(generic,/Scheduled for \{record\.effectiveFrom\}/);
+  assert.match(generic,/Bắt đầu áp dụng từ \{record\.effectiveFrom\}/);
   assert.match(generic,/kind === "policy" && \["new", "edit"\]/);
   assert.match(generic,/kind === "pricing" \? <Button/);
+  // An effective rule cannot be toggled: the status button is only rendered for future rules.
+  assert.match(generic,/kind === "pricing" && !effectiveRule/);
+  assert.match(generic,/const effectiveRule = kind === "pricing" && isEffectiveRecord\(record\)/);
   assert.doesNotMatch(policyPages,/bomPolicyApi\.(create|update|setActive)/);
   assert.doesNotMatch(policyPages,/>\s*(Create|Edit|Activate|Deactivate)/);
 });

@@ -233,7 +233,7 @@ function ContractRecord({ contract }) {
   return (
     <>
       <Panel
-        title="Contract record"
+        title="Hồ sơ hợp đồng"
         subtitle={contract.contractCode || "Contract"}
         action={<Status value={contract.status} />}
       >

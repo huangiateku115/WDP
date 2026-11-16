@@ -213,7 +213,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
         )}
       </Panel>
 
-      <Panel title="Warehouse structure and physical capacity" subtitle="Zones → aisles → racks → cells.">
+      <Panel title="Cấu trúc kho và tải trọng" subtitle="Khu vực → lối đi → kệ → ô chứa.">
         {!structure.available && (
           <p className="bom-note mb-5">
             The warehouse map is unavailable for this facility: {structure.reason || "the facility is not part of the managed warehouse map"}.
@@ -229,7 +229,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
         ]} />
         <div className="mt-5">
           <Table
-            label="Rack physical capacity"
+            label="Tải trọng vật lý của kệ"
             rows={racks}
             columns={[
               { key: "rackCode", label: "Rack" },

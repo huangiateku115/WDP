@@ -1,6 +1,7 @@
 // Live BOM DTO mapping between the backend API contract (WDP-Backend.postman_collection.json)
 // and the BOM view models used by the live Facility / Pricing / Policy pages.
 import { money } from "@/components/manager/ManagerUI";
+import { facilityLabel } from "@/lib/facilityLabels";
 
 export const BOM_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 export const BOM_UNIT_SIZES = ["SMALL", "MEDIUM", "LARGE"];
@@ -316,8 +317,10 @@ export function pricingFromDto(d) {
   };
 }
 export function pricingLabel(row) {
-  const scope = row.service === "MANAGED_INVENTORY" ? "Managed capacity" : `${row.unitSize || ""} private unit`.trim();
-  return `${scope} · every ${row.billingMonths} month(s)`;
+  const scope = row.service === "MANAGED_INVENTORY"
+    ? "Công suất lưu trữ"
+    : `Kho riêng ${facilityLabel(row.unitSize || "")}`.trim();
+  return `${scope} · chu kỳ ${row.billingMonths} tháng`;
 }
 export function pricingBody(form) {
   const body = {
