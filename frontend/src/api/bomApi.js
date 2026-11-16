@@ -31,6 +31,17 @@ export const bomPolicyApi = {
   resolve: (params) => axiosClient.get("/policies/resolve", { params }),
 };
 
+export const bomManagedInventoryCatalogApi = {
+  listCategories: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/categories', { ...config, params }),
+  createCategory: body => axiosClient.post('/managed-inventory-catalog/categories', body),
+  updateCategory: (id, body) => axiosClient.patch(`/managed-inventory-catalog/categories/${encode(id)}`, body),
+  removeCategory: id => axiosClient.delete(`/managed-inventory-catalog/categories/${encode(id)}`),
+  listQuantityUnits: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/quantity-units', { ...config, params }),
+  createQuantityUnit: body => axiosClient.post('/managed-inventory-catalog/quantity-units', body),
+  updateQuantityUnit: (id, body) => axiosClient.patch(`/managed-inventory-catalog/quantity-units/${encode(id)}`, body),
+  removeQuantityUnit: id => axiosClient.delete(`/managed-inventory-catalog/quantity-units/${encode(id)}`),
+};
+
 export const bomReservationApi = {
   listByFacility: (facilityId, config) => axiosClient.get(`/reservations/facility/${encode(facilityId)}`, config),
   get: (id, config) => axiosClient.get(`/reservations/${encode(id)}`, config),
@@ -98,6 +109,6 @@ export const bomUnitApi = {
 };
 
 export default {
-  bomFacilityApi, bomPricingApi, bomPolicyApi, bomReservationApi, bomReservationWriteApi,
+  bomFacilityApi, bomPricingApi, bomPolicyApi, bomManagedInventoryCatalogApi, bomReservationApi, bomReservationWriteApi,
   bomWarehouseApi, bomInventoryApi, bomUnitApi, bomContractApi,
 };

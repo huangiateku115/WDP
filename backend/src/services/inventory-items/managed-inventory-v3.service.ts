@@ -159,6 +159,7 @@ function assertActualMeasurements(body: any) {
 
 export class ManagedInventoryV3Service {
   static async preparePhysicalUnit(itemId: unknown, body: unknown, actor: Actor) {
+    fail(410, 'STOCK_WORKFLOW_NOT_AVAILABLE', 'Physical stock operations are paused until Cell Stock and Movement are implemented.');
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được chuẩn bị PhysicalUnit.');
     const input = plain(body, ['serial', 'actualUnitWeightKg', 'dimensionsM'], 'PhysicalUnit');
     const item = await findCustomerSku(itemId, actor); const reservation = await scopedV3Reservation(item, actor);
@@ -176,6 +177,7 @@ export class ManagedInventoryV3Service {
   }
 
   static async previewInbound(itemId: unknown, body: unknown, actor: Actor) {
+    fail(410, 'STOCK_WORKFLOW_NOT_AVAILABLE', 'Inbound preview is paused until the SKU and Item Specification contract is integrated with Cell Stock.');
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được xem placement preview.');
     const input = plain(body, ['accessSessionId', 'cellIds', 'itemKind', 'physicalUnitId', 'quantity', 'quantityUnit', 'actualUnitWeightKg', 'dimensionsM', 'pose', 'placements'], 'Preview nhập hàng');
     if (!Array.isArray(input.cellIds) || input.cellIds.length < 1 || input.cellIds.length > 100) fail(422, 'INVALID_INPUT', 'Cần từ 1 đến 100 Cell.');
@@ -238,6 +240,7 @@ export class ManagedInventoryV3Service {
   }
 
   static async confirmInbound(itemId: unknown, body: unknown, actor: Actor, idempotencyHeader: unknown) {
+    fail(410, 'STOCK_WORKFLOW_NOT_AVAILABLE', 'Inbound confirmation is paused until Cell Stock and Movement are implemented.');
     if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được xác nhận Self-Inbound.');
     const input = plain(body, ['itemKind', 'accessSessionId', 'sessionRevision', 'physicalUnitId', 'quantity', 'quantityUnit', 'actualUnitWeightKg', 'dimensionsM', 'pose', 'cellIds', 'placements', 'topologyCertificationId', 'topologyRevision', 'topologyCertificationIds', 'topologyRevisions', 'previewRevision'], 'Xác nhận nhập hàng');
     if (input.itemKind === 'A1_PHYSICAL_UNIT' && (!input.pose || typeof input.pose !== 'object' || Array.isArray(input.pose) ||
@@ -419,7 +422,7 @@ export class ManagedInventoryV3Service {
     if (!item) fail(404, 'INVENTORY_ITEM_NOT_FOUND', 'Không tìm thấy SKU.');
     if ([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) { if (!actor.assignedFacilityId?.equals(item.facilityId)) fail(404, 'INVENTORY_ITEM_NOT_FOUND', 'Không tìm thấy SKU.'); }
     else if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Vai trò không được phép xem lịch sử.');
-    return ItemMovementModel.find({ itemId: item._id, schemaVersion: 3 }).sort({ performedAt: -1 }).limit(200).lean().exec();
+    return ItemMovementModel.find({ itemId: item._id }).sort({ performedAt: -1, _id: -1 }).limit(200).lean().exec();
   }
 
   static async operation(itemId: unknown, rawKey: unknown, actor: Actor) {
@@ -443,7 +446,7 @@ export class ManagedInventoryV3Service {
       const [projection, movementCount, reservation] = await Promise.all([ProjectionModel.findOne({ skuId: item._id, facilityId: actor.assignedFacilityId }).lean().exec(),
         ItemMovementModel.countDocuments({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).exec(),
         ReservationModel.findOne({ _id: item.managedReservationId, facilityId: actor.assignedFacilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).select('allocatedCellIds allocatedCapacity usedCapacityM3 inventoryVersion').lean().exec()]);
-      const recentMovements = await ItemMovementModel.find({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).sort({ performedAt: -1 }).limit(25).lean().exec();
+      const recentMovements = await ItemMovementModel.find({ itemId: item._id, facilityId: actor.assignedFacilityId }).sort({ performedAt: -1, _id: -1 }).limit(25).lean().exec();
       let status = 'UNKNOWN', replaySnapshot: any = null;
       if (movementCount <= 5000) {
         const movements = await ItemMovementModel.find({ itemId: item._id, facilityId: actor.assignedFacilityId, schemaVersion: 3 }).sort({ performedAt: 1, _id: 1 }).lean().exec();

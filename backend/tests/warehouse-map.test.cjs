@@ -1,4 +1,4 @@
-const { test } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 require('dotenv').config = () => ({});
 Object.assign(process.env, {
@@ -16,6 +16,7 @@ const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').defaul
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
 const CellAllocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
 const InventoryItem = require('../dist/models/inventory-items/inventory-item.model').default;
+const ItemMovement = require('../dist/models/inventory-items/item-movement.model').default;
 const { WarehouseMapService: service } = require('../dist/services/warehouse-map/warehouse-map.service');
 const {
   parseRackCreate, parseCellUpdate, parseList, WarehouseMapError,
@@ -59,6 +60,11 @@ class Query {
   lean() { return this; }
   exec() { return Promise.resolve(this.value); }
 }
+let movementRows = [];
+beforeEach(t => {
+  movementRows = [];
+  t.mock.method(ItemMovement, 'find', () => new Query(movementRows));
+});
 function mockTransaction(t, options = {}) {
   const state = { session: {}, started: 0, ended: 0, aborted: false };
   state.session.withTransaction = async callback => {
@@ -348,6 +354,48 @@ test('Cell is not bookable under unavailable Rack, without usable height, or wit
   result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
   assert.equal(result.levels[3].cells[0].periodStatus, 'OCCUPIED');
   assert.equal(result.levels[3].cells[0].isBookable, false, 'nonzero physical occupancy blocks booking');
+});
+
+test('Cell with missing weight capacity or non-finite volume capacity fails booking closed with a specific reason', async t => {
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  let cellDoc = { ...cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject(), maxWeightKg: undefined };
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([cellDoc]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const period = { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' };
+
+  let result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
+  let mapped = result.levels[3].cells[0];
+  assert.equal(mapped.isBookable, false);
+  assert.equal(mapped.bookingReasonCode, 'CELL_WEIGHT_CAPACITY_NOT_CONFIGURED');
+  assert.equal(mapped.maxWeightKg, null);
+  assert.equal(mapped.remainingWeightKg, null);
+
+  cellDoc = cell(1, 1, { dimensions: { widthM: 1e308, depthM: 1e308, usableHeightM: 1 } }).toObject();
+  result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
+  mapped = result.levels[3].cells[0];
+  assert.equal(mapped.isBookable, false);
+  assert.equal(mapped.bookingReasonCode, 'CELL_VOLUME_CAPACITY_INVALID');
+  assert.equal(mapped.maxVolumeM3, null);
+  assert.equal(mapped.remainingVolumeM3, null);
+});
+
+test('Customer booking fails closed when movement history exists but Cell counters show empty', async t => {
+  const cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 0, usedVolumeM3: 0 }).toObject();
+  movementRows = [{ stockEffect: { destination: [{ cellId: cellDoc._id }] } }];
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([cellDoc]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await service.rackDetailMap(rackId, actor('CUSTOMER'), { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' });
+  const mapped = result.levels[3].cells[0];
+  assert.equal(mapped.bookingStatus, 'AVAILABLE');
+  assert.equal(mapped.isBookable, false);
+  assert.equal(mapped.bookingReasonCode, 'STOCK_RECONCILIATION_REQUIRED');
 });
 
 test('customer maps reject inactive, deleted, and non-managed facilities; customer cannot change structure', async t => {
@@ -640,7 +688,7 @@ test('API route registration exposes only the MI-01 routes behind authentication
     'POST /warehouse-zones', 'GET /warehouse-zones', 'GET /warehouse-zones/:id',
     'PATCH /warehouse-zones/:id', 'DELETE /warehouse-zones/:id', 'POST /warehouse-zones/:id/restore',
     'POST /racks', 'GET /racks', 'GET /racks/:id', 'PATCH /racks/:id', 'DELETE /racks/:id', 'POST /racks/:id/restore',
-    'GET /rack-cells', 'GET /rack-cells/:id', 'PATCH /rack-cells/:id',
+    'GET /rack-cells', 'GET /rack-cells/:id', 'GET /rack-cells/:id/stock', 'PATCH /rack-cells/:id',
   ]) assert.ok(routes.includes(expected), `${expected} is registered`);
-  assert.equal(routes.length, 17);
+  assert.equal(routes.length, 18);
 });

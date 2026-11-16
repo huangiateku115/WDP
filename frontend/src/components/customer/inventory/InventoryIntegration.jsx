@@ -1,7 +1,6 @@
 import {CustomerImagePreview} from '../CustomerMediaUI';
 import LoadState from '../CustomerResourceState';
 import InventoryStatus from "./InventoryStatus";
-import CanonicalCustomerOutbound from './CanonicalCustomerOutbound';
 import { useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { useAuthSession } from "@/lib/authSession";
@@ -28,7 +27,8 @@ import {
   useInventoryBackend,
 } from "./InventoryBackendUI";
 import InventoryItemForm from "./InventoryItemForm";
-import ManagedSelfInboundV3 from "./ManagedSelfInboundV3";
+import ItemSpecifications from "./ItemSpecifications";
+import ManagedUnifiedSelfInbound from "./ManagedUnifiedSelfInbound";
 import ManagedSelfOutboundV3 from "./ManagedSelfOutboundV3";
 import { inventoryCellLabels } from "./managedInventoryContext";
 import { formatInventoryDateTime } from "./inventoryUiFormat";
@@ -75,7 +75,6 @@ function InventoryImages({ item }) {
     </>
   );
 }
-import PlacementPreview from "./PlacementPreview";
 const notice =
   "Thông tin đăng ký mặt hàng · Ô kệ ưu tiên chỉ là đề xuất. Đăng ký hoặc xem trước không xếp hàng vào kho, không nhận hàng và không làm thay đổi sức chứa.";
 export function InventoryListIntegration() {
@@ -120,7 +119,7 @@ export function InventoryListIntegration() {
                 <Details
                   values={[
                     ["Danh mục", item.category],
-                    ["Số lượng", `${item.quantity.toLocaleString('vi-VN')} ${item.quantityUnit}`],
+                    ["Vai trò", "SKU · nhóm hàng"],
                     [
                       "Đơn thuê kho quản lý",
                       item.managedReservationId?.reservationCode || "Đơn thuê đã liên kết",
@@ -134,9 +133,7 @@ export function InventoryListIntegration() {
                     ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
                     [
                       "Vị trí lưu kho",
-                      item.inventorySchemaVersion === 3
-                        ? "Xem phân bổ nhiều Cell trong phần Tồn kho V3 bên dưới"
-                        : item.currentCellId === null ? "Chưa được xếp vào kho" : "Vị trí đang cập nhật",
+                      "Chưa ghi nhận tồn thực tế",
                     ],
                   ]}
                 />
@@ -236,8 +233,8 @@ function Detail({ id }) {
       eligibleInventoryRental(rental) &&
       inventoryId(rental.facilityId) === inventoryId(item?.facilityId);
   const cellLabels = useInventoryBackend(
-    (config) => rental && item ? inventoryCellLabels(rental, [item.preferredCellId, item.currentCellId], config) : Promise.resolve({}),
-    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId)],
+    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId], config) : Promise.resolve({}),
+    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || [])],
   );
   const refresh = () => {
     setEditing(false);
@@ -275,14 +272,7 @@ function Detail({ id }) {
                   values={[
                     ["Tên mặt hàng", item.name],
                     ["Danh mục", item.category],
-                    ["Số lượng đã đăng ký", `${item.quantity} ${item.quantityUnit}`],
-                    ["Khối lượng mỗi món (kg)", item.unitWeightKg],
-                    ["Chiều rộng (m)", item.unitDimensionsM?.widthM],
-                    ["Chiều sâu (m)", item.unitDimensionsM?.depthM],
-                    ["Chiều cao (m)", item.unitDimensionsM?.heightM],
-                    ["Thể tích mỗi món (m³)", item.unitVolumeM3],
-                    ["Tổng khối lượng (kg)", item.totalWeightKg],
-                    ["Tổng thể tích (m³)", item.totalVolumeM3],
+                    ["Vai trò", "SKU · nhóm hàng"],
                     [
                       "Đơn thuê Managed",
                       rental?.reservationCode || "Thông tin đơn thuê đã liên kết",
@@ -292,14 +282,8 @@ function Detail({ id }) {
                       rental?._facility?.name || "Cơ sở đã liên kết",
                     ],
                     [
-                      "Ô kệ ưu tiên (chỉ là đề xuất)",
-                      item.preferredCellId ? cellLabels.data?.[inventoryId(item.preferredCellId)] || "Ô kệ ưu tiên (đang tải tên vị trí)" : "Chưa chọn",
-                    ],
-                    [
                       "Vị trí lưu kho",
-                      item.inventorySchemaVersion === 3
-                        ? "Có thể gồm nhiều ô kệ; xem thông tin nhập/xuất bên dưới"
-                        : item.currentCellId === null ? "Chưa được xếp vào kho" : cellLabels.data?.[inventoryId(item.currentCellId)] || "Vị trí đang được cập nhật",
+                      "Chưa ghi nhận tồn thực tế",
                     ],
                     ["Mô tả", item.description],
                     ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
@@ -322,7 +306,6 @@ function Detail({ id }) {
                 Xem lịch sử nhập/xuất
               </Link>
             </Button>
-            {['IN_STORAGE','CHECKED_OUT'].includes(item.status)&&<Button asChild variant="outline"><Link to={`/portal/inventory/${id}/outbound`}>Yêu cầu xuất kho</Link></Button>}
             </div>
             <div className="inventory-action-group flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -337,15 +320,7 @@ function Detail({ id }) {
                 Chỉnh sửa mặt hàng
               </Button>
             )}
-            <Button asChild variant="outline">
-              <Link
-                to={`/portal/warehouse-map/${inventoryId(item.facilityId)}${eligible ? `?inventoryItem=${inventoryId(item)}` : ""}`}
-              >
-                {editable
-                  ? "Chọn ô kệ ưu tiên trên sơ đồ"
-                  : "Xem sơ đồ kho"}
-              </Link>
-            </Button>
+            <Button asChild variant="outline"><Link to={`/portal/warehouse-map/${inventoryId(item.facilityId)}`}>Xem sơ đồ kho</Link></Button>
             </div>
           </div>
           {!editable && !rentals.loading && (
@@ -360,21 +335,10 @@ function Detail({ id }) {
               onSaved={refresh}
             />
           )}
-          <PlacementPreview
-            key={JSON.stringify(item)}
-            item={item}
-            rental={rental}
-            cellLabels={cellLabels.data || {}}
-            eligible={eligible}
-          />
-          {item.inventorySchemaVersion === 3 && eligible && (
-            <ManagedSelfInboundV3 item={item} rental={rental} cellLabels={cellLabels.data || {}} onRefresh={refresh} />
-          )}
-          <p className="text-sm text-slate-500">
-            Đăng ký chỉ lưu thông tin mặt hàng. Tồn kho thực tế chỉ thay đổi sau khi bạn xác nhận nhập hàng trong phiên đến kho còn hiệu lực.
-          </p>
-          {item.inventorySchemaVersion === 3 ? <ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data || {}} onRefresh={refresh} /> :
-            <CanonicalCustomerOutbound item={item} rental={rental} loading={resource.loading || !!resource.error || rentals.loading} onRefresh={refresh} />}
+          {item.inventorySchemaVersion===3&&<ItemSpecifications sku={item} readOnly={!editable} onChanged={refresh}/>}
+          {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
+          {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
+          {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Thao tác tồn kho cho dữ liệu lịch sử được giữ ở chế độ tra cứu trong khi SKU V3 dùng luồng nhập kho hợp nhất.</p>}
         </>
       )}
     </CustomerScreen>

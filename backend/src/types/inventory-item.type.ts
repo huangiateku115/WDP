@@ -13,6 +13,7 @@ export enum InventoryItemStatus {
 export enum ReceivingCustodyStatus { NONE = 'NONE', IN_CUSTODY = 'IN_CUSTODY', RETURNED = 'RETURNED' }
 export enum ReceivingInspectionDecision { ACCEPTED = 'ACCEPTED', DISCREPANCY = 'DISCREPANCY', REJECTED = 'REJECTED' }
 export enum ManagedInventorySchemaVersion { V3 = 3 }
+export enum InventorySkuStatus { ACTIVE = 'ACTIVE', INACTIVE = 'INACTIVE' }
 
 export interface InventoryItemDimensionsM {
   widthM: number;
@@ -27,12 +28,18 @@ export interface InventoryItemFields {
   facilityId: Types.ObjectId;
   customerId: Types.ObjectId;
   managedReservationId: Types.ObjectId;
+  /** Canonical V3 SKU-to-Reservation relation; managedReservationId is legacy alias. */
+  reservationId?: Types.ObjectId;
   itemCode: string;
   name: string;
+  categoryId?: Types.ObjectId;
+  /** @deprecated Historical V1/V2 free-text category; V3 uses categoryId only. */
   category: string;
   description?: string;
+  /** @deprecated V1/V2 stock field; absent on V3 SKU identity documents. */
   quantity: number;
   /** Number of identical handling units represented by this registered lot. */
+  /** @deprecated V1/V2 physical fields; use ItemSpecification for V3. */
   quantityUnit: string;
   unitWeightKg: number;
   unitDimensionsM: InventoryItemDimensionsM;
@@ -43,6 +50,7 @@ export interface InventoryItemFields {
   /** Registration is descriptive only; physical placement is Staff-confirmed later. */
   currentCellId: Types.ObjectId | null;
   status: InventoryItemStatus;
+  skuStatus?: InventorySkuStatus;
   inboundRequestedAt?: Date;
   inboundRequestedBy?: Types.ObjectId;
   inboundConfirmedAt?: Date;

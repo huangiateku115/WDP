@@ -4,11 +4,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const apiPath = fileURLToPath(new URL('../src/api/inventoryApi.js', import.meta.url));
+const v3ApiPath = fileURLToPath(new URL('../src/api/managedInventoryV3Api.js', import.meta.url));
 const customerPath = fileURLToPath(new URL('../src/components/customer/inventory/RepeatedInboundRequests.jsx', import.meta.url));
 const staffPath = fileURLToPath(new URL('../src/pages/staff/RepeatedInboundQueuePage.jsx', import.meta.url));
 const routesPath = fileURLToPath(new URL('../src/routes/StaffRoutes.jsx', import.meta.url));
-const customerOutboundPath = fileURLToPath(new URL('../src/components/customer/inventory/CanonicalCustomerOutbound.jsx', import.meta.url));
-const staffOutboundPath = fileURLToPath(new URL('../src/pages/staff/CanonicalOutboundQueuePage.jsx', import.meta.url));
+const facilityOutboundPath = fileURLToPath(new URL('../src/components/facility/FacilityOutboundRequests.jsx', import.meta.url));
 const relocationPath = fileURLToPath(new URL('../src/pages/staff/CanonicalRelocationPage.jsx', import.meta.url));
 const workspacePath = fileURLToPath(new URL('../src/lib/facilityWorkspace.js', import.meta.url));
 const roleOutletPath = fileURLToPath(new URL('../src/components/common/RoleWorkspaceOutlet.jsx', import.meta.url));
@@ -53,32 +53,13 @@ test('Staff legacy inventory routes redirect to V3 supervision without stock mut
   assert.match(routes, /path="managed" element=\{<ManagedFacilityPage \/>\}/);
 });
 
-test('Customer canonical outbound is separate from legacy action and uses authoritative balance plus lifecycle APIs', async () => {
-  const [api, component] = await Promise.all([readFile(apiPath, 'utf8'), readFile(customerOutboundPath, 'utf8')]);
-  for (const method of ['createCanonicalOutbound', 'canonicalOutboundHistory', 'canonicalOutboundDetail', 'cancelCanonicalOutbound']) assert.match(api, new RegExp(`${method}:`));
-  assert.match(component, /inventoryApi\.stockBalance/);
-  assert.match(component, /inventoryApi\.createCanonicalOutbound/);
-  assert.match(component, /inventoryApi\.cancelCanonicalOutbound/);
-  assert.match(component, /'CANONICAL_V1'/);
-  assert.match(component, /sessionStorage\.setItem/);
-  assert.match(component, /JSON\.stringify\(\{ key, version: expectedVersion \}\)/);
-  assert.match(component, /The cancellation result is uncertain/);
-  assert.match(component, /response\.status === 200/);
-  assert.match(component, /row\.state === 'PENDING'/);
-});
-
-test('Staff outbound queue confirms partial handover with version, stable retry key and refreshed reads', async () => {
-  const [api, page] = await Promise.all([readFile(apiPath, 'utf8'), readFile(staffOutboundPath, 'utf8')]);
-  for (const method of ['canonicalOutboundStaffQueue', 'canonicalOutboundStaffDetail', 'confirmCanonicalOutbound']) assert.match(api, new RegExp(`${method}:`));
-  assert.match(page, /actualDeliveredQty/);
-  assert.match(page, /handoverConfirmed: true/);
-  assert.match(page, /detail\.request\.version/);
-  assert.match(page, /Thử lại cùng xác nhận/);
-  assert.match(page, /JSON\.stringify\(\{ key, payload, version: expectedVersion \}\)/);
-  assert.match(page, /const expectedVersion = retry/);
-  assert.match(page, /Chưa xác định kết quả xác nhận trước/);
-  assert.match(page, /canonicalOutboundStaffQueue/);
-  assert.match(page, /stockBalance/);
+test('Facility Outbound view is read-only and observes committed V3 REMOVE movements', async () => {
+  const [api, component] = await Promise.all([readFile(v3ApiPath, 'utf8'), readFile(facilityOutboundPath, 'utf8')]);
+  assert.match(api, /facilityOverview:/);
+  assert.match(component, /managedInventoryV3Api\.facilityOverview/);
+  assert.match(component, /stockEffect\?\.action === 'REMOVE'/);
+  assert.match(component, /không tự xác nhận hoặc giảm tồn/);
+  assert.doesNotMatch(component, /confirmCanonicalOutbound|cancelCanonicalOutbound|router\.post|outbound-requests/i);
 });
 
 test('Canonical relocation screen loads allocated destinations and calls the existing canonical MOVE endpoint', async () => {
@@ -98,14 +79,10 @@ test('Canonical relocation screen loads allocated destinations and calls the exi
   assert.match(page, /Biến động di chuyển đã lưu/);
 });
 
-test('Canonical Staff pages retain authenticated role gating and explicit empty, loading, error and retry states', async () => {
-  const [outbound, relocation, outlet, facilityGate, workspace] = await Promise.all([
-    readFile(staffOutboundPath, 'utf8'), readFile(relocationPath, 'utf8'), readFile(roleOutletPath, 'utf8'), readFile(facilityGatePath, 'utf8'), readFile(workspacePath, 'utf8'),
+test('Remaining Facility workflows retain authenticated role gating and explicit loading, error and retry states', async () => {
+  const [relocation, outlet, facilityGate, workspace] = await Promise.all([
+    readFile(relocationPath, 'utf8'), readFile(roleOutletPath, 'utf8'), readFile(facilityGatePath, 'utf8'), readFile(workspacePath, 'utf8'),
   ]);
-  assert.match(outbound, /Đang tải yêu cầu xuất hàng/);
-  assert.match(outbound, /Không có yêu cầu khớp trạng thái/);
-  assert.match(outbound, /role="alert"/);
-  assert.match(outbound, /Tải lại hàng chờ/);
   assert.match(relocation, /role="alert"/);
   assert.match(relocation, /Tải dữ liệu di chuyển/);
   assert.match(outlet, /FacilitySessionGate role=\{role\}/);

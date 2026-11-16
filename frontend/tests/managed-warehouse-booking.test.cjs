@@ -29,3 +29,15 @@ test('allocation conflict recovery refreshes, invalidates stale quote, and never
   });
   assert.equal(managedBookingRecovery(400), null);
 });
+
+test('booking eligibility comes from the Backend booking decision, not an inventory reconciliation flag', async () => {
+  const { cellPeriodStatus } = await import('../src/lib/warehouseMap.js');
+  const { cellBookingReason } = await import('../src/lib/managedCellBooking.js');
+  const range={startDate:'2026-11-20T00:00:00.000Z',endDate:'2026-12-20T00:00:00.000Z'},
+    rack={_id:'a'.repeat(24),facilityId:'b'.repeat(24),operationalStatus:'AVAILABLE'},
+    cell={_id:'c'.repeat(24),facilityId:rack.facilityId,operationalStatus:'AVAILABLE',bookingStatus:'AVAILABLE',periodStatus:'AVAILABLE',displayStatus:'AVAILABLE',isBookable:true,dimensions:{widthM:1,depthM:1,usableHeightM:1},physicalUsageKnown:false};
+  assert.equal(cellPeriodStatus(cell),'AVAILABLE');
+  assert.equal(cellBookingReason(cell,rack,range),'');
+  assert.equal(cellPeriodStatus({...cell,isBookable:false}),'UNAVAILABLE');
+  assert.notEqual(cellBookingReason({...cell,isBookable:false},rack,range),'');
+});

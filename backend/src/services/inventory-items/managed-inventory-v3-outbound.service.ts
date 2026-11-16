@@ -1,43 +1,41 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import mongoose, { ClientSession, Types } from 'mongoose';
-import FacilityModel from '../../models/facilities/facility.model';
 import ReservationModel from '../../models/reservations/reservation.model';
 import InventoryItemModelRaw from '../../models/inventory-items/inventory-item.model';
 import ItemMovementModelRaw from '../../models/inventory-items/item-movement.model';
-import ProjectionModelRaw from '../../models/inventory-items/managed-v3-stock-projection.model';
-import PhysicalUnitModelRaw from '../../models/inventory-items/managed-v3-physical-unit.model';
-import FootprintModelRaw from '../../models/inventory-items/managed-v3-footprint.model';
-import BatchPlacementModelRaw from '../../models/inventory-items/managed-v3-batch-placement.model';
-import RequestModelRaw from '../../models/inventory-items/managed-v3-outbound-request.model';
-import EventModelRaw from '../../models/inventory-items/managed-v3-outbound-event.model';
 import CellModelRaw from '../../models/warehouse-map/warehouse-cell.model';
 import RackModelRaw from '../../models/warehouse-map/warehouse-rack.model';
-import ZoneModelRaw from '../../models/warehouse-map/warehouse-zone.model';
-import AllocationModelRaw from '../../models/warehouse-map/cell-allocation.model';
-import TopologyModelRaw from '../../models/warehouse-map/managed-v3-topology-certification.model';
 import ManagedAccessSessionModelRaw from '../../models/access/managed-access-session.model';
 import ManagedAccessVisitModelRaw from '../../models/access/managed-access-visit.model';
+import ItemSpecificationModelRaw from '../../models/inventory-items/item-specification.model';
+import ManagedCellStockModelRaw from '../../models/inventory-items/managed-cell-stock.model';
+import ManagedItemInstanceModelRaw from '../../models/inventory-items/managed-item-instance.model';
+import ContractModelRaw from '../../models/contracts/contract.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
-import { replayManagedInventoryV3, canonicalA2RemovalAmounts } from './managed-inventory-v3-ledger.service';
-import { allocateManagedV3Fifo, assertManagedV3A1OutboundFootprints, currentManagedV3A1Footprint, reconcileManagedV3A1PhysicalUnits, reconcileManagedV3OutboundHolds, staffCanReadManagedV3OutboundRequest, ManagedV3OutboundDomainError } from './managed-v3-outbound-domain';
-import { reconcileManagedItemStock } from './managed-stock-ledger.service';
-import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
+import { readManagedFacilityStockState } from './managed-unified-inbound.service';
+import { FacilityServiceType } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
-import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { ItemMovementType } from '../../types/item-movement.type';
-import { ManagedV3OutboundAllocation, ManagedV3OutboundOperation, ManagedV3OutboundState } from '../../types/managed-inventory-v3-outbound.type';
 import { UserRole } from '../../types/user.type';
+import { ManagedAccessPurpose, ManagedAccessSessionStatus } from '../../types/managed-access.type';
+import { ItemSpecificationStatus } from '../../types/item-specification.type';
 
-const Item: any = InventoryItemModelRaw, Movement: any = ItemMovementModelRaw, Projection: any = ProjectionModelRaw;
-const PhysicalUnit: any = PhysicalUnitModelRaw, Footprint: any = FootprintModelRaw, BatchPlacement: any = BatchPlacementModelRaw;
-const Request: any = RequestModelRaw, Event: any = EventModelRaw, Cell: any = CellModelRaw, Rack: any = RackModelRaw;
-const Zone: any = ZoneModelRaw, Allocation: any = AllocationModelRaw, Topology: any = TopologyModelRaw, AccessSession: any = ManagedAccessSessionModelRaw;
+const Item: any = InventoryItemModelRaw, Movement: any = ItemMovementModelRaw;
+const Cell: any = CellModelRaw, Rack: any = RackModelRaw, AccessSession: any = ManagedAccessSessionModelRaw;
 const Visit: any = ManagedAccessVisitModelRaw;
+const ItemSpec: any = ItemSpecificationModelRaw, CellStock: any = ManagedCellStockModelRaw, ItemInstance: any = ManagedItemInstanceModelRaw, Contract: any = ContractModelRaw;
 type Actor = { _id: Types.ObjectId; role: UserRole; assignedFacilityId?: Types.ObjectId | null };
-type Plain = Record<string, any>;
+export type Plain = Record<string, any>;
 export class ManagedV3OutboundError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
-const fail = (status: number, code: string, message: string): never => { throw new ManagedV3OutboundError(status, code, message); };
+function fail(status: number, code: string, message: string): never { throw new ManagedV3OutboundError(status, code, message); }
 const same = (a: any, b: any) => String(a?._id ?? a) === String(b?._id ?? b);
+const id = (value: any) => String(value?._id ?? value);
+const stockLotKey = (line: any) => `${id(line.itemSpecId)}:${line.receiptId}:${id(line.cellId)}`;
+function physicalTotals(unitWeightKg: number, unitVolumeM3: number, quantity: number) {
+  const totalWeightKg = money(unitWeightKg * quantity, 3), totalVolumeM3 = money(unitVolumeM3 * quantity, 6);
+  if (!Number.isSafeInteger(quantity) || quantity < 0 || ![unitWeightKg, unitVolumeM3, totalWeightKg, totalVolumeM3].every(Number.isFinite)) fail(409, 'PHYSICAL_SNAPSHOT_INVALID', 'Số đo receipt không thể tính an toàn.');
+  return { totalWeightKg, totalVolumeM3 };
+}
 const live = { deletedAt: { $exists: false } };
 const oid = (value: unknown, name: string) => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(value as string); };
 const key = (value: unknown) => { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value; };
@@ -47,547 +45,422 @@ const stable = (value: any) => JSON.stringify(canonical(value));
 const hash = (value: unknown) => createHash('sha256').update(stable(value)).digest('hex');
 const errorLabel = (error: any, label: string) => !!error?.hasErrorLabel?.(label) || error?.errorLabels?.includes?.(label);
 const money = (v: number, places: 3 | 6) => Math.round((v + Number.EPSILON) * 10 ** places) / 10 ** places;
+const round = money;
+
+export type DirectOutboundLine = { lineId: string; itemSpecId: string; itemSpecRevision: number; quantity: number;
+  cellAllocations?: Array<{ cellId: string; quantity: number; receiptId?: string }>; itemInstanceIds?: string[] };
+export type DirectOutboundCandidate = { accessSessionId: string; sessionRevision: number; skuRevision: number; lines: DirectOutboundLine[]; reason?: string; referenceCode?: string; notes?: string; physicalRemovalConfirmed?: boolean; customerAttestation?: string };
+
+export function normalizeDirectOutbound(input: unknown): DirectOutboundCandidate {
+  const shape = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Plain : null;
+  if (!shape || Object.keys(shape).some(key => !['accessSessionId','sessionRevision','skuRevision','lines','reason','referenceCode','notes','physicalRemovalConfirmed','customerAttestation'].includes(key)) ||
+      typeof shape.accessSessionId !== 'string' || !/^[a-f\d]{24}$/i.test(shape.accessSessionId) ||
+      !Number.isSafeInteger(shape.sessionRevision) || shape.sessionRevision < 0 || !Number.isSafeInteger(shape.skuRevision) || shape.skuRevision < 0 ||
+      !Array.isArray(shape.lines) || shape.lines.length < 1 || shape.lines.length > 50) fail(422, 'INVALID_OUTBOUND_INPUT', 'Thông tin xuất kho không đúng định dạng.');
+  const lines: DirectOutboundLine[] = shape.lines.map((raw: any, index: number) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['lineId','itemSpecId','itemSpecRevision','quantity','cellAllocations','itemInstanceIds'].includes(key)) ||
+        typeof raw.lineId !== 'string' || !/^[\w.-]{1,80}$/.test(raw.lineId) || typeof raw.itemSpecId !== 'string' || !/^[a-f\d]{24}$/i.test(raw.itemSpecId) ||
+        !Number.isSafeInteger(raw.itemSpecRevision) || raw.itemSpecRevision < 0 || !Number.isSafeInteger(raw.quantity) || raw.quantity < 1) fail(422, 'INVALID_OUTBOUND_LINE', `Dòng ${index + 1} chưa hợp lệ.`);
+    const instances = raw.itemInstanceIds;
+    if (instances !== undefined && (!Array.isArray(instances) || instances.length < 1 || instances.length !== raw.quantity || instances.some((value: any) => typeof value !== 'string' || !value.trim() || value.length > 160) || new Set(instances).size !== instances.length || raw.cellAllocations !== undefined)) fail(422, 'INVALID_ITEM_INSTANCE_SELECTION', `Dòng ${index + 1}: hãy chọn đủ từng món nguyên vẹn hoặc dùng số lượng theo ô kệ.`);
+    const cellAllocations = raw.cellAllocations;
+    if (instances === undefined && cellAllocations !== undefined && (!Array.isArray(cellAllocations) || cellAllocations.length < 1 || cellAllocations.length > 100 ||
+        cellAllocations.some((row: any) => !row || typeof row.cellId !== 'string' || !/^[a-f\d]{24}$/i.test(row.cellId) || !Number.isSafeInteger(row.quantity) || row.quantity < 1 || row.receiptId !== undefined && (typeof row.receiptId !== 'string' || !row.receiptId.trim() || row.receiptId.length > 160)) ||
+        new Set(cellAllocations.map((row: any) => row.cellId)).size !== cellAllocations.length || cellAllocations.reduce((sum: number, row: any) => sum + row.quantity, 0) !== raw.quantity)) fail(422, 'INVALID_CELL_ALLOCATION', `Dòng ${index + 1}: tổng số lượng theo ô kệ phải bằng số lượng xuất.`);
+    return { lineId: raw.lineId, itemSpecId: raw.itemSpecId, itemSpecRevision: raw.itemSpecRevision, quantity: raw.quantity,
+      ...(cellAllocations ? { cellAllocations } : {}), ...(instances ? { itemInstanceIds: instances } : {}) };
+  });
+  if (new Set(lines.map(line => line.itemSpecId)).size !== lines.length || new Set(lines.map(line => line.lineId)).size !== lines.length) fail(422, 'DUPLICATE_OUTBOUND_LINE', 'Mỗi loại hàng chỉ được xuất trên một dòng phiếu.');
+  for (const field of ['reason','referenceCode','notes','customerAttestation'] as const) if (shape[field] !== undefined && (typeof shape[field] !== 'string' || shape[field].length > (field === 'notes' || field === 'customerAttestation' ? 1000 : 240))) fail(422, 'INVALID_OUTBOUND_INPUT', `${field} không hợp lệ.`);
+  if (shape.physicalRemovalConfirmed !== undefined && typeof shape.physicalRemovalConfirmed !== 'boolean') fail(422, 'INVALID_OUTBOUND_INPUT', 'physicalRemovalConfirmed phải là boolean.');
+  return { accessSessionId: shape.accessSessionId, sessionRevision: shape.sessionRevision, skuRevision: shape.skuRevision, lines,
+    ...(shape.reason ? { reason: shape.reason.trim() } : {}), ...(shape.referenceCode ? { referenceCode: shape.referenceCode.trim() } : {}), ...(shape.notes ? { notes: shape.notes.trim() } : {}),
+    ...(shape.physicalRemovalConfirmed !== undefined ? { physicalRemovalConfirmed: shape.physicalRemovalConfirmed } : {}),
+    ...(shape.customerAttestation ? { customerAttestation: shape.customerAttestation.trim() } : {}) };
+}
+
+function assertCurrentSignedContract(contract: any) {
+  const active = contract?.contentVersions?.find((version: any) => version.version === contract.currentContentVersion);
+  const signatures = (contract?.signatures ?? []).filter((signature: any) => signature.version === contract.currentContentVersion && signature.contentHash === active?.contentHash);
+  return contract?.status === 'SIGNED' && !!active && signatures.some((signature: any) => signature.signerRole === UserRole.CUSTOMER) &&
+    signatures.some((signature: any) => [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(signature.signerRole));
+}
+
+function directScope(sku: any, reservation: any, actor: Actor) {
+  const now = new Date();
+  if (actor.role !== UserRole.CUSTOMER || !same(sku.customerId, actor._id)) fail(404, 'SKU_NOT_FOUND', 'Không tìm thấy mặt hàng.');
+  if (sku.inventorySchemaVersion !== 3 || sku.skuStatus !== 'ACTIVE' || !same(sku.facilityId, reservation.facilityId) ||
+      !same(sku.reservationId ?? sku.managedReservationId, reservation._id)) fail(409, 'OUTBOUND_SCOPE_INVALID', 'SKU không thuộc Reservation đang chọn.');
+  if (reservation.serviceType !== FacilityServiceType.MANAGED_INVENTORY || reservation.bookingFlowVersion !== 3 || reservation.status !== ReservationStatus.ACTIVE ||
+      reservation.customerId.toString() !== actor._id.toString() || reservation.startDate > now || reservation.endDate <= now || !reservation.handoverAt || !reservation.handoverByStaffId ||
+      reservation.activeClosureRequestId) fail(409, 'RENTAL_NOT_ACTIVE', 'Reservation phải đang hoạt động, trong hạn và đã hoàn tất bàn giao.');
+}
+
+export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain; candidate: DirectOutboundCandidate; state: Plain; specifications: Plain[]; now?: Date }) {
+  const { sku, reservation, candidate, state, specifications } = input, now = input.now ?? new Date();
+  if (Number(sku.managedV3Revision ?? 0) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'SKU đã thay đổi; hãy tải lại trước khi xem trước.');
+  const specMap = new Map(specifications.map(spec => [String(spec._id), spec]));
+  const lots = (state.replay.lots as Plain[]).filter(row => same(row.skuId, sku._id) && same(row.reservationId, reservation._id));
+  const instances = (state.replay.instances as Plain[]).filter(row => same(row.skuId, sku._id) && same(row.reservationId, reservation._id) && row.status === 'PLACED');
+  const movements = (state.movements as Plain[]).filter(row => same(row.itemId, sku._id)).sort((a,b) => new Date(a.performedAt).getTime()-new Date(b.performedAt).getTime() || id(a._id).localeCompare(id(b._id)));
+  const receiptOrder = new Map<string, { at: number; movementId: string }>();
+  for (const movement of movements) if (movement.stockEffect?.action === 'ADD') for (const line of movement.stockEffect.destination ?? []) {
+    if (!receiptOrder.has(line.receiptId)) receiptOrder.set(line.receiptId, { at: new Date(movement.performedAt).getTime(), movementId: id(movement._id) });
+  }
+  const allocatedCellIds = new Set((reservation.allocatedCellIds ?? []).map(id));
+  const effectLines: Plain[] = [], cellRelease = new Map<string, { weightKg: number; volumeM3: number }>(), specTotals: Plain[] = [];
+  const addCell = (cellId: string, weightKg: number, volumeM3: number) => { const current=cellRelease.get(cellId)??{weightKg:0,volumeM3:0}; current.weightKg=money(current.weightKg+weightKg,3); current.volumeM3=money(current.volumeM3+volumeM3,6); cellRelease.set(cellId,current); };
+  let quantity = 0, totalWeightKg = 0, totalVolumeM3 = 0;
+  for (const line of candidate.lines) {
+    const spec = specMap.get(line.itemSpecId);
+    if (!spec || !same(spec.skuId,sku._id) || !same(spec.customerId,sku.customerId) || !same(spec.reservationId,reservation._id) || spec.status !== ItemSpecificationStatus.ACTIVE || spec.revision !== line.itemSpecRevision) fail(409, 'ITEM_SPECIFICATION_STALE', `Loại hàng tại dòng ${line.lineId} không còn hợp lệ; hãy tải lại.`);
+    const specLots = lots.filter(row=>same(row.itemSpecId,spec._id));
+    const specInstances = instances.filter(row=>same(row.itemSpecId,spec._id));
+    if (specLots.length && specInstances.length) fail(409, 'MIXED_STOCK_KIND_UNSUPPORTED', `Hàng ${spec.name} đang có dạng lô và món nguyên khối cùng lúc; cần đối soát trước khi xuất.`);
+    const beforeQuantity = specLots.reduce((sum,row)=>sum+row.quantityOnHand,0)+specInstances.length;
+    const availableQuantity = specLots.reduce((sum,row)=>sum+row.quantityAvailable,0)+specInstances.length;
+    let lineQuantity = 0, lineWeightKg = 0, lineVolumeM3 = 0;
+    if (line.itemInstanceIds) {
+      for (const instanceId of line.itemInstanceIds) {
+        const instance = instances.find(row=>row.itemInstanceId===instanceId && same(row.itemSpecId,spec._id));
+        if (!instance || instance.status !== 'PLACED' || instance.quantity !== 1 || !Array.isArray(instance.allocations) || !instance.allocations.length) fail(409, 'ITEM_INSTANCE_NOT_AVAILABLE', 'Một món nguyên vẹn không còn trong kho hoặc đã được xuất.');
+        for (const allocation of [...instance.allocations].sort((a,b)=>id(a.cellId).localeCompare(id(b.cellId)))) {
+          const cellId=id(allocation.cellId); if (!allocatedCellIds.has(cellId)) fail(409,'CELL_NOT_ALLOCATED','Món hàng nằm ngoài ô kệ được cấp cho Reservation.');
+          const effect = { lineId: line.lineId, itemSpecId: spec._id, receiptId: instance.sourceReceiptId, itemInstanceId: instance.itemInstanceId, cellId: allocation.cellId,
+            quantity: 1, quantityUnitSnapshot: spec.quantityUnitName ?? spec.quantityUnitId?.name ?? 'đơn vị', unitWeightKgSnapshot: instance.unitWeightKgSnapshot,
+            unitVolumeM3Snapshot: instance.unitVolumeM3Snapshot, unitDimensionsSnapshot: instance.unitDimensionsSnapshot, allocatedWeightKg: allocation.weightKg,
+            allocatedVolumeM3: allocation.volumeM3, quantityBefore: 1, quantityAfter: 0 };
+          effectLines.push(effect); addCell(cellId,allocation.weightKg,allocation.volumeM3); lineWeightKg=money(lineWeightKg+allocation.weightKg,3); lineVolumeM3=money(lineVolumeM3+allocation.volumeM3,6);
+        }
+      }
+      lineQuantity = line.itemInstanceIds.length;
+    } else {
+      if (availableQuantity < line.quantity) fail(409, 'OUTBOUND_QUANTITY_UNAVAILABLE', `Không đủ số lượng khả dụng cho ${spec.name}.`);
+      const allocations = line.cellAllocations ?? [{ cellId: '', quantity: line.quantity }];
+      let needed = line.quantity;
+      const remainingByLot = new Map(specLots.map(lot => [stockLotKey(lot), lot.quantityAvailable]));
+      const fifo = [...specLots].sort((a,b)=>{
+        const ao=receiptOrder.get(a.receiptId)??{at:Number.MAX_SAFE_INTEGER,movementId:''},bo=receiptOrder.get(b.receiptId)??{at:Number.MAX_SAFE_INTEGER,movementId:''};
+        return ao.at-bo.at||ao.movementId.localeCompare(bo.movementId)||a.receiptId.localeCompare(b.receiptId)||id(a.cellId).localeCompare(id(b.cellId));
+      });
+      for (const allocation of allocations) {
+        if (allocation.cellId && !allocatedCellIds.has(allocation.cellId)) fail(409,'CELL_NOT_ALLOCATED','Có ô kệ nguồn nằm ngoài Reservation.');
+        let cellNeeded=allocation.quantity;
+        const candidates=fifo.filter(row=>(!allocation.cellId||id(row.cellId)===allocation.cellId)&&(!allocation.receiptId||row.receiptId===allocation.receiptId));
+        for (const lot of candidates) {
+          if (!cellNeeded) break;
+          const lotKey=stockLotKey(lot), remaining=remainingByLot.get(lotKey)??0;
+          const take=Math.min(cellNeeded,remaining); if (take<1) continue;
+          const amounts=physicalTotals(lot.unitWeightKgSnapshot,lot.unitVolumeM3Snapshot,take), cellId=id(lot.cellId);
+          effectLines.push({ lineId:line.lineId,itemSpecId:spec._id,receiptId:lot.receiptId,cellId:lot.cellId,quantity:take,quantityUnitSnapshot:lot.quantityUnitSnapshot??'đơn vị',
+            unitWeightKgSnapshot:lot.unitWeightKgSnapshot,unitVolumeM3Snapshot:lot.unitVolumeM3Snapshot,unitDimensionsSnapshot:lot.unitDimensionsSnapshot,
+            allocatedWeightKg:amounts.totalWeightKg,allocatedVolumeM3:amounts.totalVolumeM3,quantityBefore:lot.quantityOnHand,quantityAfter:lot.quantityOnHand-take });
+          addCell(cellId,amounts.totalWeightKg,amounts.totalVolumeM3); lineWeightKg=money(lineWeightKg+amounts.totalWeightKg,3); lineVolumeM3=money(lineVolumeM3+amounts.totalVolumeM3,6);
+          cellNeeded-=take; needed-=take; remainingByLot.set(lotKey, remaining-take);
+        }
+        if (cellNeeded) fail(409,'OUTBOUND_QUANTITY_UNAVAILABLE',`Không đủ số lượng khả dụng tại ô kệ đã chọn cho ${spec.name}.`);
+      }
+      if (needed) fail(409,'OUTBOUND_QUANTITY_UNAVAILABLE',`Không đủ số lượng khả dụng cho ${spec.name}.`);
+      lineQuantity=line.quantity;
+    }
+    specTotals.push({ itemSpecId: spec._id, code: spec.code, name: spec.name, quantityBefore: beforeQuantity, availableBefore: availableQuantity,
+      quantityOut: lineQuantity, quantityAfter: beforeQuantity-lineQuantity, weightRemovedKg: lineWeightKg, volumeRemovedM3: lineVolumeM3 });
+    quantity+=lineQuantity; totalWeightKg=money(totalWeightKg+lineWeightKg,3); totalVolumeM3=money(totalVolumeM3+lineVolumeM3,6);
+  }
+  if (!quantity || !Number.isSafeInteger(quantity) || !Number.isFinite(totalWeightKg) || !Number.isFinite(totalVolumeM3)) fail(422,'INVALID_OUTBOUND_TOTALS','Không thể tính an toàn tổng phiếu xuất.');
+  const cells = new Map((state.cells as Plain[]).map(cell=>[id(cell._id),cell]));
+  const capacity = [...cellRelease.entries()].map(([cellId,release])=>{
+    const cell:any=cells.get(cellId); if(!cell)fail(503,'CELL_CAPACITY_UNKNOWN','Không xác minh được ô kệ nguồn.');
+    const afterWeight=money(Number(cell.usedWeightKg)-release.weightKg,3),afterVolume=money(Number(cell.usedVolumeM3)-release.volumeM3,6);
+    if(!Number.isFinite(afterWeight)||!Number.isFinite(afterVolume)||afterWeight < -0.001||afterVolume < -0.000001)fail(503,'CELL_COUNTER_RECONCILIATION_UNKNOWN',`Counter của ô ${cell.code} không thể giảm an toàn.`);
+    return {cellId,cellCode:cell.code,usedWeightBeforeKg:cell.usedWeightKg,usedWeightAfterKg:Math.max(0,afterWeight),usedVolumeBeforeM3:cell.usedVolumeM3,usedVolumeAfterM3:Math.max(0,afterVolume)};
+  });
+  return { effectLines, quantity, totalWeightKg, totalVolumeM3, cellRelease, capacity, specTotals, sourceCellIds:[...cellRelease.keys()].sort() };
+}
 
 async function withTransaction<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
   const session = await mongoose.startSession();
-  try { let result!: T; await session.withTransaction(async () => { result = await work(session); }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }, maxCommitTimeMS: 15_000 }); return result; }
-  finally { await session.endSession(); }
-}
-function requireCustomer(actor: Actor) { if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được tạo hoặc xác nhận yêu cầu xuất V3.'); }
-function projectionComparable(value: Plain) {
-  return { skuId: String(value.skuId), reservationId: String(value.reservationId), customerId: String(value.customerId), facilityId: String(value.facilityId),
-    onHandQuantity: value.onHandQuantity, heldQuantity: value.heldQuantity, availableQuantity: value.availableQuantity, totalWeightKg: value.totalWeightKg, totalVolumeM3: value.totalVolumeM3,
-    byBatch: (value.byBatch ?? []).map((x: Plain) => ({ itemKind: x.itemKind, batchId: x.batchId, cellId: String(x.cellId), quantity: x.quantity, quantityUnit: x.quantityUnit, weightKg: x.weightKg, volumeM3: x.volumeM3, heldQuantity: x.heldQuantity, topologyCertificationId: String(x.topologyCertificationId), topologyRevision: x.topologyRevision })).sort((a: Plain, b: Plain) => a.batchId.localeCompare(b.batchId) || a.cellId.localeCompare(b.cellId)),
-    byPhysicalUnit: (value.byPhysicalUnit ?? []).map((x: Plain) => ({ itemKind: x.itemKind, physicalUnitId: String(x.physicalUnitId), quantity: x.quantity, quantityUnit: x.quantityUnit, pose: x.pose, weightKg: x.weightKg, volumeM3: x.volumeM3, cellIds: (x.cellIds ?? []).map(String).sort() })).sort((a: Plain, b: Plain) => a.physicalUnitId.localeCompare(b.physicalUnitId)),
-    byCell: (value.byCell ?? []).map((x: Plain) => ({ ...x, cellId: String(x.cellId) })).sort((a: Plain, b: Plain) => a.cellId.localeCompare(b.cellId)), lastMovementId: value.lastMovementId ? String(value.lastMovementId) : null, ledgerRevision: value.ledgerRevision, projectionRevision: value.projectionRevision };
-}
-async function readState(item: Plain, session?: ClientSession) {
-  const query = Movement.find({ itemId: item._id, schemaVersion: 3 }).sort({ performedAt: 1, _id: 1 }); if (session) query.session(session);
-  const movements = await query.lean().exec();
-  if (movements.length > 5000) fail(503, 'V3_LEDGER_SCAN_LIMIT', 'Lịch sử V3 vượt giới hạn đối soát an toàn.');
-  let replay: Plain = {};
-  try { replay = replayManagedInventoryV3(item, movements); } catch (error: any) { fail(409, error.code ?? 'V3_LEDGER_UNKNOWN', 'Stock ledger V3 không thể đối soát an toàn.'); }
-  const projectionQuery = Projection.findOne({ skuId: item._id, reservationId: item.managedReservationId, customerId: item.customerId, facilityId: item.facilityId }); if (session) projectionQuery.session(session);
-  const projection = await projectionQuery.lean().exec();
-  const batchQuery = BatchPlacement.find({ skuId: item._id }); if (session) batchQuery.session(session);
-  const unitQuery = PhysicalUnit.find({ skuId: item._id }); if (session) unitQuery.session(session);
-  const [batchRows, unitRows] = await Promise.all([batchQuery.lean().exec(), unitQuery.lean().exec()]);
-  const unitIds = (unitRows as Plain[]).map(row => row._id);
-  const footprintQuery = Footprint.find({ physicalUnitId: { $in: unitIds } }); if (session) footprintQuery.session(session);
-  const footprintRows = await footprintQuery.lean().exec();
-  const requestQuery = Request.find({ skuId: item._id }).sort({ createdAt: 1, _id: 1 }); if (session) requestQuery.session(session);
-  const eventQuery = Event.find({ skuId: item._id }).sort({ occurredAt: 1, _id: 1 }); if (session) eventQuery.session(session);
-  const [requests, events] = await Promise.all([requestQuery.lean().exec(), eventQuery.lean().exec()]);
-  const pristineEmptyRegistration = movements.length === 0 && !projection && item.status === 'REGISTERED' && item.currentCellId == null &&
-    !item.currentPlacementMovementId && !item.inboundMovementId && (batchRows as Plain[]).length === 0 &&
-    (unitRows as Plain[]).every(row => row.state === 'PREPARED') && (footprintRows as Plain[]).length === 0 && requests.length === 0 && events.length === 0;
-  if (!projection && !pristineEmptyRegistration || projection && stable(projectionComparable(projection)) !== stable(projectionComparable(replay))) {
-    fail(409, 'V3_PROJECTION_MISMATCH', 'Stock projection chưa khớp replay canonical V3.');
-  }
-  const activeBatchRows = (batchRows as Plain[]).filter(row => row.state === 'ACTIVE');
-  const expectedBatchRows = replay.byBatch as Plain[];
-  const batchComparable = (rows: Plain[]) => rows.map(row => ({ batchId: String(row.batchId), cellId: String(row.cellId), quantity: row.quantity,
-    quantityUnit: row.quantityUnit, weightKg: row.weightKg, volumeM3: row.volumeM3, receiptMovementId: String(row.receiptMovementId),
-    topologyCertificationId: String(row.topologyCertificationId), topologyRevision: row.topologyRevision })).sort((a, b) => a.batchId.localeCompare(b.batchId) || a.cellId.localeCompare(b.cellId));
-  const batchScopesValid = (batchRows as Plain[]).every(row => String(row.skuId) === String(item._id) && String(row.reservationId) === String(item.managedReservationId) &&
-    String(row.customerId) === String(item.customerId) && String(row.facilityId) === String(item.facilityId));
-  if (!batchScopesValid || (batchRows as Plain[]).some(row => row.state === 'DEPLETED' && (row.quantity !== 0 || row.weightKg !== 0 || row.volumeM3 !== 0)) ||
-      stable(batchComparable(activeBatchRows)) !== stable(batchComparable(expectedBatchRows))) fail(409, 'V3_PLACEMENT_RECONCILIATION_UNKNOWN', 'BatchPlacement không khớp canonical V3 ledger.');
-  const activeUnitRows = (unitRows as Plain[]).filter(row => row.state === 'PLACED');
-  const expectedUnitRows = replay.byPhysicalUnit as Plain[];
-  try { reconcileManagedV3A1PhysicalUnits({ item, physicalUnits: unitRows as Plain[], movements, replay }); }
-  catch (error: any) { fail(409, error.code ?? 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit identity hoặc physical facts không khớp canonical V3 ledger.'); }
-  if ((unitRows as Plain[]).some(row => ['REMOVED', 'QUARANTINED'].includes(row.state) && expectedUnitRows.some(expected => String(expected.physicalUnitId) === String(row._id))) ||
-      activeUnitRows.length !== expectedUnitRows.length || activeUnitRows.some(row => !row.currentPose)) fail(409, 'V3_PHYSICAL_UNIT_RECONCILIATION_UNKNOWN', 'PhysicalUnit không khớp canonical V3 ledger.');
-  const activeFootprints = (footprintRows as Plain[]).filter(row => row.state === 'ACTIVE');
-  const footprintComparable = (rows: Plain[]) => rows.map(row => ({ physicalUnitId: String(row.physicalUnitId), sourceMovementId: String(row.sourceMovementId), cells: (row.cells ?? []).map((cell: Plain) => ({ cellId: String(cell.cellId),
-    topologyCertificationId: String(cell.topologyCertificationId), supportReactionKg: cell.supportReactionKg, occupiedVolumeM3: cell.occupiedVolumeM3, topologyRevision: cell.topologyRevision }))
-      .sort((a: Plain, b: Plain) => a.cellId.localeCompare(b.cellId)), pose: row.pose, topologyCertificationId: String(row.topologyCertificationId), topologyRevision: row.topologyRevision }))
-    .sort((a, b) => a.physicalUnitId.localeCompare(b.physicalUnitId));
-  const expectedFootprints = expectedUnitRows.map((unit: Plain) => {
-    let lines: Plain[] = []; try { lines = currentManagedV3A1Footprint(movements, String(unit.physicalUnitId)); }
-    catch { fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'A1 footprint hiện tại không thể dựng lại từ ledger history.'); }
-    const latestMovement = [...movements].reverse().find((movement: Plain) => [...(movement.v3Effect?.source ?? []), ...(movement.v3Effect?.destination ?? [])]
-      .some((line: Plain) => String(line.physicalUnitId) === String(unit.physicalUnitId)));
-    if (!latestMovement || latestMovement.v3Effect?.action === 'REMOVE') fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'Không xác định được Movement tạo footprint hiện tại.');
-    return { physicalUnitId: unit.physicalUnitId, cells: lines.map((line: Plain) => ({ cellId: line.cellId, topologyCertificationId: line.topologyCertificationId,
-      supportReactionKg: line.supportReactionKg, occupiedVolumeM3: line.occupiedVolumeM3, topologyRevision: line.topologyRevision })), pose: lines[0]!.pose, sourceMovementId: latestMovement._id,
-      topologyCertificationId: lines[0]!.topologyCertificationId, topologyRevision: lines[0]!.topologyRevision };
-  });
-  const footprintScopesValid = activeFootprints.every(row => String(row.reservationId) === String(item.managedReservationId) &&
-    String(row.customerId) === String(item.customerId) && String(row.facilityId) === String(item.facilityId));
-  if (!footprintScopesValid || stable(footprintComparable(activeFootprints)) !== stable(footprintComparable(expectedFootprints))) fail(409, 'V3_FOOTPRINT_RECONCILIATION_UNKNOWN', 'Footprint identity, scope or cells do not match canonical V3 ledger.');
-  let holds: Plain = { heldByPlacement: new Map(), pendingRequestIds: [], allocations: [] };
-  try { holds = reconcileManagedV3OutboundHolds(events, requests); } catch (error: any) { fail(409, error.code ?? 'OUTBOUND_HOLDS_UNKNOWN', 'Outbound holds không thể tái dựng an toàn.'); }
-  const batchByKey = new Map<string, Plain>((replay.byBatch ?? []).map((row: Plain) => [`B:${row.batchId}:${String(row.cellId)}`, row]));
-  const unitsById = new Map<string, Plain>((replay.byPhysicalUnit ?? []).map((row: Plain) => [String(row.physicalUnitId), row]));
-  let heldQuantity = 0; const countedUnits = new Set<string>();
-  for (const [placementKey, held] of holds.heldByPlacement.entries()) {
-    const line = placementKey.startsWith('B:') ? batchByKey.get(placementKey) : unitsById.get(placementKey.slice(2).split(':')[0]);
-    if (!line || !Number.isSafeInteger(held) || held < 1 || held > (placementKey.startsWith('B:') ? line.quantity : 1)) fail(409, 'OUTBOUND_HOLDS_UNKNOWN', 'Hold vượt tồn hoặc không còn placement nguồn.');
-    if (placementKey.startsWith('B:')) heldQuantity += held;
-    else { const unitId = placementKey.slice(2).split(':')[0]!; if (!countedUnits.has(unitId)) { heldQuantity += 1; countedUnits.add(unitId); } }
-  }
-  if (!Number.isSafeInteger(heldQuantity) || heldQuantity > replay.onHandQuantity) fail(409, 'OUTBOUND_HOLDS_UNKNOWN', 'Tổng hold vượt on-hand stock.');
-  const customerProjection = { ...replay, heldQuantity, availableQuantity: replay.onHandQuantity - heldQuantity,
-    byBatch: replay.byBatch.map((line: Plain) => ({ ...line, heldQuantity: holds.heldByPlacement.get(`B:${line.batchId}:${String(line.cellId)}`) ?? 0 })),
-    byPhysicalUnit: replay.byPhysicalUnit.map((unit: Plain) => ({ ...unit, held: holds.heldByPlacement.has(`U:${String(unit.physicalUnitId)}:${String(unit.cellIds?.[0] ?? '')}`) || holds.allocations.some((x: Plain) => String(x.physicalUnitId) === String(unit.physicalUnitId)) })) };
-  return { replay, projection, requests, events, movements, holds, customerProjection };
+  try {
+    let result!: T;
+    await session.withTransaction(async () => { result = await work(session); }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }, maxCommitTimeMS: 15_000 });
+    return result;
+  } finally { await session.endSession(); }
 }
 
-async function reservationFor(item: Plain, actor: Actor, session?: ClientSession, requireActive = true) {
-  const now = new Date(); const query = ReservationModel.findOne({ _id: item.managedReservationId, customerId: actor._id, facilityId: item.facilityId,
-    serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3, ...(requireActive ? { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now }, handoverAt: { $exists: true, $ne: null } } : {}) });
-  if (session) query.session(session);
-  const reservation: any = await query.exec();
-  if (!reservation) fail(409, 'RENTAL_NOT_ACTIVE', 'Reservation phải thuộc Customer và Facility này, ở trạng thái ACTIVE sau Handover và còn trong kỳ thuê.');
+async function directOwnedSku(input: unknown, actor: Actor, session?: ClientSession) {
+  if (actor.role !== UserRole.CUSTOMER) fail(403, 'ROLE_DENIED', 'Chỉ Customer được xác nhận xuất kho.');
+  const filter = { _id: oid(input, 'skuId'), customerId: actor._id, inventorySchemaVersion: 3, skuStatus: 'ACTIVE', deletedAt: { $exists: false } };
+  let query = Item.findOne(filter); if (session) query = query.session(session);
+  const sku: any = await query.lean().exec();
+  if (!sku) fail(404, 'SKU_NOT_FOUND', 'Không tìm thấy mặt hàng.');
+  return sku;
+}
+
+async function directReservation(sku: Plain, actor: Actor, session?: ClientSession) {
+  const reservationId = sku.reservationId ?? sku.managedReservationId;
+  let query = ReservationModel.findOne({ _id: reservationId, customerId: actor._id, facilityId: sku.facilityId,
+    serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3, status: ReservationStatus.ACTIVE,
+    startDate: { $lte: new Date() }, endDate: { $gt: new Date() }, handoverAt: { $exists: true, $ne: null },
+    handoverByStaffId: { $exists: true, $ne: null }, $or: [{ activeClosureRequestId: null }, { activeClosureRequestId: { $exists: false } }] });
+  if (session) query = query.session(session);
+  const reservation: any = await query.lean().exec();
+  if (!reservation) fail(409, 'RENTAL_NOT_ACTIVE', 'Đơn thuê phải đang hoạt động, đã bàn giao và còn trong kỳ thuê.');
+  const contractQuery = Contract.findOne({ reservationId: reservation._id, customerId: actor._id, status: 'SIGNED' });
+  if (session) contractQuery.session(session);
+  const contract: any = await contractQuery.lean().exec();
+  if (!assertCurrentSignedContract(contract)) fail(409, 'CONTRACT_NOT_SIGNED', 'Hợp đồng hiện hành chưa được Customer và đại diện cơ sở ký đầy đủ.');
   return reservation;
 }
-async function facilityFor(item: Plain, session?: ClientSession) {
-  const query = FacilityModel.findOne({ _id: item.facilityId, status: FacilityStatus.ACTIVE, serviceTypes: FacilityServiceType.MANAGED_INVENTORY, ...live }).select('_id'); if (session) query.session(session);
-  if (!await query.lean().exec()) fail(409, 'FACILITY_UNAVAILABLE', 'Facility Managed Inventory không khả dụng.');
+
+async function directFacilityState(sku: Plain, reservation: Plain, session?: ClientSession) {
+  const cellIds = (reservation.allocatedCellIds ?? []).map((value: any) => new Types.ObjectId(id(value)));
+  try { return await readManagedFacilityStockState(sku.facilityId, session, { reservationId: reservation._id, cellIds, skuId: sku._id }); }
+  catch (error: any) {
+    const code = error?.code || 'STOCK_RECONCILIATION_UNKNOWN';
+    fail(error?.status || 503, code, error?.message || 'Tồn kho chưa thể đối soát an toàn.');
+  }
 }
-async function assertFacilityCapacityReconciled(facilityId: Types.ObjectId, targetReservationId: Types.ObjectId, session: ClientSession) {
-  const items = await Item.find({ facilityId }).session(session).select('_id customerId managedReservationId inventorySchemaVersion currentCellId status currentPlacementMovementId').limit(5001).lean().exec();
-  if (items.length > 5000) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', 'Số SKU của Facility vượt giới hạn đối soát an toàn.');
-  const itemIds = items.map((row: Plain) => row._id);
-  const movementCount = await Movement.countDocuments({ facilityId, itemId: { $in: itemIds } }).session(session).exec();
-  if (movementCount > 100_000) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', 'Lịch sử Movement của Facility vượt giới hạn đối soát an toàn.');
-  const movements = await Movement.find({ facilityId, itemId: { $in: itemIds } }).sort({ performedAt: 1, _id: 1 }).session(session).lean().exec();
-  const byItem = new Map<string, Plain[]>();
-  for (const row of movements) { const list = byItem.get(String(row.itemId)) ?? []; list.push(row); byItem.set(String(row.itemId), list); }
-  const usage = new Map<string, { weight: number; volume: number }>(), reservationVolumes = new Map<string, number>();
-  const addCell = (cellId: unknown, weight: number, volume: number) => {
-    const key = String(cellId), current = usage.get(key) ?? { weight: 0, volume: 0 }; current.weight += weight; current.volume += volume; usage.set(key, current);
-  };
-  for (const item of items as Plain[]) {
-    const history = byItem.get(String(item._id)) ?? [];
-    let stock: Plain = {};
-    if (item.inventorySchemaVersion === 3) {
-      let replay: Plain = {};
-      try { replay = replayManagedInventoryV3(item, history.filter(row => row.schemaVersion === 3)); } catch { fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `V3 ledger của SKU ${item._id} không thể đối soát.`); }
-      const stored = await Projection.findOne({ skuId: item._id, facilityId }).session(session).lean().exec();
-      if (replay.ledgerRevision > 0 && (!stored || stable(projectionComparable(stored)) !== stable(projectionComparable(replay)))) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Projection của SKU ${item._id} không khớp ledger.`);
-      if (replay.ledgerRevision === 0 && stored && stable(projectionComparable(stored)) !== stable(projectionComparable(replay))) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Projection rỗng của SKU ${item._id} không khớp ledger.`);
-      for (const line of replay.byCell) addCell(line.cellId, line.weightKg, line.volumeM3);
-      stock = replay;
+
+/**
+ * A historical V3 request could hold stock outside the canonical Cell Stock projection.
+ * The request writer/model is retired; retain only this read-only fail-closed check until
+ * legacy development requests have been reconciled. No request or hold is created here.
+ */
+async function rejectUnresolvedLegacyV3Request(skuId: Types.ObjectId, session?: ClientSession) {
+  const db = mongoose.connection.db;
+  if (!db) fail(503, 'DATABASE_UNAVAILABLE', 'Không thể đối soát các yêu cầu xuất kho lịch sử.');
+  const pending = await db.collection('managedv3outboundrequests').findOne({ skuId, state: 'PENDING' }, session ? { session } : {});
+  if (pending) fail(409, 'LEGACY_OUTBOUND_REQUEST_PENDING', 'SKU còn yêu cầu xuất theo quy trình cũ cần được đối soát trước khi tiếp tục.');
+}
+
+async function loadDirectCandidateState(skuId: unknown, body: unknown, actor: Actor, session?: ClientSession) {
+  const candidate = normalizeDirectOutbound(body);
+  const sku = await directOwnedSku(skuId, actor, session);
+  const reservation = await directReservation(sku, actor, session);
+  if (Number(sku.managedV3Revision ?? 0) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'SKU đã thay đổi; hãy tải lại tồn kho.');
+  await rejectUnresolvedLegacyV3Request(sku._id, session);
+  const state = await directFacilityState(sku, reservation, session);
+  const specIds = candidate.lines.map(line => new Types.ObjectId(line.itemSpecId));
+  let specQuery = ItemSpec.find({ _id: { $in: specIds }, skuId: sku._id, customerId: actor._id, reservationId: reservation._id, facilityId: sku.facilityId,
+    status: 'ACTIVE', deletedAt: { $exists: false } }).populate('quantityUnitId', 'name code');
+  if (session) specQuery = specQuery.session(session);
+  const specifications: Plain[] = await specQuery.lean().exec();
+  if (specifications.length !== specIds.length) fail(404, 'ITEM_SPECIFICATION_NOT_FOUND', 'Một hoặc nhiều loại hàng không thuộc SKU hoặc Reservation này.');
+  const plan = buildDirectOutboundPlan({ sku, reservation, candidate, state, specifications });
+  return { candidate, sku, reservation, state, specifications, plan };
+}
+
+async function readOnlySessionScope(candidate: DirectOutboundCandidate, reservation: Plain, actor: Actor, cellIds: string[]) {
+  const currentSession: any = await AccessSession.findOne({ _id: candidate.accessSessionId, customerId: actor._id, reservationId: reservation._id,
+    facilityId: reservation.facilityId, status: ManagedAccessSessionStatus.ACTIVE, allowedPurposes: ManagedAccessPurpose.OUTBOUND,
+    revision: candidate.sessionRevision, startedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() } }).lean().exec();
+  if (!currentSession) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần Access Session OUTBOUND đang hoạt động và còn hạn.');
+  const allowed = new Set((currentSession.allowedCellIds ?? []).map(id));
+  if (!cellIds.length || cellIds.some(cellId => !allowed.has(cellId))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Session không bao phủ toàn bộ Cell nguồn.');
+  const visit: any = await Visit.findOne({ _id: currentSession.visitId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId,
+    purpose: ManagedAccessPurpose.OUTBOUND, status: 'CHECKED_IN' }).select('_id status purpose').lean().exec();
+  if (!visit) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Customer cần có Visit OUTBOUND đã CHECK_IN.');
+  return currentSession;
+}
+
+function directStockResponse(sku: Plain, reservation: Plain, state: Plain, specifications: Plain[]) {
+  const cells = new Map((state.cells as Plain[]).map(cell => [id(cell._id), cell]));
+  const lots = (state.replay.lots as Plain[]).filter(row => same(row.skuId, sku._id) && same(row.reservationId, reservation._id));
+  const instances = (state.replay.instances as Plain[]).filter(row => same(row.skuId, sku._id) && same(row.reservationId, reservation._id) && row.status === 'PLACED');
+  const itemSpecifications = specifications.map(spec => {
+    const specLots = lots.filter(row => same(row.itemSpecId, spec._id));
+    const specInstances = instances.filter(row => same(row.itemSpecId, spec._id));
+    const onHand = specLots.reduce((sum, row) => sum + row.quantityOnHand, 0) + specInstances.length;
+    const held = specLots.reduce((sum, row) => sum + row.quantityHeld, 0);
+    return { itemSpecId: spec._id, code: spec.code, name: spec.name, revision: spec.revision, quantityUnit: spec.quantityUnitId?.name ?? spec.quantityUnitId?.code ?? 'đơn vị',
+      quantityOnHand: onHand, quantityHeld: held, quantityAvailable: onHand - held,
+      stockKind: specInstances.length && specLots.length ? 'MIXED_UNSUPPORTED' : specInstances.length ? 'ITEM_INSTANCE' : 'RECEIPT_LOT',
+      receipts: specLots.map(row => ({ receiptId: row.receiptId, cellId: row.cellId, cellCode: cells.get(id(row.cellId))?.code ?? null,
+        quantityOnHand: row.quantityOnHand, quantityHeld: row.quantityHeld, quantityAvailable: row.quantityAvailable,
+        receivedAt: row.receivedAt ?? null, unitWeightKg: row.unitWeightKgSnapshot, unitVolumeM3: row.unitVolumeM3Snapshot,
+        unitDimensionsM: row.unitDimensionsM ?? row.unitDimensionsSnapshot })),
+      instances: specInstances.map(row => ({ itemInstanceId: row.itemInstanceId, receiptId: row.sourceReceiptId, weightKg: row.unitWeightKgSnapshot,
+        volumeM3: row.unitVolumeM3Snapshot, dimensionsM: row.unitDimensionsM ?? row.unitDimensionsSnapshot,
+        allocations: (row.allocations ?? []).map((allocation: Plain) => ({ cellId: allocation.cellId, cellCode: cells.get(id(allocation.cellId))?.code ?? null,
+          weightKg: allocation.weightKg, volumeM3: allocation.volumeM3 })) })) };
+  });
+  return { skuId: sku._id, reservationId: reservation._id, facilityId: sku.facilityId, skuRevision: sku.managedV3Revision ?? 0,
+    ledgerRevision: Math.max(0, ...state.movements.filter((movement: Plain) => same(movement.itemId, sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+    reconciliationStatus: 'RECONCILED', itemSpecifications };
+}
+
+function checkTransactionUnavailable(error: any): boolean {
+  return error?.code === 20 || error?.codeName === 'IllegalOperation' || /transactions? (?:are|is) not supported|transaction numbers are only allowed/i.test(String(error?.message ?? ''));
+}
+
+async function findDirectReplay(skuId: Types.ObjectId, actor: Actor, requestKey: string, payloadHash?: string) {
+  const movement: any = await Movement.findOne({ itemId: skuId, customerId: actor._id, idempotencyKey: requestKey, schemaVersion: 4, 'stockEffect.action': 'REMOVE' }).lean().exec();
+  if (!movement) return null;
+  if (payloadHash && movement.stockEffect?.requestHash !== payloadHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được sử dụng với nội dung khác.');
+  return { status: 'COMMITTED', replayed: true, movement };
+}
+
+async function applyDirectStockEffects(plan: Plain, scope: Plain, actor: Actor, session: ClientSession, movement: any) {
+  const lotEffects = (plan.effectLines as Plain[]).filter(line => !line.itemInstanceId);
+  const instanceEffects = (plan.effectLines as Plain[]).filter(line => line.itemInstanceId);
+  const byLot = new Map<string, Plain[]>();
+  for (const line of lotEffects) {
+    const lotKey = stockLotKey(line), list = byLot.get(lotKey) ?? [];
+    list.push(line); byLot.set(lotKey, list);
+  }
+  for (const lines of byLot.values()) {
+    const line = lines[0]!;
+    if (lines.length !== 1) fail(409, 'DUPLICATE_SOURCE_ALLOCATION', 'Receipt/Cell nguồn bị lặp trong cùng một phiếu.');
+    const current: any = await CellStock.findOne({ skuId: scope.sku._id, itemSpecId: line.itemSpecId, reservationId: scope.reservation._id,
+      facilityId: scope.sku.facilityId, customerId: actor._id, cellId: line.cellId, receiptId: line.receiptId }).session(session).lean().exec();
+    if (!current || current.quantityOnHand !== line.quantityBefore || line.quantity > current.quantityAvailable) fail(409, 'SOURCE_STOCK_CHANGED', 'Tồn receipt nguồn đã thay đổi; hãy tải lại và xem trước lần nữa.');
+    const after = current.quantityOnHand - line.quantity;
+    if (after === 0) {
+      const deleted = await CellStock.deleteOne({ _id: current._id, revision: current.revision, quantityOnHand: current.quantityOnHand, quantityHeld: 0 }).session(session).exec();
+      if (deleted.deletedCount !== 1) fail(412, 'STALE_CELL_STOCK', 'Projection Cell Stock vừa thay đổi.');
     } else {
-      try { stock = reconcileManagedItemStock(item, history); } catch { fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Legacy ledger của SKU ${item._id} không thể đối soát.`); }
-      if (stock.onHandQuantity > 0) {
-        if (!stock.currentCellId || stock.actualTotalWeightKg == null || stock.actualTotalVolumeM3 == null) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Legacy placement của SKU ${item._id} thiếu dữ liệu.`);
-        addCell(stock.currentCellId, stock.actualTotalWeightKg, stock.actualTotalVolumeM3);
-      }
-    }
-    const reservationKey = String(item.managedReservationId); reservationVolumes.set(reservationKey, (reservationVolumes.get(reservationKey) ?? 0) + Number(stock.actualTotalVolumeM3 ?? stock.totalVolumeM3 ?? 0));
-  }
-  const cells = await Cell.find({ facilityId, deletedAt: { $exists: false } }).session(session).select('_id rackId levelNumber maxWeightKg usedWeightKg usedVolumeM3 managedInventoryRevision').lean().exec();
-  const cellMap = new Map<string, Plain>((cells as Plain[]).map((row: Plain) => [String(row._id), row]));
-  for (const cell of cells as Plain[]) {
-    const expected = usage.get(String(cell._id)) ?? { weight: 0, volume: 0 };
-    if (![cell.usedWeightKg, cell.usedVolumeM3, cell.maxWeightKg].every(Number.isFinite) || cell.usedWeightKg < 0 || cell.usedVolumeM3 < 0 ||
-        Math.abs(cell.usedWeightKg - money(expected.weight, 3)) > 0.001 || Math.abs(cell.usedVolumeM3 - money(expected.volume, 6)) > 0.000001) {
-      fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Counter của Cell ${cell._id} không khớp tổng physical stock.`);
+      const totals = physicalTotals(current.unitWeightKgSnapshot, current.unitVolumeM3Snapshot, after);
+      const updated = await CellStock.updateOne({ _id: current._id, revision: current.revision, quantityOnHand: current.quantityOnHand,
+        quantityHeld: current.quantityHeld, quantityAvailable: current.quantityAvailable }, { $set: { quantityOnHand: after, quantityAvailable: after - current.quantityHeld,
+          totalWeightKg: totals.totalWeightKg, totalVolumeM3: totals.totalVolumeM3, ledgerRevision: movement.stockEffect.ledgerRevision }, $inc: { revision: 1 } }, { session, runValidators: true }).exec();
+      if (updated.matchedCount !== 1) fail(412, 'STALE_CELL_STOCK', 'Projection Cell Stock vừa thay đổi.');
     }
   }
-  for (const id of usage.keys()) if (!cellMap.has(id)) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Movement tham chiếu Cell không tồn tại: ${id}.`);
-  const racks = await Rack.find({ facilityId, deletedAt: { $exists: false } }).session(session).select('_id maxWeightKgPerLevel').lean().exec();
-  const rackById = new Map<string, Plain>((racks as Plain[]).map((row: Plain) => [String(row._id), row]));
-  const levelTotals = new Map<string, number>();
-  for (const cell of cells as Plain[]) { const key = `${cell.rackId}:${cell.levelNumber}`; levelTotals.set(key, (levelTotals.get(key) ?? 0) + Number(cell.usedWeightKg)); }
-  for (const [key, weight] of levelTotals) { const rackId = key.split(':')[0]!, rack = rackById.get(rackId); if (!rack || !Number.isFinite(rack.maxWeightKgPerLevel) || weight > rack.maxWeightKgPerLevel + 0.001) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Rack/Level ${key} thiếu giới hạn hoặc vượt tải.`); }
-  const reservation = await ReservationModel.findOne({ _id: targetReservationId, facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).session(session).select('_id usedCapacityM3').lean().exec();
-  const expectedReservationVolume = money(reservationVolumes.get(String(targetReservationId)) ?? 0, 6);
-  if (!reservation || !Number.isFinite(Number(reservation.usedCapacityM3)) || Math.abs(Number(reservation.usedCapacityM3) - expectedReservationVolume) > 0.000001) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', 'Reservation usedCapacityM3 không khớp toàn bộ legacy và V3 stock.');
-  return { cells: cellMap, reservationVolumeM3: expectedReservationVolume };
-}
-async function ownedItem(itemId: unknown, actor: Actor, session?: ClientSession) {
-  const id = itemId instanceof Types.ObjectId ? itemId : oid(itemId, 'skuId');
-  const query = Item.findOne({ _id: id, customerId: actor._id, inventorySchemaVersion: 3, deletedAt: { $exists: false } }); if (session) query.session(session);
-  const item = await query.exec(); if (!item) fail(404, 'INVENTORY_ITEM_NOT_FOUND', 'Không tìm thấy SKU.'); return item;
-}
-function requestSnapshot(request: Plain) { return { requestId: String(request._id), skuId: String(request.skuId), reservationId: String(request.reservationId), facilityId: String(request.facilityId),
-  itemKind: request.itemKind, requestedQuantity: request.requestedQuantity, quantityUnit: request.quantityUnit, allocations: request.allocations, sourceCellIds: [...new Set((request.allocations ?? []).map((x: Plain) => String(x.cellId)))].sort(),
-  state: request.state, version: request.version, createdAt: request.createdAt, ...(request.cancelledAt ? { cancelledAt: request.cancelledAt } : {}),
-  ...(request.confirmedAt ? { confirmedAt: request.confirmedAt, confirmedMovementId: String(request.confirmedMovementId), confirmedBy: String(request.confirmedBy) } : {}) };
-}
-async function staffVisitScope(actor: Actor) {
-  const now = new Date();
-  const [currentVisits, sessions] = await Promise.all([
-    Visit.find({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, purpose: 'OUTBOUND', status: { $in: ['SCHEDULED', 'CHECKED_IN'] }, endsAt: { $gte: now } })
-      .select('_id reservationId customerId facilityId purpose startsAt endsAt status assignedStaffId').limit(1001).lean().exec(),
-    AccessSession.find({ facilityId: actor.assignedFacilityId, assignedStaffId: actor._id, allowedPurposes: 'OUTBOUND' })
-      .select('_id visitId reservationId customerId facilityId assignedStaffId allowedCellIds allowedPurposes status').limit(1001).lean().exec(),
-  ]);
-  if (currentVisits.length > 1000 || sessions.length > 1000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Phạm vi Visit/Session của Staff vượt giới hạn truy vấn an toàn.');
-  const visitIds = [...new Set((sessions as Plain[]).map(row => String(row.visitId)))].map(value => new Types.ObjectId(value));
-  const historicalVisits = visitIds.length ? await Visit.find({ _id: { $in: visitIds }, facilityId: actor.assignedFacilityId, purpose: 'OUTBOUND', status: { $in: ['CHECKED_IN', 'COMPLETED'] } })
-    .select('_id reservationId customerId facilityId purpose startsAt endsAt status assignedStaffId').limit(1001).lean().exec() : [];
-  if (historicalVisits.length > 1000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Lịch sử Visit của Staff vượt giới hạn truy vấn an toàn.');
-  const visitsById = new Map([...(currentVisits as Plain[]), ...(historicalVisits as Plain[])].map(row => [String(row._id), row]));
-  const scopedSessions = (sessions as Plain[]).filter(row => visitsById.has(String(row.visitId)));
-  return { visits: [...visitsById.values()], sessions: scopedSessions, now };
-}
-async function staffCanReadRequest(request: Plain, actor: Actor) {
-  const scope = await staffVisitScope(actor), movement = request.confirmedMovementId ? await Movement.findOne({ _id: request.confirmedMovementId, facilityId: actor.assignedFacilityId,
-    itemId: request.skuId, schemaVersion: 3, 'v3Effect.action': 'REMOVE' }).lean().exec() : null;
-  return staffCanReadManagedV3OutboundRequest({ request, ...scope, movements: movement ? [movement] : [], actorId: String(actor._id), facilityId: String(actor.assignedFacilityId) });
+  const instanceIds = [...new Set(instanceEffects.map(line => line.itemInstanceId))];
+  for (const instanceId of instanceIds) {
+    const instance: any = (scope.state.replay.instances as Plain[]).find(row => row.itemInstanceId === instanceId && row.status === 'PLACED');
+    if (!instance) fail(409, 'ITEM_INSTANCE_NOT_AVAILABLE', 'Món nguyên khối không còn trong kho.');
+    const selected = instanceEffects.filter(line => line.itemInstanceId === instanceId);
+    const expectedCells = instance.allocations.map((allocation: Plain) => id(allocation.cellId)).sort();
+    const selectedCells = selected.map(line => id(line.cellId)).sort();
+    if (stable(expectedCells) !== stable(selectedCells)) fail(409, 'ITEM_INSTANCE_FOOTPRINT_MISMATCH', 'Phải xuất toàn bộ các ô của món nguyên khối.');
+    const updated = await ItemInstance.updateOne({ itemInstanceId: instanceId, skuId: scope.sku._id, itemSpecId: instance.itemSpecId,
+      reservationId: scope.reservation._id, customerId: actor._id, facilityId: scope.sku.facilityId, status: 'PLACED', revision: instance.revision },
+    { $set: { status: 'REMOVED', allocations: [] }, $inc: { revision: 1 } }, { session, runValidators: true }).exec();
+    if (updated.matchedCount !== 1) fail(412, 'STALE_ITEM_INSTANCE', 'Món nguyên khối vừa thay đổi.');
+  }
 }
 
 export class ManagedInventoryV3OutboundService {
-  static async stock(itemId: unknown, actor: Actor) {
-    requireCustomer(actor); const item = await ownedItem(itemId, actor); await reservationFor(item, actor, undefined, false);
-    return (await readState(item)).customerProjection;
-  }
-  static async context(itemId: unknown, actor: Actor) {
-    requireCustomer(actor); const item = await ownedItem(itemId, actor); const reservation: any = await reservationFor(item, actor, undefined, false); await facilityFor(item);
-    const state = await readState(item);
-    return { sku: { id: String(item._id), itemCode: item.itemCode, name: item.name, category: item.category, images: item.images ?? [], quantityUnit: item.quantityUnit },
-      reservation: { id: String(reservation._id), reservationCode: reservation.reservationCode, facilityId: String(reservation.facilityId), status: reservation.status },
-      stock: state.customerProjection, pendingRequestIds: state.holds.pendingRequestIds, ledgerRevision: state.replay.ledgerRevision,
-      inventoryRevision: item.managedV3Revision ?? 0, reconciliation: state.projection ? 'RECONCILED_TO_SKU_LEDGER_AND_PROJECTION' : 'NO_PHYSICAL_INBOUND' };
-  }
-  static async create(itemIdInput: unknown, body: unknown, idempotencyKeyInput: unknown, actor: Actor) {
-    requireCustomer(actor); const itemId = oid(itemIdInput, 'skuId'), keyValue = key(idempotencyKeyInput);
-    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body as Plain).some(k => k !== 'requestedQuantity' && k !== 'itemKind') ||
-        !Object.hasOwn(body, 'requestedQuantity') || !Object.hasOwn(body, 'itemKind')) fail(422, 'INVALID_OUTBOUND_REQUEST', 'Payload chỉ gồm itemKind và requestedQuantity.');
-    const input = body as Plain;
-    if (!['A1_PHYSICAL_UNIT', 'A2_BATCH'].includes(input.itemKind) || !Number.isSafeInteger(input.requestedQuantity) || input.requestedQuantity < 1) fail(422, 'INVALID_OUTBOUND_REQUEST', 'Loại hàng hoặc số lượng không hợp lệ.');
-    await ownedItem(itemId, actor);
-    const requestHash = hash({ skuId: String(itemId), itemKind: input.itemKind, requestedQuantity: input.requestedQuantity });
-    const prior = await Event.findOne({ skuId: itemId, operation: 'CREATE', idempotencyKey: keyValue }).lean().exec();
-    if (prior) { if (prior.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được sử dụng với nội dung khác.'); const existing = await Request.findOne({ _id: prior.requestId, customerId: actor._id }).lean().exec(); if (!existing) fail(503, 'OUTBOUND_REQUEST_HISTORY_UNKNOWN', 'Event yêu cầu tồn tại nhưng Request chưa đọc được.'); return { data: requestSnapshot(existing), replayed: true }; }
-    try {
-      const data = await withTransaction(async session => {
-        const current = await ownedItem(itemId, actor, session);
-        const locked = await Item.findOneAndUpdate({ _id: itemId, customerId: actor._id, inventorySchemaVersion: 3,
-          managedReservationId: current.managedReservationId, facilityId: current.facilityId, managedV3Revision: current.managedV3Revision ?? 0, deletedAt: { $exists: false } },
-        { $inc: { managedV3Revision: 1 } }, { new: true, session }).exec();
-        if (!locked) fail(409, 'STALE_INVENTORY_REVISION', 'SKU vừa thay đổi; tải lại tồn kho rồi thử lại.');
-        await reservationFor(locked, actor, session); await facilityFor(locked, session);
-        const state = await readState(locked, session);
-        if (state.holds.pendingRequestIds.length) fail(409, 'OUTBOUND_REQUEST_PENDING', 'SKU đã có một yêu cầu xuất đang giữ hàng. Hãy hoàn tất hoặc hủy yêu cầu đó trước.');
-        if (state.replay.onHandQuantity === 0 || state.customerProjection.availableQuantity === 0) fail(409, 'OUTBOUND_NO_PHYSICAL_STOCK', 'SKU chưa có tồn vật lý đã đối soát. Hãy hoàn tất Self-Inbound trước khi tạo yêu cầu xuất.');
-        if (input.requestedQuantity > state.customerProjection.availableQuantity) fail(409, 'OUTBOUND_QUANTITY_UNAVAILABLE', 'Số lượng yêu cầu vượt tồn khả dụng thực tế.');
-        await assertFacilityCapacityReconciled(locked.facilityId, locked.managedReservationId, session);
-        let allocations: ManagedV3OutboundAllocation[];
-        if (input.itemKind === 'A2_BATCH') allocations = allocateManagedV3Fifo(state.replay, input.requestedQuantity);
-        else {
-          if (input.requestedQuantity > state.replay.byPhysicalUnit.length) fail(409, 'OUTBOUND_QUANTITY_UNAVAILABLE', 'Không đủ PhysicalUnit nguyên vẹn để xuất.');
-          const units = [...state.replay.byPhysicalUnit].sort((a: Plain, b: Plain) => new Date(a.receivedAt ?? 0).getTime() - new Date(b.receivedAt ?? 0).getTime() || String(a.sourceMovementId ?? a.physicalUnitId).localeCompare(String(b.sourceMovementId ?? b.physicalUnitId)) || String(a.physicalUnitId).localeCompare(String(b.physicalUnitId))).slice(0, input.requestedQuantity);
-          allocations = [];
-          for (const unit of units as Plain[]) {
-            if (unit.cellIds.length !== 1) fail(409, 'A1_LOAD_SHARING_UNCERTIFIED', 'A1 nhiều Cell đang bị khóa vì mô hình topology hiện không lưu chứng nhận load-sharing có thể xác minh.');
-            const receipt = await Movement.findOne({ _id: unit.sourceMovementId, itemId, schemaVersion: 3, 'v3Effect.action': 'ADD', 'v3Effect.itemKind': 'A1_PHYSICAL_UNIT' }).session(session).lean().exec();
-            if (!receipt) fail(409, 'A1_FOOTPRINT_UNKNOWN', 'Không thể chứng minh receipt và footprint của PhysicalUnit.');
-            const currentFootprint = currentManagedV3A1Footprint(state.movements, String(unit.physicalUnitId));
-            for (const line of currentFootprint) allocations.push({ ...line, itemKind: 'A1_PHYSICAL_UNIT', receiptMovementId: receipt._id } as ManagedV3OutboundAllocation);
-          }
-          try { assertManagedV3A1OutboundFootprints(allocations as Plain[]); }
-          catch (error: any) { fail(409, error.code ?? 'A1_FOOTPRINT_UNKNOWN', 'Footprint A1 chưa đủ bằng chứng để xuất an toàn.'); }
-        }
-        const reservation: any = await reservationFor(locked, actor, session);
-        const cellIds = [...new Set(allocations.map(row => String(row.cellId)))].map(id => new Types.ObjectId(id));
-        for (const cellId of cellIds) {
-          if (!(reservation.allocatedCellIds ?? []).some((id: Types.ObjectId) => same(id, cellId))) fail(409, 'SOURCE_CELL_NOT_ALLOCATED', 'Nguồn hàng không nằm trong Cell được Reservation cấp.');
-          const allocationRow = await Allocation.findOne({ cellId, reservationId: reservation._id, facilityId: locked.facilityId, customerId: actor._id, status: CellAllocationStatus.OCCUPIED }).session(session).lean().exec();
-          if (!allocationRow) fail(409, 'SOURCE_CELL_NOT_OWNED', 'Cell nguồn không còn được Reservation này chiếm dụng.');
-        }
-        if (input.itemKind === 'A1_PHYSICAL_UNIT') for (const line of allocations) {
-          const certificate = await Topology.findOne({ _id: line.topologyCertificationId, facilityId: locked.facilityId, certificationState: 'CERTIFIED', revision: line.topologyRevision,
-            provenance: 'FACILITY_SURVEY', supportSurfaceId: { $exists: true, $ne: '' }, certifiedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() },
-            'cells.cellId': line.cellId }).session(session).lean().exec();
-          if (!certificate) fail(409, 'A1_TOPOLOGY_UNCERTIFIED', 'A1 source Cell không có topology certification Facility còn hiệu lực.');
-        }
-        const request = new Request({ skuId: itemId, reservationId: locked.managedReservationId, customerId: actor._id, facilityId: locked.facilityId,
-          itemKind: input.itemKind, requestedQuantity: input.requestedQuantity, quantityUnit: allocations[0]?.quantityUnit, allocations,
-          state: ManagedV3OutboundState.PENDING, version: 0, idempotencyKey: keyValue, requestHash, createdAt: new Date() });
-        await request.save({ session });
-        await new Event({ requestId: request._id, skuId: itemId, reservationId: request.reservationId, customerId: actor._id, facilityId: locked.facilityId,
-          actorId: actor._id, operation: ManagedV3OutboundOperation.CREATE, idempotencyKey: keyValue, requestHash, resultingState: request.state,
-          resultingVersion: 0, allocationSnapshot: allocations, occurredAt: request.createdAt }).save({ session });
-        return requestSnapshot(request.toObject());
-      });
-      return { data, replayed: false };
-    } catch (error: any) {
-      if (error?.code === 11000) {
-        const event = await Event.findOne({ skuId: itemId, operation: 'CREATE', idempotencyKey: keyValue }).lean().exec().catch(() => null);
-        if (event?.requestHash === requestHash) {
-          const existing = await Request.findOne({ _id: event.requestId, customerId: actor._id }).lean().exec();
-          if (!existing) fail(503, 'OUTBOUND_REQUEST_HISTORY_UNKNOWN', 'Event yêu cầu tồn tại nhưng Request chưa đọc được.');
-          return { data: requestSnapshot(existing), replayed: true };
-        }
-        if (event) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key hoặc request đang hoạt động đã xung đột.');
-        fail(409, 'OUTBOUND_REQUEST_PENDING', 'SKU đã có yêu cầu xuất PENDING hoặc khóa duy nhất đang tranh chấp. Tải lại lịch sử trước khi thử lại.');
-      }
-      if (error instanceof ManagedV3OutboundError) throw error;
-      if (error instanceof ManagedV3OutboundDomainError) fail(409, error.code, error.message);
-      if (error instanceof ManagedAccessError) fail(error.status, error.code, error.message);
-      if (errorLabel(error, 'UnknownTransactionCommitResult')) fail(503, 'OUTBOUND_REQUEST_OUTCOME_UNKNOWN', 'Kết quả tạo yêu cầu chưa xác định; tra cứu lại bằng Idempotency-Key, không tạo key mới.');
-      throw error;
-    }
+  static async context(skuId: unknown, actor: Actor) {
+    const sku = await directOwnedSku(skuId, actor);
+    const reservation = await directReservation(sku, actor);
+    await rejectUnresolvedLegacyV3Request(sku._id);
+    const state = await directFacilityState(sku, reservation);
+    const specQuery = ItemSpec.find({ skuId: sku._id, customerId: actor._id, reservationId: reservation._id, facilityId: sku.facilityId,
+      status: 'ACTIVE', deletedAt: { $exists: false } }).populate('quantityUnitId', 'name code').sort({ createdAt: 1, _id: 1 });
+    const specifications: Plain[] = await specQuery.lean().exec();
+    return { sku: { id: sku._id, itemCode: sku.itemCode, name: sku.name, categoryId: sku.categoryId, images: sku.images ?? [] },
+      reservation: { id: reservation._id, reservationCode: reservation.reservationCode, facilityId: reservation.facilityId, status: reservation.status },
+      stock: directStockResponse(sku, reservation, state, specifications) };
   }
 
-  static async listForItem(itemIdInput: unknown, query: unknown, actor: Actor) {
-    requireCustomer(actor); const itemId = oid(itemIdInput, 'skuId');
-    const item = await ownedItem(itemId, actor); await reservationFor(item, actor, undefined, false);
-    const raw = query && typeof query === 'object' && !Array.isArray(query) ? query as Plain : {};
-    if (Object.keys(raw).some(k => !['page', 'limit', 'state'].includes(k))) fail(400, 'INVALID_PAGINATION', 'Bộ lọc yêu cầu không hợp lệ.');
-    const page = raw.page === undefined ? 1 : Number(raw.page), limit = raw.limit === undefined ? 20 : Number(raw.limit);
-    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (raw.state && !Object.values(ManagedV3OutboundState).includes(raw.state))) fail(400, 'INVALID_PAGINATION', 'Trang, giới hạn hoặc trạng thái không hợp lệ.');
-    const filter: Plain = { skuId: itemId, customerId: actor._id }; if (raw.state) filter.state = raw.state;
-    const [rows, total] = await Promise.all([Request.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(), Request.countDocuments(filter).exec()]);
-    return { data: rows.map(requestSnapshot), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-  }
-  static async get(requestIdInput: unknown, actor: Actor) {
-    requireCustomer(actor); const request = await Request.findOne({ _id: oid(requestIdInput, 'requestId'), customerId: actor._id }).lean().exec();
-    if (!request) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu xuất.');
-    const item = await ownedItem(String(request.skuId), actor); const state = await readState(item);
-    return { ...requestSnapshot(request), stock: state.customerProjection };
-  }
-  static async cancel(requestIdInput: unknown, ifMatch: unknown, keyInput: unknown, actor: Actor) {
-    requireCustomer(actor); const requestId = oid(requestIdInput, 'requestId'), expected = version(ifMatch), keyValue = key(keyInput);
-    const current = await Request.findOne({ _id: requestId, customerId: actor._id }).lean().exec(); if (!current) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu xuất.');
-    const requestHash = hash({ requestId: String(requestId), operation: 'CANCEL', expectedVersion: expected });
-    const prior = await Event.findOne({ skuId: current.skuId, operation: 'CANCEL', idempotencyKey: keyValue }).lean().exec();
-    if (prior) { if (prior.requestHash !== requestHash || !same(prior.requestId, requestId)) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với yêu cầu khác.'); return { data: requestSnapshot(await Request.findById(requestId).lean().exec()), replayed: true }; }
-    try {
-      const data = await withTransaction(async session => {
-        const item = await ownedItem(String(current.skuId), actor, session);
-        const locked = await Item.findOneAndUpdate({ _id: item._id, inventorySchemaVersion: 3, managedV3Revision: item.managedV3Revision ?? 0 }, { $inc: { managedV3Revision: 1 } }, { new: true, session }).exec();
-        if (!locked) fail(409, 'STALE_INVENTORY_REVISION', 'Tồn kho vừa thay đổi; tải lại trước khi hủy.');
-        const state = await readState(locked, session);
-        if (!state.holds.pendingRequestIds.includes(String(requestId))) fail(409, 'OUTBOUND_HOLDS_UNKNOWN', 'Yêu cầu không còn được hold bởi event history authoritative.');
-        const request = await Request.findOneAndUpdate({ _id: requestId, customerId: actor._id, state: ManagedV3OutboundState.PENDING, version: expected },
-          { $set: { state: ManagedV3OutboundState.CANCELLED, cancelledAt: new Date() }, $inc: { version: 1 } }, { new: true, runValidators: true, session }).exec();
-        if (!request) fail(412, 'STALE_OUTBOUND_REQUEST', 'Yêu cầu đã thay đổi hoặc không còn PENDING. Tải lại trước khi thử lại.');
-        await new Event({ requestId, skuId: request.skuId, reservationId: request.reservationId, customerId: request.customerId, facilityId: request.facilityId,
-          actorId: actor._id, operation: ManagedV3OutboundOperation.CANCEL, idempotencyKey: keyValue, requestHash,
-          resultingState: request.state, resultingVersion: request.version, allocationSnapshot: request.allocations, occurredAt: request.cancelledAt }).save({ session });
-        return requestSnapshot(request.toObject());
-      });
-      return { data, replayed: false };
-    } catch (error: any) { if (error instanceof ManagedV3OutboundError) throw error; if (errorLabel(error, 'UnknownTransactionCommitResult')) fail(503, 'OUTBOUND_CANCEL_OUTCOME_UNKNOWN', 'Kết quả hủy chưa xác định; hãy đối soát cùng Idempotency-Key.'); throw error; }
+  static async preview(skuId: unknown, body: unknown, actor: Actor) {
+    const scope = await loadDirectCandidateState(skuId, body, actor);
+    const currentSession = await readOnlySessionScope(scope.candidate, scope.reservation, actor, scope.plan.sourceCellIds);
+    const cells = new Map((scope.state.cells as Plain[]).map((cell: Plain) => [id(cell._id), cell]));
+    return { status: 'READY', skuId: scope.sku._id, reservationId: scope.reservation._id, facilityId: scope.sku.facilityId,
+      accessSession: { sessionId: currentSession._id, purpose: ManagedAccessPurpose.OUTBOUND, expiresAt: currentSession.expiresAt, revision: currentSession.revision },
+      lines: scope.plan.specTotals.map((line: Plain) => ({ ...line, sources: scope.plan.effectLines.filter((source: Plain) => source.lineId === scope.candidate.lines.find(candidate => same(candidate.itemSpecId, line.itemSpecId))?.lineId)
+        .map((source: Plain) => ({ itemSpecId: source.itemSpecId, receiptId: source.receiptId, itemInstanceId: source.itemInstanceId, cellId: source.cellId,
+          cellCode: cells.get(id(source.cellId))?.code ?? null, quantity: source.quantity, quantityBefore: source.quantityBefore, quantityAfter: source.quantityAfter,
+          weightRemovedKg: source.allocatedWeightKg, volumeRemovedM3: source.allocatedVolumeM3, unitWeightKgSnapshot: source.unitWeightKgSnapshot,
+          unitVolumeM3Snapshot: source.unitVolumeM3Snapshot, unitDimensionsSnapshot: source.unitDimensionsSnapshot })) })),
+      capacity: scope.plan.capacity, totalQuantity: scope.plan.quantity, totalWeightKg: scope.plan.totalWeightKg, totalVolumeM3: scope.plan.totalVolumeM3,
+      ledgerRevision: Math.max(0, ...scope.state.movements.filter((movement: Plain) => same(movement.itemId, scope.sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+      skuRevision: scope.sku.managedV3Revision ?? 0,
+      warnings: ['Preview không ghi tồn kho. Customer sẽ ghi nhận đã thực hiện xuất hàng trong phiên OUTBOUND có Staff giám sát.'] };
   }
 
-  static async preview(requestIdInput: unknown, body: unknown, actor: Actor) {
-    requireCustomer(actor); const requestId = oid(requestIdInput, 'requestId');
-    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body as Plain).some(k => !['accessSessionId', 'sessionRevision'].includes(k)) ||
-        typeof (body as Plain).accessSessionId !== 'string' || !Number.isSafeInteger((body as Plain).sessionRevision)) fail(422, 'INVALID_OUTBOUND_PREVIEW', 'Preview cần Access Session ID và revision hợp lệ.');
-    const input = body as Plain, request = await Request.findOne({ _id: requestId, customerId: actor._id }).lean().exec();
-    if (!request) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu xuất.');
-    const item = await ownedItem(String(request.skuId), actor); await reservationFor(item, actor, undefined, false);
-    const state = await readState(item);
-    if (request.state !== ManagedV3OutboundState.PENDING || !state.holds.pendingRequestIds.includes(String(requestId))) fail(409, 'OUTBOUND_REQUEST_NOT_PENDING', 'Yêu cầu không còn giữ hàng để xuất.');
-    {
-      const sessionId = oid(input.accessSessionId, 'accessSessionId'), session = await AccessSession.findOne({ _id: sessionId, customerId: actor._id,
-        reservationId: request.reservationId, facilityId: request.facilityId }).lean().exec();
-      const visit = session ? await Visit.findOne({ _id: session.visitId, customerId: actor._id, reservationId: request.reservationId,
-        facilityId: request.facilityId, status: 'CHECKED_IN', purpose: 'OUTBOUND' }).select('_id').lean().exec() : null;
-      if (!session || session.status !== 'ACTIVE' || new Date(session.startedAt) > new Date() || new Date(session.expiresAt) <= new Date() ||
-          !visit || !(session.allowedPurposes ?? []).includes('OUTBOUND') || request.allocations.some((row: Plain) => !(session.allowedCellIds ?? []).some((id: any) => same(id, row.cellId)))) {
-        fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Access Session chưa ACTIVE, hết hạn hoặc sai Customer/Reservation/Facility/purpose/Cell.');
-      }
-      if (!Number.isSafeInteger(input.sessionRevision) || input.sessionRevision !== session.revision) fail(412, 'STALE_ACCESS_SESSION', 'Access Session vừa thay đổi; tải lại trước khi preview.');
-    }
-    const totalWeightKg = money(request.allocations.reduce((n: number, row: Plain) => n + row.weightKg, 0), 3);
-    const totalVolumeM3 = money(request.allocations.reduce((n: number, row: Plain) => n + row.volumeM3, 0), 6);
-    return { sku: { id: String(item._id), itemCode: item.itemCode, name: item.name, images: item.images ?? [] }, stock: state.customerProjection,
-      request: requestSnapshot(request), outboundPlan: { quantity: request.requestedQuantity, quantityUnit: request.quantityUnit,
-        allocations: request.allocations, sourceCellIds: requestSnapshot(request).sourceCellIds, totalWeightKg, totalVolumeM3 },
-      accessSession: { id: String(input.accessSessionId), purpose: 'OUTBOUND', expiresAt: (await AccessSession.findById(input.accessSessionId).select('expiresAt').lean().exec())?.expiresAt },
-      ledgerRevision: state.replay.ledgerRevision, inventoryRevision: item.managedV3Revision ?? 0, physicalConfirmationRequired: true,
-      note: 'Preview không xác nhận xuất và không thay đổi tồn kho.' };
-  }
-
-  static async confirm(requestIdInput: unknown, body: unknown, idempotencyInput: unknown, ifMatch: unknown, actor: Actor) {
-    requireCustomer(actor); const requestId = oid(requestIdInput, 'requestId'), expectedVersion = version(ifMatch), keyValue = key(idempotencyInput);
-    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body as Plain).some(k => !['accessSessionId', 'sessionRevision', 'physicalRemovalConfirmed', 'attestation'].includes(k))) fail(422, 'INVALID_OUTBOUND_CONFIRMATION', 'Payload xác nhận xuất không hợp lệ.');
-    const input = body as Plain;
-    if (typeof input.accessSessionId !== 'string' || !Number.isSafeInteger(input.sessionRevision) || input.physicalRemovalConfirmed !== true ||
-        typeof input.attestation !== 'string' || input.attestation.trim().length < 10 || input.attestation.length > 500) fail(422, 'CUSTOMER_ATTESTATION_REQUIRED', 'Cần Session OUTBOUND hợp lệ và xác nhận rõ rằng Customer đã thực tế lấy đúng hàng.');
-    const sessionId = oid(input.accessSessionId, 'accessSessionId'), request = await Request.findOne({ _id: requestId, customerId: actor._id }).lean().exec();
-    if (!request) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu xuất.');
-    const operationHash = hash({ requestId: String(requestId), sessionId: String(sessionId), sessionRevision: input.sessionRevision,
-      physicalRemovalConfirmed: true, attestation: input.attestation.trim(), expectedVersion });
-    const prior = await Event.findOne({ skuId: request.skuId, operation: ManagedV3OutboundOperation.CONFIRM, idempotencyKey: keyValue, actorId: actor._id }).lean().exec();
-    if (prior) {
-      if (prior.requestHash !== operationHash || !same(prior.requestId, requestId)) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với xác nhận khác.');
-      return { data: { ...requestSnapshot(await Request.findById(requestId).lean().exec()), movementId: String(prior.movementId), outcome: 'COMMITTED' }, replayed: true };
-    }
+  static async confirm(skuId: unknown, body: unknown, idempotencyInput: unknown, ifMatchInput: unknown, actor: Actor) {
+    const skuIdObject = oid(skuId, 'skuId'), requestKey = key(idempotencyInput), candidate = normalizeDirectOutbound(body), requestHash = hash(candidate);
+    if (candidate.physicalRemovalConfirmed !== true || !candidate.customerAttestation?.trim()) fail(422, 'CUSTOMER_ATTESTATION_REQUIRED', 'Customer cần xác nhận đã thực tế lấy hàng khỏi Cell trước khi hoàn tất.');
+    await directOwnedSku(skuIdObject, actor);
+    const replay = await findDirectReplay(skuIdObject, actor, requestKey, requestHash);
+    if (replay) return replay;
+    if (version(ifMatchInput) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'If-Match và revision trong payload không khớp.');
     try {
-      const result = await withTransaction(async session => {
-        const currentItem = await ownedItem(String(request.skuId), actor, session);
-        const lockedItem = await Item.findOneAndUpdate({ _id: currentItem._id, customerId: actor._id, inventorySchemaVersion: 3,
-          managedV3Revision: currentItem.managedV3Revision ?? 0, deletedAt: { $exists: false } }, { $inc: { managedV3Revision: 1 } }, { new: true, session }).exec();
-        if (!lockedItem) fail(409, 'STALE_INVENTORY_REVISION', 'Tồn kho đã thay đổi sau Preview; tải lại và preview lại.');
-        const reservation: any = await reservationFor(lockedItem, actor, session); await facilityFor(lockedItem, session);
-        const currentRequest = await Request.findOne({ _id: requestId, customerId: actor._id, skuId: lockedItem._id }).session(session).exec();
-        if (!currentRequest || currentRequest.state !== ManagedV3OutboundState.PENDING) fail(409, 'OUTBOUND_REQUEST_NOT_PENDING', 'Yêu cầu đã được xử lý hoặc hủy.');
-        if (currentRequest.version !== expectedVersion) fail(412, 'STALE_OUTBOUND_REQUEST', 'Revision yêu cầu xuất đã thay đổi; tải lại và preview lại.');
-        if (currentRequest.itemKind === 'A1_PHYSICAL_UNIT') {
-          try { assertManagedV3A1OutboundFootprints(currentRequest.allocations as Plain[]); }
-          catch (error: any) { fail(409, error.code ?? 'A1_FOOTPRINT_UNKNOWN', 'Footprint A1 chưa đủ bằng chứng để xác nhận xuất an toàn.'); }
-        }
-        const state = await readState(lockedItem, session);
-        if (state.holds.pendingRequestIds.length !== 1 || state.holds.pendingRequestIds[0] !== String(requestId)) fail(409, 'OUTBOUND_HOLDS_UNKNOWN', 'Hold của yêu cầu không khớp nguồn authoritative.');
-        const cellIds = [...new Set((currentRequest.allocations as Plain[]).map(row => String(row.cellId)))].map(value => new Types.ObjectId(value));
-        try { await assertManagedAccessSessionScope({ sessionId, customerId: actor._id, reservationId: reservation._id, facilityId: reservation.facilityId,
-          purpose: 'OUTBOUND' as any, cellIds, expectedRevision: input.sessionRevision, dbSession: session }); }
+      return await withTransaction(async session => {
+        const scope = await loadDirectCandidateState(skuIdObject, candidate, actor, session);
+        const sourceCellIds = scope.plan.sourceCellIds.map(value => new Types.ObjectId(value));
+        try { await assertManagedAccessSessionScope({ sessionId: candidate.accessSessionId, customerId: actor._id, reservationId: scope.reservation._id,
+          facilityId: scope.reservation.facilityId, purpose: ManagedAccessPurpose.OUTBOUND, cellIds: sourceCellIds,
+          expectedRevision: candidate.sessionRevision, dbSession: session }); }
         catch (error: any) { if (error instanceof ManagedAccessError) fail(error.status, error.code, error.message); throw error; }
-        const capacities = await assertFacilityCapacityReconciled(lockedItem.facilityId, reservation._id, session);
-        const byCell = new Map<string, { weight: number; volume: number; id: Types.ObjectId }>();
-        for (const line of currentRequest.allocations as Plain[]) {
-          const key = String(line.cellId), value = byCell.get(key) ?? { weight: 0, volume: 0, id: line.cellId };
-          value.weight += Number(line.weightKg); value.volume += Number(line.volumeM3); byCell.set(key, value);
-          const owned = (reservation.allocatedCellIds ?? []).some((id: Types.ObjectId) => same(id, line.cellId));
-          const allocation = await Allocation.findOne({ cellId: line.cellId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, status: CellAllocationStatus.OCCUPIED }).session(session).lean().exec();
-          if (!owned || !allocation) fail(409, 'SOURCE_CELL_NOT_OWNED', 'Cell nguồn không còn được Reservation này cấp và chiếm dụng.');
-          const certificate = await Topology.findOne({ _id: line.topologyCertificationId, facilityId: reservation.facilityId, certificationState: 'CERTIFIED', revision: line.topologyRevision,
-            certifiedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() }, ...(line.itemKind === 'A1_PHYSICAL_UNIT' ? { provenance: 'FACILITY_SURVEY', supportSurfaceId: { $exists: true, $ne: '' }, 'cells.cellId': line.cellId } : {}) }).session(session).lean().exec();
-          if (!certificate) fail(409, 'SOURCE_TOPOLOGY_UNCERTIFIED', 'Chứng nhận topology nguồn không còn hiệu lực; cần kiểm tra Facility.');
+        const nextSku = await Item.updateOne({ _id: scope.sku._id, customerId: actor._id, facilityId: scope.sku.facilityId, inventorySchemaVersion: 3,
+          managedV3Revision: candidate.skuRevision, skuStatus: 'ACTIVE', deletedAt: { $exists: false } }, { $inc: { managedV3Revision: 1 } }, { session }).exec();
+        if (nextSku.matchedCount !== 1) fail(412, 'STALE_SKU_REVISION', 'SKU vừa thay đổi.');
+        for (const spec of [...scope.specifications].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
+          const expectedRevision = candidate.lines.find(line => same(line.itemSpecId, spec._id))!.itemSpecRevision;
+          const fenced = await ItemSpec.updateOne({ _id: spec._id, skuId: scope.sku._id, customerId: actor._id, revision: expectedRevision, status: 'ACTIVE' },
+            { $inc: { inboundRevision: 1 } }, { session }).exec();
+          if (fenced.matchedCount !== 1) fail(412, 'ITEM_SPECIFICATION_STALE', 'Item Specification vừa thay đổi.');
         }
-        const now = new Date(), movementId = new Types.ObjectId();
-        const source: Plain[] = (currentRequest.allocations as Plain[]).map(row => ({ ...(typeof row.toObject === 'function' ? row.toObject() : row), cellId: row.cellId, physicalUnitId: row.physicalUnitId ?? undefined,
-          batchId: row.batchId ?? undefined, receiptMovementId: row.receiptMovementId ?? undefined }));
-        if (!source.length) fail(409, 'OUTBOUND_ALLOCATION_UNKNOWN', 'Yêu cầu không có phân bổ nguồn hàng đã đối soát.');
-        const totalWeightKg = money(source.reduce((n, row) => n + row.weightKg, 0), 3), totalVolumeM3 = money(source.reduce((n, row) => n + row.volumeM3, 0), 6);
-        const quantity = Number(currentRequest.requestedQuantity), dimensions = lockedItem.unitDimensionsM;
-        if (!dimensions || ![dimensions.widthM, dimensions.depthM, dimensions.heightM].every((x: number) => Number.isFinite(x) && x > 0)) fail(409, 'ITEM_DIMENSIONS_UNKNOWN', 'Kích thước SKU không đủ để ghi canonical REMOVE.');
-        const operationId = `outbound:${String(requestId)}`;
-        const movementRows = await Movement.create([{ _id: movementId, itemId: lockedItem._id, managedReservationId: reservation._id, facilityId: reservation.facilityId, customerId: actor._id,
-          type: ItemMovementType.OUTBOUND, sourceCellId: null, destinationCellId: null, previousPlacementMovementId: state.replay.lastMovementId,
-          quantity, quantityUnit: currentRequest.quantityUnit, actualUnitWeightKg: money(totalWeightKg / quantity, 3), actualTotalWeightKg: totalWeightKg,
-          actualUnitDimensionsM: dimensions, actualTotalVolumeM3: totalVolumeM3, performedBy: actor._id, performedAt: now,
-          handoverNote: 'Customer attestation in Staff-supervised OUTBOUND Access Session.', idempotencyKey: keyValue,
-          schemaVersion: 3, operationId, v3Effect: { action: 'REMOVE', itemKind: currentRequest.itemKind, operationId, requestHash: operationHash,
-            accessSessionId: sessionId, inventoryRevision: lockedItem.managedV3Revision, ledgerRevision: state.replay.ledgerRevision + 1,
-            topologyCertificationId: source[0]!.topologyCertificationId, topologyRevision: source[0]!.topologyRevision, correlationId: randomUUID(), source,
-            customerAttestation: { customerId: actor._id, attestedAt: now, statement: input.attestation.trim() } } }], { session });
-        const movement = movementRows[0];
-        for (const line of source) {
-          if (line.itemKind === 'A2_BATCH') {
-            const placement = await BatchPlacement.findOne({ skuId: lockedItem._id, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId,
-              batchId: line.batchId, cellId: line.cellId, receiptMovementId: line.receiptMovementId, state: 'ACTIVE' }).session(session).exec();
-            if (!placement || placement.quantity < line.quantity) fail(409, 'SOURCE_PLACEMENT_MISMATCH', 'BatchPlacement đã thay đổi hoặc không còn đủ tồn.');
-            const amounts = canonicalA2RemovalAmounts(placement, line.quantity);
-            if (amounts.removedWeightKg !== line.weightKg || amounts.removedVolumeM3 !== line.volumeM3) fail(409, 'SOURCE_PLACEMENT_MISMATCH', 'Physical metrics của hold không còn khớp placement.');
-            placement.quantity = amounts.remainingQuantity; placement.weightKg = amounts.remainingWeightKg; placement.volumeM3 = amounts.remainingVolumeM3;
-            placement.sourceMovementId = movement._id; placement.state = amounts.remainingQuantity === 0 ? 'DEPLETED' : 'ACTIVE'; placement.revision += 1;
-            await placement.save({ session });
-          }
+        const cellsById = new Map((scope.state.cells as Plain[]).map((cell: Plain) => [id(cell._id), cell]));
+        const byCell = new Map<string, Plain>();
+        for (const [cellId, release] of scope.plan.cellRelease.entries()) byCell.set(cellId, { ...release, cell: cellsById.get(cellId) });
+        for (const [cellId, release] of [...byCell.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+          const current: any = release.cell;
+          if (!current || release.weightKg > current.usedWeightKg + 0.001 || release.volumeM3 > current.usedVolumeM3 + 0.000001) fail(503, 'CELL_COUNTER_RECONCILIATION_UNKNOWN', 'Counter Cell không đủ để giải phóng tồn theo receipt.');
+          const changed = await Cell.updateOne({ _id: current._id, facilityId: scope.sku.facilityId, managedInventoryRevision: current.managedInventoryRevision,
+            usedWeightKg: current.usedWeightKg, usedVolumeM3: current.usedVolumeM3 },
+          { $inc: { usedWeightKg: -round(release.weightKg, 3), usedVolumeM3: -round(release.volumeM3, 6), managedInventoryRevision: 1 } }, { session }).exec();
+          if (changed.matchedCount !== 1) fail(412, 'STALE_CELL_CAPACITY', 'Capacity của Cell ' + current.code + ' vừa thay đổi.');
         }
-        if (currentRequest.itemKind === 'A1_PHYSICAL_UNIT') {
-          const unitIds = [...new Set(source.map(row => String(row.physicalUnitId)))].map(value => new Types.ObjectId(value));
-          for (const unitId of unitIds) {
-            const footprint = await Footprint.findOne({ physicalUnitId: unitId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, state: 'ACTIVE' }).session(session).exec();
-            const unit = await PhysicalUnit.findOne({ _id: unitId, skuId: lockedItem._id, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId, state: 'PLACED' }).session(session).exec();
-            if (!footprint || !unit || stable(footprint.cells.map((x: Plain) => String(x.cellId)).sort()) !== stable(source.filter(row => String(row.physicalUnitId) === String(unitId)).map(row => String(row.cellId)).sort())) fail(409, 'A1_FOOTPRINT_MISMATCH', 'PhysicalUnit phải được xuất nguyên vẹn cùng toàn bộ Footprint.');
-            footprint.state = 'RELEASED'; footprint.revision += 1; await footprint.save({ session });
-            unit.state = 'REMOVED'; unit.revision += 1; await unit.save({ session });
-          }
+        const rackIds = [...new Set([...byCell.values()].map((row: Plain) => String(row.cell?.rackId)).filter(Boolean))].sort();
+        for (const rackId of rackIds) {
+          const changed = await Rack.updateOne({ _id: rackId, facilityId: scope.sku.facilityId, deletedAt: { $exists: false } }, { $inc: { managedInventoryRevision: 1 } }, { session }).exec();
+          if (changed.matchedCount !== 1) fail(503, 'RACK_CAPACITY_RECONCILIATION_UNKNOWN', 'Không thể khóa revision Rack/Level.');
         }
-        for (const [cellId, delta] of byCell) {
-          const currentCell = capacities.cells.get(cellId)!;
-          if (!currentCell) fail(503, 'CAPACITY_RECONCILIATION_UNKNOWN', `Thiếu source Cell ${cellId}.`);
-          const updated = await Cell.findOneAndUpdate({ _id: delta.id, facilityId: reservation.facilityId,
-            managedInventoryRevision: currentCell.managedInventoryRevision ?? 0, usedWeightKg: { $gte: money(delta.weight, 3) }, usedVolumeM3: { $gte: money(delta.volume, 6) } },
-          { $inc: { usedWeightKg: -money(delta.weight, 3), usedVolumeM3: -money(delta.volume, 6), managedInventoryRevision: 1 } }, { new: true, session }).exec();
-          if (!updated) fail(409, 'STALE_CELL_CAPACITY', 'Counter Cell vừa thay đổi hoặc không đủ bằng chứng sử dụng.');
-        }
-        const reservationFence = await ReservationModel.findOneAndUpdate({ _id: reservation._id, facilityId: reservation.facilityId,
-          status: ReservationStatus.ACTIVE, inventoryVersion: reservation.inventoryVersion ?? 0, usedCapacityM3: { $gte: totalVolumeM3 } },
-        { $inc: { inventoryVersion: 1, usedCapacityM3: -totalVolumeM3 } }, { new: true, session }).exec();
-        if (!reservationFence) fail(409, 'STALE_RESERVATION_CAPACITY', 'Reservation capacity vừa thay đổi hoặc không đủ.');
-        const nextMovements = await Movement.find({ itemId: lockedItem._id, schemaVersion: 3 }).sort({ performedAt: 1, _id: 1 }).session(session).lean().exec();
-        let nextProjection: Plain = {}; try { nextProjection = replayManagedInventoryV3(lockedItem, nextMovements); } catch (error: any) { fail(409, error.code ?? 'V3_LEDGER_INVALID', 'REMOVE tạo ledger không hợp lệ; transaction đã rollback.'); }
-        const replaced = await Projection.updateOne({ skuId: lockedItem._id, reservationId: reservation._id, facilityId: reservation.facilityId,
-          projectionRevision: state.replay.projectionRevision }, { $set: nextProjection }, { runValidators: true, session }).exec();
-        if (replaced.matchedCount !== 1) fail(412, 'STALE_V3_PROJECTION', 'Projection vừa thay đổi; transaction đã rollback.');
-        const completed = await Request.findOneAndUpdate({ _id: requestId, customerId: actor._id, state: ManagedV3OutboundState.PENDING, version: expectedVersion },
-          { $set: { state: ManagedV3OutboundState.CONFIRMED, confirmedAt: now, confirmedBy: actor._id, confirmedMovementId: movement._id,
-            customerAttestation: { confirmedAt: now, customerId: actor._id, text: input.attestation.trim() } }, $inc: { version: 1 } }, { new: true, runValidators: true, session }).exec();
-        if (!completed) fail(412, 'STALE_OUTBOUND_REQUEST', 'Request vừa được thay đổi; transaction đã rollback.');
-        await new Event({ requestId, skuId: request.skuId, reservationId: request.reservationId, customerId: request.customerId, facilityId: request.facilityId,
-          actorId: actor._id, operation: ManagedV3OutboundOperation.CONFIRM, idempotencyKey: keyValue, requestHash: operationHash,
-          resultingState: completed.state, resultingVersion: completed.version, allocationSnapshot: completed.allocations, occurredAt: now, movementId: movement._id }).save({ session });
-        return { ...requestSnapshot(completed.toObject()), movementId: String(movement._id), currentQuantity: nextProjection.onHandQuantity,
-          heldQuantity: 0, availableQuantity: nextProjection.onHandQuantity, totalWeightKg: nextProjection.totalWeightKg, totalVolumeM3: nextProjection.totalVolumeM3, outcome: 'COMMITTED' };
+        const nextUsed = round(Number(scope.reservation.usedCapacityM3) - scope.plan.totalVolumeM3, 6);
+        if (!Number.isFinite(nextUsed) || nextUsed < -0.000001) fail(503, 'RESERVATION_COUNTER_RECONCILIATION_UNKNOWN', 'Reservation capacity không thể giảm an toàn.');
+        const reservationUpdated = await ReservationModel.updateOne({ _id: scope.reservation._id, customerId: actor._id, facilityId: scope.sku.facilityId,
+          status: ReservationStatus.ACTIVE, inventoryVersion: scope.reservation.inventoryVersion ?? 0, usedCapacityM3: scope.reservation.usedCapacityM3 },
+        { $set: { usedCapacityM3: Math.max(0, nextUsed) }, $inc: { inventoryVersion: 1 } }, { session }).exec();
+        if (reservationUpdated.matchedCount !== 1) fail(412, 'STALE_RESERVATION_CAPACITY', 'Reservation capacity vừa thay đổi.');
+        const movements = (scope.state.movements as Plain[]).filter((movement: Plain) => same(movement.itemId, scope.sku._id));
+        const ledgerRevision = Math.max(0, ...movements.map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))) + 1;
+        const movementId = new Types.ObjectId(), operationId = 'MI-OUT:' + String(scope.sku._id) + ':' + createHash('sha256').update(requestKey).digest('hex');
+        const quantityUnit = new Set(scope.plan.effectLines.map((line: Plain) => line.quantityUnitSnapshot)).size === 1
+          ? scope.plan.effectLines[0]!.quantityUnitSnapshot : 'MIXED';
+        const first = scope.plan.effectLines[0]!, now = new Date();
+        const movement: any = new Movement({ _id: movementId, movementCode: 'MI-' + movementId.toString(), referenceCode: scope.candidate.referenceCode || operationId,
+          operationId, itemId: scope.sku._id, managedReservationId: scope.reservation._id, facilityId: scope.sku.facilityId, customerId: actor._id,
+          type: ItemMovementType.OUTBOUND, quantity: scope.plan.quantity, quantityUnit, actualUnitWeightKg: round(scope.plan.totalWeightKg / scope.plan.quantity, 3),
+          actualTotalWeightKg: scope.plan.totalWeightKg, actualUnitDimensionsM: first.unitDimensionsSnapshot, actualTotalVolumeM3: scope.plan.totalVolumeM3,
+          performedBy: actor._id, performedAt: now, inspectionNote: candidate.customerAttestation,
+          handoverNote: scope.candidate.notes, idempotencyKey: requestKey, schemaVersion: 4, itemSpecId: first.itemSpecId,
+          stockEffect: { action: 'REMOVE', operationId, requestHash, ledgerRevision, contractVersion: 2, accessSessionId: new Types.ObjectId(scope.candidate.accessSessionId),
+            source: scope.plan.effectLines, destination: [] } });
+        await movement.save({ session });
+        await applyDirectStockEffects(scope.plan, scope, actor, session, movement);
+        const committedState = await directFacilityState(scope.sku, scope.reservation, session);
+        const stock = directStockResponse(scope.sku, scope.reservation, committedState, scope.specifications);
+        return { status: 'COMMITTED', replayed: false, movement, stock, quantity: scope.plan.quantity,
+          totalWeightKg: scope.plan.totalWeightKg, totalVolumeM3: scope.plan.totalVolumeM3, lineCount: scope.plan.specTotals.length };
       });
-      return { data: result, replayed: false };
     } catch (error: any) {
-      if (error instanceof ManagedV3OutboundError || error instanceof ManagedV3OutboundDomainError) throw error;
-      if (error instanceof ManagedAccessError) fail(error.status, error.code, error.message);
+      if (error instanceof ManagedV3OutboundError || error instanceof ManagedAccessError) throw error;
       if (error?.code === 11000) {
-        const committed = await Event.findOne({ skuId: request.skuId, operation: ManagedV3OutboundOperation.CONFIRM, idempotencyKey: keyValue, actorId: actor._id }).lean().exec().catch(() => null);
-        if (committed?.requestHash === operationHash && same(committed.requestId, requestId)) return { data: { ...requestSnapshot(await Request.findById(requestId).lean().exec()), movementId: String(committed.movementId), outcome: 'COMMITTED' }, replayed: true };
-        fail(409, 'IDEMPOTENCY_CONFLICT', 'Xung đột key hoặc movement; hãy đối soát lịch sử trước khi thử lại.');
+        const recovered = await findDirectReplay(skuIdObject, actor, requestKey, requestHash).catch(() => null);
+        if (recovered) return recovered;
+        fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã bị xung đột; hãy đối soát trước khi gửi lại.');
       }
       if (errorLabel(error, 'UnknownTransactionCommitResult')) {
-        const committed = await Event.findOne({ skuId: request.skuId, operation: ManagedV3OutboundOperation.CONFIRM, idempotencyKey: keyValue, actorId: actor._id }).lean().exec().catch(() => null);
-        if (committed?.requestHash === operationHash && same(committed.requestId, requestId)) return { data: { ...requestSnapshot(await Request.findById(requestId).lean().exec()), movementId: String(committed.movementId), outcome: 'COMMITTED' }, replayed: true };
-        fail(503, 'OUTBOUND_CONFIRM_OUTCOME_UNKNOWN', 'Kết quả xác nhận chưa xác định; đối soát cùng Idempotency-Key, không tạo yêu cầu hoặc key mới.');
+        const recovered = await findDirectReplay(skuIdObject, actor, requestKey, requestHash).catch(() => null);
+        if (recovered) return recovered;
+        fail(503, 'OUTCOME_UNKNOWN', 'Kết quả commit chưa xác định. Hãy đối soát bằng cùng Idempotency-Key; không tạo key mới.');
       }
+      if (checkTransactionUnavailable(error)) fail(503, 'TRANSACTIONS_UNAVAILABLE', 'MongoDB hiện tại không hỗ trợ transaction; xuất kho chưa được ghi.');
       throw error;
     }
   }
 
-  static async operation(itemIdInput: unknown, rawKey: unknown, actor: Actor) {
-    const itemId = oid(itemIdInput, 'skuId'), keyValue = key(rawKey);
-    const filter: Plain = { skuId: itemId, operation: ManagedV3OutboundOperation.CONFIRM, idempotencyKey: keyValue };
-    if (actor.role === UserRole.CUSTOMER) filter.customerId = actor._id;
-    else if ([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role)) { if (!actor.assignedFacilityId) fail(403, 'ROLE_DENIED', 'Facility assignment is required.'); filter.facilityId = actor.assignedFacilityId; }
-    else fail(403, 'ROLE_DENIED', 'Role cannot read outbound operation.');
-    const event = await Event.findOne(filter).lean().exec(); if (!event) fail(404, 'OUTBOUND_OPERATION_NOT_FOUND', 'Không tìm thấy thao tác đã xác nhận.');
-    const movement = await Movement.findOne({ _id: event.movementId, itemId, schemaVersion: 3 }).lean().exec();
-    if (!movement) fail(503, 'OUTBOUND_OPERATION_UNKNOWN', 'Event xác nhận không có Movement V3 tương ứng.');
-    return { event, movement, request: requestSnapshot(await Request.findById(event.requestId).lean().exec()) };
-  }
-
-  static async facilityQueue(queryInput: unknown, actor: Actor) {
-    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role) || !actor.assignedFacilityId) fail(403, 'ROLE_DENIED', 'Staff/Manager cần Facility assignment.');
-    const raw = queryInput && typeof queryInput === 'object' && !Array.isArray(queryInput) ? queryInput as Plain : {};
-    if (Object.keys(raw).some(k => !['state', 'page', 'limit', 'dateFrom', 'dateTo'].includes(k))) fail(400, 'INVALID_FILTER', 'Bộ lọc không hợp lệ.');
-    const page = raw.page === undefined ? 1 : Number(raw.page), limit = raw.limit === undefined ? 20 : Number(raw.limit);
-    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail(400, 'INVALID_PAGINATION', 'Phân trang không hợp lệ.');
-    const filter: Plain = { facilityId: actor.assignedFacilityId }; if (raw.state) { if (!Object.values(ManagedV3OutboundState).includes(raw.state)) fail(400, 'INVALID_FILTER', 'Trạng thái không hợp lệ.'); filter.state = raw.state; }
-    if (raw.dateFrom || raw.dateTo) { filter.createdAt = {}; if (raw.dateFrom) filter.createdAt.$gte = new Date(String(raw.dateFrom)); if (raw.dateTo) filter.createdAt.$lte = new Date(String(raw.dateTo)); if ((Object.values(filter.createdAt) as Date[]).some((d: Date) => !Number.isFinite(d.getTime()))) fail(400, 'INVALID_FILTER', 'Ngày lọc không hợp lệ.'); }
-    let rows: Plain[], total: number;
-    if (actor.role === UserRole.FACILITY_MANAGER) {
-      [rows, total] = await Promise.all([Request.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(), Request.countDocuments(filter).exec()]);
-    } else {
-      const scope = await staffVisitScope(actor);
-      const reservationIds = [...new Set(scope.visits.map((row: Plain) => String(row.reservationId)))].map((value: string) => new Types.ObjectId(value));
-      if (!reservationIds.length) return { data: [], pagination: { page, limit, total: 0, totalPages: 0 } };
-      const states = raw.state ? [raw.state] : [ManagedV3OutboundState.PENDING, ManagedV3OutboundState.CONFIRMED];
-      const candidates = await Request.find({ ...filter, reservationId: { $in: reservationIds }, state: { $in: states } }).sort({ createdAt: -1, _id: -1 }).limit(5001).lean().exec();
-      if (candidates.length > 5000) fail(503, 'STAFF_OUTBOUND_SCOPE_TOO_LARGE', 'Danh sách Outbound vượt giới hạn đối soát quyền Staff.');
-      const movementIds = candidates.map((row: Plain) => row.confirmedMovementId).filter(Boolean);
-      const sessionIds = scope.sessions.map((row: Plain) => row._id);
-      const scopedMovements = movementIds.length && sessionIds.length ? await Movement.find({ _id: { $in: movementIds }, facilityId: actor.assignedFacilityId,
-        schemaVersion: 3, 'v3Effect.action': 'REMOVE', 'v3Effect.accessSessionId': { $in: sessionIds } }).lean().exec() : [];
-      const visible = candidates.filter((request: Plain) => staffCanReadManagedV3OutboundRequest({ request, ...scope, movements: scopedMovements,
-        actorId: String(actor._id), facilityId: String(actor.assignedFacilityId) }));
-      rows = visible.slice((page - 1) * limit, page * limit); total = visible.length;
-    }
-    const itemIds = [...new Set((rows as Plain[]).map((r: Plain) => String(r.skuId)))].map((id: string) => new Types.ObjectId(id));
-    const items = await Item.find({ _id: { $in: itemIds }, facilityId: actor.assignedFacilityId }).select('_id itemCode name images category').lean().exec();
-    const itemMap = new Map(items.map((row: Plain) => [String(row._id), row]));
-    const data = rows.filter((row: Plain) => itemMap.has(String(row.skuId))).map((row: Plain) => ({ ...requestSnapshot(row), sku: itemMap.get(String(row.skuId)) }));
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-  }
-  static async facilityDetail(requestIdInput: unknown, actor: Actor) {
-    if (![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(actor.role) || !actor.assignedFacilityId) fail(403, 'ROLE_DENIED', 'Staff/Manager cần Facility assignment.');
-    const request = await Request.findOne({ _id: oid(requestIdInput, 'requestId'), facilityId: actor.assignedFacilityId }).lean().exec();
-    if (!request) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu tại Facility.');
-    if (actor.role === UserRole.FACILITY_STAFF && !await staffCanReadRequest(request, actor)) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu trong phạm vi Visit/Session OUTBOUND được phân công.');
-    const [item, customer, movements, events] = await Promise.all([
-      Item.findOne({ _id: request.skuId, facilityId: actor.assignedFacilityId }).select('_id itemCode name images category quantityUnit').lean().exec(),
-      (await import('../../models/users/user.model')).default.findById(request.customerId).select('_id displayName').lean().exec(),
-      Movement.find({ itemId: request.skuId, 'v3Effect.operationId': { $regex: `^outbound:${String(request._id)}$` } }).sort({ performedAt: 1 }).lean().exec(),
-      Event.find({ requestId: request._id }).sort({ resultingVersion: 1 }).lean().exec(),
-    ]);
-    if (!item || !customer) fail(404, 'OUTBOUND_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu tại Facility.');
-    return { request: requestSnapshot(request), sku: item, customer, movements, events, stock: await ManagedInventoryV3OutboundService.stock(String(request.skuId), { _id: request.customerId, role: UserRole.CUSTOMER } as Actor) };
+  static async operation(skuId: unknown, rawKey: unknown, actor: Actor) {
+    const sku = await directOwnedSku(skuId, actor), requestKey = key(rawKey);
+    const movement: any = await Movement.findOne({ itemId: sku._id, customerId: actor._id, idempotencyKey: requestKey, schemaVersion: 4,
+      'stockEffect.action': 'REMOVE' }).lean().exec();
+    if (!movement) fail(404, 'OUTBOUND_OPERATION_NOT_FOUND', 'Chưa tìm thấy phiếu xuất đã xác nhận.');
+    return { status: 'COMMITTED', movement };
   }
 }
-

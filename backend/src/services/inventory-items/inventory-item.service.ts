@@ -612,6 +612,7 @@ function movementDto(movement: any, includeCustomer = true) {
     ...(movement.relocationNote === undefined ? {} : { relocationNote: movement.relocationNote }),
     ...(movement.physicalPackingConfirmed === undefined ? {} : { physicalPackingConfirmed: movement.physicalPackingConfirmed }),
     ...(movement.schemaVersion === undefined ? {} : { schemaVersion: movement.schemaVersion }),
+    ...(movement.itemSpecId ? { itemSpecId: movement.itemSpecId } : {}),
     ...(movement.arithmeticPolicy === undefined ? {} : { arithmeticPolicy: movement.arithmeticPolicy }),
     ...(Array.isArray(movement.batchLines) ? { batchLines: movement.batchLines.map((line: any) => ({
       batchId: line.batchId,
@@ -622,6 +623,31 @@ function movementDto(movement: any, includeCustomer = true) {
       actualUnitWeightKg: line.actualUnitWeightKg, actualUnitDimensionsM: line.actualUnitDimensionsM,
       actualTotalWeightKg: line.actualTotalWeightKg, actualTotalVolumeM3: line.actualTotalVolumeM3,
     })) } : {}),
+    ...(movement.schemaVersion === 4 && movement.stockEffect ? { stockEffect: {
+      action: movement.stockEffect.action,
+      ledgerRevision: movement.stockEffect.ledgerRevision,
+      contractVersion: movement.stockEffect.contractVersion,
+      source: (movement.stockEffect.source ?? []).map((line: any) => ({
+        lineId: line.lineId, itemSpecId: line.itemSpecId, receiptId: line.receiptId,
+        ...(line.itemInstanceId ? { itemInstanceId: line.itemInstanceId } : {}), cellId: line.cellId,
+        quantity: line.quantity, quantityUnitSnapshot: line.quantityUnitSnapshot,
+        unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot,
+        unitDimensionsSnapshot: line.unitDimensionsSnapshot,
+        allocatedWeightKg: line.allocatedWeightKg, allocatedVolumeM3: line.allocatedVolumeM3,
+        ...(line.quantityBefore === undefined ? {} : { quantityBefore: line.quantityBefore }),
+        ...(line.quantityAfter === undefined ? {} : { quantityAfter: line.quantityAfter }),
+      })),
+      destination: (movement.stockEffect.destination ?? []).map((line: any) => ({
+        lineId: line.lineId, itemSpecId: line.itemSpecId, receiptId: line.receiptId,
+        ...(line.itemInstanceId ? { itemInstanceId: line.itemInstanceId } : {}), cellId: line.cellId,
+        quantity: line.quantity, quantityUnitSnapshot: line.quantityUnitSnapshot,
+        unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot,
+        unitDimensionsSnapshot: line.unitDimensionsSnapshot,
+        allocatedWeightKg: line.allocatedWeightKg, allocatedVolumeM3: line.allocatedVolumeM3,
+        ...(line.quantityBefore === undefined ? {} : { quantityBefore: line.quantityBefore }),
+        ...(line.quantityAfter === undefined ? {} : { quantityAfter: line.quantityAfter }),
+      })),
+    } } : {}),
     createdAt: movement.createdAt,
   };
 }
@@ -675,6 +701,7 @@ async function validatePreferredCell(cellId: string, reservation: IReservation, 
 
 export class InventoryItemService {
   static async create(input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy inventory registration is disabled; register a SKU and Item Specification instead');
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only customers can register inventory items');
     const data = parseCreate(input);
     return execute(async () => {
@@ -756,6 +783,7 @@ export class InventoryItemService {
   }
 
   static async update(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy item metadata editing is disabled; update the SKU or Item Specification API');
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Only the owning customer may update registered item metadata');
     const itemId = parseId(idInput, 'item ID');
     const changes = parseUpdate(input);
@@ -804,6 +832,7 @@ export class InventoryItemService {
   }
 
   static async requestInbound(idInput: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Stock inbound is paused until Cell Stock and Movement are implemented');
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Customer role required');
     const itemId = parseId(idInput, 'item ID');
     return execute(async () => withTransaction(async session => {
@@ -830,6 +859,7 @@ export class InventoryItemService {
   }
 
   static async confirmInbound(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy stock inbound is disabled');
     if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
     const itemId = parseId(idInput, 'item ID');
     const data: InboundConfirmationInput = parseInboundConfirmation(input);
@@ -1012,6 +1042,7 @@ export class InventoryItemService {
   }
 
   static async rejectInbound(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy stock inbound is disabled');
     if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
     const itemId = parseId(idInput, 'item ID');
     const { reason } = parseInboundRejection(input);
@@ -1032,6 +1063,7 @@ export class InventoryItemService {
   }
 
   static async requestOutbound(idInput: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Stock outbound is paused until Cell Stock and Movement are implemented');
     if (actor.role !== UserRole.CUSTOMER) throw new InventoryItemError(403, 'Customer role required');
     const itemId = parseId(idInput, 'item ID');
     return execute(async () => withTransaction(async session => {
@@ -1073,6 +1105,7 @@ export class InventoryItemService {
   }
 
   static async confirmOutbound(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy stock outbound is disabled');
     if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
     const itemId = parseId(idInput, 'item ID');
     const data: OutboundConfirmationInput = parseOutboundConfirmation(input);
@@ -1188,6 +1221,7 @@ export class InventoryItemService {
   }
 
   static async rejectOutbound(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Legacy stock outbound is disabled');
     if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
     const itemId = parseId(idInput, 'item ID');
     const { reason } = parseOutboundRejection(input);
@@ -1216,6 +1250,7 @@ export class InventoryItemService {
   }
 
   static async relocate(idInput: unknown, input: unknown, actor: Actor) {
+    throw new InventoryItemError(410, 'Stock relocation is paused until Cell Stock and Movement are implemented');
     if (actor.role !== UserRole.FACILITY_STAFF) throw new InventoryItemError(403, 'Assigned Facility Staff role required');
     const itemId = parseId(idInput, 'item ID');
     const data: RelocationInput = parseRelocation(input);
