@@ -5,6 +5,7 @@ const audit = new Schema({ action: { type: String, required: true }, actorId: { 
 const schema = new Schema<IManagedAccessSession>({
   visitId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessVisit', required: true, index: true },
   reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },
+  scopedReservationIds: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }],
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
   assignedStaffId: { type: Schema.Types.ObjectId, ref: 'User', required: true },

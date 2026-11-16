@@ -4,7 +4,7 @@ import { managedInventoryV3OutboundApi } from '@/api/managedInventoryV3OutboundA
 import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
 import { formatInventoryDateTime } from './inventoryUiFormat';
 
-const refId = value => String(value?._id ?? value?.id ?? value ?? '');
+const refId = value => String(value?.skuId?._id ?? value?.skuId ?? value?._id ?? value?.id ?? value ?? '');
 const makeLine = spec => ({ lineId: globalThis.crypto?.randomUUID?.() || `out-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   itemSpecId: refId(spec), itemSpecRevision: spec?.revision ?? 0, quantity: 1, cellAllocations: [], itemInstanceIds: [] });
 const errorMessage = error => {
@@ -23,6 +23,7 @@ const errorMessage = error => {
     RENTAL_NOT_ACTIVE: 'Đơn thuê chưa ở trạng thái hoạt động hoặc chưa hoàn tất bàn giao.',
     LEGACY_OUTBOUND_REQUEST_PENDING: 'Còn yêu cầu xuất theo quy trình cũ cần được Facility đối soát.',
     IDEMPOTENCY_CONFLICT: 'Mã thao tác đã được dùng cho nội dung khác. Không gửi lại bằng mã mới; hãy đối soát lịch sử.',
+    OUTBOUND_REJECTED_NO_WRITE: 'Backend đã từ chối mã SKU trên đường dẫn trước khi ghi dữ liệu. Phiếu cũ chưa tạo movement; hãy tải lại SKU, xem trước lại rồi mới xác nhận.',
   };
   return messages[code] || error?.response?.data?.message || error?.message || 'Không thể hoàn tất xuất kho. Hãy tải lại và đối soát.';
 };
@@ -101,7 +102,11 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
       setPending(null); setPreview(null); setAttested(false);
       setNotice(`Đã xuất kho thành công · ${result?.movement?.movementCode || result?.movement?.id || ''}`);
       await reload(); await onRefresh?.();
-    } catch (e) { setPending(managedInventoryV3OutboundApi.pending(skuId)); setError(errorMessage(e)); }
+    } catch (e) {
+      if (e?.code === 'OUTBOUND_REJECTED_NO_WRITE') { setPending(null); setPreview(null); setAttested(false); }
+      else setPending(managedInventoryV3OutboundApi.pending(skuId));
+      setError(errorMessage(e));
+    }
     finally { setBusy(false); }
   };
   const reconcile = async () => {
@@ -115,7 +120,10 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
     } catch (e) {
       if (e?.response?.status === 404 && pending.payload) {
         try { await managedInventoryV3OutboundApi.confirm(skuId, pending.payload); managedInventoryV3OutboundApi.clearPending(skuId); setPending(null); setNotice('Đã gửi lại đúng thao tác đang chờ bằng cùng Idempotency-Key.'); await reload(); await onRefresh?.(); }
-        catch (retryError) { setError(errorMessage(retryError)); }
+        catch (retryError) {
+          if (retryError?.code === 'OUTBOUND_REJECTED_NO_WRITE') { setPending(null); setPreview(null); setAttested(false); }
+          setError(errorMessage(retryError));
+        }
       } else setError(errorMessage(e));
     } finally { setPending(managedInventoryV3OutboundApi.pending(skuId)); setBusy(false); }
   };

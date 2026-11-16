@@ -40,6 +40,9 @@ test('Create Visit and check-in reuse persisted idempotency keys and expose expl
 test('Visit amendments keep an idempotency key across ambiguous outcomes and Access UI explains provisional capacity and the 60-minute session boundary',()=>{
  assert.match(api,/amendVisit: async/);assert.match(api,/Idempotency-Key/);assert.match(api,/pendingAmend/);
  assert.match(api,/expectedRevision/);assert.match(api,/originalRevision/);assert.match(customer,/pending\.expectedRevision/);
+ assert.match(api,/client\.patch\([\s\S]*pending\.payload[\s\S]*String\(originalRevision\)[\s\S]*pending\.key/);
+ assert.match(api,/if \(!Number\.isSafeInteger\(expectedRevision\) \|\| expectedRevision < 0\)/);
+ assert.doesNotMatch(api,/Number\.isSafeInteger\(pending\.expectedRevision\) \? pending\.expectedRevision : Number\(revision\)/);
  assert.match(customer,/if\(editing\)\{[\s\S]*pendingAmend/);assert.match(customer,/Number\(current\.revision\)!==pendingAmend\.revision/);
  assert.doesNotMatch(customer,/if\(editing&&\(!cause\?\.response\?\.status\|\|cause\.response\.status>=500\)\)setPendingAmend/);
  assert.match(customer,/số tài khoản Staff đang hoạt động/);assert.match(customer,/chưa phải xác nhận Staff đang trực/);assert.match(customer,/không tự gia hạn/);

@@ -15,7 +15,8 @@ const schema = new Schema<IManagedItemInstance>({
   itemInstanceId: { type: String, required: true, trim: true, maxlength: 160, immutable: true },
   skuId: { type: Schema.Types.ObjectId, ref: 'InventoryItem', required: true, immutable: true },
   itemSpecId: { type: Schema.Types.ObjectId, ref: 'ItemSpecification', required: true, immutable: true },
-  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, immutable: true },
+  // Placement ownership may change only through a canonical transactional MOVE.
+  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, immutable: true },
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
   sourceReceiptId: { type: String, required: true, trim: true, maxlength: 160, immutable: true },

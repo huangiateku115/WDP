@@ -42,6 +42,8 @@ export interface ManagedStockEffectLine {
   /** Stable logical inbound row; several cell allocations may share one lineId. */
   lineId?: string;
   itemSpecId: Types.ObjectId;
+  /** Placement owner for cross-Reservation V3 MOVE; absent means movement.managedReservationId. */
+  reservationId?: Types.ObjectId;
   receiptId: string;
   itemInstanceId?: string;
   cellId: Types.ObjectId;
@@ -63,6 +65,9 @@ export interface ManagedStockMovementEffect {
   /** Additive line contract version; absent on historical v4 events. */
   contractVersion?: 2;
   accessSessionId?: Types.ObjectId;
+  reason?: string;
+  notes?: string;
+  customerAttestation?: { customerId: Types.ObjectId; attestedAt: Date; statement: string };
   source?: ManagedStockEffectLine[];
   destination?: ManagedStockEffectLine[];
 }

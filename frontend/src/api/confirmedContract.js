@@ -139,6 +139,9 @@ export function assertConfirmedRequest(config) {
       /^inventory-items\/[a-f\d]{24}\/v3\/outbound\/(context|operations)$/i.test(path)) ||
     (method === "POST" &&
       /^inventory-items\/[a-f\d]{24}\/v3\/outbound(?:\/preview)?$/i.test(path));
+  const managedV3Relocation =
+    (method === "GET" && /^inventory-items\/[a-f\d]{24}\/v3\/relocation\/(context|operations)$/i.test(path)) ||
+    (method === "POST" && /^inventory-items\/[a-f\d]{24}\/v3\/relocation(?:\/preview)?$/i.test(path));
   const managedAccess =
     (method === "POST" &&
       (/^access\/managed-v3\/visits$/i.test(path) ||
@@ -281,11 +284,9 @@ export function assertConfirmedRequest(config) {
   const staffInventoryOperations =
     (method === "GET" &&
       (/^inbound-requests\/receiving-queue$/i.test(path) ||
-        /^inbound-requests\/[a-f\d]{24}\/receiving$/i.test(path) ||
-        /^inventory-items\/[a-f\d]{24}\/relocate-canonical\/context$/i.test(path))) ||
+        /^inbound-requests\/[a-f\d]{24}\/receiving$/i.test(path))) ||
     (method === "POST" &&
-      (/^inbound-requests\/[a-f\d]{24}\/(evidence-uploads|inspection|return-completed|confirm)$/i.test(path) ||
-        /^inventory-items\/[a-f\d]{24}\/relocate-canonical$/i.test(path)));
+      /^inbound-requests\/[a-f\d]{24}\/(evidence-uploads|inspection|return-completed|confirm)$/i.test(path));
   const allowed =
     facilityManagedReadiness ||
     selfStorageCheckoutAndRenew ||
@@ -317,6 +318,7 @@ export function assertConfirmedRequest(config) {
     managedIntake ||
     managedV3Inventory ||
     managedV3Outbound ||
+    managedV3Relocation ||
     deskAllowed ||
     inspectionAllowed ||
     facilityReviewAllowed ||

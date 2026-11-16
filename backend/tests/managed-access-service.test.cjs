@@ -85,7 +85,7 @@ test('Visit amendment rechecks availability and allocation inside a Facility-fen
 
 test('Visit amendment rejects stale revisions and checked-in visits without saving',async t=>{
  const r=reservation(),actor=customer(),base=payload(r),visit={_id:oid(55),reservationId:r._id,customerId:r.customerId,facilityId:r.facilityId,purpose:'INBOUND',startsAt:new Date(base.startsAt),endsAt:new Date(base.endsAt),status:'CHECKED_IN',revision:5,audit:[],save:async()=>{throw Error('must not save');}};
- t.mock.method(Visit,'findOne',()=>new Query(visit));
+ t.mock.method(Visit,'findOne',()=>new Query(visit));t.mock.method(Visit,'find',()=>new Query([]));
  await assert.rejects(ManagedAccessService.amendVisit(String(visit._id),{startsAt:base.startsAt,endsAt:base.endsAt},actor,5,'checked-in-amend-key'),error=>error.code==='VISIT_NOT_AMENDABLE');
  visit.status='SCHEDULED';
  await assert.rejects(ManagedAccessService.amendVisit(String(visit._id),{startsAt:base.startsAt,endsAt:base.endsAt},actor,4,'stale-amendment-key'),error=>error.code==='STALE_REVISION'&&error.status===412);
@@ -159,7 +159,7 @@ test('Customer availability does not invent slots when Facility schedule is miss
 test('Customer cancellation atomically fences owner, status and revision',async t=>{
  const row={_id:oid(11),customerId:oid(1),status:'SCHEDULED',revision:2,audit:[]};let filter,update;
  t.mock.method(Visit,'findOneAndUpdate',(f,u)=>{filter=f;update=u;if(row.status!=='SCHEDULED'||row.revision!==f.revision)return new Query(null);Object.assign(row,u.$set);row.revision+=u.$inc.revision;row.audit.push(u.$push.audit);return new Query(row);});
- t.mock.method(Visit,'findOne',()=>new Query(row));
+ t.mock.method(Visit,'findOne',()=>new Query(row));t.mock.method(Visit,'find',()=>new Query([]));
  const result=await ManagedAccessService.cancelVisit(String(row._id),customer(),2);
  assert.equal(result.status,'CANCELLED');assert.equal(result.revision,3);assert.equal(result.audit.at(-1).action,'VISIT_CANCELLED');
  assert.equal(String(filter.customerId),String(customer()._id));assert.equal(filter.status,'SCHEDULED');assert.equal(filter.revision,2);assert.equal(update.$inc.revision,1);
@@ -168,10 +168,28 @@ test('Customer cancellation atomically fences owner, status and revision',async 
 
 test('Customer cancellation loses safely to a concurrent amend/check-in revision change',async t=>{
  const row={_id:oid(11),customerId:oid(1),status:'SCHEDULED',revision:3,audit:[]};
- t.mock.method(Visit,'findOneAndUpdate',()=>new Query(null));t.mock.method(Visit,'findOne',()=>new Query(row));
+ t.mock.method(Visit,'findOneAndUpdate',()=>new Query(null));t.mock.method(Visit,'findOne',()=>new Query(row));t.mock.method(Visit,'find',()=>new Query([]));
  await assert.rejects(ManagedAccessService.cancelVisit(String(row._id),customer(),2),error=>error.status===412&&error.code==='STALE_REVISION');
  row.status='CHECKED_IN';
  await assert.rejects(ManagedAccessService.cancelVisit(String(row._id),customer(),3),error=>error.status===409&&error.code==='VISIT_NOT_CANCELLABLE');
+ row.status='SCHEDULED';row.revision=4;
+ await assert.rejects(ManagedAccessService.cancelVisit(String(row._id),customer(),3),error=>error.status===412&&error.code==='STALE_REVISION');
+});
+
+test('Two concurrent Customer cancellations produce one terminal transition',async t=>{
+ const row={_id:oid(17),customerId:oid(1),status:'SCHEDULED',revision:7,audit:[]};let writes=0;
+ t.mock.method(Visit,'find',()=>new Query([]));t.mock.method(Visit,'findOne',()=>new Query(row));
+ t.mock.method(Visit,'findOneAndUpdate',(filter,update)=>{
+  if(row.status!=='SCHEDULED'||row.revision!==filter.revision)return new Query(null);
+  writes++;row.status=update.$set.status;row.revision+=update.$inc.revision;row.audit.push(update.$push.audit);return new Query(row);
+ });
+ const results=await Promise.allSettled([
+  ManagedAccessService.cancelVisit(String(row._id),customer(),7),
+  ManagedAccessService.cancelVisit(String(row._id),customer(),7),
+ ]);
+ assert.equal(results.filter(result=>result.status==='fulfilled').length,1);
+ assert.equal(results.filter(result=>result.status==='rejected').length,1);
+ assert.equal(writes,1);assert.equal(row.status,'CANCELLED');assert.equal(row.revision,8);
 });
 
 test('Manager assignment is facility-scoped and rejects an overlapping assigned Staff schedule',async t=>{
@@ -276,7 +294,7 @@ test('D3/D4 session guard fences the complete multi-Cell scope and revalidates l
  let sessionFilter,allocationFilter;
  t.mock.method(Session,'findOneAndUpdate',(filter,update)=>{sessionFilter=filter;return new Query({...session,revision:9});});
  t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(r));t.mock.method(Reservation,'findById',()=>new Query(r));
- t.mock.method(Visit,'findOne',()=>new Query({purpose:'RELOCATION',status:'CHECKED_IN'}));
+ t.mock.method(Visit,'findOne',()=>new Query({reservationId,purpose:'RELOCATION',status:'CHECKED_IN'}));
  t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(Contract,'findOne',()=>new Query(contract));
  t.mock.method(Allocation,'updateMany',(filter)=>{allocationFilter=filter;return new Query({matchedCount:2});});

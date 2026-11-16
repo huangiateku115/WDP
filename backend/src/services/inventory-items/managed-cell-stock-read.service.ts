@@ -79,10 +79,15 @@ export class ManagedCellStockReadService {
       InventoryItemModel.findOne({ _id: skuId }).select('quantity quantityUnit currentCellId').lean().exec(),
     ]);
     const reservationId = sku.reservationId ?? sku.managedReservationId;
+    const referencedReservationIds = new Set<string>([String(reservationId ?? ''), ...stocks.map((row: any) => idText(row.reservationId)),
+      ...instances.map((row: any) => idText(row.reservationId)), ...movements.flatMap((movement: any) => [idText(movement.managedReservationId), ...(movement.stockEffect?.source ?? []).map((line: any) => idText(line.reservationId)), ...(movement.stockEffect?.destination ?? []).map((line: any) => idText(line.reservationId))])].filter(Boolean));
+    const reservationRows: any[] = referencedReservationIds.size <= 1000 ? await (ReservationModel as any).find({ _id: { $in: [...referencedReservationIds] }, customerId: sku.customerId,
+      facilityId: sku.facilityId, serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3 }).select('_id reservationCode status').lean().exec() : [];
+    const validReservationIds = new Set(reservationRows.map((row: any) => idText(row._id)));
     const scopedRows = (rows: any[]) => rows.every(row => String(row.skuId ?? row.itemId ?? '') === String(skuId) &&
       String(row.customerId ?? '') === String(sku.customerId) && String(row.facilityId ?? '') === String(sku.facilityId) &&
-      String(row.reservationId ?? row.managedReservationId ?? '') === String(reservationId ?? ''));
-    const scopeRowsMatch = !!sku.customerId && !!sku.facilityId && !!reservationId &&
+      validReservationIds.has(String(row.reservationId ?? row.managedReservationId ?? reservationId ?? '')));
+    const scopeRowsMatch = !!sku.customerId && !!sku.facilityId && !!reservationId && validReservationIds.size === referencedReservationIds.size &&
       scopedRows([...specifications, ...stocks, ...instances, ...movements]);
     const placementCellIds = new Set<string>();
     for (const row of stocks) if (row.cellId) placementCellIds.add(idText(row.cellId));
@@ -103,12 +108,18 @@ export class ManagedCellStockReadService {
     let replay: any = null, replayError: string | null = null;
     if (v4Events.length === movements.length && v4Events.length) { try { replay = replayManagedStockMovements(v4Events); } catch (error: any) { replayError = error?.code || 'STOCK_LEDGER_UNKNOWN'; } }
     const initialized = canonicalScopeMatches && movements.length === 0 && stocks.length === 0 && instances.every((row: any) => row.status === 'REMOVED') && legacySku?.quantity == null && legacySku?.currentCellId == null;
-    const replayMatchesProjection = canonicalScopeMatches && historyBounded && !!replay && sameProjection(replay.lots, stocks, row => `${idText(row.itemSpecId)}|${row.receiptId}|${idText(row.cellId)}`, ['skuId','itemSpecId','reservationId','facilityId','customerId','cellId','receiptId','quantityOnHand','quantityHeld','quantityAvailable','totalWeightKg','totalVolumeM3','unitWeightKgSnapshot','unitVolumeM3Snapshot','quantityUnitSnapshot','ledgerRevision']) &&
+    const replayMatchesProjection = canonicalScopeMatches && historyBounded && !!replay && sameProjection(replay.lots, stocks, row => `${idText(row.reservationId)}|${idText(row.itemSpecId)}|${row.receiptId}|${idText(row.cellId)}`, ['skuId','itemSpecId','reservationId','facilityId','customerId','cellId','receiptId','quantityOnHand','quantityHeld','quantityAvailable','totalWeightKg','totalVolumeM3','unitWeightKgSnapshot','unitVolumeM3Snapshot','quantityUnitSnapshot','ledgerRevision']) &&
       sameInstanceProjection(replay.instances, instances);
     const ledgerStatus = initialized ? 'NOT_REQUIRED' : replayMatchesProjection ? 'REPLAYED' : replayError ? 'MISMATCH' : 'UNKNOWN';
     const canonicalRows = replayMatchesProjection ? replay.lots : [], canonicalInstances = replayMatchesProjection ? replay.instances : [];
     const summary = physicalSummary(canonicalRows, canonicalInstances);
-    return { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId,
+    const byReservation = replayMatchesProjection ? [...new Set([...canonicalRows.map((row: any) => idText(row.reservationId)), ...canonicalInstances.filter((row: any) => row.status === 'PLACED').map((row: any) => idText(row.reservationId))])].map(resId => ({
+      reservationId: resId, reservationCode: reservationRows.find((row: any) => idText(row._id) === resId)?.reservationCode ?? null,
+      quantityOnHand: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).length,
+      totalWeightKg: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0),
+      totalVolumeM3: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0),
+    })) : [];
+    return { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
       ledgerStatus, reconciliationStatus: initialized ? 'NOT_REQUIRED' : ledgerStatus === 'MISMATCH' ? 'MISMATCH' : 'UNKNOWN', reasonCode: initialized ? 'NO_STOCK_HISTORY' : !canonicalScopeMatches ? 'STOCK_SCOPE_MISMATCH' : replayError || (legacyMovement ? 'LEGACY_MOVEMENT_NOT_REPLAYED' : historyBounded ? 'CANONICAL_LEDGER_OR_PROJECTION_UNVERIFIED' : 'MOVEMENT_HISTORY_LIMIT_EXCEEDED'),
       totalQuantity: initialized ? 0 : replayMatchesProjection ? summary.byCell.size === 0 ? 0 : [...summary.byCell.values()].reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) : null,
       totalWeightKg: initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0) : null,

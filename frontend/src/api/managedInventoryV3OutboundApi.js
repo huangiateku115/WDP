@@ -22,8 +22,20 @@ export const managedInventoryV3OutboundApi = {
   preview: (skuId, payload) => axiosClient.post(path(skuId, '/preview'), payload),
   confirm: async (skuId, payload) => {
     const pending = savePending(skuId, payload);
-    const response = await axiosClient.post(path(skuId), payload, { headers: { 'Idempotency-Key': pending.key, 'If-Match': `"${payload.skuRevision}"` } });
-    removePending(skuId); return response;
+    try {
+      const response = await axiosClient.post(path(skuId), payload, { headers: { 'Idempotency-Key': pending.key, 'If-Match': `"${payload.skuRevision}"` } });
+      removePending(skuId); return response;
+    } catch (error) {
+      const responseStatus = error?.response?.status;
+      const responseBody = error?.response?.data;
+      // This exact SKU path validation runs before Backend reads or writes.
+      // Releasing only this deterministic rejection allows a corrected preview safely.
+      if ([400, 422].includes(responseStatus) && responseBody?.code === 'INVALID_INPUT' && responseBody?.message === 'skuId không hợp lệ.') {
+        removePending(skuId);
+        error.code = 'OUTBOUND_REJECTED_NO_WRITE';
+      }
+      throw error;
+    }
   },
   pending: skuId => readPending(skuId),
   clearPending: removePending,

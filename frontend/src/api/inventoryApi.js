@@ -19,8 +19,6 @@ export const inventoryApi = {
   repeatedInboundHistory: (itemId, params = {}, config = {}) =>
     axiosClient.get(`/inventory-items/${inventoryItemId(itemId)}/inbound-requests`, { ...config, params }),
   repeatedInboundDetail: (requestId, config = {}) => axiosClient.get(`/inbound-requests/${inventoryItemId(requestId)}`, config),
-  canonicalRelocationContext: (itemId, config = {}) => axiosClient.get(`/inventory-items/${inventoryItemId(itemId)}/relocate-canonical/context`, config),
-  relocateCanonical: (itemId, payload, idempotencyKey, config = {}) => axiosClient.post(`/inventory-items/${inventoryItemId(itemId)}/relocate-canonical`, payload, { ...config, headers: { ...config.headers, 'Idempotency-Key': idempotencyKey } }),
   amendRepeatedInbound: (requestId, payload, version, idempotencyKey, config = {}) =>
     axiosClient.patch(`/inbound-requests/${inventoryItemId(requestId)}`, payload, { ...config, headers: { ...config.headers, 'If-Match': `"${version}"`, 'Idempotency-Key': idempotencyKey } }),
   cancelRepeatedInbound: (requestId, version, idempotencyKey, config = {}) =>

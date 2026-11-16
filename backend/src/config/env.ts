@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import { resolveMi06BRepeatedInboundGate } from './mi06b-feature-gate';
 import { resolveMi06CanonicalOutboundConfirmationGate, resolveMi06CanonicalOutboundGate } from './mi06-canonical-outbound-gate';
-import { resolveMi06CanonicalRelocationGate } from './mi06-canonical-relocation-gate';
 dotenv.config({ quiet: true });
 
 export class ConfigurationError extends Error {}
@@ -55,9 +54,6 @@ function loadEnvironment() {
       nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
     // Canonical outbound confirmation is independent and opt-in; never active in production.
     mi06CanonicalOutboundConfirmationsEnabled: resolveMi06CanonicalOutboundConfirmationGate(nodeEnv, process.env.MI06_CANONICAL_OUTBOUND_CONFIRMATIONS_ENABLED) &&
-      nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
-    // Canonical relocation is independently opt-in and remains forced off in production.
-    mi06CanonicalRelocationsEnabled: resolveMi06CanonicalRelocationGate(nodeEnv, process.env.MI06_CANONICAL_RELOCATIONS_ENABLED) &&
       nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
     keycloak: {
       baseUrl, realm, issuer,
