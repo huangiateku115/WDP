@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import {buildFacilityBoard,boardDayRows,boardAttention,facilityDay} from '../src/lib/facilityBoard.js';
 import {assertConfirmedRequest} from '../src/api/confirmedContract.js';
 const id='a'.repeat(24), user={id:'staff',role:'FACILITY_MANAGER',assignedFacilityId:'facility'};
+
+test('ready handovers appear for both facility roles without adding foreign or cancelled rentals',()=>{
+ const reservations=['CHECKIN_READY','PAID','CANCELLED'].map(status=>({_id:status,facilityId:'facility',serviceType:'SELF_STORAGE',status,startDate:'2026-11-16T03:00:00Z'}));
+ reservations.push({_id:'foreign',facilityId:'other',serviceType:'SELF_STORAGE',status:'CHECKIN_READY'});
+ for(const role of ['staff','manager']) {
+  const rows=buildFacilityBoard({reservations},user,role);
+  assert.deepEqual(rows.map(row=>row.id),['CHECK_IN:CHECKIN_READY','CHECK_IN:PAID']);
+  assert.equal(rows[0].to,`/${role}/reservations/CHECKIN_READY`);
+ }
+});
 test('paper contract API remains allowed after shared API merge; unknown mutations remain blocked',()=>{
  for(const [method,url] of [['get',`/contracts/${id}/print`],['post',`/contracts/${id}/confirm-signed-paper`],['post',`/reservations/${id}/handover`]]) assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
  for(const [method,url] of [['delete',`/contracts/${id}/print`],['post',`/contracts/${id}/reset`],['post','/refunds']])assert.throws(()=>assertConfirmedRequest({method,url}));
