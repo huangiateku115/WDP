@@ -9,7 +9,18 @@ async function start(): Promise<void> {
   const { ManagedInventoryImageService } = await import('./services/upload/managed-inventory-image.service');
   const { ManagedReceivingEvidenceService } = await import('./services/upload/managed-receiving-evidence.service');
   const { ManagedAccessService } = await import('./services/access/managed-access.service');
+  const cron = (await import('node-cron')).default;
+  const { checkSigningSla } = await import('./jobs/signing-sla-checker.job');
+  const { checkRentalExpiration } = await import('./jobs/rental-expiration-checker.job');
   const server = http.createServer(app);
+  const dailySelfStorageCron = cron.schedule(
+    '0 8 * * *',
+    () => {
+      void checkSigningSla().catch((err) => console.error('[Cron] checkSigningSla error:', err?.message || err));
+      void checkRentalExpiration().catch((err) => console.error('[Cron] checkRentalExpiration error:', err?.message || err));
+    },
+    { timezone: 'Asia/Ho_Chi_Minh' }
+  );
   const managedVisitMissedTimer = setInterval(() => {
     void ManagedAccessService.reconcileMissedVisits().catch(() => console.error('Managed access missed-visit reconciliation will retry on the next interval'));
   }, 60 * 1000);
@@ -31,6 +42,7 @@ async function start(): Promise<void> {
     clearInterval(imageCleanupTimer);
     clearInterval(managedVisitMissedTimer);
     clearInterval(managedAccessExpiryTimer);
+    dailySelfStorageCron.stop();
     const timeout = setTimeout(() => {
       console.error('Shutdown timed out');
       process.exit(1);

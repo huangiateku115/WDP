@@ -15,6 +15,7 @@ import { FacilityServiceType } from '../../types/facility.type';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { calculateRentalPaymentBreakdown, roundVndAmount } from './payment-accounting';
+import { EmailService } from '../email/email.service';
 
 const PAYOS_INTENT_PREFIX = 'PAYOS-SS-';
 const MAX_ORDER_CODE = 9_999_999_999;
@@ -1494,6 +1495,20 @@ export class PayosPaymentService {
       if (!result) throw new PayosPaymentError(503, 'WEBHOOK_OUTCOME_UNKNOWN', 'Webhook processing outcome is uncertain');
       logWebhookDiagnostic('TRANSACTION_RESULT', result.duplicate ? 'DUPLICATE_EVENT' : result.applied ? 'APPLIED' : 'MANUAL_REVIEW', payment,
         { serviceType: payment.serviceType, purpose: payment.purpose });
+      if (result.applied && payment.serviceType === FacilityServiceType.SELF_STORAGE) {
+        void (async () => {
+          const updatedRes = await Reservations.findById(payment.reservationId).lean().exec();
+          if (!updatedRes) return;
+          if (payment.purpose === PaymentPurpose.RENEWAL) {
+            const extItem = (updatedRes.extendContract || []).find(
+              (e: any) => String(e.paymentId) === String(payment._id) || String(e.payosOrderCode) === String(payment.providerReference)
+            );
+            if (extItem) await EmailService.sendExtensionPaidEmail(updatedRes, extItem);
+          } else {
+            await EmailService.sendRentalPaidEmail(updatedRes, payment.amount);
+          }
+        })().catch(() => {});
+      }
       return { success: true, duplicate: result.duplicate === true, reconciled: result.reconciled === true };
     } catch (error: any) {
       logWebhookDiagnostic('TRANSACTION', 'ROLLED_BACK_OR_UNCERTAIN', payment,

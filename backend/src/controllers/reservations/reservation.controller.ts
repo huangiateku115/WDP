@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { calculateRentalPaymentBreakdown } from '../../services/payments/payment-accounting';
 import mongoose from 'mongoose';
 import { CloudinaryService } from '../../services/upload/cloudinary.service';
+import { EmailService } from '../../services/email/email.service';
 import { PayOS } from '@payos/node';
 
 class ReservationControllerError extends Error {
@@ -623,6 +624,10 @@ export const cancelReservation = async (req: Request, res: Response) => {
       { $set: { status: ContractStatus.TERMINATED, updatedAt: now } }
     );
 
+    if (isStaffOrAdmin && existing.serviceType === FacilityServiceType.SELF_STORAGE && reservation) {
+      void EmailService.sendStaffCancelledNoReceiveEmail(reservation, finalReason).catch(() => {});
+    }
+
     return res.json({
       success: true,
       message: 'Hủy đơn thành công. Ô kho đã được giải phóng.',
@@ -713,6 +718,8 @@ export const mockPayReservation = async (req: Request, res: Response) => {
         { $set: { fullPaymentId: payment._id, fullRentPaymentId: payment._id } }
       ).exec();
     }
+
+    void EmailService.sendRentalPaidEmail(reservation, totalDueAmount).catch(() => {});
 
     return res.json({ success: true, data: reservation, payment });
   } catch (error: any) {
@@ -1083,14 +1090,14 @@ export const handoverReservation = async (req: Request, res: Response) => {
           const lockedUnit = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
             bookingVersion: currentVersion(unit.bookingVersion) }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
           if (!lockedUnit) throw new ReservationControllerError(409, 'Storage Unit changed concurrently; reload and retry.');
+          const accessPinCode = current.accessPinCode || Math.floor(100000 + Math.random() * 900000).toString();
           activated = await (ReservationModel as any).findOneAndUpdate({ _id: current._id, status: ReservationStatus.CHECKIN_READY,
             rentalPaymentFlow: 'FULL_UPFRONT_V1', inventoryVersion: current.inventoryVersion ?? 0 }, {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.ACTIVE, handoverByStaffId: req.user!._id,
               handoverAt: now, paperContractVerifiedBy: contract.verifiedByStaff, paperContractVerifiedAt: contract.verifiedAt,
-              storageCondition: String(storageCondition) },
-            $unset: { accessPinCode: 1 },
+              storageCondition: String(storageCondition), accessPinCode },
             $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
-              reason: 'Authorized Facility Staff confirmed identity and physical handover; credential provisioning unavailable', createdAt: now } },
+              reason: 'Authorized Facility Staff confirmed identity and physical handover; simulated access PIN provisioned', createdAt: now } },
           }, { new: true, session, runValidators: true }).exec();
           if (!activated) throw new ReservationControllerError(409, 'Reservation changed concurrently; reload and retry.');
           const occupied = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
@@ -1103,8 +1110,9 @@ export const handoverReservation = async (req: Request, res: Response) => {
         throw error;
       } finally { await session.endSession(); }
       if (!activated) return res.status(503).json({ success: false, code: 'HANDOVER_OUTCOME_UNKNOWN', message: 'Không xác định được kết quả bàn giao; hãy tải lại trạng thái trước khi thử lại.' });
-      return res.json({ success: true, message: 'Đã ghi nhận bàn giao vật lý. Quyền truy cập số chưa được cấp.',
-        data: { reservation: activated, accessProvisioning: { status: 'UNAVAILABLE' } } });
+      void EmailService.sendHandoverPinEmail(activated, activated.accessPinCode || '123456').catch(() => {});
+      return res.json({ success: true, message: 'Bàn giao kho thành công. Đơn hàng đã chuyển sang trạng thái ACTIVE.',
+        data: { reservation: activated, pinCode: activated.accessPinCode, accessProvisioning: { status: 'SIMULATED', mode: 'PIN_CODE' } } });
     }
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       return res.status(404).json({ success: false, message: 'Self-Storage handover is disabled in this environment pending payment verification.' });
@@ -1228,6 +1236,8 @@ export const handoverReservation = async (req: Request, res: Response) => {
       }
     }
     if (!activatedReservation) return res.status(503).json({ success: false, message: 'Handover outcome is uncertain; verify state before retrying.' });
+
+    void EmailService.sendHandoverPinEmail(activatedReservation, activatedReservation.accessPinCode || '1234').catch(() => {});
 
     return res.json({
       success: true,
@@ -1413,6 +1423,10 @@ export const completeCheckout = async (req: Request, res: Response) => {
       .populate('customerId', 'fullName email phone')
       .populate('storageUnitId', 'unitCode size volumeM3')
       .exec();
+
+    if (updated) {
+      void EmailService.sendCheckoutCompletedEmail(updated, String(condition || 'GOOD'), typeof note === 'string' ? note.trim() : undefined).catch(() => {});
+    }
 
     return res.json({
       success: true,
@@ -1685,6 +1699,8 @@ export const createExtensionRequest = async (req: Request, res: Response) => {
 
     const createdItem = reservation.extendContract[reservation.extendContract.length - 1];
 
+    void EmailService.sendExtensionCreatedEmail(reservation, createdItem).catch(() => {});
+
     return res.status(201).json({
       success: true,
       message: `Tạo yêu cầu gia hạn ${durationMonths} tháng thành công. Mã yêu cầu: ${extensionCode}. Vui lòng thanh toán để tiếp tục.`,
@@ -1823,6 +1839,8 @@ export const mockPayExtension = async (req: Request, res: Response) => {
 
     await reservation.save();
 
+    void EmailService.sendExtensionPaidEmail(reservation, extItem).catch(() => {});
+
     return res.json({
       success: true,
       message: `Giả lập thanh toán gia hạn thành công! Vui lòng đến cơ sở ký phụ lục hợp đồng giấy trong vòng 3 ngày (trước ${extItem.signingDeadline.toLocaleDateString('vi-VN')}).`,
@@ -1891,6 +1909,8 @@ export const confirmExtension = async (req: Request, res: Response) => {
       { $set: { 'pricingSnapshot.endDate': extItem.newEndDate, updatedAt: new Date() } }
     ).exec();
 
+    void EmailService.sendExtensionConfirmedEmail(reservation, extItem).catch(() => {});
+
     return res.json({
       success: true,
       message: `Xác nhận gia hạn thành công! Hạn hợp đồng mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}.`,
@@ -1945,6 +1965,8 @@ export const rejectExtension = async (req: Request, res: Response) => {
     });
 
     await reservation.save();
+
+    void EmailService.sendExtensionRejectedEmail(reservation, extItem, reason.trim()).catch(() => {});
 
     return res.json({
       success: true,

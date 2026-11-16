@@ -13,6 +13,7 @@ import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { captureTermsAcceptance } from '../terms/terms.catalog';
+import { EmailService } from '../email/email.service';
 
 export interface SuggestedStorageUnit {
   _id: Types.ObjectId | string;
@@ -527,6 +528,10 @@ export class ReservationService {
         await contract.save({ session });
         createdReservation = reservation;
       });
+
+      if (createdReservation && !replayed) {
+        void EmailService.sendReservationCreatedEmail(createdReservation).catch(() => {});
+      }
 
       return { reservation: createdReservation!, replayed };
     } catch (error: any) {
