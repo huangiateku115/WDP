@@ -25,20 +25,35 @@ test('Facility and storage unit forms share the capability-aware image editor',(
 
 test('Revenue report keeps its full shell on top of a capability-gated adapter',()=>{
   const page=read('../src/pages/bom/ReportsPages.jsx');
-  for(const marker of [/loadRevenueReport/,/revenueSource/,/defaultRevenuePeriod/,/exportRevenueReport/,/Xuất CSV/,/Doanh thu theo cơ sở/]){
+  for(const marker of [/loadRevenueReport/,/revenueSource/,/defaultRevenuePeriod/,/exportStatistics/,/Xuất \$\{format\.toUpperCase\(\)\}/,/Doanh thu theo cơ sở/]){
     assert.match(page,marker);
   }
+  // Ranking report is served by the same statistics read model.
+  assert.match(page,/export function FacilityRankingPage/);
+  assert.match(page,/loadFacilityRanking/);
+  assert.match(page,/reportType: "facilities-kpi"/);
   const adapter=read('../src/lib/reportSources.js');
   assert.match(adapter,/export async function loadRevenueReport/);
   assert.match(adapter,/export function defaultRevenuePeriod/);
   assert.match(adapter,/export async function loadUtilizationSummary/);
-  assert.match(adapter,/statistics\/revenue|statisticsApi\.revenue/);
+  assert.match(adapter,/export async function loadFacilityRanking/);
+  assert.match(adapter,/export async function loadRentalTrends/);
+  assert.match(adapter,/export async function exportStatistics/);
   const api=read('../src/api/statisticsApi.js');
-  assert.match(api,/\/statistics\/revenue/);
+  for(const endpoint of ['revenue','utilization','facilities-ranking','rental-trends','filters']){
+    assert.match(api,new RegExp(`/statistics/${endpoint}`));
+  }
   assert.match(api,/\/statistics\/export\/\$\{format\}/);
   const allowlist=read('../src/api/confirmedContract.js');
   assert.match(allowlist,/revenue\|facilities-ranking/);
+  assert.match(allowlist,/rental-trends/);
   assert.match(allowlist,/statistics\\\/export\\\/\(csv\|xlsx\|pdf\)/);
+  const bomRoutes=read('../src/routes/BomRoutes.jsx');
+  const adminRoutes=read('../src/routes/AdminRoutes.jsx');
+  for(const routes of [bomRoutes,adminRoutes]){
+    assert.match(routes,/path="reports\/facilities-ranking"/);
+    assert.match(routes,/FacilityRankingPage/);
+  }
   // The statistics read model now serves revenue and server export; the rest still waits on backend.
   const capabilities=read('../src/lib/backendCapabilities.js');
   assert.match(capabilities,/revenueReport: true/);
@@ -46,6 +61,14 @@ test('Revenue report keeps its full shell on top of a capability-gated adapter',
   for(const flag of ['facilityImageUpload','storageUnitImageUpload','globalAuditSearch','notificationProducer']){
     assert.match(capabilities,new RegExp(`${flag}: false`));
   }
+});
+
+test('Rental report renders the server trend series instead of aggregating on the client',()=>{
+  const page=read('../src/pages/bom/RentalReportLivePage.jsx');
+  assert.match(page,/import \{ defaultRevenuePeriod, loadRentalTrends \} from "@\/lib\/reportSources"/);
+  assert.match(page,/loadRentalTrends\(/);
+  assert.match(page,/Xu hướng theo kỳ/);
+  assert.match(page,/options=\{\[\["day", "Theo ngày"\], \["week", "Theo tuần"\], \["month", "Theo tháng"\]\]\}/);
 });
 
 test('Audit, login history and the notification inbox expose filters and CSV export',()=>{

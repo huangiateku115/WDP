@@ -62,15 +62,53 @@ export function defaultRevenuePeriod(now = new Date()) {
 }
 
 export async function exportRevenueReport({ format = "csv", from, to, facilityId, signal } = {}) {
+  return exportStatistics({ reportType: "revenue", format, from, to, facilityId, signal });
+}
+
+// Any report the statistics export router supports:
+// GET /statistics/export/{csv|xlsx|pdf}?reportType=revenue|facilities-kpi|financial-analytics|…
+export async function exportStatistics({ reportType, format = "csv", from, to, facilityId, signal } = {}) {
   const response = await statisticsApi.exportFile(format, {
-    reportType: "revenue",
+    reportType,
     fromDate: from,
     toDate: to,
     facilityId,
   }, { signal });
   return {
     blob: response?.data instanceof Blob ? response.data : new Blob([response?.data ?? ""]),
-    filename: `doanh-thu-${from}-${to}.${format}`,
+    filename: `${reportType}-${from}-${to}.${format}`,
+  };
+}
+
+// Facility ranking: GET /statistics/facilities-ranking?sortBy&sortOrder&page&limit
+export async function loadFacilityRanking({ from, to, facilityId, sortBy = "collectedAmount", sortOrder = "desc", page = 1, limit = 20, signal } = {}) {
+  const body = (await statisticsApi.facilitiesRanking({ fromDate: from, toDate: to, facilityId, sortBy, sortOrder, page, limit }, { signal }))?.data?.data ?? {};
+  const items = (body.items || []).map((row) => ({
+    id: row.facilityId,
+    code: row.code || "",
+    name: row.name || row.code || row.facilityId,
+    services: row.serviceTypes || [],
+    reservations: row.reservationCount ?? 0,
+    paidReservations: row.paidReservationCount ?? 0,
+    customers: row.uniqueCustomers ?? 0,
+    collected: row.collectedAmount ?? 0,
+  }));
+  return { items, total: body.total ?? items.length, page: body.page ?? page, limit: body.limit ?? limit };
+}
+
+// Rental trends: GET /statistics/rental-trends?granularity=day|week|month
+export async function loadRentalTrends({ from, to, facilityId, granularity = "month", signal } = {}) {
+  const body = (await statisticsApi.rentalTrends({ fromDate: from, toDate: to, facilityId, granularity }, { signal }))?.data?.data ?? {};
+  return {
+    granularity: body.granularity || granularity,
+    items: (body.items || []).map((row) => ({
+      bucketStart: String(row.bucketStart || "").slice(0, 10),
+      reservations: row.reservationCount ?? 0,
+      paidReservations: row.paidReservationCount ?? 0,
+      selfStorage: row.paidSelfStorageRentalCount ?? 0,
+      managedInventory: row.paidManagedInventoryRentalCount ?? 0,
+      customers: row.uniquePaidCustomers ?? 0,
+    })),
   };
 }
 

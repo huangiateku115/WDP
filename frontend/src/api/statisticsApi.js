@@ -11,6 +11,8 @@ const clean = (query = {}) => Object.fromEntries(
 export const statisticsApi = {
   revenue: (query, config) => axiosClient.get("/statistics/revenue", { ...config, params: clean(query) }),
   utilization: (query, config) => axiosClient.get("/statistics/utilization", { ...config, params: clean(query) }),
+  facilitiesRanking: (query, config) => axiosClient.get("/statistics/facilities-ranking", { ...config, params: clean(query) }),
+  rentalTrends: (query, config) => axiosClient.get("/statistics/rental-trends", { ...config, params: clean(query) }),
   filters: (query, config) => axiosClient.get("/statistics/filters", { ...config, params: clean(query) }),
   // csv | xlsx | pdf — returns a file blob, so the caller saves it with `downloadBlob`.
   exportFile: (format, query, config) =>

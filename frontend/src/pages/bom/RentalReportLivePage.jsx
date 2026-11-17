@@ -7,6 +7,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, serviceLabel } from "@/lib/bomMappers";
 import { downloadCsv } from "@/lib/csvExport";
+import { defaultRevenuePeriod, loadRentalTrends } from "@/lib/reportSources";
 
 const countBy = (rows, status) => rows.filter((row) => row.status === status).length;
 const MAX_FACILITY_FETCHES = 12;
@@ -24,6 +25,18 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const initialPeriod = defaultRevenuePeriod();
+  const [granularity, setGranularity] = useState("month");
+  const trends = useAsyncData(
+    ({ signal }) => loadRentalTrends({
+      from: from || initialPeriod.from,
+      to: to || initialPeriod.to,
+      facilityId: facility,
+      granularity,
+      signal,
+    }),
+    [from, to, facility, granularity],
+  );
 
   return (
     <Screen
@@ -106,23 +119,54 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 columns={[
                   {
                     key: "code",
-                    label: "Reservation",
+                    label: "Mã đơn",
                     render: (r) => (
                       <Link className="manager-link" to={`${basePath}/reservations/${r.isManaged ? "managed/" : ""}${r.id}`}>
                         {r.code || r.id}
                       </Link>
                     ),
                   },
-                  { key: "facility", label: "Facility", render: (r) => facilityName(facilities, r.facilityId) },
-                  { key: "customer", label: "Customer", render: (r) => r.customerName },
-                  { key: "service", label: "Service", render: (r) => serviceLabel(r.service) },
-                  { key: "resource", label: "Unit / capacity", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
-                  { key: "period", label: "Period", render: (r) => `${r.startDate} → ${r.endDate}` },
-                  { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
-                  { key: "rent", label: "Estimated rent", render: (r) => money(r.estimatedRent) },
+                  { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+                  { key: "customer", label: "Khách hàng", render: (r) => r.customerName },
+                  { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
+                  { key: "resource", label: "Kho / công suất", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
+                  { key: "period", label: "Thời gian thuê", render: (r) => `${r.startDate} → ${r.endDate}` },
+                  { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+                  { key: "rent", label: "Tiền thuê tạm tính", render: (r) => money(r.estimatedRent) },
                 ]}
                 empty="Không có đơn phù hợp bộ lọc."
               />
+            </Panel>
+
+            <Panel
+              title="Xu hướng theo kỳ"
+              subtitle={`${trends.data?.items?.length ?? 0} mốc thời gian`}
+              action={
+                <Field label="Cách gộp">
+                  <Select label="Gộp theo" value={granularity} onChange={setGranularity}
+                    options={[["day", "Theo ngày"], ["week", "Theo tuần"], ["month", "Theo tháng"]]} />
+                </Field>
+              }
+            >
+              {trends.error
+                ? <p className="bom-note">{trends.error}</p>
+                : trends.loading
+                  ? <p role="status" className="text-sm text-slate-500">Đang tải xu hướng…</p>
+                  : (
+                    <Table
+                      label="Xu hướng đơn đặt thuê"
+                      rows={trends.data?.items || []}
+                      columns={[
+                        { key: "bucketStart", label: "Kỳ" },
+                        { key: "reservations", label: "Đơn đặt thuê" },
+                        { key: "paidReservations", label: "Đơn đã thanh toán" },
+                        { key: "selfStorage", label: "Thuê kho riêng" },
+                        { key: "managedInventory", label: "Lưu trữ hàng hóa" },
+                        { key: "customers", label: "Khách đã thanh toán" },
+                      ]}
+                      empty="Chưa có dữ liệu xu hướng cho khoảng thời gian này."
+                    />
+                  )}
             </Panel>
           </>
         );
