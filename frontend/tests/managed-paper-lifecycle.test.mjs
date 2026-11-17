@@ -97,8 +97,8 @@ test('uncertain upload cannot be submitted twice without reloading and reconcili
   ui.find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
   ui.button('Kiểm tra và xác minh hợp đồng giấy').props.onClick(); await ui.submit(); await ui.submit(); assert.equal(ui.calls.length, 1);
 });
-test('Staff sees missing read permission instead of an unusable full-upfront form', () => {
-  const ui = harness(fixture(), { role: 'FACILITY_STAFF' });
-  assert.equal(ui.button('Kiểm tra và xác minh hợp đồng giấy'), undefined);
-  assert.match(ui.render().props.children.props.children, /Quyền nhân viên đọc đơn hàng hóa cần được backend bổ sung/);
+test('Staff in assigned facility can open full-upfront paper form without bypassing evidence requirements', () => {
+ const ui=harness(fixture(),{role:'FACILITY_STAFF'});
+ assert.ok(ui.button('Kiểm tra và xác minh hợp đồng giấy'));
+ assert.equal(ui.button('Kiểm tra và xác minh hợp đồng giấy').props.disabled,true);
 });
