@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Dialog, Button, Field, Input, Select, Message } from "@/components/manager/ManagerUI";
+import { ImageEditor, isHttpImage, MAX_IMAGES } from "@/components/bom/ImageEditor";
 import { bomUnitApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { BOM_UNIT_SIZES } from "@/lib/bomMappers";
 
 // Storage unit dialogs for the BOM/Admin unit console.
 // Backend contract (storage-unit.validation.ts):
-//   create  POST  /facilities/:facilityId/storage-units {unitCode, size, dimensions, description?, status?}
+//   create  POST  /facilities/:facilityId/storage-units {unitCode, size, dimensions, description?, status?, images?}
 //   update  PATCH /storage-units/:id {unitCode?, size?, dimensions?, description?, images?}
 //   status  PATCH /storage-units/:id/status {status}
 // Volume is always derived by the backend from dimensions, and HELD / OCCUPIED belong to the
@@ -26,6 +27,7 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
     widthM: String(unit?.dimensions?.widthM ?? ""),
     heightM: String(unit?.dimensions?.heightM ?? ""),
     description: unit?.description || "",
+    images: Array.isArray(unit?.images) ? [...unit.images] : [],
   });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +55,15 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
       setError("Mô tả tối đa 2000 ký tự.");
       return;
     }
+    const images = (form.images || []).map((url) => String(url).trim()).filter(Boolean);
+    if (images.length > MAX_IMAGES) {
+      setError(`Chỉ cho phép tối đa ${MAX_IMAGES} ảnh cho mỗi kho.`);
+      return;
+    }
+    if (images.some((url) => !isHttpImage(url))) {
+      setError("Mỗi ảnh phải là URL HTTP(S) hợp lệ.");
+      return;
+    }
     setPending(true);
     try {
       const body = {
@@ -61,6 +72,8 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
         dimensions: { lengthM: number(form.lengthM), widthM: number(form.widthM), heightM: number(form.heightM) },
       };
       if (form.description.trim()) body.description = form.description.trim();
+      // Edit always sends the list so clearing every URL actually removes the saved images.
+      if (editing || images.length) body.images = images;
       if (editing) await bomUnitApi.update(unit.id, body);
       else await bomUnitApi.create(facilityId, body);
       onSaved?.();
@@ -98,6 +111,12 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
         <Field label="Mô tả" hint="Không bắt buộc, tối đa 2000 ký tự.">
           <Input aria-label="Mô tả kho" value={form.description} onChange={(e) => change("description", e.target.value)} />
         </Field>
+        <ImageEditor
+          label="Hình ảnh kho"
+          target="storage-unit"
+          images={form.images}
+          onChange={(next) => change("images", next)}
+        />
         <p className="bom-warning">
           {editing
             ? "Không sửa được kho đang được giữ hoặc đang sử dụng; hãy hoàn tất hoặc giải phóng đơn trước."

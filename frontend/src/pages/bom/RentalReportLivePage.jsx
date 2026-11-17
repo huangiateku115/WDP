@@ -6,6 +6,7 @@ import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, serviceLabel } from "@/lib/bomMappers";
+import { downloadCsv } from "@/lib/csvExport";
 
 const countBy = (rows, status) => rows.filter((row) => row.status === status).length;
 const MAX_FACILITY_FETCHES = 12;
@@ -21,6 +22,8 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   const [facility, setFacility] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   return (
     <Screen
@@ -32,6 +35,8 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
         const rows = reservations.filter((r) =>
           (!facility || r.facilityId === facility) &&
           (!status || r.status === status) &&
+          (!from || (r.startDate && r.startDate >= from)) &&
+          (!to || (r.startDate && r.startDate <= to)) &&
           (!search || `${r.code} ${r.customerName}`.toLowerCase().includes(search.toLowerCase())));
         return (
           <>
@@ -60,9 +65,40 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 <Field label="Tìm kiếm">
                   <Input aria-label="Tìm đơn đặt thuê" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </Field>
+                <Field label="Bắt đầu từ ngày">
+                  <Input aria-label="Bắt đầu từ ngày" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                </Field>
+                <Field label="Đến ngày">
+                  <Input aria-label="Đến ngày" type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
+                </Field>
               </div>
             </Panel>
-            <Panel title="Đơn đặt thuê" subtitle={`${rows.length} / ${reservations.length} bản ghi`}>
+            <Panel
+              title="Đơn đặt thuê"
+              subtitle={`${rows.length} / ${reservations.length} bản ghi`}
+              action={
+                <Button
+                  variant="outline"
+                  disabled={!rows.length}
+                  onClick={() => downloadCsv(
+                    `don-dat-thue${from ? `-${from}` : ""}${to ? `-${to}` : ""}.csv`,
+                    [["code", "Mã đơn"], ["facility", "Cơ sở"], ["customer", "Khách hàng"], ["service", "Dịch vụ"], ["resource", "Kho / công suất"], ["period", "Thời gian thuê"], ["status", "Trạng thái"], ["rent", "Tiền thuê tạm tính"]],
+                    rows.map((r) => ({
+                      code: r.code || r.id,
+                      facility: facilityName(facilities, r.facilityId),
+                      customer: r.customerName,
+                      service: serviceLabel(r.service),
+                      resource: r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : ""),
+                      period: `${r.startDate} → ${r.endDate}`,
+                      status: r.status,
+                      rent: r.estimatedRent,
+                    })),
+                  )}
+                >
+                  Xuất CSV
+                </Button>
+              }
+            >
               {truncated && <TruncatedNotice total={facilities.length} shown={Math.min(facilities.length, MAX_FACILITY_FETCHES)} />}
               <Table
                 label="Vòng đời đơn đặt thuê"

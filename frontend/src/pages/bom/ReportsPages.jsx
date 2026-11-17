@@ -1,5 +1,13 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Screen, Panel, OpenLink, Button } from "@/components/manager/ManagerUI";
+import { Screen, Panel, OpenLink, Button, Field, Input, Select, Table, money } from "@/components/manager/ManagerUI";
+import { Kpis } from "@/components/bom/BomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
+import { useAsyncData } from "@/lib/useAsyncData";
+import { loadFacilities, facilityName } from "@/lib/bomApiData";
+import { defaultRevenuePeriod, loadRevenueReport, revenueSource } from "@/lib/reportSources";
+import { downloadCsv } from "@/lib/csvExport";
+import { capability } from "@/lib/backendCapabilities";
 
 // Reports shared by the BOM and Admin workspaces.
 // Utilization and rental reports are live (confirmed read APIs).
@@ -51,19 +59,86 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
 }
 
 export function RevenueReportPendingPage({ basePath = "/bom" }) {
+  const initial = defaultRevenuePeriod();
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const [facility, setFacility] = useState("");
+  const facilities = useAsyncData(loadFacilities, []);
+  const report = useAsyncData(({ signal }) => loadRevenueReport({ from, to, facilityId: facility, signal }), [from, to, facility]);
+  const source = revenueSource();
+  const exportCapability = capability("serverExport");
+  const value = (amount) => (amount === null || amount === undefined ? "—" : money(amount));
+
   return (
     <Screen
       title="Doanh thu toàn hệ thống"
-      description="Doanh thu đã thu, trạng thái thanh toán và tổng hợp theo kỳ."
+      description="Doanh thu đã thu, đang chờ và đã hoàn theo khoảng thời gian và cơ sở."
       action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
     >
-      <Panel title="Doanh thu toàn hệ thống">
-        <p className="text-sm text-slate-600">Chưa có dữ liệu.</p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Mở báo cáo sử dụng</Link></Button>
-          <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Mở báo cáo thuê kho</Link></Button>
-        </div>
-      </Panel>
+      <AsyncBoundary state={report} render={(data) => {
+        const directory = facilities.data || [];
+        const rows = data.byFacility || [];
+        return (
+          <>
+            <Kpis items={[
+              ["Đã thu", value(data.totals.paid), `${from} → ${to}`],
+              ["Đang chờ", value(data.totals.pending), "Chưa ghi nhận thanh toán"],
+              ["Đã hoàn", value(data.totals.refunded), "Hoàn tiền đã xử lý"],
+              ["Số đơn", data.totals.orders ?? "—", "Đơn phát sinh trong kỳ"],
+            ]} />
+            {!data.available && <p className="bom-note">{data.reason}</p>}
+            <Panel title="Bộ lọc">
+              <div className="manager-filters">
+                <Field label="Từ ngày">
+                  <Input aria-label="Từ ngày" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                </Field>
+                <Field label="Đến ngày">
+                  <Input aria-label="Đến ngày" type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} />
+                </Field>
+                <Field label="Cơ sở">
+                  <Select label="Lọc theo cơ sở" value={facility} onChange={setFacility}
+                    options={[["", "Tất cả cơ sở"], ...directory.map((f) => [f.id, f.name])]} />
+                </Field>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button variant="outline" onClick={report.reload}>Tính lại</Button>
+                <Button
+                  variant="outline"
+                  disabled={!source.ready || !rows.length}
+                  title={source.ready ? undefined : exportCapability.reason}
+                  onClick={() => downloadCsv(
+                    `doanh-thu-${from}-${to}.csv`,
+                    [["facilityName", "Cơ sở"], ["orders", "Số đơn"], ["paid", "Đã thu"], ["pending", "Đang chờ"], ["refunded", "Đã hoàn"]],
+                    rows,
+                  )}
+                >
+                  Xuất CSV
+                </Button>
+              </div>
+            </Panel>
+            <Panel title="Theo cơ sở" subtitle={`${rows.length} cơ sở`}>
+              <Table
+                label="Doanh thu theo cơ sở"
+                rows={rows}
+                columns={[
+                  { key: "facilityName", label: "Cơ sở", render: (r) => facilityName(directory, r.facilityId) },
+                  { key: "orders", label: "Số đơn", render: (r) => r.orders ?? "—" },
+                  { key: "paid", label: "Đã thu", render: (r) => value(r.paid) },
+                  { key: "pending", label: "Đang chờ", render: (r) => value(r.pending) },
+                  { key: "refunded", label: "Đã hoàn", render: (r) => value(r.refunded) },
+                ]}
+                empty="Chưa có dữ liệu doanh thu cho khoảng thời gian này."
+              />
+            </Panel>
+            <Panel title="Báo cáo khác">
+              <div className="flex flex-wrap gap-3">
+                <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Báo cáo mức sử dụng</Link></Button>
+                <Button asChild variant="outline"><Link to={`${basePath}/reports/rentals`}>Lịch sử thuê kho</Link></Button>
+              </div>
+            </Panel>
+          </>
+        );
+      }} />
     </Screen>
   );
 }

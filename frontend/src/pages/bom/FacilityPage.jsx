@@ -8,6 +8,7 @@ import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { ResourceGallery, ResourceThumb } from "@/components/bom/ResourceImages";
+import { ImageEditor } from "@/components/bom/ImageEditor";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -354,13 +355,6 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       ? f.serviceTypes.filter((s) => s !== service)
       : [...f.serviceTypes, service],
   }));
-  const images = form.images || [];
-  const setImage = (index, value) => setForm((f) => ({
-    ...f,
-    images: (f.images || []).map((url, i) => (i === index ? value : url)),
-  }));
-  const addImage = () => setForm((f) => ({ ...f, images: [...(f.images || []), ""].slice(0, 10) }));
-  const removeImage = (index) => setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
 
   async function submit(event) {
     event.preventDefault();
@@ -535,28 +529,12 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   ))}
                 </div>
               </Field>
-              <div className="manager-field">
-                <span>Hình ảnh cơ sở</span>
-                <div className="space-y-2">
-                  {images.map((url, index) => (
-                    <div key={index} className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-[240px] flex-1">
-                        <Input
-                          aria-label={`URL ảnh cơ sở ${index + 1}`}
-                          placeholder="https://res.cloudinary.com/..."
-                          value={url}
-                          onChange={(event) => setImage(index, event.target.value)}
-                        />
-                      </div>
-                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Gỡ</Button>
-                    </div>
-                  ))}
-                  {images.length < 10 && (
-                    <Button type="button" variant="outline" onClick={addImage}>Thêm URL ảnh</Button>
-                  )}
-                </div>
-                <small>Không bắt buộc. Tối đa 10 URL ảnh; ảnh đầu tiên là ảnh bìa.</small>
-              </div>
+              <ImageEditor
+                label="Hình ảnh cơ sở"
+                target="facility"
+                images={form.images}
+                onChange={(next) => setForm((f) => ({ ...f, images: next }))}
+              />
               <div className="bom-wide">
                 <Field label="Mô tả">
                   <Textarea aria-label="Mô tả" value={form.description} onChange={(e) => change("description", e.target.value)} />
