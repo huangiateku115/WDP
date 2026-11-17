@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   Panel, Table, Status, Field, Input, Select, Button, Message,
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState } from "@/components/admin/AdminUI";
-import { ReadOnlyValues, Kpis } from "@/components/bom/BomUI";
+import { Kpis } from "@/components/bom/BomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
+import { facilityLabel } from "@/lib/facilityLabels";
 import { useAdminUsers, userId, userStatus } from "@/lib/adminUsers";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
@@ -116,7 +118,11 @@ export function LoginHistoryPage() {
     (!eventType || r.source.eventType === eventType) && inRange(r.source.createdAt, from, to));
 
   return (
-    <AdminScreen title="Lịch sử đăng nhập" description="Các lần đăng nhập của tài khoản đã chọn.">
+    <AdminScreen
+      title="Lịch sử đăng nhập"
+      description="Các lần đăng nhập của tài khoản đã chọn."
+      action={selected ? <Button variant="outline" onClick={history.reload} disabled={history.loading}>Tải lại</Button> : undefined}
+    >
       <UserApiState state={state} />
       <Panel title="Chọn tài khoản">
         <div className="manager-filters">
@@ -129,8 +135,7 @@ export function LoginHistoryPage() {
           title="Lần đăng nhập"
           subtitle={`${visible.length} / ${rows.length} sự kiện`}
           action={
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={history.reload}>Tải lại</Button>
+            selected ? (
               <Button
                 variant="outline"
                 disabled={!visible.length}
@@ -142,13 +147,13 @@ export function LoginHistoryPage() {
               >
                 Xuất CSV
               </Button>
-            </div>
+            ) : undefined
           }
         >
           <div className="manager-filters mb-5">
             <Field label="Sự kiện">
               <Select label="Lọc theo sự kiện" value={eventType} onChange={setEventType}
-                options={[["", "Tất cả sự kiện"], ...events.map((value) => [value, value])]} />
+                  options={[["", "Tất cả sự kiện"], ...events.map((value) => [value, facilityLabel(value)])]} />
             </Field>
             <Field label="Từ ngày">
               <Input aria-label="Từ ngày" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
@@ -162,15 +167,20 @@ export function LoginHistoryPage() {
             : history.loading
               ? <p role="status" className="text-sm text-slate-500">Đang tải lịch sử đăng nhập…</p>
               : (
-                <Table label="Lịch sử đăng nhập" rows={visible} columns={[
-                  { key: "event", label: "Sự kiện", render: (r) => r.source.eventType || "—" },
-                  { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
-                  { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
-                  { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
-                  { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
-                  { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
-                  { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
-                ]} empty="Không có sự kiện phù hợp bộ lọc." />
+                <AsyncBoundary
+                  state={history}
+                  render={() => (
+                    <Table label="Lịch sử đăng nhập" rows={visible} columns={[
+                      { key: "event", label: "Sự kiện", render: (r) => facilityLabel(r.source.eventType) || "—" },
+                      { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
+                      { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
+                      { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
+                      { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
+                      { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
+                      { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
+                    ]} empty="Không có sự kiện phù hợp bộ lọc." />
+                  )}
+                />
               )}
         </Panel>
       )}
@@ -179,18 +189,14 @@ export function LoginHistoryPage() {
 }
 
 export function AuditPage() {
-  const { id } = useParams();
   const state = useAdminUsers();
   const [selected, setSelected] = useState("");
-  const [openId, setOpenId] = useState(id || "");
   const logs = useAsyncData(
     () => (selected ? auditApi.getAdminAuditLogs(selected).then(unwrap) : Promise.resolve([])),
     [selected],
   );
   const records = logs.data || [];
-  const rows = records.map((row, index) => ({ id: row._id || `log-${index}`, source: row }));
-  const open = records.find((row) => row._id === openId);
-  const [action, setAction] = useState("");
+  const rows = records.map((row, index) => ({ id: row._id || `log-${index}`, source: row }));  const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -202,11 +208,15 @@ export function AuditPage() {
     inRange(r.source.createdAt, from, to));
 
   return (
-    <AdminScreen title="Nhật ký kiểm toán" description="Hành động của tài khoản đã chọn.">
+    <AdminScreen
+      title="Nhật ký kiểm toán"
+      description="Hành động của tài khoản đã chọn."
+      action={selected ? <Button variant="outline" onClick={logs.reload} disabled={logs.loading}>Tải lại</Button> : undefined}
+    >
       <UserApiState state={state} />
       <Panel title="Chọn tài khoản">
         <div className="manager-filters">
-          <UserPicker state={state} value={selected} onChange={(v) => { setSelected(v); setOpenId(""); }} label="Tài khoản" />
+          <UserPicker state={state} value={selected} onChange={setSelected} label="Tài khoản" />
         </div>
         {!selected && <p className="text-sm text-slate-500">Chọn một tài khoản để xem các hành động đã thực hiện.</p>}
       </Panel>
@@ -216,26 +226,23 @@ export function AuditPage() {
             title="Sự kiện kiểm toán"
             subtitle={`${visible.length} / ${rows.length} sự kiện`}
             action={
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={logs.reload}>Tải lại</Button>
-                <Button
-                  variant="outline"
-                  disabled={!visible.length}
-                  onClick={() => downloadCsv(
-                    `nhat-ky-kiem-toan${from ? `-${from}` : ""}${to ? `-${to}` : ""}.csv`,
-                    [["action", "Hành động đã thực hiện"], ["actorRole", "Vai trò"], ["entityType", "Đối tượng"], ["entityId", "Mã đối tượng"], ["facilityId", "Cơ sở"], ["createdAt", "Thời điểm"]],
-                    visible.map((r) => ({ ...r.source, createdAt: stamp(r.source.createdAt) })),
-                  )}
-                >
-                  Xuất CSV
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                disabled={!visible.length}
+                onClick={() => downloadCsv(
+                  `nhat-ky-kiem-toan${from ? `-${from}` : ""}${to ? `-${to}` : ""}.csv`,
+                  [["action", "Hành động đã thực hiện"], ["actorRole", "Vai trò"], ["entityType", "Đối tượng"], ["entityId", "Mã đối tượng"], ["facilityId", "Cơ sở"], ["createdAt", "Thời điểm"]],
+                  visible.map((r) => ({ ...r.source, createdAt: stamp(r.source.createdAt) })),
+                )}
+              >
+                Xuất CSV
+              </Button>
             }
           >
             <div className="manager-filters mb-5">
               <Field label="Hành động">
                 <Select label="Lọc theo hành động" value={action} onChange={setAction}
-                  options={[["", "Tất cả hành động"], ...actionOptions.map((value) => [value, value])]} />
+                  options={[["", "Tất cả hành động"], ...actionOptions.map((value) => [value, facilityLabel(value)])]} />
               </Field>
               <Field label="Đối tượng">
                 <Select label="Lọc theo đối tượng" value={entityType} onChange={setEntityType}
@@ -253,25 +260,27 @@ export function AuditPage() {
               : logs.loading
                 ? <p role="status" className="text-sm text-slate-500">Đang tải nhật ký…</p>
                 : (
-                  <Table label="Nhật ký kiểm toán" rows={visible} columns={[
-                    { key: "action", label: "Hành động", render: (r) => (r.source._id === openId ? <b>{r.source.action}</b> : r.source.action) },
-                    { key: "role", label: "Vai trò", render: (r) => <Status value={r.source.actorRole} /> },
-                    { key: "entity", label: "Đối tượng", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },
-                    { key: "facility", label: "Cơ sở", render: (r) => r.source.facilityId || "—" },
-                    { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
-                    { key: "detail", label: "Chi tiết", render: (r) => <Button variant="outline" size="sm" onClick={() => setOpenId(r.source._id)}>Xem</Button> },
-                  ]} empty="Không có sự kiện phù hợp bộ lọc." />
-                )}
+                  <AsyncBoundary state={logs} render={() => (
+                    <Table label="Nhật ký kiểm toán" rows={visible} columns={[
+                      { key: "action", label: "Hành động", render: (r) => facilityLabel(r.source.action) || "—" },
+                      { key: "role", label: "Vai trò", render: (r) => <Status value={r.source.actorRole} /> },
+                      { key: "entity", label: "Đối tượng", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },
+                      { key: "facility", label: "Cơ sở", render: (r) => r.source.facilityId || "—" },
+                      { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
+                      {
+                        key: "detail",
+                        label: "Chi tiết",
+                        render: (r) => (
+                          <Button asChild variant="outline" size="sm">
+                            <Link to={`/admin/audit/${encodeURIComponent(selected)}/${encodeURIComponent(r.source._id)}`}>Xem</Link>
+                          </Button>
+                        ),
+                      },
+                    ]} empty="Không có sự kiện phù hợp bộ lọc." />
+                  )}
+                />
+              )}
           </Panel>
-          {open && (
-            <Panel title={`Chi tiết thay đổi · ${open.action}`} subtitle={stamp(open.createdAt)} action={<Button variant="ghost" onClick={() => setOpenId("")}>Đóng</Button>}>
-              <div className="grid gap-5 md:grid-cols-2">
-                <div><h4 className="mb-2 font-bold">Trước</h4><ReadOnlyValues value={open.before} /></div>
-                <div><h4 className="mb-2 font-bold">Sau</h4><ReadOnlyValues value={open.after} /></div>
-              </div>
-              {open.reason && <p className="mt-5 text-sm text-slate-500">Lý do: {open.reason}</p>}
-            </Panel>
-          )}
         </>
       )}
     </AdminScreen>

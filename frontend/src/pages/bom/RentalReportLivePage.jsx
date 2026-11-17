@@ -73,7 +73,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
     <Screen
       title="Lịch sử thuê kho"
       description="Đơn đặt thuê trên mọi cơ sở, lọc theo cơ sở, trạng thái và tìm kiếm."
-      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
+      action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={summary.reload} disabled={summary.loading}>Tính lại</Button><Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button></div>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated, failedFacilities }) => {
         const rows = reservations.filter((r) =>
@@ -126,7 +126,6 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 </Field>
               </div>
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="outline" onClick={summary.reload} disabled={summary.loading}>Tính lại</Button>
                 {EXPORT_FORMATS.map((format) => (
                   <Button key={format} variant="outline" disabled={Boolean(exporting)} onClick={() => runExport(format)}>
                     {exporting === format ? "Đang xuất…" : `Xuất báo cáo ${format.toUpperCase()}`}

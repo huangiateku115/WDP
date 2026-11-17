@@ -4,6 +4,7 @@ import {
   Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, Message,
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState, ApiConfirmation } from "@/components/admin/AdminUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import {
   useAdminUsers, loadAdminUsers, userId, userStatus, isInactive, facilityIdOf,
   createAdminUser, changeAdminUserRole, deactivateAdminUser, reactivateAdminUser, updateAdminUser,
@@ -52,14 +53,18 @@ function UserDirectory({ state }) {
     <AdminScreen
       title="Người dùng"
       description="Tìm kiếm và quản lý tài khoản người dùng."
-      action={<Button asChild variant="orange"><Link to="/admin/users/new">Tạo người dùng</Link></Button>}
+      action={(
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => loadAdminUsers(true)} disabled={state.status === "loading"}>Tải lại</Button>
+          <Button asChild variant="orange"><Link to="/admin/users/new">Tạo người dùng</Link></Button>
+        </div>
+      )}
     >
       <UserApiState state={state} />
       {state.status === "ready" && state.sessionToken && (
         <Panel
           title="Danh sách người dùng"
           subtitle="Các tài khoản bạn có thể quản lý."
-          action={<Button variant="outline" onClick={() => loadAdminUsers(true)}>Tải lại danh sách</Button>}
         >
           <div className="manager-filters">
             <Field label="Tìm kiếm">
@@ -74,7 +79,10 @@ function UserDirectory({ state }) {
               </Field>
             )}
           </div>
-          <Table label="Người dùng" rows={rows} columns={columns} />
+          <AsyncBoundary
+            state={{ loading: state.status === "loading", error: state.status === "error" ? state.error : "", data: rows, reload: () => loadAdminUsers(true) }}
+            render={(tableRows) => <Table label="Người dùng" rows={tableRows} columns={columns} />}
+          />
         </Panel>
       )}
     </AdminScreen>

@@ -1,10 +1,11 @@
-import {useCallback,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {useNavigate,useParams} from 'react-router-dom';
 import api from '@/api/serviceDeskApi';
 import {useAuthSession} from '@/lib/authSession';
 import useFacilityResource,{announceReviewChange} from '@/lib/useFacilityResource';
 import {apiRecord,apiRows,objectId,reviewError} from '@/lib/facilityReview';
 import {deskRecord,deskScope,deskList,deskFields,deskMessage,deskStatuses,deskCategories,deskPriorities,nextDeskStatus,textField,canEscalateDesk} from '@/lib/serviceDeskReview';
+import {useDebouncedValue} from '@/lib/useDebouncedValue';
 import {Screen,Panel,Details,Table,OpenLink,Input,Textarea,Field,Select,Button,Message,Status,Dialog} from '@/components/manager/ManagerUI';
 
 export default function ServiceDeskApiView({kind,manager=false}){const {id}=useParams();return <Desk key={`${kind}:${id||'list'}`} kind={kind} manager={manager}/>;}
@@ -12,6 +13,9 @@ function Desk({kind,manager}){
  const {id}=useParams(),nav=useNavigate(),{user}=useAuthSession(),isManager=user?.role==='FACILITY_MANAGER',base=`/${manager?'manager':'staff'}/${kind}`;
  const [page,setPage]=useState(1),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[feedback,setFeedback]=useState({}),[saving,setSaving]=useState(false),[confirmation,setConfirmation]=useState(null),busy=useRef(false);
  const [staffId,setStaffId]=useState(''),[resolution,setResolution]=useState(''),[message,setMessage]=useState(''),[internal,setInternal]=useState(true);
+ // Quy ước 2: the text filter applies on change (debounced) instead of a separate search button.
+ const debouncedSearch=useDebouncedValue(search);
+ useEffect(()=>{setPage(1);setQuery(debouncedSearch.trim());},[debouncedSearch]);
  const permitted=['FACILITY_MANAGER','FACILITY_STAFF'].includes(user?.role)&&objectId(user?.assignedFacilityId)&&(!id||objectId(id));
  const load=useCallback(async signal=>{
   if(id){const row=deskRecord(apiRecord(await api.detail(kind,id,{signal})));if(row.id!==id||!deskScope(row,user,kind))throw Error("Bạn không có quyền xem yêu cầu này.");return row;}
@@ -31,7 +35,7 @@ function Desk({kind,manager}){
  async function sendMessage(){await run(async()=>{const fresh=deskRecord(apiRecord(await api.detail(kind,id)));if(!deskScope(fresh,user,kind))throw Error("Bạn không còn quyền xử lý yêu cầu này.");const text=textField(message,5000,"Nội dung");const sent=deskMessage(apiRecord(await api.message(id,text,internal)),id);if(sent.message!==text||sent.isInternal!==internal)throw Error("Nội dung hoặc phạm vi hiển thị tin nhắn đã lưu chưa khớp yêu cầu.");setMessage('');setFeedback({success:"Đã lưu tin nhắn."});});}
  return <Screen title={kind==='maintenance'?"Bảo trì cơ sở":"Hỗ trợ khách hàng"} notice="Yêu cầu và thay đổi được lưu trên máy chủ." action={<Button variant="outline" disabled={saving} onClick={resource.reload}>Tải lại</Button>}>
  {!permitted?<Panel title="Yêu cầu không khả dụng"><p>Cần tài khoản được phân công cơ sở và mã định danh hợp lệ.</p></Panel>:<><Message {...feedback}/><Message error={resource.error}/>{resource.loading&&<p role="status">Đang tải…</p>}
- {!id&&<><Panel title="Yêu cầu"><form className="facility-filter-row mb-4" onSubmit={e=>{e.preventDefault();setPage(1);setQuery(search.trim());}}><Input aria-label="Tìm yêu cầu" maxLength={100} value={search} onChange={e=>setSearch(e.target.value)}/><Button>Tìm kiếm</Button><Select label="Trạng thái yêu cầu" value={status} onChange={v=>{setStatus(v);setPage(1);}} options={['',...deskStatuses]}/></form><Table rows={resource.data?.rows||[]} columns={[{key:'id',label:'Yêu cầu',render:r=><OpenLink to={`${base}/${r.id}`}>{r.title||r.subject}</OpenLink>},{key:'status',label:"Trạng thái",render:r=><Status value={r.status}/>},{key:'priority',label:"Mức ưu tiên"},{key:'assignee',label:"Nhân viên"}]}/><div className="mt-4 flex gap-3"><Button disabled={saving||page<=1} onClick={()=>setPage(p=>p-1)}>Trước</Button><span >Trang {page}</span><Button disabled={saving||!resource.data||page>=resource.data.pagination.totalPages} onClick={()=>setPage(p=>p+1)}>Tiếp</Button></div></Panel>
+ {!id&&<><Panel title="Yêu cầu"><div className="manager-filters mb-4"><Field label="Tìm kiếm"><Input aria-label="Tìm yêu cầu" maxLength={100} value={search} onChange={e=>setSearch(e.target.value)}/></Field><Field label="Trạng thái"><Select label="Trạng thái yêu cầu" value={status} onChange={v=>{setStatus(v);setPage(1);}} options={['',...deskStatuses]}/></Field></div><Table rows={resource.data?.rows||[]} columns={[{key:'id',label:'Yêu cầu',render:r=><OpenLink to={`${base}/${r.id}`}>{r.title||r.subject}</OpenLink>},{key:'status',label:"Trạng thái",render:r=><Status value={r.status}/>},{key:'priority',label:"Mức ưu tiên"},{key:'assignee',label:"Nhân viên"}]}/><div className="mt-4 flex gap-3"><Button disabled={saving||page<=1} onClick={()=>setPage(p=>p-1)}>Trước</Button><span >Trang {page}</span><Button disabled={saving||!resource.data||page>=resource.data.pagination.totalPages} onClick={()=>setPage(p=>p+1)}>Tiếp</Button></div></Panel>
  {(kind==='maintenance'||isManager)&&<TicketForm kind={kind} saving={saving} onSubmit={fields=>run(async()=>{const body={...deskFields(kind,fields),facilityId:user.assignedFacilityId};if(kind==='support'){if(!objectId(fields.relatedId))throw Error("Nhập mã tài khoản khách hàng thay cho mã hồ sơ.");body.customerId=fields.relatedId;}else if(fields.relatedId){if(!objectId(fields.relatedId))throw Error("Mã kho riêng không hợp lệ.");body.storageUnitId=fields.relatedId;}
  const created=deskRecord(apiRecord(await api.create(kind,body)));if(created.facility!==user.assignedFacilityId||created.status!=='OPEN')throw Error("Máy chủ chưa xác nhận yêu cầu mới.");if(isManager)nav(`${base}/${created.id}`);else setFeedback({success:`Đã tạo ${created.id}. Quản lý cần giao yêu cầu cho bạn để hiển thị trong danh sách cá nhân.`});})}/>}</>}
  {row&&<><Panel title={row.title||row.subject}><Details values={ [["Trạng thái",<Status value={row.status}/>],["Mô tả",row.description],["Mức ưu tiên",row.priority],["Nhóm yêu cầu",row.category],["Nhân viên",row.assignee||"Chưa phân công"],["Kết quả",row.resolutionNote||'—']]}/></Panel>

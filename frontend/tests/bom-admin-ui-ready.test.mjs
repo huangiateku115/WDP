@@ -276,3 +276,65 @@ test('Admin account creation never leaves an English or half-configured account'
   assert.match(page,/const \[unassignedId, setUnassignedId\] = useState\(""\)/);
   assert.match(page,/to=\{`\/admin\/users\/\$\{unassignedId\}`\}/);
 });
+
+test('List screens never render detail or edit inline (quy ước 1)',()=>{
+  const warehouse=read('../src/pages/shared/WarehouseStructurePage.jsx');
+  assert.doesNotMatch(warehouse,/rackId &&/,'rack cells must not expand inside the warehouse list');
+  assert.match(warehouse,/warehouse\/\$\{encodeURIComponent\(facilityId\)\}\/racks\/\$\{encodeURIComponent\(r\.id\)\}\/cells/);
+  const rackCells=read('../src/pages/shared/RackCellsPage.jsx');
+  assert.match(rackCells,/useParams/);
+  assert.match(rackCells,/loadCells\(facilityId, rackId/);
+  assert.match(rackCells,/AsyncBoundary/);
+  const catalog=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  assert.doesNotMatch(catalog,/\{form\s*&&/,'the catalog form must live on its own route');
+  assert.match(catalog,/managed-inventory-catalog\/new|\/new\/\$\{kind\}/);
+  const catalogForm=read('../src/pages/bom/CatalogRecordPage.jsx');
+  assert.match(catalogForm,/mode = "new"/);
+  assert.match(catalogForm,/api\[config\.get\]/);
+  const audit=read('../src/pages/admin/LiveSystemPages.jsx');
+  assert.doesNotMatch(audit,/\{open && \(/,'audit detail must not expand below the table');
+  assert.match(audit,/\/admin\/audit\/\$\{encodeURIComponent\(selected\)\}/);
+  const auditDetail=read('../src/pages/admin/AuditLogDetailPage.jsx');
+  assert.match(auditDetail,/getAdminAuditLogs\(userId\)/);
+  const bomRoutes=read('../src/routes/BomRoutes.jsx');
+  const adminRoutes=read('../src/routes/AdminRoutes.jsx');
+  for(const routes of [bomRoutes,adminRoutes]){
+    assert.match(routes,/path="warehouse\/:facilityId\/racks\/:rackId\/cells"/);
+    assert.match(routes,/path="managed-inventory-catalog\/new\/:kind"/);
+    assert.match(routes,/path="managed-inventory-catalog\/:kind\/:id\/edit"/);
+  }
+  assert.match(adminRoutes,/path="audit\/:userId\/:logId"/);
+});
+
+test('List tables use AsyncBoundary and refresh lives in the screen action (quy ước 5)',()=>{
+  for(const file of ['pages/admin/LiveSystemPages.jsx','pages/admin/UsersLivePage.jsx','pages/bom/ManagedInventoryCatalogPage.jsx']){
+    assert.match(read(`../src/${file}`),/AsyncBoundary/,`${file} must wrap its list table`);
+  }
+  for(const file of ['pages/bom/ReportsPages.jsx','pages/bom/RentalReportLivePage.jsx']){
+    const page=read(`../src/${file}`);
+    assert.match(page,/action=\{<div className="flex flex-wrap gap-2"><Button variant="outline" onClick=\{\w+\.reload\}/,`${file}: refresh belongs to the screen action`);
+    assert.doesNotMatch(page,/Panel title="Bộ lọc">[\s\S]{0,900}Tính lại/,'refresh must not sit inside the filter panel');
+  }
+});
+
+test('Free-text filters are debounced and carry no submit button (quy ước 2)',()=>{
+  const hook=read('../src/lib/useDebouncedValue.js');
+  assert.match(hook,/FILTER_DEBOUNCE_MS = 350/);
+  for(const file of ['pages/bom/ManagedInventoryCatalogPage.jsx','pages/staff/ManagedFacilityPage.jsx','pages/staff/ServiceDeskApiView.jsx','pages/staff/StockBalancePage.jsx']){
+    assert.match(read(`../src/${file}`),/useDebouncedValue/,`${file} must debounce its text filter`);
+  }
+  const stock=read('../src/pages/staff/StockBalancePage.jsx');
+  assert.doesNotMatch(stock,/facility-filter-row/);
+  assert.match(stock,/manager-filters/);
+  assert.doesNotMatch(stock,/<Button[^>]*>Tải \/ cập nhật tồn kho/);
+});
+
+test('Audit and login screens print Vietnamese labels, not raw codes (quy ước 6)',()=>{
+  const page=read('../src/pages/admin/LiveSystemPages.jsx');
+  assert.match(page,/facilityLabel\(r\.source\.action\)/);
+  assert.match(page,/facilityLabel\(r\.source\.eventType\)/);
+  const dictionary=read('../src/lib/facilityLabels.js');
+  for(const code of ['LOGIN','LOGOUT','CREATE_FACILITY','UPDATE_PRICING_RULE','APPROVE_RESERVATION','TERMINATED','RECONCILIATION_REQUIRED','UNLOCK_FAILED']){
+    assert.ok(dictionary.includes(`${code}:`),`dictionary is missing the audit/status code ${code}`);
+  }
+});

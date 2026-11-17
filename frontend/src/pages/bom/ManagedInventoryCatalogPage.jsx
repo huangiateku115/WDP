@@ -1,26 +1,149 @@
-import {useCallback,useEffect,useState} from 'react';
-import {bomManagedInventoryCatalogApi as api} from '@/api/bomApi';
-import {Button,Input,Panel,Screen,Status,Table,Field,Message} from '@/components/manager/ManagerUI';
-import {apiErrorMessage} from '@/lib/apiError';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { bomManagedInventoryCatalogApi as api } from '@/api/bomApi';
+import { Button, Input, Panel, Screen, Status, Table, Field, Select, Message } from '@/components/manager/ManagerUI';
+import { AsyncBoundary, ConfirmDialog } from '@/components/bom/LiveBomUI';
+import { useAsyncData } from '@/lib/useAsyncData';
+import { apiErrorMessage } from '@/lib/apiError';
+import { useDebouncedValue } from '@/lib/useDebouncedValue';
+import { catalogConfig, CATALOG_KIND_KEYS } from '@/lib/managedCatalogKinds';
 
-const kinds={category:{title:'Danh mục hàng hóa',plural:'Danh mục',list:'listCategories',create:'createCategory',update:'updateCategory',remove:'removeCategory'},quantityUnit:{title:'Đơn vị tính',plural:'Đơn vị',list:'listQuantityUnits',create:'createQuantityUnit',update:'updateQuantityUnit',remove:'removeQuantityUnit'}};
-const blank={code:'',name:'',description:'',sortOrder:0};
-export default function ManagedInventoryCatalogPage(){
-  const [kind,setKind]=useState('category'),[search,setSearch]=useState(''),[status,setStatus]=useState('ALL'),[page,setPage]=useState(1),[result,setResult]=useState({data:[],pagination:{totalPages:0,total:0}}),[loading,setLoading]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState(''),[form,setForm]=useState(null),[busy,setBusy]=useState(false);
-  const config=kinds[kind];
-  const load=useCallback(async()=>{setLoading(true);setError('');try{const response=await api[config.list]({search,status,page,limit:20});if(response.data?.success!==true||!Array.isArray(response.data.data)||!response.data.pagination)throw Error('Dữ liệu danh mục trả về không hợp lệ.');setResult({data:response.data.data,pagination:response.data.pagination});}catch(e){setError(apiErrorMessage(e,'Không tải được danh mục.'));}finally{setLoading(false);}},[config,search,status,page]);
-  useEffect(()=>{void load();},[load]);
-  const switchKind=value=>{setKind(value);setPage(1);setSearch('');setStatus('ALL');setForm(null);setError('');setSuccess('');};
-  const submit=async event=>{event.preventDefault();if(busy||!form)return;setBusy(true);setError('');setSuccess('');try{const body={name:form.name.trim(),description:form.description.trim(),sortOrder:Number(form.sortOrder)};if(!form._id)body.code=form.code.trim().toUpperCase();else body.isActive=form.isActive;await api[form._id?config.update:config.create](...(form._id?[form._id,body]:[body]));setSuccess(form._id?`${config.plural} đã được cập nhật.`:`Đã tạo ${config.plural.toLowerCase()} mới.`);setForm(null);await load();}catch(e){setError(apiErrorMessage(e,'Không lưu được danh mục.'));}finally{setBusy(false);}};
-  const deactivate=async row=>{if(!window.confirm(`Ngừng sử dụng “${row.name}”? Bản ghi sẽ được giữ lại và không xuất hiện trong lựa chọn mới.`))return;setError('');setSuccess('');try{await api[config.remove](row._id);setSuccess(`Đã ngừng sử dụng “${row.name}”.`);await load();}catch(e){setError(apiErrorMessage(e,'Không thể ngừng sử dụng bản ghi.'));}};
-  const columns=[{key:'code',label:'Mã'},{key:'name',label:'Tên'},{key:'description',label:'Mô tả'},{key:'sortOrder',label:'Thứ tự'},{key:'isActive',label:'Trạng thái',render:r=><Status value={r.isActive?'ACTIVE':'INACTIVE'}/>},{key:'actions',label:'Thao tác',render:r=><div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setForm({...r})}>Sửa</Button>{r.isActive&&<Button size="sm" variant="outline" onClick={()=>void deactivate(r)}>Ngừng dùng</Button>}</div>}];
-  return <Screen title="Danh mục hàng hóa và đơn vị tính" description="Danh mục và đơn vị tính dùng chung toàn hệ thống. Khách hàng chỉ chọn được giá trị đang hoạt động.">
-    <Panel title="Danh mục chuẩn" subtitle="Đây là dữ liệu dùng chung, không cấu hình riêng theo cơ sở." action={<Button onClick={()=>setForm({...blank,isActive:true})}>Tạo {config.plural.toLowerCase()}</Button>}>
-      <div className="mb-5 flex flex-wrap gap-2"><Button variant={kind==='category'?'default':'outline'} onClick={()=>switchKind('category')}>Danh mục hàng hóa</Button><Button variant={kind==='quantityUnit'?'default':'outline'} onClick={()=>switchKind('quantityUnit')}>Đơn vị tính</Button></div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_180px_auto]"><Input aria-label="Tìm danh mục" placeholder="Tìm theo mã hoặc tên" value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}/><select aria-label="Lọc trạng thái" className="rounded-md border px-3" value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="ALL">Tất cả trạng thái</option><option value="ACTIVE">Đang hoạt động</option><option value="INACTIVE">Ngừng sử dụng</option></select><Button variant="outline" onClick={()=>void load()} disabled={loading}>Tải lại</Button></div>
-      <Message error={error} success={success}/>{loading?<p role="status" className="py-8 text-center text-sm text-slate-500">Đang tải danh mục…</p>:<Table columns={columns} rows={result.data} label={config.title} empty="Chưa có dữ liệu phù hợp. Tạo bản ghi đầu tiên để Customer có thể chọn."/>}
-      <div className="mt-4 flex items-center justify-between gap-3 text-sm"><span>{Number(result.pagination.total||0).toLocaleString('vi-VN')} bản ghi</span><div className="flex gap-2"><Button variant="outline" disabled={page<=1||loading} onClick={()=>setPage(n=>n-1)}>Trang trước</Button><Button variant="outline" disabled={page>=Number(result.pagination.totalPages||0)||loading} onClick={()=>setPage(n=>n+1)}>Trang sau</Button></div></div>
-    </Panel>
-    {form&&<Panel title={form._id?`Sửa ${config.plural.toLowerCase()}`:`Tạo ${config.plural.toLowerCase()}`} subtitle="Mã định danh không thể thay đổi sau khi tạo."><form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">{!form._id&&<Field label="Mã định danh"><Input required maxLength={kind==='category'?48:32} value={form.code||''} onChange={e=>setForm({...form,code:e.target.value})} placeholder={kind==='category'?'VD: VAN_PHONG':'VD: THUNG'}/></Field>}<Field label="Tên hiển thị"><Input required maxLength={kind==='category'?120:80} value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Thứ tự hiển thị"><Input type="number" min="0" max="1000000" step="1" required value={form.sortOrder??0} onChange={e=>setForm({...form,sortOrder:e.target.value})}/></Field><Field label="Mô tả"><Input maxLength={1000} value={form.description||''} onChange={e=>setForm({...form,description:e.target.value})}/></Field>{form._id&&<Field label="Trạng thái"><select className="rounded-md border px-3 py-2" value={form.isActive?'true':'false'} onChange={e=>setForm({...form,isActive:e.target.value==='true'})}><option value="true">Đang hoạt động</option><option value="false">Ngừng sử dụng</option></select></Field>}<div className="flex gap-2 sm:col-span-2"><Button type="submit" disabled={busy}>{busy?'Đang lưu…':'Lưu'}</Button><Button type="button" variant="outline" disabled={busy} onClick={()=>setForm(null)}>Hủy</Button></div></form></Panel>}
-  </Screen>;
+// List screen only. Create and edit live on their own routes
+// (`managed-inventory-catalog/new/:kind`, `managed-inventory-catalog/:kind/:id/edit`), so the
+// table never grows a form underneath it.
+const ALL = "__all__";
+
+export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-inventory-catalog' }) {
+  const location = useLocation();
+  const [kind, setKind] = useState(CATALOG_KIND_KEYS[0]);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [status, setStatus] = useState(ALL);
+  const [page, setPage] = useState(1);
+  const [deactivating, setDeactivating] = useState(null);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(location.state?.catalogNotice || '');
+  const config = catalogConfig(kind);
+  // A free-text search that hits the API on every keystroke breaks quy ước 2, so it is debounced.
+  const search = useDebouncedValue(searchDraft);
+
+  const list = useAsyncData(
+    async ({ signal }) => {
+      const response = await api[config.list]({ search, status: status === ALL ? '' : status, page, limit: 20 }, { signal });
+      if (response.data?.success !== true || !Array.isArray(response.data.data) || !response.data.pagination) {
+        throw Error('Dữ liệu danh mục trả về không hợp lệ.');
+      }
+      return { rows: response.data.data, pagination: response.data.pagination };
+    },
+    [config, search, status, page],
+  );
+
+  const switchKind = useCallback((value) => {
+    setKind(value);
+    setSearchDraft('');
+    setStatus(ALL);
+    setPage(1);
+    setError('');
+    setSuccess('');
+  }, []);
+
+  useEffect(() => { setPage(1); }, [search, status]);
+
+  async function deactivate(row) {
+    setError('');
+    setSuccess('');
+    try {
+      await api[config.remove](row._id);
+      setSuccess(`Đã ngừng sử dụng “${row.name}”.`);
+      list.reload();
+    } catch (e) {
+      setError(apiErrorMessage(e, 'Không thể ngừng sử dụng bản ghi.'));
+    }
+  }
+
+  const columns = [
+    { key: 'code', label: 'Mã' },
+    { key: 'name', label: 'Tên' },
+    { key: 'description', label: 'Mô tả' },
+    { key: 'sortOrder', label: 'Thứ tự' },
+    { key: 'isActive', label: 'Trạng thái', render: (r) => <Status value={r.isActive ? 'ACTIVE' : 'INACTIVE'} /> },
+    {
+      key: 'actions',
+      label: 'Thao tác',
+      render: (r) => (
+        <div className="flex gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link to={`${basePath}/${kind}/${encodeURIComponent(r._id)}/edit`}>Sửa</Link>
+          </Button>
+          {r.isActive && <Button size="sm" variant="outline" onClick={() => setDeactivating(r)}>Ngừng dùng</Button>}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Screen
+      title="Danh mục hàng hóa và đơn vị tính"
+      description="Danh mục và đơn vị tính dùng chung toàn hệ thống. Khách hàng chỉ chọn được giá trị đang hoạt động."
+      action={(
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={list.reload} disabled={list.loading}>Tải lại</Button>
+          <Button asChild><Link to={`${basePath}/new/${kind}`}>Tạo {config.plural.toLowerCase()}</Link></Button>
+        </div>
+      )}
+    >
+      <Panel title="Danh mục chuẩn" subtitle="Đây là dữ liệu dùng chung, không cấu hình riêng theo cơ sở.">
+        <div className="mb-5 flex flex-wrap gap-2">
+          {CATALOG_KIND_KEYS.map((value) => (
+            <Button key={value} variant={kind === value ? 'default' : 'outline'} onClick={() => switchKind(value)}>
+              {catalogConfig(value).title}
+            </Button>
+          ))}
+        </div>
+        <div className="manager-filters">
+          <Field label="Tìm kiếm">
+            <Input aria-label="Tìm danh mục" placeholder="Tìm theo mã hoặc tên" value={searchDraft} onChange={(e) => setSearchDraft(e.target.value)} />
+          </Field>
+          <Field label="Trạng thái">
+            <Select
+              label="Lọc trạng thái danh mục"
+              value={status}
+              onChange={setStatus}
+              options={[[ALL, 'Tất cả trạng thái'], ['ACTIVE', 'Đang hoạt động'], ['INACTIVE', 'Ngừng sử dụng']]}
+            />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Message error={error} success={success} />
+        </div>
+        <AsyncBoundary state={list} render={(data) => (
+          <>
+            {data.pagination.truncated && <p className="bom-note mb-4">Đang hiển thị một phần dữ liệu. Hãy thu hẹp bộ lọc.</p>}
+            <Table
+              columns={columns}
+              rows={data.rows}
+              label={config.title}
+              empty="Chưa có dữ liệu phù hợp. Tạo bản ghi đầu tiên để Customer có thể chọn."
+            />
+            <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+              <span>{Number(data.pagination.total || 0).toLocaleString('vi-VN')} bản ghi</span>
+              <div className="flex gap-2">
+                <Button variant="outline" disabled={page <= 1 || list.loading} onClick={() => setPage((n) => n - 1)}>Trang trước</Button>
+                <Button variant="outline" disabled={page >= Number(data.pagination.totalPages || 0) || list.loading} onClick={() => setPage((n) => n + 1)}>Trang sau</Button>
+              </div>
+            </div>
+          </>
+        )} />
+      </Panel>
+
+      {deactivating && (
+        <ConfirmDialog
+          title={`Ngừng sử dụng “${deactivating.name}”?`}
+          summary="Bản ghi sẽ được giữ lại và không xuất hiện trong lựa chọn mới."
+          confirmLabel="Ngừng sử dụng"
+          onClose={() => setDeactivating(null)}
+          onConfirm={() => deactivate(deactivating)}
+        />
+      )}
+    </Screen>
+  );
 }

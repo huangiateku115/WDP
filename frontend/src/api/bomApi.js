@@ -33,10 +33,12 @@ export const bomPolicyApi = {
 
 export const bomManagedInventoryCatalogApi = {
   listCategories: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/categories', { ...config, params }),
+  getCategory: (id, config = {}) => axiosClient.get(`/managed-inventory-catalog/categories/${encode(id)}`, config),
   createCategory: body => axiosClient.post('/managed-inventory-catalog/categories', body),
   updateCategory: (id, body) => axiosClient.patch(`/managed-inventory-catalog/categories/${encode(id)}`, body),
   removeCategory: id => axiosClient.delete(`/managed-inventory-catalog/categories/${encode(id)}`),
   listQuantityUnits: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/quantity-units', { ...config, params }),
+  getQuantityUnit: (id, config = {}) => axiosClient.get(`/managed-inventory-catalog/quantity-units/${encode(id)}`, config),
   createQuantityUnit: body => axiosClient.post('/managed-inventory-catalog/quantity-units', body),
   updateQuantityUnit: (id, body) => axiosClient.patch(`/managed-inventory-catalog/quantity-units/${encode(id)}`, body),
   removeQuantityUnit: id => axiosClient.delete(`/managed-inventory-catalog/quantity-units/${encode(id)}`),

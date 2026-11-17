@@ -87,7 +87,7 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
     <Screen
       title="Doanh thu toàn hệ thống"
       description="Doanh thu đã thu, đang chờ và đã hoàn theo khoảng thời gian và cơ sở."
-      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
+      action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={report.reload} disabled={report.loading}>Tính lại</Button><Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button></div>}
     >
       <AsyncBoundary state={report} render={(data) => {
         const directory = facilities.data || [];
@@ -117,7 +117,7 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
                 </Field>
               </div>
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="outline" onClick={report.reload}>Tính lại</Button>
+
                 {["csv", "xlsx", "pdf"].map((format) => (
                   <Button
                     key={format}
@@ -214,7 +214,7 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
     <Screen
       title="Xếp hạng cơ sở"
       description="So sánh số đơn, khách hàng và doanh thu đã thu giữa các cơ sở trong kỳ."
-      action={<Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button>}
+      action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={ranking.reload} disabled={ranking.loading}>Tính lại</Button><Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button></div>}
     >
       <AsyncBoundary state={ranking} render={(data) => (
         <>
@@ -241,7 +241,6 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
               </Field>
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Button variant="outline" onClick={ranking.reload}>Tính lại</Button>
               {["csv", "xlsx", "pdf"].map((format) => (
                 <Button key={format} variant="outline" disabled={Boolean(exporting)} onClick={() => runExport(format)}>
                   {exporting === format ? "Đang xuất…" : `Xuất ${format.toUpperCase()}`}

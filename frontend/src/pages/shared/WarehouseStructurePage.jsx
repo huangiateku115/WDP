@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Button, Details } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { CellDialog, RackDialog, ZoneDialog } from "@/components/bom/WarehouseStructureDialogs";
+import { RackDialog, ZoneDialog } from "@/components/bom/WarehouseStructureDialogs";
 import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadCells, loadFacilities, loadManagedCapacity, loadRacks, loadZones } from "@/lib/bomApiData";
+import { loadFacilities, loadManagedCapacity, loadRacks, loadZones } from "@/lib/bomApiData";
 import { bomWarehouseApi } from "@/api/bomApi";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
@@ -26,24 +27,20 @@ function currentMonthWindow() {
   return { startDate: start.toISOString(), endDate: end.toISOString() };
 }
 
-export default function WarehouseStructurePage() {
+export default function WarehouseStructurePage({ basePath = "/bom" }) {
   const directory = useAsyncData(loadFacilities, []);
-  const [facilityId, setFacilityId] = useState("");
+  // The selected facility lives in the URL so the rack-cell route can link back to the same view.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [facilityId, setFacilityId] = useState(searchParams.get("facility") || "");
   const [zoneFilter, setZoneFilter] = useState("");
-  const [rackId, setRackId] = useState("");
   const [zoneDialog, setZoneDialog] = useState(null);
   const [rackDialog, setRackDialog] = useState(null);
-  const [cellDialog, setCellDialog] = useState(null);
   const [capacityOpen, setCapacityOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const window = currentMonthWindow();
 
   const zones = useAsyncData(({ signal }) => (facilityId ? loadZones(facilityId, { signal }) : Promise.resolve(null)), [facilityId]);
   const racks = useAsyncData(({ signal }) => (facilityId ? loadRacks(facilityId, { signal }) : Promise.resolve(null)), [facilityId]);
-  const cells = useAsyncData(
-    ({ signal }) => (facilityId && rackId ? loadCells(facilityId, rackId, { signal }) : Promise.resolve(null)),
-    [facilityId, rackId],
-  );
   const capacity = useAsyncData(
     ({ signal }) => (facilityId ? loadManagedCapacity(facilityId, { ...window, signal }) : Promise.resolve(null)),
     [facilityId],
@@ -52,13 +49,12 @@ export default function WarehouseStructurePage() {
   function selectFacility(id) {
     setFacilityId(id);
     setZoneFilter("");
-    setRackId("");
+    setSearchParams(id ? { facility: id } : {}, { replace: true });
   }
 
   function reloadStructure() {
     zones.reload();
     racks.reload();
-    if (rackId) cells.reload();
   }
   function removeZone(zone) {
     setConfirm({
@@ -74,7 +70,7 @@ export default function WarehouseStructurePage() {
       title: `Xóa kệ ${rack.rackCode}?`,
       summary: "Chỉ xóa được kệ khi mọi ô đều đang bị chặn hoặc đang bảo trì, và không ô nào còn hàng, đang giữ hoặc đang được đặt.",
       label: "Xóa kệ",
-      run: async () => { await bomWarehouseApi.deleteRack(rack.id); if (rack.id === rackId) setRackId(""); reloadStructure(); },
+      run: async () => { await bomWarehouseApi.deleteRack(rack.id); reloadStructure(); },
     });
   }
 
@@ -216,7 +212,9 @@ export default function WarehouseStructurePage() {
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Ô lưu trữ</Button>
+                              <Button asChild size="sm" variant="outline">
+                                <Link to={`${basePath}/warehouse/${encodeURIComponent(facilityId)}/racks/${encodeURIComponent(r.id)}/cells`}>Ô lưu trữ</Link>
+                              </Button>
                               <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Sửa</Button>
                               <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Xóa</Button>
                             </div>
@@ -227,44 +225,6 @@ export default function WarehouseStructurePage() {
                     />
                   </Panel>
                 ) : null)} />
-
-                {rackId && (
-                  <AsyncBoundary state={cells} render={(data) => (data ? (
-                    <Panel
-                      title="Ô trên kệ"
-                      subtitle={`${data.total} ô lưu trữ`}
-                      action={<Button variant="outline" onClick={() => setRackId("")}>Đóng danh sách ô</Button>}
-                    >
-                      <Details values={[
-                        ["Rack", (racks.data?.rows || []).find((r) => r.id === rackId)?.rackCode || rackId],
-                        ["Available cells", countBy(data.rows, "operationalStatus", "AVAILABLE")],
-                        ["Rated cell weight", kg(sumBy(data.rows, "maxWeightKg"))],
-                        ["Cell volume", m3(sumBy(data.rows, "usableVolumeM3"))],
-                      ]} />
-                      <div className="mt-5">
-                        <Table
-                          label="Ô trên kệ"
-                          rows={data.rows}
-                          columns={[
-                            { key: "code", label: "Cell" },
-                            { key: "levelNumber", label: "Level" },
-                            { key: "cellNumber", label: "Position" },
-                            { key: "dimensions", label: "Dimensions", render: (r) => `${r.dimensions.widthM}×${r.dimensions.depthM} m · cao dùng được ${r.dimensions.usableHeightM ?? "—"} m` },
-                            { key: "maxWeightKg", label: "Max weight", render: (r) => kg(r.maxWeightKg) },
-                            { key: "usableVolumeM3", label: "Volume", render: (r) => (r.usableVolumeM3 === null ? "—" : m3(r.usableVolumeM3)) },
-                            { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-                            {
-                              key: "actions",
-                              label: "Actions",
-                              render: (r) => <Button size="sm" variant="outline" onClick={() => setCellDialog(r)}>Sửa</Button>,
-                            },
-                          ]}
-                          empty="Kệ này chưa có ô lưu trữ nào."
-                        />
-                      </div>
-                    </Panel>
-                  ) : null)} />
-                )}
               </>
             )}
           </>
@@ -287,9 +247,6 @@ export default function WarehouseStructurePage() {
           onClose={() => setRackDialog(null)}
           onSaved={reloadStructure}
         />
-      )}
-      {cellDialog && (
-        <CellDialog cell={cellDialog} onClose={() => setCellDialog(null)} onSaved={() => cells.reload()} />
       )}
       {capacityOpen && (
         <ManagedCapacityDialog
