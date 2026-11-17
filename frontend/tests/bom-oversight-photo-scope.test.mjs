@@ -17,14 +17,16 @@ test('BOM mappers keep facility and unit photography and flag Managed reservatio
   assert.match(mapper,/isManaged: d\?\.serviceType === "MANAGED_INVENTORY"/);
 });
 
-test('BOM reservation reads request both service scopes and never swallow a failed facility',()=>{
+test('BOM reservation reads request both service scopes for one facility and never swallow a failure',()=>{
   const data=read('../src/lib/bomApiData.js');
   assert.match(data,/const RESERVATION_SERVICE_TYPES = \["SELF_STORAGE", "MANAGED_INVENTORY"\]/);
   assert.match(data,/\{ signal, params: \{ serviceType \} \}/);
   assert.match(data,/export async function loadFacilityReservationsAll/);
-  assert.match(data,/const failedFacilities = \[\]/);
-  assert.match(data,/failedFacilities\.push/);
+  // The scopes are read one after another (no cross-facility fan-out) and a failure is surfaced.
+  assert.match(data,/const failedServiceTypes = \[\]/);
+  assert.match(data,/failedServiceTypes\.push\(serviceType\)/);
   assert.doesNotMatch(data,/\.catch\(\(\) => \[\]\)/);
+  assert.doesNotMatch(data,/export async function loadReservations\(/);
 });
 
 test('Oversight, unit register and facility console render saved photography',()=>{

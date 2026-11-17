@@ -2,28 +2,23 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Input, Select, Button, Details, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
+import { loadFacilities, loadFacilityReservationsAll, facilityName, reservationScopeLabel } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, serviceLabel } from "@/lib/bomMappers";
 import { apiErrorMessage } from "@/lib/apiError";
 import { downloadCsv, saveBlob } from "@/lib/csvExport";
 import { defaultRevenuePeriod, exportStatistics, loadRentalTrends, loadReservationReport } from "@/lib/reportSources";
 
-const MAX_FACILITY_FETCHES = 12;
 const EXPORT_FORMATS = ["csv", "xlsx", "pdf"];
 
-// Two complementary sources:
-//   • GET /statistics/reservations — server aggregate for the selected period, every facility the
-//     caller may see (no 12-facility cap) and the only place an overdue/cancellation count comes
-//     from without loading rows.
-//   • GET /reservations/* — the per-row list the console shows, limited to the loaded facilities.
+// Two sources, both bounded:
+//   • GET /statistics/reservations + /statistics/rental-trends — server aggregates for the period
+//     across every facility the caller may see (no per-facility fan-out).
+//   • GET /reservations/facility/:id — the per-reservation rows, read for the ONE facility the
+//     operator selects (the backend has no cross-facility reservation list).
 export default function RentalReportLivePage({ basePath = "/bom" }) {
-  const state = useAsyncData(async ({ signal }) => {
-    const facilities = await loadFacilities();
-    const { rows, truncated, failedFacilities } = await loadReservations(facilities, { signal });
-    return { facilities, reservations: rows, truncated, failedFacilities };
-  }, []);
+  const directory = useAsyncData(loadFacilities, []);
   const [facility, setFacility] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -42,6 +37,11 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   const trends = useAsyncData(
     ({ signal }) => loadRentalTrends({ from: periodFrom, to: periodTo, facilityId: facility, granularity, signal }),
     [periodFrom, periodTo, facility, granularity],
+  );
+  // Rows are only requested for a chosen facility, so the page never opens one request per facility.
+  const rowSet = useAsyncData(
+    ({ signal }) => (facility ? loadFacilityReservationsAll(facility, { signal }) : Promise.resolve(null)),
+    [facility],
   );
 
   async function runExport(format) {
@@ -75,9 +75,9 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
       description="Đơn đặt thuê trên mọi cơ sở, lọc theo cơ sở, trạng thái và tìm kiếm."
       action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={summary.reload} disabled={summary.loading}>Tính lại</Button><Button asChild variant="outline"><Link to={`${basePath}/reports`}>Quay lại báo cáo</Link></Button></div>}
     >
-      <AsyncBoundary state={state} render={({ facilities, reservations, truncated, failedFacilities }) => {
+      <AsyncBoundary state={directory} render={(facilities) => {
+        const reservations = rowSet.data?.rows || [];
         const rows = reservations.filter((r) =>
-          (!facility || r.facilityId === facility) &&
           (!status || r.status === status) &&
           (!from || (r.startDate && r.startDate >= from)) &&
           (!to || (r.startDate && r.startDate <= to)) &&
@@ -95,15 +95,14 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
               ["Chờ ký hợp đồng", number(totals.awaitingContract), "Đã thanh toán nhưng chưa có hợp đồng đã ký"],
             ]} />
             {summary.error && <p className="bom-warning">Không tải được số liệu tổng hợp: {summary.error}</p>}
-            {failedFacilities?.length > 0 && (
+            {rowSet.data?.failedServiceTypes?.length > 0 && (
               <p className="bom-warning">
-                Không tải được đơn đặt thuê của {failedFacilities.length} cơ sở:{" "}
-                {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. Danh sách đơn bên dưới không bao gồm các bản ghi đó.
+                Không tải được đơn thuộc phạm vi {reservationScopeLabel(rowSet.data.failedServiceTypes)}; danh sách đơn bên dưới chưa đầy đủ.
               </p>
             )}
             <Panel title="Bộ lọc">
               <div className="manager-filters">
-                <Field label="Cơ sở">
+                <Field label="Cơ sở" hint="Danh sách đơn chi tiết chỉ tải cho cơ sở được chọn.">
                   <Select label="Lọc theo cơ sở" value={facility} onChange={setFacility}
                     options={[["", "Tất cả cơ sở"], ...facilities.map((f) => [f.id, f.name])]} />
                 </Field>
@@ -165,8 +164,8 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
 
             <Panel
               title="Đơn đặt thuê"
-              subtitle={`${rows.length} / ${reservations.length} bản ghi`}
-              action={
+              subtitle={facility ? `${rows.length} / ${reservations.length} bản ghi của ${facilityName(facilities, facility)}` : "Chọn một cơ sở để xem danh sách đơn chi tiết."}
+              action={facility ? (
                 <Button
                   variant="outline"
                   disabled={!rows.length}
@@ -187,32 +186,37 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 >
                   Xuất bảng đang xem (CSV)
                 </Button>
-              }
+              ) : undefined}
             >
-              {truncated && <TruncatedNotice total={facilities.length} shown={Math.min(facilities.length, MAX_FACILITY_FETCHES)} />}
-              <Table
-                label="Vòng đời đơn đặt thuê"
-                rows={rows}
-                columns={[
-                  {
-                    key: "code",
-                    label: "Mã đơn",
-                    render: (r) => (
-                      <Link className="manager-link" to={`${basePath}/reservations/${r.isManaged ? "managed/" : ""}${r.id}`}>
-                        {r.code || r.id}
-                      </Link>
-                    ),
-                  },
-                  { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
-                  { key: "customer", label: "Khách hàng", render: (r) => r.customerName },
-                  { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
-                  { key: "resource", label: "Kho / công suất", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
-                  { key: "period", label: "Thời gian thuê", render: (r) => `${r.startDate} → ${r.endDate}` },
-                  { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
-                  { key: "rent", label: "Tiền thuê tạm tính", render: (r) => money(r.estimatedRent) },
-                ]}
-                empty="Không có đơn phù hợp bộ lọc."
-              />
+              {!facility ? (
+                <p className="text-sm text-slate-500">Máy chủ chỉ có API đơn thuê theo từng cơ sở, nên danh sách chi tiết chỉ tải khi bạn chọn một cơ sở. Số liệu tổng hợp ở trên đã tính trên mọi cơ sở.</p>
+              ) : (
+                <AsyncBoundary state={rowSet} render={() => (
+                  <Table
+                    label="Vòng đời đơn đặt thuê"
+                    rows={rows}
+                    columns={[
+                      {
+                        key: "code",
+                        label: "Mã đơn",
+                        render: (r) => (
+                          <Link className="manager-link" to={`${basePath}/reservations/${r.isManaged ? "managed/" : ""}${r.id}`}>
+                            {r.code || r.id}
+                          </Link>
+                        ),
+                      },
+                      { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
+                      { key: "customer", label: "Khách hàng", render: (r) => r.customerName },
+                      { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
+                      { key: "resource", label: "Kho / công suất", render: (r) => r.unitCode || (r.allocatedCapacity != null ? `${r.allocatedCapacity} m³` : "—") },
+                      { key: "period", label: "Thời gian thuê", render: (r) => `${r.startDate} → ${r.endDate}` },
+                      { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
+                      { key: "rent", label: "Tiền thuê tạm tính", render: (r) => money(r.estimatedRent) },
+                    ]}
+                    empty="Không có đơn phù hợp bộ lọc."
+                  />
+                )} />
+              )}
             </Panel>
 
             <Panel

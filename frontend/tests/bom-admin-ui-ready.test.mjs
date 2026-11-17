@@ -258,13 +258,26 @@ test('Rental report uses the server aggregate and server export',()=>{
   assert.match(adapter,/filters = \{\}/);
 });
 
-test('BOM dashboard offers a facility filter and facility photos',()=>{
+test('BOM dashboard offers a facility filter, facility photos and no per-facility fan-out',()=>{
   const page=read('../src/pages/bom/DashboardLivePage.jsx');
   assert.match(page,/const \[facility, setFacility\] = useState\(""\)/);
   assert.match(page,/label="Lọc theo cơ sở"/);
   assert.match(page,/import \{ ResourceThumb \} from "@\/components\/bom\/ResourceImages"/);
   assert.match(page,/\{ key: "cover", label: "Ảnh", render: \(r\) => <ResourceThumb/);
-  assert.match(page,/const scoped = facility \? reservations\.filter/);
+  // Counts come from the statistics read model; rows are read for one chosen facility only.
+  assert.match(page,/loadReservationReport/);
+  assert.match(page,/facility \? loadFacilityReservationsAll\(facility/);
+  assert.doesNotMatch(page,/loadReservations\(/, 'the dashboard must not fan out one request per facility');
+});
+
+test('Reservation rows are never fetched across facilities (quy ước 4)',()=>{
+  const data=read('../src/lib/bomApiData.js');
+  assert.doesNotMatch(data,/export async function loadReservations/, 'the cross-facility reservation loader must stay deleted');
+  assert.doesNotMatch(data,/MAX_FACILITY_FETCHES/);
+  assert.doesNotMatch(data,/Promise\.all/, 'reservation scopes are read sequentially, not in parallel');
+  for(const file of ['pages/bom/DashboardLivePage.jsx','pages/bom/RentalReportLivePage.jsx']){
+    assert.doesNotMatch(read(`../src/${file}`),/loadReservations\(/);
+  }
 });
 
 test('Admin account creation never leaves an English or half-configured account',()=>{
