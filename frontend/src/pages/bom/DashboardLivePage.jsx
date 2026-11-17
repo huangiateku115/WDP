@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Screen, Panel, Table, Status, Button, money } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Status, Button, Field, Select, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { ResourceThumb } from "@/components/bom/ResourceImages";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 import { serviceLabel } from "@/lib/bomMappers";
@@ -17,6 +19,8 @@ export default function DashboardLivePage() {
     const { rows, truncated, failedFacilities } = await loadReservations(facilities, { signal });
     return { facilities, reservations: rows, truncated, failedFacilities };
   }, []);
+  // Cross-facility is the default; picking a facility narrows every KPI and table below to it.
+  const [facility, setFacility] = useState("");
 
   return (
     <Screen
@@ -25,11 +29,13 @@ export default function DashboardLivePage() {
       action={<Button asChild variant="outline"><Link to="/bom/facilities">Quản lý cơ sở</Link></Button>}
     >
       <AsyncBoundary state={state} render={({ facilities, reservations, truncated, failedFacilities }) => {
+        const scoped = facility ? reservations.filter((r) => r.facilityId === facility) : reservations;
         const byFacility = facilities.map((f) => {
           const rows = reservations.filter((r) => r.facilityId === f.id);
           return {
             id: f.id,
             name: f.name,
+            cover: f.coverImage,
             status: f.status,
             total: rows.length,
             reserved: countBy(rows, "RESERVED"),
@@ -37,21 +43,33 @@ export default function DashboardLivePage() {
             overdue: countBy(rows, "OVERDUE"),
           };
         });
-        const recent = [...reservations]
+        const recent = [...scoped]
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
           .slice(0, 20);
 
         return (
           <>
+            <Panel title="Bộ lọc">
+              <div className="manager-filters">
+                <Field label="Cơ sở" hint="Chọn một cơ sở để thu hẹp mọi số liệu bên dưới; để trống là toàn hệ thống.">
+                  <Select
+                    label="Lọc theo cơ sở"
+                    value={facility}
+                    onChange={setFacility}
+                    options={[["", "Toàn hệ thống"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                  />
+                </Field>
+              </div>
+            </Panel>
             <Kpis items={[
-              ["Tổng số cơ sở", facilities.length, "Bản ghi cơ sở"],
+              ["Tổng số cơ sở", facilities.length, "Bản ghi cơ sở trên hệ thống"],
               ["Cơ sở đang hoạt động", facilities.filter((f) => f.status === "ACTIVE").length, "Đang nhận đơn mới"],
-              ["Tổng số đơn", reservations.length, "Trên mọi cơ sở"],
-              ["Đơn đang thuê", countBy(reservations, "ACTIVE"), "Đơn có trạng thái Đang sử dụng"],
-              ["Chờ duyệt", countBy(reservations, "RESERVED"), "Đơn có trạng thái Chờ xử lý"],
-              ["Quá hạn", countBy(reservations, "OVERDUE"), "Đơn có trạng thái Quá hạn"],
-              ["Đã đóng", countBy(reservations, "CLOSED"), "Đơn có trạng thái Đã đóng"],
-              ["Đã hủy", countBy(reservations, "CANCELLED"), "Đơn có trạng thái Đã hủy"],
+              ["Tổng số đơn", scoped.length, facility ? facilityName(facilities, facility) : "Trên mọi cơ sở"],
+              ["Đơn đang thuê", countBy(scoped, "ACTIVE"), "Đơn có trạng thái Đang sử dụng"],
+              ["Chờ duyệt", countBy(scoped, "RESERVED"), "Đơn có trạng thái Chờ xử lý"],
+              ["Quá hạn", countBy(scoped, "OVERDUE"), "Đơn có trạng thái Quá hạn"],
+              ["Đã đóng", countBy(scoped, "CLOSED"), "Đơn có trạng thái Đã đóng"],
+              ["Đã hủy", countBy(scoped, "CANCELLED"), "Đơn có trạng thái Đã hủy"],
             ]} />
             {truncated && <TruncatedNotice total={facilities.length} shown={Math.min(facilities.length, MAX_FACILITY_FETCHES)} />}
             {failedFacilities?.length > 0 && (
@@ -60,11 +78,12 @@ export default function DashboardLivePage() {
                 {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. Số liệu bên dưới không bao gồm các bản ghi đó.
               </p>
             )}
-            <Panel title="Số đơn theo cơ sở" subtitle="Số lượng theo từng cơ sở.">
+            <Panel title="Số đơn theo cơ sở" subtitle={facility ? `Đang xem: ${facilityName(facilities, facility)}` : "Số lượng theo từng cơ sở."}>
               <Table
                 label="Số đơn theo cơ sở"
-                rows={byFacility}
+                rows={facility ? byFacility.filter((row) => row.id === facility) : byFacility}
                 columns={[
+                  { key: "cover", label: "Ảnh", render: (r) => <ResourceThumb src={r.cover} alt={`Ảnh ${r.name}`} /> },
                   { key: "name", label: "Facility", render: (r) => <Link className="manager-link" to={`/bom/facilities/${r.id}`} state={{ from: "/bom/dashboard" }}>{r.name}</Link> },
                   { key: "status", label: "Business status", render: (r) => <Status value={r.status} /> },
                   { key: "total", label: "Tổng đơn" },
@@ -75,7 +94,7 @@ export default function DashboardLivePage() {
                 empty="Chưa có cơ sở để hiển thị."
               />
             </Panel>
-            <Panel title="Đơn gần đây" subtitle="20 bản ghi mới nhất.">
+            <Panel title="Đơn gần đây" subtitle={`20 bản ghi mới nhất${facility ? ` của ${facilityName(facilities, facility)}` : ""}.`}>
               <Table
                 label="Đơn gần đây"
                 rows={recent}

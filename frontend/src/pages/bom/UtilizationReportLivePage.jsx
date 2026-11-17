@@ -225,7 +225,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
             ["Registered item lots", itemRows.length],
             ["Item volume", m3(usedM3)],
             ["Item weight", kg(usedKg)],
-            ["Volume vs sellable capacity", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : "No sellable capacity"],
+            ["Volume vs sellable capacity", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : "Chưa có công suất bán được"],
             ["Placed on a cell", countBy(itemRows, "placed", true)],
           ]} />
         </div>

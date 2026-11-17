@@ -69,7 +69,7 @@ test('Revenue report keeps its full shell on top of a capability-gated adapter',
 
 test('Rental report renders the server trend series instead of aggregating on the client',()=>{
   const page=read('../src/pages/bom/RentalReportLivePage.jsx');
-  assert.match(page,/import \{ defaultRevenuePeriod, loadRentalTrends \} from "@\/lib\/reportSources"/);
+  assert.match(page,/import \{ defaultRevenuePeriod, exportStatistics, loadRentalTrends, loadReservationReport \} from "@\/lib\/reportSources"/);
   assert.match(page,/loadRentalTrends\(/);
   assert.match(page,/Xu hướng theo kỳ/);
   assert.match(page,/options=\{\[\["day", "Theo ngày"\], \["week", "Theo tuần"\], \["month", "Theo tháng"\]\]\}/);
@@ -87,7 +87,7 @@ test('Audit, login history and the notification inbox expose filters and CSV exp
   assert.match(notifications,/downloadCsv\(/);
   const rental=read('../src/pages/bom/RentalReportLivePage.jsx');
   assert.match(rental,/r\.startDate >= from/);
-  assert.match(rental,/Xuất CSV/);
+  assert.match(rental,/Xuất bảng đang xem \(CSV\)/);
 });
 
 test('CSV export writes a BOM-prefixed UTF-8 blob so Excel keeps Vietnamese',()=>{
@@ -243,4 +243,36 @@ test('No source file contains a broken UTF-8 replacement character',()=>{
   assert.ok(files.length > 100,'walk() found sources to scan');
   const broken=files.filter((file)=>readFileSync(new URL(file,import.meta.url),'utf8').includes('\uFFFD'));
   assert.deepEqual(broken,[],`files with U+FFFD (wrong encoding on write): ${broken.join(', ')}`);
+});
+
+test('Rental report uses the server aggregate and server export',()=>{
+  const page=read('../src/pages/bom/RentalReportLivePage.jsx');
+  assert.match(page,/loadReservationReport/);
+  assert.match(page,/reportType: "reservations"/);
+  for(const format of ['csv','xlsx','pdf']) assert.match(page,new RegExp(`EXPORT_FORMATS = \\[.*${format}`));
+  assert.match(page,/Xuất báo cáo \$\{format\.toUpperCase\(\)\}/);
+  const api=read('../src/api/statisticsApi.js');
+  assert.match(api,/reservations: \(query, config\) => axiosClient\.get\("\/statistics\/reservations"/);
+  const adapter=read('../src/lib/reportSources.js');
+  assert.match(adapter,/export async function loadReservationReport/);
+  assert.match(adapter,/filters = \{\}/);
+});
+
+test('BOM dashboard offers a facility filter and facility photos',()=>{
+  const page=read('../src/pages/bom/DashboardLivePage.jsx');
+  assert.match(page,/const \[facility, setFacility\] = useState\(""\)/);
+  assert.match(page,/label="Lọc theo cơ sở"/);
+  assert.match(page,/import \{ ResourceThumb \} from "@\/components\/bom\/ResourceImages"/);
+  assert.match(page,/\{ key: "cover", label: "Ảnh", render: \(r\) => <ResourceThumb/);
+  assert.match(page,/const scoped = facility \? reservations\.filter/);
+});
+
+test('Admin account creation never leaves an English or half-configured account',()=>{
+  const page=read('../src/pages/admin/UsersLivePage.jsx');
+  for(const english of [/Select a Facility for this account/,/The account was created/,/Facility assignment failed/,/Unable to create the account/,/unknown error/]){
+    assert.doesNotMatch(page,english);
+  }
+  assert.match(page,/Hãy chọn cơ sở cho tài khoản này\./);
+  assert.match(page,/const \[unassignedId, setUnassignedId\] = useState\(""\)/);
+  assert.match(page,/to=\{`\/admin\/users\/\$\{unassignedId\}`\}/);
 });

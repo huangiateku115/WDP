@@ -62,17 +62,64 @@ export function defaultRevenuePeriod(now = new Date()) {
 }
 
 // Any report the statistics export router supports:
-// GET /statistics/export/{csv|xlsx|pdf}?reportType=revenue|facilities-kpi|financial-analytics|…
-export async function exportStatistics({ reportType, format = "csv", from, to, facilityId, signal } = {}) {
+// GET /statistics/export/{csv|xlsx|pdf}?reportType=revenue|facilities-kpi|reservations|…
+// `filters` carries the report-specific query keys the backend allowlists (granularity,
+// serviceType, unitSize…); unknown keys are rejected with 400, so they are never guessed here.
+export async function exportStatistics({ reportType, format = "csv", from, to, facilityId, filters = {}, signal } = {}) {
   const response = await statisticsApi.exportFile(format, {
     reportType,
     fromDate: from,
     toDate: to,
     facilityId,
+    ...filters,
   }, { signal });
   return {
     blob: response?.data instanceof Blob ? response.data : new Blob([response?.data ?? ""]),
-    filename: `${reportType}-${from}-${to}.${format}`,
+    filename: `${reportType}${from ? `-${from}` : ""}${to ? `-${to}` : ""}.${format}`,
+  };
+}
+
+// Reservation lifecycle report: GET /statistics/reservations?fromDate&toDate&facilityId&granularity
+// The backend counts every reservation created in the requested period, across every facility the
+// caller may see, so the console no longer stops at the first 12 facilities.
+export async function loadReservationReport({ from, to, facilityId, granularity = "month", signal } = {}) {
+  const body = (await statisticsApi.reservations({ fromDate: from, toDate: to, facilityId, granularity }, { signal }))?.data?.data ?? {};
+  return {
+    granularity: body.granularity || granularity,
+    totals: {
+      total: body.totalReservations ?? null,
+      paid: body.paidReservations ?? null,
+      pendingPayment: body.pendingPaymentReservations ?? null,
+      awaitingContract: body.awaitingContractReservations ?? null,
+      active: body.activeReservations ?? null,
+      cancelled: body.cancelledReservations ?? null,
+      completed: body.completedReservations ?? null,
+      overdue: body.overdueReservations ?? null,
+      cancellationRate: body.cancellationRate ?? null,
+    },
+    byStatus: Object.entries(body.reservationsByStatus || {})
+      .map(([status, count]) => ({ status, count: Number(count) || 0 }))
+      .sort((a, b) => b.count - a.count),
+    byService: (body.reservationsByService || []).map((row) => ({
+      service: row.serviceType,
+      total: row.total ?? 0,
+      active: row.active ?? 0,
+      cancelled: row.cancelled ?? 0,
+    })),
+    byFacility: (body.reservationsByFacility || []).map((row) => ({
+      facilityId: row.facilityId,
+      total: row.total ?? 0,
+      active: row.active ?? 0,
+      cancelled: row.cancelled ?? 0,
+    })),
+    items: (body.reservationTrend || []).map((row) => ({
+      bucketStart: String(row.bucketStart || "").slice(0, 10),
+      service: row.serviceType,
+      total: row.total ?? 0,
+      paid: row.paid ?? 0,
+      active: row.active ?? 0,
+      cancelled: row.cancelled ?? 0,
+    })),
   };
 }
 

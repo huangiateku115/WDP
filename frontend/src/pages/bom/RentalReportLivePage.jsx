@@ -1,19 +1,23 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Screen, Panel, Table, Status, Field, Input, Select, Button, money } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Status, Field, Input, Select, Button, Details, money } from "@/components/manager/ManagerUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadReservations, facilityName } from "@/lib/bomApiData";
 import { BOM_RESERVATION_STATUSES, serviceLabel } from "@/lib/bomMappers";
-import { downloadCsv } from "@/lib/csvExport";
-import { defaultRevenuePeriod, loadRentalTrends } from "@/lib/reportSources";
+import { apiErrorMessage } from "@/lib/apiError";
+import { downloadCsv, saveBlob } from "@/lib/csvExport";
+import { defaultRevenuePeriod, exportStatistics, loadRentalTrends, loadReservationReport } from "@/lib/reportSources";
 
-const countBy = (rows, status) => rows.filter((row) => row.status === status).length;
 const MAX_FACILITY_FETCHES = 12;
+const EXPORT_FORMATS = ["csv", "xlsx", "pdf"];
 
-// Rental lifecycle report driven by the confirmed reservation API.
-// Payment/revenue totals still need a cross-facility payment ledger endpoint.
+// Two complementary sources:
+//   • GET /statistics/reservations — server aggregate for the selected period, every facility the
+//     caller may see (no 12-facility cap) and the only place an overdue/cancellation count comes
+//     from without loading rows.
+//   • GET /reservations/* — the per-row list the console shows, limited to the loaded facilities.
 export default function RentalReportLivePage({ basePath = "/bom" }) {
   const state = useAsyncData(async ({ signal }) => {
     const facilities = await loadFacilities();
@@ -26,17 +30,44 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const initialPeriod = defaultRevenuePeriod();
+  const periodFrom = from || initialPeriod.from;
+  const periodTo = to || initialPeriod.to;
   const [granularity, setGranularity] = useState("month");
-  const trends = useAsyncData(
-    ({ signal }) => loadRentalTrends({
-      from: from || initialPeriod.from,
-      to: to || initialPeriod.to,
-      facilityId: facility,
-      granularity,
-      signal,
-    }),
-    [from, to, facility, granularity],
+  const [exporting, setExporting] = useState("");
+  const [exportError, setExportError] = useState("");
+  const summary = useAsyncData(
+    ({ signal }) => loadReservationReport({ from: periodFrom, to: periodTo, facilityId: facility, granularity, signal }),
+    [periodFrom, periodTo, facility, granularity],
   );
+  const trends = useAsyncData(
+    ({ signal }) => loadRentalTrends({ from: periodFrom, to: periodTo, facilityId: facility, granularity, signal }),
+    [periodFrom, periodTo, facility, granularity],
+  );
+
+  async function runExport(format) {
+    if (exporting) return;
+    setExportError("");
+    setExporting(format);
+    try {
+      // reportType=reservations accepts fromDate/toDate/facilityId + serviceType/granularity/unitSize.
+      const file = await exportStatistics({
+        reportType: "reservations",
+        format,
+        from: periodFrom,
+        to: periodTo,
+        facilityId: facility,
+        filters: { granularity },
+      });
+      saveBlob(file.filename, file.blob);
+    } catch (error) {
+      setExportError(apiErrorMessage(error));
+    } finally {
+      setExporting("");
+    }
+  }
+
+  const totals = summary.data?.totals || {};
+  const number = (value) => (value === null || value === undefined ? "—" : value);
 
   return (
     <Screen
@@ -54,15 +85,20 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
         return (
           <>
             <Kpis items={[
-              ["Đơn đặt thuê", reservations.length, "Trên mọi cơ sở"],
-              ["Đang thuê", countBy(reservations, "ACTIVE"), "Trạng thái Đang sử dụng"],
-              ["Quá hạn", countBy(reservations, "OVERDUE"), "Trạng thái Quá hạn"],
-              ["Đã đóng", countBy(reservations, "CLOSED"), "Trạng thái Đã đóng"],
+              ["Tổng đơn trong kỳ", number(totals.total), `Đơn tạo từ ${periodFrom} đến ${periodTo}`],
+              ["Đã thanh toán", number(totals.paid), "Thanh toán PayOS đã xác minh"],
+              ["Đang thuê", number(totals.active), "Trạng thái hiện tại: Đang sử dụng"],
+              ["Quá hạn", number(totals.overdue), "Trạng thái hiện tại: Quá hạn"],
+              ["Đã hủy", number(totals.cancelled), "Tỷ lệ hủy tính trên tổng đơn trong kỳ"],
+              ["Đã hoàn tất", number(totals.completed), "Đã trả kho hoặc đã đóng"],
+              ["Chờ thanh toán", number(totals.pendingPayment), "Chưa thanh toán, còn trong hạn"],
+              ["Chờ ký hợp đồng", number(totals.awaitingContract), "Đã thanh toán nhưng chưa có hợp đồng đã ký"],
             ]} />
+            {summary.error && <p className="bom-warning">Không tải được số liệu tổng hợp: {summary.error}</p>}
             {failedFacilities?.length > 0 && (
               <p className="bom-warning">
                 Không tải được đơn đặt thuê của {failedFacilities.length} cơ sở:{" "}
-                {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. Báo cáo bên dưới không bao gồm các bản ghi đó.
+                {failedFacilities.slice(0, 5).join(", ")}{failedFacilities.length > 5 ? "…" : ""}. Danh sách đơn bên dưới không bao gồm các bản ghi đó.
               </p>
             )}
             <Panel title="Bộ lọc">
@@ -84,8 +120,52 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                 <Field label="Đến ngày">
                   <Input aria-label="Đến ngày" type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
                 </Field>
+                <Field label="Cách gộp kỳ">
+                  <Select label="Gộp theo" value={granularity} onChange={setGranularity}
+                    options={[["day", "Theo ngày"], ["week", "Theo tuần"], ["month", "Theo tháng"]]} />
+                </Field>
               </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button variant="outline" onClick={summary.reload} disabled={summary.loading}>Tính lại</Button>
+                {EXPORT_FORMATS.map((format) => (
+                  <Button key={format} variant="outline" disabled={Boolean(exporting)} onClick={() => runExport(format)}>
+                    {exporting === format ? "Đang xuất…" : `Xuất báo cáo ${format.toUpperCase()}`}
+                  </Button>
+                ))}
+              </div>
+              {exportError && <p role="alert" className="bom-error mt-4">{exportError}</p>}
             </Panel>
+
+            <Panel title="Tổng hợp theo trạng thái" subtitle={`Đơn tạo trong kỳ ${periodFrom} → ${periodTo}`}>
+              {summary.loading
+                ? <p role="status" className="text-sm text-slate-500">Đang tải số liệu tổng hợp…</p>
+                : (
+                  <>
+                    <Details values={[
+                      ["Tổng đơn", number(totals.total)],
+                      ["Tỷ lệ hủy", totals.cancellationRate === null || totals.cancellationRate === undefined ? "—" : `${totals.cancellationRate}%`],
+                      ...(summary.data?.byStatus || []).map((row) => [row.status, row.count]),
+                    ]} />
+                    <div className="mt-5">
+                      <Table
+                        label="Đơn theo mô hình dịch vụ"
+                        rows={(summary.data?.byService || []).map((row) => ({ ...row, id: row.service }))}
+                        columns={[
+                          { key: "service", label: "Mô hình dịch vụ", render: (r) => serviceLabel(r.service) },
+                          { key: "total", label: "Tổng đơn" },
+                          { key: "active", label: "Đang thuê" },
+                          { key: "cancelled", label: "Đã hủy" },
+                        ]}
+                        empty="Chưa có đơn nào trong kỳ đã chọn."
+                      />
+                    </div>
+                    <p className="bom-note mt-4">
+                      Số liệu tổng hợp do máy chủ tính trên toàn bộ cơ sở bạn có quyền xem. Trạng thái là trạng thái hiện tại của các đơn được tạo trong kỳ, không phải số lần chuyển trạng thái.
+                    </p>
+                  </>
+                )}
+            </Panel>
+
             <Panel
               title="Đơn đặt thuê"
               subtitle={`${rows.length} / ${reservations.length} bản ghi`}
@@ -108,7 +188,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
                     })),
                   )}
                 >
-                  Xuất CSV
+                  Xuất bảng đang xem (CSV)
                 </Button>
               }
             >
@@ -140,13 +220,7 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
 
             <Panel
               title="Xu hướng theo kỳ"
-              subtitle={`${trends.data?.items?.length ?? 0} mốc thời gian`}
-              action={
-                <Field label="Cách gộp">
-                  <Select label="Gộp theo" value={granularity} onChange={setGranularity}
-                    options={[["day", "Theo ngày"], ["week", "Theo tuần"], ["month", "Theo tháng"]]} />
-                </Field>
-              }
+              subtitle={`${trends.data?.items?.length ?? 0} mốc thời gian · gộp theo ${{ day: "ngày", week: "tuần", month: "tháng" }[granularity] || "tháng"}`}
             >
               {trends.error
                 ? <p className="bom-note">{trends.error}</p>

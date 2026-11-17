@@ -29,7 +29,7 @@ const inRange = (value, from, to) => {
 const distinct = (rows, read) => [...new Set(rows.map(read).filter(Boolean))].sort();
 
 function UserPicker({ state, value, onChange, label }) {
-  const options = [["", "Select an account"], ...state.users.filter((u) => userId(u)).map((u) => [userId(u), u.displayName || u.email || userId(u)])];
+  const options = [["", "Chọn tài khoản"], ...state.users.filter((u) => userId(u)).map((u) => [userId(u), u.displayName || u.email || userId(u)])];
   return (
     <Field label={label}>
       <Select label={label} value={value} onChange={onChange} options={options} />

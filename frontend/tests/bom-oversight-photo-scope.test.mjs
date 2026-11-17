@@ -59,7 +59,9 @@ test('Admin account creation assigns the selected Facility in the same flow',()=
   const page=read('../src/pages/admin/UsersLivePage.jsx');
   assert.match(page,/const needsFacility = \["FACILITY_MANAGER", "FACILITY_STAFF"\]\.includes\(role\)/);
   assert.match(page,/await assignAdminUserFacility\(createdId, facilityId\)/);
-  assert.match(page,/assign the Facility from the account detail page/i);
+  // The failure path is Vietnamese and links straight to the account page, not to an instruction.
+  assert.match(page,/Hãy mở trang tài khoản để gán cơ sở\./);
+  assert.match(page,/to=\{`\/admin\/users\/\$\{unassignedId\}`\}/);
   const lib=read('../src/lib/adminUsers.js');
   assert.match(lib,/return userIdFromResponse\(response\)/);
 });

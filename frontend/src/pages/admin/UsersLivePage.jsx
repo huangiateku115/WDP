@@ -264,6 +264,8 @@ function CreateUser({ state }) {
   const [facilityId, setFacilityId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  // Set when the account exists but the facility scope could not be attached.
+  const [unassignedId, setUnassignedId] = useState("");
   const busy = useRef(false);
   // Only Facility Manager / Facility Staff accounts carry a Facility scope, and the backend
   // refuses to assign one to any other role (facility-assignment.service.ts).
@@ -277,23 +279,28 @@ function CreateUser({ state }) {
     setPending(true);
     setError("");
     try {
-      if (needsFacility && !facilityId) throw new Error("Select a Facility for this account.");
+      if (needsFacility && !facilityId) throw new Error("Hãy chọn cơ sở cho tài khoản này.");
       const createdId = await createAdminUser({ email, password, displayName, phone, role }, () => setPassword(""));
       if (needsFacility) {
         if (!createdId) {
-          setError("The account was created, but its identifier was not returned. Assign the Facility from the account detail page.");
+          // The backend creates the account without a facility scope, so the assignment is a
+          // second call. If the id is not returned the account still exists: send the operator to
+          // the detail page instead of leaving a half-configured account behind.
+          setError("Đã tạo tài khoản nhưng máy chủ không trả về mã tài khoản. Hãy mở trang tài khoản để gán cơ sở.");
+          nav("/admin/users");
           return;
         }
         try {
           await assignAdminUserFacility(createdId, facilityId);
         } catch (assignError) {
-          setError(`The account was created, but the Facility assignment failed: ${apiErrorMessage(assignError, "unknown error")}. Assign it from the account detail page.`);
+          setError(`Đã tạo tài khoản nhưng gán cơ sở thất bại: ${apiErrorMessage(assignError, "lỗi không xác định")}`);
+          setUnassignedId(createdId);
           return;
         }
       }
       nav("/admin/users");
     } catch (err) {
-      setError(apiErrorMessage(err, "Unable to create the account."));
+      setError(apiErrorMessage(err, "Không tạo được tài khoản."));
     } finally {
       setPassword("");
       busy.current = false;
@@ -329,6 +336,12 @@ function CreateUser({ state }) {
           )}
           <div className="admin-wide space-y-4">
             <Message error={error} />
+            {unassignedId && (
+              <p className="bom-warning">
+                Tài khoản đã được tạo. Gán cơ sở ngay để tài khoản dùng được.{" "}
+                <Link className="manager-link font-semibold" to={`/admin/users/${unassignedId}`}>Mở trang tài khoản</Link>
+              </p>
+            )}
             <div className="flex flex-wrap gap-3">
               <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang tạo…" : "Tạo người dùng"}</Button>
               <Button type="button" variant="outline" onClick={() => nav("/admin/users")}>Hủy</Button>
