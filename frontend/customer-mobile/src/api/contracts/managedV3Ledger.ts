@@ -13,12 +13,21 @@ const stockDto=z.object({
   byBatch:z.array(placement.extend({batchId:z.string().min(1),quantityUnit:z.string().min(1)})),
   byPhysicalUnit:z.array(z.object({physicalUnitId:objectId,cellIds:z.array(objectId)})),
 });
-const movementDto=z.object({
+const v3MovementDto=z.object({
   _id:objectId,itemId:idRef,managedReservationId:idRef,customerId:idRef,facilityId:idRef,
   schemaVersion:z.literal(3),operationId:z.string().min(1),performedAt:instant,quantity:whole,quantityUnit:z.string().min(1),
   v3Effect:z.object({action:z.enum(['ADD','MOVE','REMOVE']),itemKind:z.enum(['A1_PHYSICAL_UNIT','A2_BATCH']),
     source:z.array(placement).optional(),destination:z.array(placement).optional()}),
 });
+const unifiedMovementDto=z.object({
+  _id:objectId,itemId:idRef,managedReservationId:idRef,customerId:idRef,facilityId:idRef,
+  schemaVersion:z.literal(4),operationId:z.string().min(1),idempotencyKey:z.string().min(1),performedAt:instant,
+  quantity:whole,quantityUnit:z.string().min(1),
+  stockEffect:z.object({action:z.enum(['ADD','MOVE','REMOVE']),operationId:z.string().min(1),ledgerRevision:whole,
+    destination:z.array(z.object({cellId:objectId,quantity:whole}).passthrough()).optional(),
+    source:z.array(z.object({cellId:objectId,quantity:whole}).passthrough()).optional()}).passthrough(),
+}).passthrough();
+const movementDto=z.union([v3MovementDto,unifiedMovementDto]);
 
 function assertScope(sku:Sku,owner:string,row:{customerId:z.infer<typeof idRef>;facilityId:z.infer<typeof idRef>;reservationId:z.infer<typeof idRef>},skuId:string){
   assertOwner(sku,owner);

@@ -22,7 +22,7 @@ export function ManagedSessionSkuPicker({reservationId,sessionId}:{reservationId
     if(first.pagination.totalPages>100)throw new MobileInputError('Danh sách hàng hóa quá lớn để xác minh an toàn.');
     const items=[...first.items];
     for(let page=2;page<=first.pagination.totalPages;page++)items.push(...(await mobileRepo.inventory(owner,page,signal)).items);
-    const skus=items.filter(item=>item.inventorySchemaVersion===3&&item.status==='REGISTERED'&&item.currentCellId==null&&
+    const skus=items.filter(item=>item.inventorySchemaVersion===3&&item.status==='ACTIVE'&&item.currentCellId==null&&
       refId(item.managedReservationId)===reservation._id&&refId(item.facilityId)===refId(reservation.facilityId));
     return {reservation,session,skus,cellCount:eligibleInboundCells(reservation,session).length};
   });
@@ -39,7 +39,7 @@ export function ManagedSessionSkuPicker({reservationId,sessionId}:{reservationId
     {data.data?.skus.map(item=><Card key={item._id}>
       <AppText variant="card">{item.name}</AppText>
       <AppText>Mã hàng: {item.itemCode}</AppText>
-      <AppText>Đăng ký: {item.quantity} {item.quantityUnit}</AppText>
+      <AppText>Chỉ Item Specification đang hoạt động mới có thể lập dòng nhập.</AppText>
       <Button label="Mở kiểm tra nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id,accessSessionId:data.data!.session._id}})}/>
     </Card>)}
   </LiveScreen>;

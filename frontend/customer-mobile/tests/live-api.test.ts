@@ -21,6 +21,7 @@ const {journal,newAttempt}=require('../src/state/attemptJournal') as typeof impo
 const {loadContractReview,submitReviewedContract}=require('../src/api/selfStorageContract') as typeof import('../src/api/selfStorageContract');
 const {paymentContext,openDeposit,openSelfStoragePayment}=require('../src/api/selfStoragePayment') as typeof import('../src/api/selfStoragePayment');
 const {checkoutLink,depositDecision,fullRentDecision}=require('../src/domain/livePayment') as typeof import('../src/domain/livePayment');
+const {vietnamDateKey}=require('../src/domain/vietnamDate') as typeof import('../src/domain/vietnamDate');
 
 const [owner,other,facilityId,unitId,pricingId,rentalId,contractId,paymentId]=['1','2','3','4','5','6','7','8'].map(i=>i.repeat(24)) as [string,string,string,string,string,string,string,string];
 const user={_id:owner,role:'CUSTOMER',displayName:'Khách kiểm thử',email:'example@example.invalid',isActive:true};
@@ -142,6 +143,37 @@ test('quote checks exact availability and sends only authoritative booking field
   const quote=await mobileRepo.quote(facilityId,unitId,{start,end,value:'1',unit:'MONTH'});
   expect(quote.estimate.depositAmount).toBe(1000);
   await expect(mobileRepo.book({...quote.body,termsAccepted:true,termsVersionId:'FIXTURE@1'},'fixture-attempt',owner)).resolves.toMatchObject({_id:rentalId});
+});
+
+test('Self Storage same-day quote rechecks the exact VN rental interval before enabling booking',async()=>{
+  configureApiSession('fixture-access');
+  const actualNow=new Date();
+  const today=vietnamDateKey(actualNow);
+  const fakeNow=Date.parse(`${today}T12:00:00+07:00`);
+  const nowSpy=jest.spyOn(Date,'now').mockReturnValue(fakeNow);
+  const endDate=new Date(`${today}T00:00:00.000Z`);endDate.setUTCDate(endDate.getUTCDate()+1);
+  const end=endDate.toISOString().slice(0,10),startDate=today+'T00:00:00.000Z',endDateIso=end+'T00:00:00.000Z';
+  try{
+    const requests:string[]=[];
+    fixture(c=>{
+      requests.push(`${c.method?.toUpperCase()} ${c.url}`);
+      if(c.url==='/storage-units/'+unitId)return envelope({_id:unitId,facilityId,unitCode:'A-01',size:'SMALL',status:'AVAILABLE'});
+      if(c.url?.endsWith('/availability')){
+        expect(c.params).toMatchObject({month:today.slice(0,7),startDate:today,endDate:end});
+        return envelope({storageUnitId:unitId,month:today.slice(0,7),intervals:[],availabilityState:'VERIFIED',
+          rangeAvailability:'AVAILABLE',requestedRange:{startDate,endDate:endDateIso},evaluatedAt:new Date(fakeNow).toISOString()});
+      }
+      if(c.url==='/pricing-rules/resolve')return envelope({_id:pricingId,facilityId,serviceType:'SELF_STORAGE',unitSize:'SMALL',term:{unit:'DAY',value:1},currency:'VND',price:2000,isActive:true,effectiveFrom:'2020-01-01T00:00:00Z'});
+      if(c.url==='/reservations/estimate'){
+        expect(JSON.parse(c.data)).toEqual({pricingPolicyId:pricingId,startDate,endDate:endDateIso});
+        return envelope({estimatedRent:2000,depositAmount:0,taxAmount:0,basePrice:2000,durationDays:1});
+      }
+      throw new Error(`Unexpected request ${c.method} ${c.url}`);
+    });
+    const quote=await mobileRepo.quote(facilityId,unitId,{start:today,end,value:1,unit:'DAY'});
+    expect(quote.body.startDate).toBe(startDate);
+    expect(requests).toEqual(['GET /storage-units/'+unitId,'GET /storage-units/'+unitId+'/availability','GET /pricing-rules/resolve','POST /reservations/estimate']);
+  }finally{nowSpy.mockRestore();}
 });
 
 test('persisted attempts are scoped and only one concurrent submit can claim a key',async()=>{

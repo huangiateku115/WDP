@@ -218,10 +218,12 @@ function ItemDetail({id,accessSessionId}:{id:string;accessSessionId?:string}){
   return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký và tồn kho của mặt hàng." onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
     <ResourceState {...item}/>
     {item.data&&<Card><CardHeading icon="cube-outline" title={item.data.name}/><AppText>Mã hàng {item.data.itemCode}</AppText>
-      <AppText>Đăng ký {item.data.quantity} {item.data.quantityUnit}</AppText>
-      <AppText>{({REGISTERED:'Đã đăng ký',PENDING_INBOUND:'Chờ nhập kho',RECEIVED_PENDING_ACCEPTANCE:'Đã nhận, chờ xác nhận',IN_STORAGE:'Đang lưu kho',PENDING_OUTBOUND:'Chờ xuất kho',CHECKED_OUT:'Đã xuất kho'})[item.data.status]}</AppText>
-      <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
-      <AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>
+      {item.data.inventorySchemaVersion===3?<AppText>SKU V3 · {item.data.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}. Số lượng và số đo được quản lý theo Item Specification.</AppText>:<>
+        <AppText>Đăng ký {item.data.quantity} {item.data.quantityUnit}</AppText>
+        <AppText>{({REGISTERED:'Đã đăng ký',PENDING_INBOUND:'Chờ nhập kho',RECEIVED_PENDING_ACCEPTANCE:'Đã nhận, chờ xác nhận',IN_STORAGE:'Đang lưu kho',PENDING_OUTBOUND:'Chờ xuất kho',CHECKED_OUT:'Đã xuất kho',ACTIVE:'Đang hoạt động',INACTIVE:'Ngừng hoạt động'})[item.data.status]}</AppText>
+        <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
+        {!!item.data.unitDimensionsM&&<AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>}
+      </>}
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
     {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}} accessSessionId={accessSessionId}/>}
     <ResourceState {...stock}/>
@@ -249,13 +251,15 @@ export function Movements(){
   const data=useResource(owner+':'+id,async signal=>mobileRepo.inventoryMovements(await mobileRepo.item(id,owner,signal),owner,signal));
   return <LiveScreen title="Lịch sử di chuyển" eyebrow="KHO KÝ GỬI" subtitle="Các lần nhập, xuất và di chuyển đã ghi nhận." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
     {data.data?.rows.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
-    {data.data?.kind==='V3'&&data.data.rows.map(move=><Card key={move._id}>
-      <AppText variant="card">{{ADD:'Nhập kho',MOVE:'Chuyển ô',REMOVE:'Xuất kho'}[move.v3Effect.action]}</AppText>
+    {data.data?.kind==='V3'&&data.data.rows.map(move=>{const effect=move.schemaVersion===4
+      ?move.stockEffect as {action:'ADD'|'MOVE'|'REMOVE';source?:{cellId:string}[];destination?:{cellId:string}[]}
+      :move.v3Effect as {action:'ADD'|'MOVE'|'REMOVE';source?:{cellId:string}[];destination?:{cellId:string}[]};return <Card key={move._id}>
+      <AppText variant="card">{{ADD:'Nhập kho',MOVE:'Chuyển ô',REMOVE:'Xuất kho'}[effect.action]}</AppText>
       <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
       <AppText>Thao tác {move.operationId}</AppText>
-      {move.v3Effect.source?.map(row=>row.cellId).join(', ') ? <AppText>Ô nguồn: {move.v3Effect.source.map(row=>row.cellId).join(', ')}</AppText>:null}
-      {move.v3Effect.destination?.map(row=>row.cellId).join(', ') ? <AppText>Ô đích: {move.v3Effect.destination.map(row=>row.cellId).join(', ')}</AppText>:null}
-    </Card>)}
+      {effect.source?.map(row=>row.cellId).join(', ') ? <AppText>Ô nguồn: {effect.source.map(row=>row.cellId).join(', ')}</AppText>:null}
+      {effect.destination?.map(row=>row.cellId).join(', ') ? <AppText>Ô đích: {effect.destination.map(row=>row.cellId).join(', ')}</AppText>:null}
+    </Card>;})}
     {data.data?.kind==='LEGACY'&&data.data.rows.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
       <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
       {!!move.inspectionNote&&<AppText>{move.inspectionNote}</AppText>}</Card>)}
