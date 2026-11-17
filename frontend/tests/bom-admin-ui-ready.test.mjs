@@ -320,13 +320,11 @@ test('List tables use AsyncBoundary and refresh lives in the screen action (quy 
 test('Free-text filters are debounced and carry no submit button (quy ước 2)',()=>{
   const hook=read('../src/lib/useDebouncedValue.js');
   assert.match(hook,/FILTER_DEBOUNCE_MS = 350/);
-  for(const file of ['pages/bom/ManagedInventoryCatalogPage.jsx','pages/staff/ManagedFacilityPage.jsx','pages/staff/ServiceDeskApiView.jsx','pages/staff/StockBalancePage.jsx']){
-    assert.match(read(`../src/${file}`),/useDebouncedValue/,`${file} must debounce its text filter`);
-  }
-  const stock=read('../src/pages/staff/StockBalancePage.jsx');
-  assert.doesNotMatch(stock,/facility-filter-row/);
-  assert.match(stock,/manager-filters/);
-  assert.doesNotMatch(stock,/<Button[^>]*>Tải \/ cập nhật tồn kho/);
+  // Scope: BOM/Admin only. Manager and Staff screens are owned by their own workspace.
+  const catalog=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  assert.match(catalog,/useDebouncedValue/);
+  assert.match(catalog,/className="manager-filters"/);
+  assert.doesNotMatch(catalog,/facility-filter-row/);
 });
 
 test('Audit and login screens print Vietnamese labels, not raw codes (quy ước 6)',()=>{

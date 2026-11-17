@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '@/api/facilityManagedApi';
 import managedReservationApi from '@/api/managedReservationApi';
 import { useAuthSession } from '@/lib/authSession';
 import useFacilityResource from '@/lib/useFacilityResource';
-import { useDebouncedValue } from '@/lib/useDebouncedValue';
 import { objectId, recordId } from '@/lib/facilityReview';
 import { managedItemPage, managedReadiness, scopedManagedReservation } from '@/lib/managedFacilityReview';
 import { Screen, Panel, Field, Input, Select, Table, Status, Button, OpenLink, Message, Details } from '@/components/manager/ManagerUI';
@@ -34,9 +33,6 @@ export default function ManagedFacilityPage() {
 
 function Inventory({ user, role }) {
   const [page, setPage] = useState(1), [search, setSearch] = useState(''), [query, setQuery] = useState(''), [status, setStatus] = useState('');
-  // Quy ước 2: the text filter applies on change (debounced) — no separate search button.
-  const debouncedSearch = useDebouncedValue(search);
-  useEffect(() => { setPage(1); setQuery(debouncedSearch.trim()); }, [debouncedSearch]);
   const load = useCallback(async signal => managedItemPage(await api.items(user.assignedFacilityId,
     { page, limit: 20, ...(query ? { search: query } : {}), ...(status ? { status } : {}) }, { signal }), user.assignedFacilityId, page),
   [user.assignedFacilityId, page, query, status]);
@@ -44,10 +40,11 @@ function Inventory({ user, role }) {
   return <Panel title="Hàng hóa trong cơ sở" action={<Button variant="outline" onClick={resource.reload}>Tải lại</Button>}>
     <p className="mb-4">Chọn Xem tồn và lịch sử để kiểm tra hàng đang lưu. Số lượng đăng ký có thể khác số lượng thực tế.</p>
     <p className="mb-4"><OpenLink to={`/${role}/managed-inventory-v3`}>{role === 'manager' ? 'Báo cáo hàng hóa tự quản tại cơ sở' : 'Giám sát hàng hóa trong phiên được giao'}</OpenLink></p>
-    <div className="manager-filters mb-4">
+    <form className="facility-filter-row mb-4" onSubmit={event => { event.preventDefault(); setPage(1); setQuery(search.trim()); }}>
       <Field label="Tìm mã hoặc tên mặt hàng"><Input maxLength={100} value={search} onChange={event => setSearch(event.target.value)} /></Field>
       <Field label="Trạng thái"><Select label="Trạng thái hàng hóa" value={status} onChange={value => { setStatus(value); setPage(1); }} options={[["", 'Tất cả trạng thái'], ...['REGISTERED', 'PENDING_INBOUND', 'RECEIVED_PENDING_ACCEPTANCE', 'IN_STORAGE', 'PENDING_OUTBOUND', 'CHECKED_OUT'].map(value => [value, value])]} /></Field>
-    </div>
+      <Button type="submit">Tìm kiếm</Button>
+    </form>
     <Message error={resource.error} />{resource.loading && <p role="status">Đang tải hàng hóa…</p>}
     {resource.data && <><Table label="Giám sát hàng hóa" rows={resource.data.rows} columns={[
       { key: 'itemCode', label: 'Mã hàng' }, { key: 'name', label: 'Tên hàng' },

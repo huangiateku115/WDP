@@ -76,7 +76,6 @@ function renderPage(file, role, tab = 'inventory', state = {}) {
     '@/lib/useFacilityResource': { default: () => ({ data: null, loading: false, error: '', reload() {}, ...state }), announceReviewChange() {} },
     '@/lib/facilityReview': { objectId: value => /^[a-f\d]{24}$/.test(value || ''), recordId: value => typeof value === 'object' ? value?._id || value?.id : value },
     '@/lib/managedFacilityReview': { managedItemPage, managedReadiness, scopedManagedReservation, scopedTopology, positiveNumber },
-    '@/lib/useDebouncedValue': { useDebouncedValue: value => value, FILTER_DEBOUNCE_MS: 350 },
     '@/components/manager/ManagerUI': ui,
     '@/components/staff/QueuePagination': { default: simple('nav') },
     '@/components/facility/FacilityInventoryDetail': { default: simple('section') },

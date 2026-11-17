@@ -3,8 +3,7 @@ import {useNavigate, useSearchParams} from 'react-router-dom';
 import inventoryApi from '@/api/inventoryApi';
 import {getAccessToken, useAuthSession} from '@/lib/authSession';
 import {inventoryId, validInventoryId} from '@/lib/inventoryRegistration';
-import {useDebouncedValue} from '@/lib/useDebouncedValue';
-import {Screen, Panel, Details, Table, Field, Input, OpenLink, Message} from '@/components/manager/ManagerUI';
+import {Screen, Panel, Details, Table, Button, Input, OpenLink, Message} from '@/components/manager/ManagerUI';
 
 export default function StockBalancePage() {
   const navigate = useNavigate();
@@ -26,7 +25,7 @@ export default function StockBalancePage() {
   }, [accessToken, user?.assignedFacilityId]);
 
   async function load(event) {
-    event?.preventDefault?.();
+    event.preventDefault();
     if (!validInventoryId(itemId)) {
       setError("Nhập mã mặt hàng hợp lệ.");
       return;
@@ -41,7 +40,7 @@ export default function StockBalancePage() {
       const item = itemResponse.data?.data;
       if (itemResponse.data?.success !== true || inventoryId(item) !== itemId ||
           inventoryId(item.facilityId) !== inventoryId(user?.assignedFacilityId)) {
-        throw Error('Mặt hàng này không thuộc cơ sở bạn được phân công.');
+        throw Error('This Item is outside your assigned Facility.');
       }
       if (currentRequest !== request.current || token !== getAccessToken()) return;
       if (item.inventorySchemaVersion === 3) { navigate(`/${workspace}/managed?itemId=${itemId}`, {replace:true}); return; }
@@ -65,22 +64,13 @@ export default function StockBalancePage() {
   }
 
   const balance = result?.balance;
-  // Quy ước 2: a lookup filter applies on change (debounced) instead of waiting for a submit button.
-  const debouncedItemId = useDebouncedValue(itemId);
-  useEffect(() => {
-    if (validInventoryId(debouncedItemId)) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedItemId]);
-
-  return <Screen title="Tồn kho theo lô (luồng cũ)" description="Tra cứu tồn và lô hàng của luồng trước. Hàng hóa tự quản dùng trang Giám sát hàng hóa tự quản." notice="Tồn kho tự cập nhật sau khi bạn nhập mã mặt hàng.">
+  return <Screen title="Tồn kho theo lô (luồng cũ)" description="Tra cứu tồn và lô hàng của luồng trước. Hàng hóa tự quản dùng trang Giám sát hàng hóa tự quản." notice="Tải lại tồn sau nhập, xuất hoặc di chuyển để xem số lượng mới nhất.">
     <OpenLink to={`/${workspace}/managed`}>Về Hàng hóa và tồn kho</OpenLink>
     <Panel title="Tìm mặt hàng">
-      <div className="manager-filters">
-        <Field label="Mã mặt hàng" hint="Dán mã mặt hàng (24 ký tự) để xem tồn; kết quả tự cập nhật khi bạn nhập xong.">
-          <Input aria-label="Mã mặt hàng" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
-        </Field>
-      </div>
-      {loading && <p role="status" className="mt-3 text-sm text-slate-500">Đang tải tồn kho…</p>}
+      <form className="facility-filter-row" onSubmit={load}>
+        <Input aria-label="Mã mặt hàng" value={itemId} onChange={event => setItemId(event.target.value.trim())}/>
+        <Button disabled={loading}>{loading ? "Đang tải…" : "Tải / cập nhật tồn kho"}</Button>
+      </form>
     </Panel>
     <Message error={error}/>
     {result && <>
