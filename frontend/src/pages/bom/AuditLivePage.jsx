@@ -17,7 +17,7 @@ const userIdOf = (profile) =>
   profile?.userId && typeof profile.userId === "object" ? profile.userId._id : profile?.userId;
 const accountLabel = (profile) => {
   const user = profile?.userId && typeof profile.userId === "object" ? profile.userId : {};
-  return user.fullName || user.displayName || user.email || userIdOf(profile) || "Customer";
+  return user.fullName || user.displayName || user.email || userIdOf(profile) || "Khách hàng";
 };
 const when = (value) => (value ? new Date(value).toLocaleString("en-GB") : "—");
 

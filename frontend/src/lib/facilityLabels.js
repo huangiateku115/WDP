@@ -146,6 +146,30 @@ const labels = {
   'Confirm account deactivation': 'Xác nhận ngừng tài khoản',
   'Confirm account reactivation': 'Xác nhận kích hoạt lại tài khoản',
   'Confirm account change': 'Xác nhận thay đổi tài khoản',
+  // Contract workspace + pricing snapshot (values come straight from the contract document).
+  Customer: 'Khách hàng', Contract: 'Hợp đồng', Contracts: 'Hợp đồng',
+  Deposit: 'Đặt cọc', Tax: 'Thuế', 'Total due': 'Tổng phải trả',
+  'Balance due': 'Còn phải trả', 'Deposit credit': 'Trừ tiền đặt cọc',
+  'Pricing policy': 'Chính sách giá', 'Rental term unit': 'Đơn vị thời hạn thuê',
+  // Column labels that still arrived in English.
+  Reserved: 'Đã đặt trước', Overdue: 'Quá hạn', 'Sort order': 'Thứ tự', Level: 'Tầng',
+  Capacity: 'Công suất', Note: 'Ghi chú', 'Envelope volume': 'Thể tích bao',
+  'Identity card': 'Giấy tờ định danh', Verification: 'Xác minh', 'Verified at': 'Xác minh lúc',
+  Position: 'Vị trí', 'Max weight': 'Tải trọng tối đa', IP: 'Địa chỉ IP',
+  // Field-label / boolean states shown as text.
+  Blocked: 'Bị chặn', 'Not assigned': 'Chưa phân bổ', 'Not required': 'Không bắt buộc',
+  'Preferred cell set, not received yet': 'Đã chọn ô ưu tiên, chưa nhận hàng',
+  // Codes rendered as badges or plain cells (Status/Details/Table translate through here).
+  INTERNAL: 'Nội bộ', EMPTY: 'Trống', PARTIAL: 'Một phần', FULL: 'Đầy',
+  READ: 'Đã đọc', UNREAD: 'Chưa đọc',
+  EMAIL: 'Email', IN_APP: 'Trong ứng dụng', SMS: 'Tin nhắn SMS',
+  PAYMENT_REMINDER: 'Nhắc thanh toán', OVERDUE_ALERT: 'Cảnh báo quá hạn',
+  CONTRACT_SIGNED: 'Đã ký hợp đồng', CHECKOUT_REMINDER: 'Nhắc trả kho',
+  DEPOSIT: 'Đặt cọc', CANCELLATION: 'Hủy đơn', REFUND: 'Hoàn tiền',
+  SHELF_CONSTRAINT: 'Giới hạn tầng kệ', SENT: 'Đã gửi', FIXED: 'Số tiền cố định',
+  NOT_ASSIGNED: 'Chưa phân bổ', NOT_REQUIRED: 'Không bắt buộc',
+  PROMOTIONAL: 'Khuyến mại', LOYALTY: 'Khách hàng thân thiết', FEE_WAIVER: 'Miễn giảm phí',
+  PERCENTAGE: 'Theo phần trăm', UNDEFINED: 'Chưa xác định',
 };
 
 export function facilityLabel(value) {

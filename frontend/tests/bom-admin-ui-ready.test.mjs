@@ -145,3 +145,45 @@ test('Policy and discount write mappers stay deleted while read mappers remain',
   assert.doesNotMatch(reportSources,/export async function exportRevenueReport/);
   assert.match(reportSources,/export async function exportStatistics/);
 });
+test('Every visible BOM/Admin field label exists in the Vietnamese dictionary',()=>{
+  const dictionary=read('../src/lib/facilityLabels.js');
+  const keys=new Set();
+  for(const match of dictionary.matchAll(/(?:^|[\s,{])(?:'([^']+)'|([A-Za-z][A-Za-z0-9_]*))\s*:/g)){
+    keys.add(match[1] || match[2]);
+  }
+  assert.ok(keys.has('Customer') && keys.has('Deposit') && keys.has('Tax'),'dictionary keeps the contract labels');
+  // Labels are rendered through facilityLabel(), so any label missing here shows up in English.
+  const files=[
+    'pages/bom/AuditLivePage.jsx','pages/bom/DashboardLivePage.jsx','pages/bom/FacilityPage.jsx',
+    'pages/bom/OversightLivePage.jsx','pages/bom/RentalReportLivePage.jsx','pages/bom/ReportsPages.jsx',
+    'pages/bom/UtilizationReportLivePage.jsx','pages/admin/LiveSystemPages.jsx','pages/admin/ServiceConsolePage.jsx',
+    'pages/shared/ContractLookupPage.jsx','pages/shared/CustomerProfilesPage.jsx','pages/shared/InventoryItemsPage.jsx',
+    'pages/shared/NotificationsPage.jsx','pages/shared/ReservationDetailPage.jsx','pages/shared/ReservationsOversightPage.jsx',
+    'pages/shared/StorageUnitsPage.jsx','pages/shared/WarehouseStructurePage.jsx',
+  ];
+  // "Sang", "Kho" and "Trong kho" are Vietnamese words that happen to be plain ASCII.
+  const allowed=new Set(['Sang','Kho','Trong kho']);
+  const missing=[];
+  for(const file of files){
+    const source=read(`../src/${file}`);
+    const labels=[];
+    for(const match of source.matchAll(/\[\s*"([^"]{2,60})"\s*,/g)) labels.push(match[1]);
+    for(const match of source.matchAll(/label:\s*"([^"]{2,60})"/g)) labels.push(match[1]);
+    for(const label of labels){
+      if(/[^\x20-\x7E]/.test(label)) continue;      // already Vietnamese
+      if(!/^[A-Z]/.test(label)) continue;           // object keys such as "createdAt" are data, not labels
+      if(allowed.has(label) || keys.has(label)) continue;
+      missing.push(`${file}: ${label}`);
+    }
+  }
+  assert.deepEqual(missing,[],`field labels missing from lib/facilityLabels.js: ${missing.join(' | ')}`);
+});
+
+test('Contract pricing snapshot never invents English labels or prints raw ids',()=>{
+  const page=read('../src/pages/shared/ContractLookupPage.jsx');
+  assert.doesNotMatch(page,/labelize/);
+  assert.match(page,/const shortRef = \(value\) =>/);
+  assert.match(page,/"Pricing policy", shortRef\(pricing\.pricingPolicyId\)/);
+  assert.doesNotMatch(page,/No pricing values were captured/);
+  assert.doesNotMatch(page,/could not be opened/);
+});

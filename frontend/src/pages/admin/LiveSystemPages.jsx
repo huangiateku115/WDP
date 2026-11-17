@@ -68,7 +68,7 @@ export function DashboardPage() {
         <Panel title="Phân bố vai trò">
           <Table
             label="Phân bố vai trò"
-            rows={[...new Set(state.users.map((u) => u.role || "Role not returned"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Role not returned") === role).length }))}
+            rows={[...new Set(state.users.map((u) => u.role || "Chưa rõ vai trò"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Chưa rõ vai trò") === role).length }))}
             columns={[{ key: "role", label: "Role" }, { key: "count", label: "Users" }]}
           />
         </Panel>

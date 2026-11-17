@@ -15,8 +15,8 @@ import { canReviewReservations } from "@/lib/roles";
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
 const customerName = (reservation) => {
   const customer = reservation?.customerId;
-  if (customer && typeof customer === "object") return customer.fullName || customer.displayName || customer.email || "Customer";
-  return "Customer";
+  if (customer && typeof customer === "object") return customer.fullName || customer.displayName || customer.email || "Khách hàng";
+  return "Khách hàng";
 };
 const facilityName = (reservation) => {
   const facility = reservation?.facilityId;
@@ -27,7 +27,7 @@ const unitLabel = (reservation) => {
   return (unit && typeof unit === "object" ? unit.unitCode : unit) || "—";
 };
 const timelineOf = (reservation) => (Array.isArray(reservation?.statusHistory) ? reservation.statusHistory : [])
-  .map((entry) => ({ at: entry.createdAt, status: entry.status, note: entry.reason || "Status change" }))
+  .map((entry) => ({ at: entry.createdAt, status: entry.status, note: entry.reason || "Đổi trạng thái" }))
   .reverse();
 
 export default function ReservationDetailPage({ managed = false, basePath = "/admin/reservations" }) {

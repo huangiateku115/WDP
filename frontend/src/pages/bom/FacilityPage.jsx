@@ -202,7 +202,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Country", facility.country],
                 ["City / Province", facility.city],
                 ["Ward / Commune", facility.ward],
-                ["Street / area", facility.district],
+                ["Street / Area", facility.district],
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],

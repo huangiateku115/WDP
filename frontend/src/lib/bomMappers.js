@@ -357,7 +357,7 @@ export function policyFromDto(d) {
     facilityId: d?.facilityId,
     service: d?.serviceType || "",
     type: d?.type,
-    name: BOM_POLICY_LABELS[d?.type] || d?.type || "Policy",
+    name: BOM_POLICY_LABELS[d?.type] || d?.type || "Chính sách",
     description: config.description || "",
     rule: config.rule || "",
     effectiveFrom: fromInstant(d?.effectiveFrom),
@@ -412,7 +412,7 @@ export function categoryFromDto(d) {
     facilityId: d?.facilityId,
     service: d?.serviceType || "",
     type: d?.type,
-    name: allowed.length ? allowed.join(", ") : "Item category",
+    name: allowed.length ? allowed.join(", ") : "Danh mục hàng hóa",
     allowedCategories: allowed.join("\n"),
     blockedCategories: blocked.join("\n"),
     allowedCount: allowed.length,
@@ -443,7 +443,7 @@ export function reservationFromDto(d) {
     isManaged: d?.serviceType === "MANAGED_INVENTORY",
     customerName: (customer && typeof customer === "object"
       ? customer.displayName || customer.fullName || customer.email
-      : null) || "Customer",
+      : null) || "Khách hàng",
     unitCode: unit && typeof unit === "object" ? unit.unitCode : undefined,
     unitSize: unit && typeof unit === "object" ? unit.size : undefined,
     allocatedCapacity: d?.allocatedCapacity ?? null,

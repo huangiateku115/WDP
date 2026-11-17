@@ -6,6 +6,7 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { apiErrorMessage } from "@/lib/apiError";
 import { notificationApi } from "@/api/notificationApi";
 import { filterNotifications } from "@/lib/facilityNotifications";
+import { facilityLabel } from "@/lib/facilityLabels";
 import { downloadCsv } from "@/lib/csvExport";
 
 // Shared notification inbox for BOM and Admin. The endpoint returns the notifications of the
@@ -75,7 +76,8 @@ export default function NotificationsPage() {
                   [["title", "Tiêu đề"], ["type", "Loại"], ["content", "Nội dung"], ["channel", "Kênh"], ["isRead", "Đã đọc"], ["createdAt", "Thời điểm nhận"]],
                   visible.map((row) => ({
                     ...row,
-                    channel: Array.isArray(row.sentVia) && row.sentVia.length ? row.sentVia.join(", ") : "",
+                    type: facilityLabel(row.type || ""),
+                    channel: Array.isArray(row.sentVia) && row.sentVia.length ? row.sentVia.map(facilityLabel).join(", ") : "",
                     isRead: row.isRead ? "Đã đọc" : "Chưa đọc",
                     createdAt: row.createdAt ? new Date(row.createdAt).toLocaleString("vi-VN") : "",
                   })),
@@ -99,7 +101,7 @@ export default function NotificationsPage() {
                   label="Lọc theo loại thông báo"
                   value={type}
                   onChange={setType}
-                  options={[["", "Tất cả loại"], ...types.map((value) => [value, value])]}
+                  options={[["", "Tất cả loại"], ...types.map((value) => [value, facilityLabel(value)])]}
                 />
               </Field>
               <Field label="Tìm kiếm">
@@ -119,9 +121,9 @@ export default function NotificationsPage() {
                 rows={visible}
                 columns={[
                   { key: "title", label: "Tiêu đề", render: (r) => r.title || "Thông báo" },
-                  { key: "type", label: "Loại", render: (r) => r.type || "—" },
+                  { key: "type", label: "Loại", render: (r) => facilityLabel(r.type || "—") },
                   { key: "content", label: "Nội dung", render: (r) => r.content || "—" },
-                  { key: "channel", label: "Kênh", render: (r) => (Array.isArray(r.sentVia) && r.sentVia.length ? r.sentVia.join(", ") : "—") },
+                  { key: "channel", label: "Kênh", render: (r) => (Array.isArray(r.sentVia) && r.sentVia.length ? r.sentVia.map(facilityLabel).join(", ") : "—") },
                   { key: "state", label: "Trạng thái", render: (r) => (r.isRead ? "Đã đọc" : "Chưa đọc") },
                   { key: "at", label: "Thời điểm nhận", render: (r) => (r.createdAt ? new Date(r.createdAt).toLocaleString("vi-VN") : "—") },
                   {

@@ -150,7 +150,7 @@ function ItemDetail({ id, basePath }) {
               ["Total volume", m3(row.totalVolumeM3)],
               ["Total weight", kg(row.totalWeightKg)],
               ["Managed reservation", row.reservationId || "—"],
-              ["Placement", row.currentCellId ? `Stored on cell ${row.currentCellId}` : row.preferredCellId ? "Preferred cell set, not received yet" : "Not assigned"],
+              ["Placement", row.currentCellId ? `Đang xếp ở ô ${row.currentCellId}` : row.preferredCellId ? "Đã chọn ô ưu tiên, chưa nhận hàng" : "Chưa phân bổ"],
               ["Inbound requested", stamp(row.inboundRequestedAt)],
               ["Inbound confirmed", stamp(row.inboundConfirmedAt)],
               ["Rejection reason", row.rejectionReason || "—"],
