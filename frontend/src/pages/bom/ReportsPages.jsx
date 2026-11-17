@@ -20,25 +20,21 @@ const REPORTS = [
     key: "utilization",
     title: "Mức sử dụng toàn hệ thống",
     description: "Tỷ lệ lấp đầy kho riêng và thể tích lưu trữ hàng hóa.",
-    live: true,
   },
   {
     key: "rentals",
     title: "Lịch sử thuê kho",
     description: "Vòng đời đơn đặt thuê trên mọi cơ sở.",
-    live: true,
   },
   {
     key: "revenue",
     title: "Doanh thu toàn hệ thống",
     description: "Doanh thu đã thu, trạng thái thanh toán và tổng hợp theo kỳ.",
-    live: true,
   },
   {
     key: "facilities-ranking",
     title: "Xếp hạng cơ sở",
     description: "So sánh đơn đặt thuê, khách hàng và doanh thu giữa các cơ sở.",
-    live: true,
   },
 ];
 
@@ -52,11 +48,7 @@ export function ReportsIndexPage({ basePath = "/bom" }) {
         {REPORTS.map((report) => (
           <Panel key={report.key} title={report.title}>
             <p className="mb-5 text-sm text-slate-500">{report.description}</p>
-            {report.live ? (
-              <OpenLink to={`${basePath}/reports/${report.key}`}>Mở báo cáo</OpenLink>
-            ) : (
-              <p className="text-sm text-slate-500">Chưa có dữ liệu.</p>
-            )}
+            <OpenLink to={`${basePath}/reports/${report.key}`}>Mở báo cáo</OpenLink>
           </Panel>
         ))}
       </div>

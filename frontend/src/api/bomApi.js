@@ -79,10 +79,6 @@ export const bomReservationWriteApi = {
   approve: (id) => axiosClient.patch(`/reservations/${encode(id)}/approve`),
   reject: (id, reason) => axiosClient.patch(`/reservations/${encode(id)}/reject`, { reason }),
   managedGet: (id, config) => axiosClient.get(`/reservations/managed/${encode(id)}`, config),
-  managedApprove: (id) => axiosClient.patch(`/reservations/managed/${encode(id)}/approve`),
-  managedReject: (id, reason) => axiosClient.patch(`/reservations/managed/${encode(id)}/reject`, { reason }),
-  managedActivate: (id) => axiosClient.patch(`/reservations/managed/${encode(id)}/activate`),
-  managedMockPay: (id) => axiosClient.post(`/reservations/managed/${encode(id)}/mock-pay`),
 };
 
 export const bomContractApi = {

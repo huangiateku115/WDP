@@ -61,10 +61,6 @@ export function defaultRevenuePeriod(now = new Date()) {
   return { from: `${month}-01`, to: `${month}-${pad(now.getDate())}` };
 }
 
-export async function exportRevenueReport({ format = "csv", from, to, facilityId, signal } = {}) {
-  return exportStatistics({ reportType: "revenue", format, from, to, facilityId, signal });
-}
-
 // Any report the statistics export router supports:
 // GET /statistics/export/{csv|xlsx|pdf}?reportType=revenue|facilities-kpi|financial-analytics|…
 export async function exportStatistics({ reportType, format = "csv", from, to, facilityId, signal } = {}) {

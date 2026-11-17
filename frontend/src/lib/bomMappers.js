@@ -21,7 +21,6 @@ export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key,
 // Display labels for backend enum values rendered in the console (never show raw codes).
 export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Thuê kho riêng", MANAGED_INVENTORY: "Lưu trữ hàng hóa" };
 export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Khuyến mại", LOYALTY: "Khách hàng thân thiết", FEE_WAIVER: "Miễn phụ phí" };
-export const BOM_DISCOUNT_VALUE_LABELS = { PERCENTAGE: "Phần trăm", FIXED: "Số tiền cố định", UNDEFINED: "Chưa xác định" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
 
 // Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
@@ -368,32 +367,10 @@ export function policyFromDto(d) {
     config,
   };
 }
-export function policyBody(form) {
-  const body = {
-    facilityId: form.facilityId,
-    type: form.type,
-    config: { description: (form.description || "").trim(), rule: (form.rule || "").trim() },
-    effectiveFrom: toInstant(form.effectiveFrom),
-    isActive: form.status === "ACTIVE",
-  };
-  if (form.service) body.serviceType = form.service;
-  return body;
-}
-// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
-export function policyUpdateBody(form, { effective = false } = {}) {
-  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
-  const body = {
-    config: { description: (form.description || "").trim(), rule: (form.rule || "").trim() },
-    effectiveFrom: toInstant(form.effectiveFrom),
-  };
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
-}
 
 /* --------------------- Discounts / waivers (Policy) -------------------- */
 export const BOM_DISCOUNT_TYPES = ["DISCOUNT", "WAIVER"];
 export const BOM_DISCOUNT_KINDS = ["PROMOTIONAL", "LOYALTY", "FEE_WAIVER"];
-export const BOM_DISCOUNT_VALUE_TYPES = ["PERCENTAGE", "FIXED", "UNDEFINED"];
 
 export function discountFromDto(d) {
   const config = d?.config || {};
@@ -416,64 +393,15 @@ export function discountFromDto(d) {
   };
 }
 export function discountValueLabel(row) {
-  if (row.valueType === "UNDEFINED") return "Not defined";
+  if (row.valueType === "UNDEFINED") return "Chưa xác định";
   if (row.valueType === "PERCENTAGE") return `${row.value}%`;
   return money(row.value);
-}
-export function discountBody(form) {
-  const body = {
-    facilityId: form.facilityId,
-    type: form.kind === "FEE_WAIVER" ? "WAIVER" : "DISCOUNT",
-    config: {
-      name: (form.name || "").trim(),
-      kind: form.kind,
-      valueType: form.valueType,
-      value: form.valueType === "UNDEFINED" ? null : Number(form.value),
-      conditions: (form.conditions || "").trim(),
-    },
-    effectiveFrom: toInstant(form.effectiveFrom),
-    isActive: form.status === "ACTIVE",
-  };
-  if (form.service) body.serviceType = form.service;
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
-}
-// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
-export function discountUpdateBody(form, { effective = false } = {}) {
-  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
-  const body = {
-    config: {
-      name: (form.name || "").trim(),
-      kind: form.kind,
-      valueType: form.valueType,
-      value: form.valueType === "UNDEFINED" ? null : Number(form.value),
-      conditions: (form.conditions || "").trim(),
-    },
-    effectiveFrom: toInstant(form.effectiveFrom),
-  };
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
 }
 
 /* --------------------- Item categories (Policy CATEGORY) ---------------- */
 // The backend CATEGORY policy stores only { allowedCategories[], blockedCategories[] } and
 // requires serviceType MANAGED_INVENTORY, so the console edits those two lists directly.
-export const BOM_CATEGORY_TYPES = ["CATEGORY"];
-
 const asCategoryList = (value) => (Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : []);
-// Accepts comma, semicolon or newline separated input, trims, uppercases and de-duplicates
-// (the backend rejects duplicates and stores categories uppercased).
-export function splitCategoryInput(value) {
-  const seen = new Set();
-  return String(value || "")
-    .split(/[,\n;]/)
-    .map((entry) => entry.trim().toUpperCase())
-    .filter((entry) => {
-      if (!entry || entry.length > 80 || seen.has(entry)) return false;
-      seen.add(entry);
-      return true;
-    });
-}
 
 export function categoryFromDto(d) {
   const config = d?.config || {};
@@ -494,51 +422,6 @@ export function categoryFromDto(d) {
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
     config,
-  };
-}
-function categoryConfig(form) {
-  const allowed = splitCategoryInput(form.allowedCategories);
-  const blocked = splitCategoryInput(form.blockedCategories).filter((entry) => !allowed.includes(entry));
-  return { allowedCategories: allowed, blockedCategories: blocked };
-}
-export function categoryBody(form) {
-  const body = {
-    facilityId: form.facilityId,
-    type: "CATEGORY",
-    // CATEGORY policies are Managed Inventory only; any other service model is rejected.
-    serviceType: "MANAGED_INVENTORY",
-    config: categoryConfig(form),
-    effectiveFrom: toInstant(form.effectiveFrom),
-    isActive: form.status === "ACTIVE",
-  };
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
-}
-// PATCH /policies/:id only accepts effectiveFrom, effectiveTo and config.
-export function categoryUpdateBody(form, { effective = false } = {}) {
-  if (effective) return form.effectiveTo ? { effectiveTo: toInstant(form.effectiveTo) } : {};
-  const body = { config: categoryConfig(form), effectiveFrom: toInstant(form.effectiveFrom) };
-  if (form.effectiveTo) body.effectiveTo = toInstant(form.effectiveTo);
-  return body;
-}
-
-/* ---------------------------- Contracts ---------------------------- */
-export function contractFromDto(d) {
-  const reservation = d?.reservationId && typeof d.reservationId === "object" ? d.reservationId : null;
-  const customer = d?.customerSnapshot || {};
-  return {
-    id: d?._id,
-    code: d?.contractCode || "",
-    status: d?.status || "",
-    customerName: customer.fullName || customer.displayName || customer.email
-      || (d?.customerId && typeof d.customerId === "object" ? d.customerId.displayName || d.customerId.email : "")
-      || "Customer",
-    reservationId: reservation?._id || (typeof d?.reservationId === "string" ? d.reservationId : ""),
-    reservationCode: reservation?.reservationCode || "",
-    facilityId: reservation?.facilityId && typeof reservation.facilityId === "object" ? reservation.facilityId._id : reservation?.facilityId,
-    serviceType: reservation?.serviceType || "",
-    signedAt: d?.signedByCustomerAt || "",
-    createdAt: d?.createdAt || "",
   };
 }
 

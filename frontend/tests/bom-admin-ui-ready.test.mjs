@@ -119,3 +119,29 @@ test('Warehouse information is labelled as information and only shown for Manage
     assert.doesNotMatch(page,/Khu vực → lối đi → kệ → ô chứa/);
   }
 });
+test('Managed reservations expose no unsupported console actions',()=>{
+  const page=read('../src/pages/shared/ReservationDetailPage.jsx');
+  for(const dead of [/managedApprove/,/managedReject/,/managedMockPay/,/managedActivate/]){
+    assert.doesNotMatch(page,dead);
+  }
+  assert.match(page,/\{!managed && canReview && reservation\.status === "RESERVED"/);
+  assert.match(page,/Đơn lưu trữ hàng hóa được duyệt theo luồng hợp đồng và bàn giao tại cơ sở\./);
+  const api=read('../src/api/bomApi.js');
+  assert.doesNotMatch(api,/managedApprove|managedReject|managedMockPay|managedActivate/);
+  assert.match(api,/managedGet: \(id, config\) => axiosClient\.get\(`\/reservations\/managed\/\$\{encode\(id\)\}`/);
+  const roles=read('../src/lib/roles.js');
+  assert.doesNotMatch(roles,/canMockPayReservations/);
+});
+
+test('Policy and discount write mappers stay deleted while read mappers remain',()=>{
+  const mappers=read('../src/lib/bomMappers.js');
+  for(const dead of ['policyBody','policyUpdateBody','discountBody','discountUpdateBody','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','BOM_DISCOUNT_VALUE_TYPES','contractFromDto']){
+    assert.doesNotMatch(mappers,new RegExp(`${dead}\\b`));
+  }
+  for(const alive of ['policyFromDto','discountFromDto','discountValueLabel','categoryFromDto','pricingBody','pricingUpdateBody']){
+    assert.match(mappers,new RegExp(`${alive}\\b`));
+  }
+  const reportSources=read('../src/lib/reportSources.js');
+  assert.doesNotMatch(reportSources,/export async function exportRevenueReport/);
+  assert.match(reportSources,/export async function exportStatistics/);
+});
