@@ -116,6 +116,11 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
   const racks = structure.racks;
   const unitRows = units.rows;
   const itemRows = inventory.rows;
+  // Show only the blocks the facility actually sells: units for SELF_STORAGE, capacity and
+  // warehouse information for MANAGED_INVENTORY. A facility may offer both models.
+  const serviceTypes = (facilities.find((f) => f.id === facilityId) || {}).serviceTypes || [];
+  const offersSelfStorage = serviceTypes.includes("SELF_STORAGE");
+  const offersManaged = serviceTypes.includes("MANAGED_INVENTORY");
 
   const unitsTotal = unitRows.length;
   const unitsOccupied = unitRows.filter((u) => UNIT_ALLOCATED.includes(u.status)).length;
@@ -153,13 +158,15 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
   return (
     <>
       <Kpis items={[
-        ["Tỷ lệ lấp đầy kho riêng", unitsTotal ? `${Math.round((unitsOccupied / unitsTotal) * 100)}%` : "—", `${unitsOccupied} / ${unitsTotal} kho đang sử dụng`],
-        ["Thể tích đã dùng", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : m3(usedM3), sellableM3 ? `${m3(usedM3)} / ${m3(sellableM3)} công suất bán được` : "Chưa cấu hình công suất bán được"],
-        ["Ô còn trống", cells ? `${availableCells} / ${cells}` : "—", "Ô có thể xếp thêm hàng"],
-        ["Tải trọng có thể phân bổ", kg(allocatableKg), `trên ${kg(ratedKg)} định mức`],
+        ...(offersSelfStorage ? [["Tỷ lệ lấp đầy kho riêng", unitsTotal ? `${Math.round((unitsOccupied / unitsTotal) * 100)}%` : "—", `${unitsOccupied} / ${unitsTotal} kho đang sử dụng`]] : []),
+        ...(offersManaged ? [
+          ["Thể tích đã dùng", sellableM3 ? `${Math.round(pct(usedM3, sellableM3))}%` : m3(usedM3), sellableM3 ? `${m3(usedM3)} / ${m3(sellableM3)} công suất bán được` : "Chưa cấu hình công suất bán được"],
+          ["Ô còn trống", cells ? `${availableCells} / ${cells}` : "—", "Ô có thể xếp thêm hàng"],
+          ["Tải trọng có thể phân bổ", kg(allocatableKg), `trên ${kg(ratedKg)} định mức`],
+        ] : []),
       ]} />
 
-      <Panel title="Tỷ lệ lấp đầy kho riêng" subtitle={`${units.rows.length} / ${units.total} kho · ${facilityName(facilities, facilityId)}`}>
+      {offersSelfStorage && <Panel title="Tỷ lệ lấp đầy kho riêng" subtitle={`${units.rows.length} / ${units.total} kho · ${facilityName(facilities, facilityId)}`}>
         {units.truncated && <TruncatedNotice total={units.total} shown={units.rows.length} />}
         {unitsTotal > 0 && <Meter label="Kho riêng đang sử dụng" used={unitsOccupied} max={unitsTotal} unit="kho" />}
         <div className="mt-5">
@@ -186,8 +193,9 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
             empty="Cơ sở này chưa đăng ký kho riêng nào."
           />
         </div>
-      </Panel>
+      </Panel>}
 
+      {offersManaged && (
       <Panel
         title="Công suất lưu trữ hàng hóa"
         subtitle={capacity
@@ -232,38 +240,41 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
           />
         )}
       </Panel>
+      )}
 
-      <Panel title="Cấu trúc kho và tải trọng" subtitle="Khu vực → lối đi → kệ → ô chứa.">
+      {offersManaged && (
+      <Panel title="Thông tin kho và tải trọng">
         {!structure.available && (
           <p className="bom-note mb-5">
-            The warehouse map is unavailable for this facility: {structure.reason || "the facility is not part of the managed warehouse map"}.
+            Cơ sở này không thuộc bản đồ kho: {structure.reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
           </p>
         )}
         <Details values={[
-          ["Zones", structure.zones.length],
-          ["Racks", racks.length],
-          ["Cells", `${availableCells} of ${cells} available`],
-          ["Rated weight capacity", kg(ratedKg)],
-          ["Allocatable weight capacity", kg(allocatableKg)],
-          ["Rack envelope volume", m3(envelopeM3)],
+          ["Khu vực", structure.zones.length],
+          ["Kệ", racks.length],
+          ["Ô chứa", cells ? `${availableCells} / ${cells} ô trống` : "—"],
+          ["Tải trọng định mức", kg(ratedKg)],
+          ["Tải trọng có thể phân bổ", kg(allocatableKg)],
+          ["Thể tích bao kệ", m3(envelopeM3)],
         ]} />
         <div className="mt-5">
           <Table
             label="Tải trọng vật lý của kệ"
             rows={racks}
             columns={[
-              { key: "rackCode", label: "Rack" },
-              { key: "zone", label: "Zone", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
-              { key: "aisleCode", label: "Aisle" },
-              { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-              { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} available` },
-              { key: "envelopeM3", label: "Envelope volume", render: (r) => m3(r.envelopeM3) },
-              { key: "ratedCapacityKg", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
+              { key: "rackCode", label: "Kệ" },
+              { key: "zone", label: "Khu vực", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
+              { key: "aisleCode", label: "Lối đi" },
+              { key: "operationalStatus", label: "Trạng thái", render: (r) => <Status value={r.operationalStatus} /> },
+              { key: "cells", label: "Ô chứa", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
+              { key: "envelopeM3", label: "Thể tích bao kệ", render: (r) => m3(r.envelopeM3) },
+              { key: "ratedCapacityKg", label: "Định mức / phân bổ được", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
             ]}
-            empty="No warehouse zone, rack or cell is configured for this facility."
+            empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
           />
         </div>
       </Panel>
+      )}
     </>
   );
 }

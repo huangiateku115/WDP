@@ -128,17 +128,22 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
   const availableCells = sumBy(racks, "availableCellCount");
   const ratedKg = sumBy(racks, "ratedCapacityKg");
   const allocatableKg = sumBy(racks, "allocatableCapacityKg");
+  // Only render the blocks the facility actually sells: private units for SELF_STORAGE,
+  // warehouse/inventory for MANAGED_INVENTORY. A facility can offer both.
+  const serviceTypes = (facilities.find((f) => f.id === facilityId) || {}).serviceTypes || [];
+  const offersSelfStorage = serviceTypes.includes("SELF_STORAGE");
+  const offersManaged = serviceTypes.includes("MANAGED_INVENTORY");
 
   return (
     <>
-      <Kpis items={[
+      {offersManaged && <Kpis items={[
         ["Khu vực", structure.zones.length, `Khu vực đang hoạt động · ${facilityName(facilities, facilityId)}`],
         ["Kệ", racks.length, "Trong mọi khu vực đang hoạt động"],
         ["Ô chứa", cells, `${availableCells} ô còn trống để xếp hàng`],
         ["Tải trọng định mức", kg(ratedKg), `${kg(allocatableKg)} có thể phân bổ theo ô`],
-      ]} />
+      ]} />}
 
-      <Panel title="Cấu trúc kho" subtitle="Khu vực → lối đi → kệ → ô chứa.">
+      {offersManaged && <Panel title="Thông tin kho">
         {racks.length > 0 && <Meter label="Tải trọng ô có thể phân bổ" used={allocatableKg} max={ratedKg || allocatableKg || 1} unit="kg" />}
         <p className="bom-note mt-4">
           Tải trọng đã dùng bằng 0 cho đến khi nhân viên xác nhận nhập kho.
@@ -157,9 +162,9 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
           ]}
           empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
         />
-      </Panel>
+      </Panel>}
 
-      <Panel title="Kho riêng" subtitle={`${units.rows.length} / ${units.total} kho`}>
+      {offersSelfStorage && <Panel title="Kho riêng" subtitle={`${units.rows.length} / ${units.total} kho`}>
         {units.truncated && <TruncatedNotice total={units.total} shown={units.rows.length} />}
         <Details values={[
           ["Occupied", countBy(units.rows, "status", "OCCUPIED")],
@@ -181,9 +186,9 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
             empty="Cơ sở này chưa đăng ký kho riêng nào."
           />
         </div>
-      </Panel>
+      </Panel>}
 
-      <Panel title="Hàng hóa lưu trữ" subtitle={`${inventory.rows.length} / ${inventory.total} mặt hàng đã đăng ký`}>
+      {offersManaged && <Panel title="Hàng hóa lưu trữ" subtitle={`${inventory.rows.length} / ${inventory.total} mặt hàng đã đăng ký`}>
         {inventory.truncated && <TruncatedNotice total={inventory.total} shown={inventory.rows.length} />}
         <Details values={[
           ["Số lô đã đăng ký", inventory.rows.length],
@@ -207,7 +212,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
             empty="Cơ sở này chưa có mặt hàng lưu trữ nào."
           />
         </div>
-      </Panel>
+      </Panel>}
 
       <Panel title="Đơn đặt thuê" subtitle={`${reservationRows.length} bản ghi của cơ sở này`}>
         {reservations.failedServiceTypes.length > 0 && (

@@ -92,3 +92,30 @@ test('CSV export writes a BOM-prefixed UTF-8 blob so Excel keeps Vietnamese',()=
   assert.match(csv,/\\uFEFF/);
   assert.match(csv,/replaceAll\('"', '""'\)/);
 });
+
+test('Warehouse information is labelled as information and only shown for Managed Inventory facilities',()=>{
+  // "Cấu trúc kho" is a technical term; the screens only display warehouse information.
+  for(const layout of ['../src/layouts/BomLayout.jsx','../src/layouts/AdminLayout.jsx']){
+    const source=read(layout);
+    assert.match(source,/['"]warehouse['"],Warehouse,['"]Thông tin kho['"]/);
+    assert.doesNotMatch(source,/['"]Cấu trúc kho['"]/);
+  }
+  const warehouse=read('../src/pages/shared/WarehouseStructurePage.jsx');
+  assert.match(warehouse,/title="Thông tin kho"/);
+  const facility=read('../src/pages/bom/FacilityPage.jsx');
+  assert.match(facility,/facility\.serviceTypes\.includes\("MANAGED_INVENTORY"\) && \(/);
+  assert.match(facility,/facility\.serviceTypes\.includes\("SELF_STORAGE"\) && \(/);
+  const oversight=read('../src/pages/bom/OversightLivePage.jsx');
+  assert.match(oversight,/const offersSelfStorage = serviceTypes\.includes\("SELF_STORAGE"\)/);
+  assert.match(oversight,/const offersManaged = serviceTypes\.includes\("MANAGED_INVENTORY"\)/);
+  const utilization=read('../src/pages/bom/UtilizationReportLivePage.jsx');
+  assert.match(utilization,/\.\.\.\(offersSelfStorage \? \[\["Tỷ lệ lấp đầy kho riêng"/);
+  assert.match(utilization,/\.\.\.\(offersManaged \? \[/);
+  // Units are only offered for facilities that sell the Self Storage model.
+  const units=read('../src/pages/shared/StorageUnitsPage.jsx');
+  assert.match(units,/const selectable = facilities\.filter\(\(f\) => f\.serviceTypes\.includes\(SELF_STORAGE\)\)/);
+  // The hierarchy hint was dropped from every screen.
+  for(const page of [facility,oversight,utilization,warehouse]){
+    assert.doesNotMatch(page,/Khu vực → lối đi → kệ → ô chứa/);
+  }
+});

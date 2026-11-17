@@ -79,7 +79,7 @@ export default function WarehouseStructurePage() {
 
   return (
     <Screen
-      title="Cấu trúc kho"
+      title="Thông tin kho"
       description="Khu vực, kệ và ô chứa của cơ sở lưu trữ hàng hóa."
     >
       <AsyncBoundary state={directory} render={(facilities) => {

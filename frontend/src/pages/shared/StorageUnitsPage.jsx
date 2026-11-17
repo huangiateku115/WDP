@@ -56,12 +56,16 @@ export default function StorageUnitsPage() {
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);
+        // Private units only exist for the Self Storage model, so the selector mirrors the
+        // warehouse console and hides every facility that does not sell that model.
+        const selectable = facilities.filter((f) => f.serviceTypes.includes(SELF_STORAGE));
+        const excluded = facilities.length - selectable.length;
         const canWrite = Boolean(facility && facility.status === "ACTIVE" && facility.serviceTypes.includes(SELF_STORAGE));
         const rows = units.data?.rows || [];
         return (
           <>
             <Kpis items={[
-              ["Cơ sở", facilities.length, "Trên toàn hệ thống"],
+              ["Cơ sở", selectable.length, "Cơ sở có dịch vụ Thuê kho riêng"],
               ["Số kho đã tải", units.data?.total ?? "—", "Theo bộ lọc hiện tại"],
               ["Sẵn sàng", countBy(rows, "status", "AVAILABLE"), "Có thể cho thuê"],
               ["Tổng thể tích đã đăng ký", m3(sumBy(rows, "volumeM3")), "Tính từ kích thước kho"],
@@ -77,7 +81,7 @@ export default function StorageUnitsPage() {
                     label="Cơ sở của kho"
                     value={facilityId}
                     onChange={selectFacility}
-                    options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                    options={[["", "Chọn cơ sở"], ...selectable.map((f) => [f.id, `${f.name} (${f.code})`])]}
                   />
                 </Field>
                 <Field label="Trạng thái">
@@ -100,6 +104,11 @@ export default function StorageUnitsPage() {
                   <Input aria-label="Tìm kho riêng" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </Field>
               </div>
+              {excluded > 0 && (
+                <p className="bom-note mt-5">
+                  Ẩn {excluded} cơ sở khác vì cơ sở không cung cấp dịch vụ Thuê kho riêng.
+                </p>
+              )}
               {facility && !canWrite && (
                 <p className="bom-warning mt-5">
                   {facility.name} đang ở trạng thái {facility.status} và không cung cấp dịch vụ Thuê kho riêng, nên không thể tạo kho.

@@ -221,17 +221,17 @@ function FacilityDetail({ basePath, oversightRoot }) {
             <Panel title="Hình ảnh cơ sở">
               <ResourceGallery images={facility.images} alt={`${facility.name} photo`} />
             </Panel>
-            <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
-              const cells = sumBy(racks, "cellCount");
-              const availableCells = sumBy(racks, "availableCellCount");
-              return (
-                <Panel title="Cấu trúc kho" subtitle="Khu vực → lối đi → kệ → ô chứa.">
-                  {!available && (
-                    <p className="bom-note mb-5">
-                      Cơ sở này không thuộc bản đồ kho: {reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
-                      Kho riêng là mô hình lưu trữ áp dụng cho cơ sở này.
-                    </p>
-                  )}
+            {facility.serviceTypes.includes("MANAGED_INVENTORY") && (
+              <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
+                const cells = sumBy(racks, "cellCount");
+                const availableCells = sumBy(racks, "availableCellCount");
+                return (
+                  <Panel title="Thông tin kho">
+                    {!available && (
+                      <p className="bom-note mb-5">
+                        Cơ sở này không thuộc bản đồ kho: {reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
+                      </p>
+                    )}
                   <Details values={[
                     ["Zones", zones.length],
                     ["Racks", racks.length],
@@ -256,6 +256,8 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 </Panel>
               );
             }} />
+            )}
+            {facility.serviceTypes.includes("SELF_STORAGE") && (
             <AsyncBoundary state={units} render={({ rows, total, truncated }) => (
               <Panel title="Kho riêng" subtitle={`${rows.length} / ${total} kho`}>
                 {truncated && <TruncatedNotice total={total} shown={rows.length} />}
@@ -280,6 +282,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 </div>
               </Panel>
             )} />
+            )}
             {confirmOpen && (
               <ConfirmDialog
                 title="Xác nhận trạng thái cơ sở"
