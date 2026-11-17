@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Message } from "@/components/manager/ManagerUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { facilityLabel } from "@/lib/facilityLabels";
 import customerProfileApi from "@/api/customerProfileApi";
 import auditApi from "@/api/auditApi";
 
@@ -73,7 +74,7 @@ export default function AuditLivePage() {
                   rows={history.map((row) => ({ ...row, id: row._id }))}
                   columns={[
                     { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
-                    { key: "eventType", label: "Sự kiện", render: (r) => r.eventType || "—" },
+                    { key: "eventType", label: "Sự kiện", render: (r) => facilityLabel(r.eventType) || "—" },
                     { key: "status", label: "Kết quả", render: (r) => <Status value={r.status || "—"} /> },
                     { key: "failureReason", label: "Lý do", render: (r) => r.failureReason || "—" },
                     { key: "ip", label: "IP", render: (r) => r.ip || "—" },
@@ -93,7 +94,7 @@ export default function AuditLivePage() {
                   rows={logs.map((row) => ({ ...row, id: row._id }))}
                   columns={[
                     { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
-                    { key: "action", label: "Hành động", render: (r) => r.action || "—" },
+                    { key: "action", label: "Hành động", render: (r) => facilityLabel(r.action) || "—" },
                     { key: "entityType", label: "Đối tượng", render: (r) => r.entityType || "—" },
                     { key: "entityId", label: "Mã đối tượng", render: (r) => r.entityId || "—" },
                     { key: "reason", label: "Lý do", render: (r) => r.reason || "—" },

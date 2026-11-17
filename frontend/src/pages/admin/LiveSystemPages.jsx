@@ -7,7 +7,7 @@ import { AdminScreen, UserApiState } from "@/components/admin/AdminUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { facilityLabel } from "@/lib/facilityLabels";
-import { useAdminUsers, userId, userStatus } from "@/lib/adminUsers";
+import { useAdminUsers, loadAdminUsers, userId, userStatus } from "@/lib/adminUsers";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
 import auditApi from "@/api/auditApi";
@@ -68,10 +68,15 @@ export function DashboardPage() {
       </Panel>
       {ready && (
         <Panel title="Phân bố vai trò">
-          <Table
-            label="Phân bố vai trò"
-            rows={[...new Set(state.users.map((u) => u.role || "Chưa rõ vai trò"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Chưa rõ vai trò") === role).length }))}
-            columns={[{ key: "role", label: "Role" }, { key: "count", label: "Users" }]}
+          <AsyncBoundary
+            state={{ loading: false, error: "", data: state.users, reload: () => loadAdminUsers(true) }}
+            render={() => (
+              <Table
+                label="Phân bố vai trò"
+                rows={[...new Set(state.users.map((u) => u.role || "Chưa rõ vai trò"))].map((role) => ({ id: role, role, count: state.users.filter((u) => (u.role || "Chưa rõ vai trò") === role).length }))}
+                columns={[{ key: "role", label: "Vai trò" }, { key: "count", label: "Số tài khoản" }]}
+              />
+            )}
           />
         </Panel>
       )}
@@ -79,18 +84,14 @@ export function DashboardPage() {
         title="Số liệu cơ sở"
         action={<Button asChild variant="outline"><Link to="/admin/facilities">Mở giám sát cơ sở</Link></Button>}
       >
-        {facilities.error
-          ? <Message error={facilities.error} />
-          : facilities.loading
-            ? <p role="status" className="text-sm text-slate-500">Đang tải danh sách cơ sở…</p>
-            : (
-              <Kpis items={[
-                ["Tổng số cơ sở", facilitiesData.length, "Bản ghi cơ sở"],
-                ["Cơ sở đang hoạt động", activeFacilities, "Đang nhận đơn mới"],
-                ["Cơ sở ngừng hoạt động", facilitiesData.length - activeFacilities, "Chặn nhận đơn mới"],
-                ["Mô hình dịch vụ", serviceModels.length, serviceModels.join(", ") || "Chưa có dữ liệu"],
-              ]} />
-            )}
+        <AsyncBoundary state={facilities} render={() => (
+          <Kpis items={[
+            ["Tổng số cơ sở", facilitiesData.length, "Bản ghi cơ sở"],
+            ["Cơ sở đang hoạt động", activeFacilities, "Đang nhận đơn mới"],
+            ["Cơ sở ngừng hoạt động", facilitiesData.length - activeFacilities, "Chặn nhận đơn mới"],
+            ["Mô hình dịch vụ", serviceModels.length, serviceModels.map(facilityLabel).join(", ") || "Chưa có dữ liệu"],
+          ]} />
+        )} />
       </Panel>
       <Panel title="Lịch sử đăng nhập và nhật ký">
         <div className="flex flex-wrap gap-3">
@@ -162,26 +163,20 @@ export function LoginHistoryPage() {
               <Input aria-label="Đến ngày" type="date" min={from || undefined} value={to} onChange={(event) => setTo(event.target.value)} />
             </Field>
           </div>
-          {history.error
-            ? <Message error={history.error} />
-            : history.loading
-              ? <p role="status" className="text-sm text-slate-500">Đang tải lịch sử đăng nhập…</p>
-              : (
-                <AsyncBoundary
-                  state={history}
-                  render={() => (
-                    <Table label="Lịch sử đăng nhập" rows={visible} columns={[
-                      { key: "event", label: "Sự kiện", render: (r) => facilityLabel(r.source.eventType) || "—" },
-                      { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
-                      { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
-                      { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
-                      { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
-                      { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
-                      { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
-                    ]} empty="Không có sự kiện phù hợp bộ lọc." />
-                  )}
-                />
-              )}
+          <AsyncBoundary
+            state={history}
+            render={() => (
+              <Table label="Lịch sử đăng nhập" rows={visible} columns={[
+                { key: "event", label: "Sự kiện", render: (r) => facilityLabel(r.source.eventType) || "—" },
+                { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
+                { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
+                { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
+                { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
+                { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
+                { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
+              ]} empty="Không có sự kiện phù hợp bộ lọc." />
+            )}
+          />
         </Panel>
       )}
     </AdminScreen>
@@ -255,13 +250,8 @@ export function AuditPage() {
                 <Input aria-label="Đến ngày" type="date" min={from || undefined} value={to} onChange={(event) => setTo(event.target.value)} />
               </Field>
             </div>
-            {logs.error
-              ? <Message error={logs.error} />
-              : logs.loading
-                ? <p role="status" className="text-sm text-slate-500">Đang tải nhật ký…</p>
-                : (
-                  <AsyncBoundary state={logs} render={() => (
-                    <Table label="Nhật ký kiểm toán" rows={visible} columns={[
+            <AsyncBoundary state={logs} render={() => (
+              <Table label="Nhật ký kiểm toán" rows={visible} columns={[
                       { key: "action", label: "Hành động", render: (r) => facilityLabel(r.source.action) || "—" },
                       { key: "role", label: "Vai trò", render: (r) => <Status value={r.source.actorRole} /> },
                       { key: "entity", label: "Đối tượng", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },
@@ -277,9 +267,7 @@ export function AuditPage() {
                         ),
                       },
                     ]} empty="Không có sự kiện phù hợp bộ lọc." />
-                  )}
-                />
-              )}
+            )} />
           </Panel>
         </>
       )}
@@ -297,7 +285,11 @@ export function FacilitiesPage() {
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
 
   return (
-    <AdminScreen title="Giám sát cơ sở" description="Xem toàn bộ cơ sở trong hệ thống.">
+    <AdminScreen
+      title="Giám sát cơ sở"
+      description="Xem toàn bộ cơ sở trong hệ thống."
+      action={<Button variant="outline" onClick={() => { invalidateFacilities(); state.reload(); }} disabled={state.loading}>Tải lại</Button>}
+    >
       <Panel title="Bộ lọc">
         <div className="manager-filters">
           <Field label="Tìm kiếm">
@@ -308,22 +300,18 @@ export function FacilitiesPage() {
           </Field>
         </div>
       </Panel>
-      <Panel title="Tổng hợp cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`} action={<Button variant="outline" onClick={() => { invalidateFacilities(); state.reload(); }}>Tải lại</Button>}>
-        {state.error
-          ? <Message error={state.error} />
-          : state.loading
-            ? <p role="status" className="text-sm text-slate-500">Đang tải danh sách cơ sở…</p>
-            : (
-              <Table label="Cơ sở" rows={rows} columns={[
-                { key: "name", label: "Facility" },
-                { key: "code", label: "Code" },
-                { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
-                { key: "district", label: "Khu vực" },
-                { key: "address", label: "Address" },
-                { key: "services", label: "Service models", render: (f) => f.serviceTypes.join(", ") || "—" },
-                { key: "openingHours", label: "Opening hours" },
-              ]} />
-            )}
+      <Panel title="Tổng hợp cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`}>
+        <AsyncBoundary state={state} render={() => (
+          <Table label="Cơ sở" rows={rows} columns={[
+            { key: "name", label: "Facility" },
+            { key: "code", label: "Code" },
+            { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
+            { key: "district", label: "Khu vực" },
+            { key: "address", label: "Address" },
+            { key: "services", label: "Service models", render: (f) => f.serviceTypes.map(facilityLabel).join(", ") || "—" },
+            { key: "openingHours", label: "Opening hours" },
+          ]} />
+        )} />
       </Panel>
     </AdminScreen>
   );

@@ -136,33 +136,31 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
             </Panel>
 
             <Panel title="Tổng hợp theo trạng thái" subtitle={`Đơn tạo trong kỳ ${periodFrom} → ${periodTo}`}>
-              {summary.loading
-                ? <p role="status" className="text-sm text-slate-500">Đang tải số liệu tổng hợp…</p>
-                : (
-                  <>
-                    <Details values={[
-                      ["Tổng đơn", number(totals.total)],
-                      ["Tỷ lệ hủy", totals.cancellationRate === null || totals.cancellationRate === undefined ? "—" : `${totals.cancellationRate}%`],
-                      ...(summary.data?.byStatus || []).map((row) => [row.status, row.count]),
-                    ]} />
-                    <div className="mt-5">
-                      <Table
-                        label="Đơn theo mô hình dịch vụ"
-                        rows={(summary.data?.byService || []).map((row) => ({ ...row, id: row.service }))}
-                        columns={[
-                          { key: "service", label: "Mô hình dịch vụ", render: (r) => serviceLabel(r.service) },
-                          { key: "total", label: "Tổng đơn" },
-                          { key: "active", label: "Đang thuê" },
-                          { key: "cancelled", label: "Đã hủy" },
-                        ]}
-                        empty="Chưa có đơn nào trong kỳ đã chọn."
-                      />
-                    </div>
-                    <p className="bom-note mt-4">
-                      Số liệu tổng hợp do máy chủ tính trên toàn bộ cơ sở bạn có quyền xem. Trạng thái là trạng thái hiện tại của các đơn được tạo trong kỳ, không phải số lần chuyển trạng thái.
-                    </p>
-                  </>
-                )}
+              <AsyncBoundary state={summary} render={() => (
+                <>
+                  <Details values={[
+                    ["Tổng đơn", number(totals.total)],
+                    ["Tỷ lệ hủy", totals.cancellationRate === null || totals.cancellationRate === undefined ? "—" : `${totals.cancellationRate}%`],
+                    ...(summary.data?.byStatus || []).map((row) => [row.status, row.count]),
+                  ]} />
+                  <div className="mt-5">
+                    <Table
+                      label="Đơn theo mô hình dịch vụ"
+                      rows={(summary.data?.byService || []).map((row) => ({ ...row, id: row.service }))}
+                      columns={[
+                        { key: "service", label: "Mô hình dịch vụ", render: (r) => serviceLabel(r.service) },
+                        { key: "total", label: "Tổng đơn" },
+                        { key: "active", label: "Đang thuê" },
+                        { key: "cancelled", label: "Đã hủy" },
+                      ]}
+                      empty="Chưa có đơn nào trong kỳ đã chọn."
+                    />
+                  </div>
+                  <p className="bom-note mt-4">
+                    Số liệu tổng hợp do máy chủ tính trên toàn bộ cơ sở bạn có quyền xem. Trạng thái là trạng thái hiện tại của các đơn được tạo trong kỳ, không phải số lần chuyển trạng thái.
+                  </p>
+                </>
+              )} />
             </Panel>
 
             <Panel
@@ -221,25 +219,21 @@ export default function RentalReportLivePage({ basePath = "/bom" }) {
               title="Xu hướng theo kỳ"
               subtitle={`${trends.data?.items?.length ?? 0} mốc thời gian · gộp theo ${{ day: "ngày", week: "tuần", month: "tháng" }[granularity] || "tháng"}`}
             >
-              {trends.error
-                ? <p className="bom-note">{trends.error}</p>
-                : trends.loading
-                  ? <p role="status" className="text-sm text-slate-500">Đang tải xu hướng…</p>
-                  : (
-                    <Table
-                      label="Xu hướng đơn đặt thuê"
-                      rows={trends.data?.items || []}
-                      columns={[
-                        { key: "bucketStart", label: "Kỳ" },
-                        { key: "reservations", label: "Đơn đặt thuê" },
-                        { key: "paidReservations", label: "Đơn đã thanh toán" },
-                        { key: "selfStorage", label: "Thuê kho riêng" },
-                        { key: "managedInventory", label: "Lưu trữ hàng hóa" },
-                        { key: "customers", label: "Khách đã thanh toán" },
-                      ]}
-                      empty="Chưa có dữ liệu xu hướng cho khoảng thời gian này."
-                    />
-                  )}
+              <AsyncBoundary state={trends} render={() => (
+                <Table
+                  label="Xu hướng đơn đặt thuê"
+                  rows={trends.data?.items || []}
+                  columns={[
+                    { key: "bucketStart", label: "Kỳ" },
+                    { key: "reservations", label: "Đơn đặt thuê" },
+                    { key: "paidReservations", label: "Đơn đã thanh toán" },
+                    { key: "selfStorage", label: "Thuê kho riêng" },
+                    { key: "managedInventory", label: "Lưu trữ hàng hóa" },
+                    { key: "customers", label: "Khách đã thanh toán" },
+                  ]}
+                  empty="Chưa có dữ liệu xu hướng cho khoảng thời gian này."
+                />
+              )} />
             </Panel>
           </>
         );

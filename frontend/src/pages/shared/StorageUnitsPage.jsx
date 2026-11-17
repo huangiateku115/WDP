@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { ResourceThumb } from "@/components/bom/ResourceImages";
-import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
+import { UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { loadFacilities, loadFacilityUnits } from "@/lib/bomApiData";
 import { bomUnitApi } from "@/api/bomApi";
 import { BOM_UNIT_SIZES } from "@/lib/bomMappers";
@@ -16,21 +18,24 @@ import { countBy, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 const SELF_STORAGE = "SELF_STORAGE";
 const wc = (conditions) => Object.fromEntries(Object.entries(conditions).filter(([, value]) => value));
 
-export default function StorageUnitsPage() {
+export default function StorageUnitsPage({ basePath = "/bom/units" }) {
   const directory = useAsyncData(loadFacilities, []);
-  const [facilityId, setFacilityId] = useState("");
+  // The selected facility lives in the URL so the create/edit routes can link back here.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [facilityId, setFacilityId] = useState(searchParams.get("facility") || "");
   const [status, setStatus] = useState("");
   const [size, setSize] = useState("");
   const [search, setSearch] = useState("");
-  const [unitDialog, setUnitDialog] = useState(null);
+  // Free-text search hits the API, so it is debounced (quy ước 2).
+  const debouncedSearch = useDebouncedValue(search);
   const [statusDialog, setStatusDialog] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
   const units = useAsyncData(
     ({ signal }) => (facilityId
-      ? loadFacilityUnits(facilityId, { signal, ...wc({ status, size, search: search.trim() }) })
+      ? loadFacilityUnits(facilityId, { signal, ...wc({ status, size, search: debouncedSearch.trim() }) })
       : Promise.resolve(null)),
-    [facilityId, status, size, search],
+    [facilityId, status, size, debouncedSearch],
   );
 
   function selectFacility(id) {
@@ -38,6 +43,7 @@ export default function StorageUnitsPage() {
     setStatus("");
     setSize("");
     setSearch("");
+    setSearchParams(id ? { facility: id } : {}, { replace: true });
   }
 
   function removeUnit(unit) {
@@ -127,7 +133,9 @@ export default function StorageUnitsPage() {
                 <Panel
                   title="Danh sách kho"
                   subtitle={`${data.total} kho · ${countBy(data.rows, "status", "AVAILABLE")} đang sẵn sàng`}
-                  action={<Button onClick={() => setUnitDialog("new")} disabled={!canWrite}>Tạo kho</Button>}
+                  action={canWrite
+                    ? <Button asChild><Link to={`${basePath}/new/${encodeURIComponent(facilityId)}`}>Tạo kho</Link></Button>
+                    : <Button disabled>Tạo kho</Button>}
                 >
                   {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                   <div className="mt-5">
@@ -156,7 +164,9 @@ export default function StorageUnitsPage() {
                             const locked = r.status === "HELD" || r.status === "OCCUPIED";
                             return (
                               <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setUnitDialog(r)}>Sửa</Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <Link to={`${basePath}/${encodeURIComponent(r.id)}/edit`}>Sửa</Link>
+                                </Button>
                                 <Button size="sm" variant="outline" disabled={locked} onClick={() => setStatusDialog(r)}>Trạng thái</Button>
                                 <Button size="sm" variant="outline" disabled={locked} onClick={() => removeUnit(r)}>Xóa</Button>
                               </div>
@@ -174,14 +184,6 @@ export default function StorageUnitsPage() {
         );
       }} />
 
-      {unitDialog && (
-        <UnitDialog
-          facilityId={facilityId}
-          unit={unitDialog === "new" ? null : unitDialog}
-          onClose={() => setUnitDialog(null)}
-          onSaved={() => units.reload()}
-        />
-      )}
       {statusDialog && (
         <UnitStatusDialog unit={statusDialog} onClose={() => setStatusDialog(null)} onSaved={() => units.reload()} />
       )}

@@ -148,6 +148,7 @@ export function unitFromDto(d) {
   const images = httpImages(d?.images);
   return {
     id: d?._id,
+    facilityId: d?.facilityId?._id || d?.facilityId || "",
     code: d?.unitCode || "",
     size: d?.size || "",
     status: d?.status || "",

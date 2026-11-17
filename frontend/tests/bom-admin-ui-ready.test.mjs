@@ -336,3 +336,51 @@ test('Audit and login screens print Vietnamese labels, not raw codes (quy ước
     assert.ok(dictionary.includes(`${code}:`),`dictionary is missing the audit/status code ${code}`);
   }
 });
+
+test('Unit and warehouse create/edit screens live on their own routes',()=>{
+  const units=read('../src/pages/shared/StorageUnitsPage.jsx');
+  assert.doesNotMatch(units,/<UnitDialog/,'the unit list must not open an edit dialog');
+  assert.match(units,/units\/new|\/new\/\$\{encodeURIComponent\(facilityId\)\}/);
+  assert.match(units,/\$\{basePath\}\/\$\{encodeURIComponent\(r\.id\)\}\/edit/);
+  const unitForm=read('../src/pages/shared/UnitFormPage.jsx');
+  assert.match(unitForm,/bomUnitApi\.get\(id/);
+  const warehouse=read('../src/pages/shared/WarehouseStructurePage.jsx');
+  assert.doesNotMatch(warehouse,/<ZoneDialog|<RackDialog/,'the warehouse list must not open edit dialogs');
+  assert.match(warehouse,/formHref\("zones"\)/);
+  assert.match(warehouse,/formHref\("racks", r\.id\)/);
+  const warehouseForm=read('../src/pages/shared/WarehouseFormPage.jsx');
+  assert.match(warehouseForm,/ZoneForm/);
+  assert.match(warehouseForm,/RackForm/);
+  for(const routes of [read('../src/routes/BomRoutes.jsx'),read('../src/routes/AdminRoutes.jsx')]){
+    assert.match(routes,/path="units\/new\/:facilityId"/);
+    assert.match(routes,/path="units\/:id\/edit"/);
+    assert.match(routes,/path="warehouse\/:facilityId\/zones\/new"/);
+    assert.match(routes,/path="warehouse\/:facilityId\/zones\/:zoneId\/edit"/);
+    assert.match(routes,/path="warehouse\/:facilityId\/racks\/new"/);
+    assert.match(routes,/path="warehouse\/:facilityId\/racks\/:rackId\/edit"/);
+  }
+});
+
+test('Every BOM/Admin list search that calls the API is debounced',()=>{
+  for(const file of ['pages/shared/StorageUnitsPage.jsx','pages/shared/InventoryItemsPage.jsx','pages/bom/ManagedInventoryCatalogPage.jsx']){
+    assert.match(read(`../src/${file}`),/useDebouncedValue/,`${file} must debounce its server-side search`);
+  }
+});
+
+test('Report and system tables all render through AsyncBoundary',()=>{
+  for(const file of ['pages/bom/RentalReportLivePage.jsx','pages/admin/LiveSystemPages.jsx']){
+    const page=read(`../src/${file}`);
+    assert.doesNotMatch(page,/role="status"/,`${file} still renders a manual loading placeholder`);
+    // A loader must never drive a hand-written branch; AsyncBoundary owns loading and error.
+    assert.doesNotMatch(page,/\b(facilities|trends|summary|history|logs)\.(loading|error)\s*\n\s*\?/,`${file} still branches on a loader by hand`);
+  }
+});
+
+test('Audit and inventory console print dictionary labels',()=>{
+  const audit=read('../src/pages/bom/AuditLivePage.jsx');
+  assert.match(audit,/facilityLabel\(r\.action\)/);
+  assert.match(audit,/facilityLabel\(r\.eventType\)/);
+  const inventory=read('../src/pages/shared/InventoryItemsPage.jsx');
+  assert.match(inventory,/facilityLabel\(r\.category\)/);
+  assert.doesNotMatch(inventory,/Unknown facility/);
+});

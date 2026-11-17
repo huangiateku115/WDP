@@ -42,6 +42,16 @@ function Form({ pending, error, onClose, onSubmit, children, submitLabel }) {
 
 /* ------------------------------- Zone ------------------------------- */
 export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
+  return (
+    <Dialog title={zone ? `Sửa khu vực ${zone.code}` : "Tạo khu vực kho"} onClose={onClose}>
+      <ZoneForm facilityId={facilityId} zone={zone} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+// The form body, so the console can host create/edit on its own route
+// (`warehouse/:facilityId/zones/new`, `…/zones/:zoneId/edit`) instead of a dialog in the list.
+export function ZoneForm({ facilityId, zone, onClose, onSaved }) {
   const editing = Boolean(zone);
   const [form, setForm] = useState({
     code: zone?.code || "",
@@ -105,8 +115,7 @@ export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Sửa khu vực ${zone.code}` : "Tạo khu vực kho"} onClose={onClose}>
-      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu khu vực" : "Tạo khu vực"}>
+    <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu khu vực" : "Tạo khu vực"}>
         <div className="manager-filters">
           {!editing && (
             <Field label="Mã khu vực" hint="Tên viết tắt của khu vực, duy nhất trong cơ sở. Ví dụ: KV1.">
@@ -131,13 +140,20 @@ export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
             <Input aria-label="Màu khu vực trên bản đồ" placeholder="#2F855A" value={form.color} onChange={(e) => change("color", e.target.value)} />
           </Field>
         </AdvancedFields>
-      </Form>
-    </Dialog>
+    </Form>
   );
 }
 
 /* ------------------------------- Rack ------------------------------- */
 export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
+  return (
+    <Dialog title={rack ? `Sửa kệ ${rack.rackCode}` : "Tạo kệ"} onClose={onClose}>
+      <RackForm facilityId={facilityId} zones={zones} rack={rack} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+export function RackForm({ facilityId, zones, rack, onClose, onSaved }) {
   const editing = Boolean(rack);
   const [form, setForm] = useState({
     zoneId: rack?.zoneId || zones[0]?.id || "",
@@ -240,8 +256,7 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Sửa kệ ${rack.rackCode}` : "Tạo kệ"} onClose={onClose}>
-      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu kệ" : "Tạo kệ"}>
+    <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu kệ" : "Tạo kệ"}>
         <div className="manager-filters">
           {!editing && (
             <>
@@ -303,8 +318,7 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
             ? "Không đổi được kích thước, tải trọng hay trạng thái khi ô đang chứa hàng, đang được phân bổ hoặc đã có đơn giữ chỗ."
             : "Tạo kệ sẽ tạo luôn các ô lưu trữ; tải trọng mỗi tầng được chia đều cho các ô."}
         </p>
-      </Form>
-    </Dialog>
+    </Form>
   );
 }
 

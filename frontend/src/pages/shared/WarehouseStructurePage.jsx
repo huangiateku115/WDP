@@ -3,9 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Button, Details } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { RackDialog, ZoneDialog } from "@/components/bom/WarehouseStructureDialogs";
-import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
-import { useAsyncData } from "@/lib/useAsyncData";
+import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, loadManagedCapacity, loadRacks, loadZones } from "@/lib/bomApiData";
 import { bomWarehouseApi } from "@/api/bomApi";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
@@ -32,9 +30,7 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
   // The selected facility lives in the URL so the rack-cell route can link back to the same view.
   const [searchParams, setSearchParams] = useSearchParams();
   const [facilityId, setFacilityId] = useState(searchParams.get("facility") || "");
-  const [zoneFilter, setZoneFilter] = useState("");
-  const [zoneDialog, setZoneDialog] = useState(null);
-  const [rackDialog, setRackDialog] = useState(null);
+  const [zoneFilter, setZoneFilter] = useState(searchParams.get("zone") || "");
   const [capacityOpen, setCapacityOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const window = currentMonthWindow();
@@ -51,6 +47,17 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
     setZoneFilter("");
     setSearchParams(id ? { facility: id } : {}, { replace: true });
   }
+
+  // Keeps the chosen facility and zone in the URL so the form routes can link back here.
+  function selectZone(id) {
+    setZoneFilter(id);
+    const next = {};
+    if (facilityId) next.facility = facilityId;
+    if (id) next.zone = id;
+    setSearchParams(next, { replace: true });
+  }
+
+  const formHref = (kind, id) => `${basePath}/warehouse/${encodeURIComponent(facilityId)}/${kind}/${id ? `${encodeURIComponent(id)}/edit` : "new"}${zoneFilter ? `?zone=${encodeURIComponent(zoneFilter)}` : ""}`;
 
   function reloadStructure() {
     zones.reload();
@@ -108,7 +115,7 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                   <Select
                     label="Lọc theo khu vực"
                     value={zoneFilter}
-                    onChange={setZoneFilter}
+                    onChange={selectZone}
                     disabled={!facilityId}
                     options={[["", "Tất cả khu vực"], ...(zones.data?.rows || []).map((z) => [z.id, `${z.code} · ${z.name}`])]}
                   />
@@ -154,7 +161,7 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                   <Panel
                     title="Khu vực"
                     subtitle={`${data.total} khu vực`}
-                    action={<Button onClick={() => setZoneDialog("new")}>Tạo khu vực</Button>}
+                    action={<Button asChild><Link to={formHref("zones")}>Tạo khu vực</Link></Button>}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                     <Table
@@ -171,7 +178,7 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setZoneDialog(r)}>Sửa</Button>
+                            <Button asChild size="sm" variant="outline"><Link to={formHref("zones", r.id)}>Sửa</Link></Button>
                             <Button size="sm" variant="outline" onClick={() => removeZone(r)}>Xóa</Button>
                             </div>
                           ),
@@ -186,8 +193,8 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                   <Panel
                     title="Kệ"
                     action={(
-                      <Button onClick={() => setRackDialog("new")} disabled={!(zones.data?.rows || []).length}>
-                        Tạo kệ
+                      <Button asChild disabled={!(zones.data?.rows || []).length}>
+                        <Link to={formHref("racks")}>Tạo kệ</Link>
                       </Button>
                     )}
                   >
@@ -215,7 +222,7 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                               <Button asChild size="sm" variant="outline">
                                 <Link to={`${basePath}/warehouse/${encodeURIComponent(facilityId)}/racks/${encodeURIComponent(r.id)}/cells`}>Ô lưu trữ</Link>
                               </Button>
-                              <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Sửa</Button>
+                              <Button asChild size="sm" variant="outline"><Link to={formHref("racks", r.id)}>Sửa</Link></Button>
                               <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Xóa</Button>
                             </div>
                           ),
@@ -231,23 +238,6 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
         );
       }} />
 
-      {zoneDialog && (
-        <ZoneDialog
-          facilityId={facilityId}
-          zone={zoneDialog === "new" ? null : zoneDialog}
-          onClose={() => setZoneDialog(null)}
-          onSaved={reloadStructure}
-        />
-      )}
-      {rackDialog && (
-        <RackDialog
-          facilityId={facilityId}
-          zones={(zones.data?.rows || []).filter((z) => z.isActive)}
-          rack={rackDialog === "new" ? null : rackDialog}
-          onClose={() => setRackDialog(null)}
-          onSaved={reloadStructure}
-        />
-      )}
       {capacityOpen && (
         <ManagedCapacityDialog
           facilityId={facilityId}

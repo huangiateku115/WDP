@@ -19,6 +19,16 @@ const number = (value) => (String(value).trim() ? Number(value) : NaN);
 const isPositive = (value) => Number.isFinite(number(value)) && number(value) > 0;
 
 export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
+  return (
+    <Dialog title={unit ? `Sửa kho ${unit.code}` : "Tạo kho riêng"} onClose={onClose}>
+      <UnitForm facilityId={facilityId} unit={unit} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+// The form itself, so the create/edit console can live on its own route
+// (`units/new/:facilityId`, `units/:id/edit`) instead of a dialog inside the list page.
+export function UnitForm({ facilityId, unit, onClose, onSaved }) {
   const editing = Boolean(unit);
   const [form, setForm] = useState({
     unitCode: unit?.code || "",
@@ -86,49 +96,47 @@ export function UnitDialog({ facilityId, unit, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Sửa kho ${unit.code}` : "Tạo kho riêng"} onClose={onClose}>
-      <form className="space-y-5" onSubmit={submit}>
-        <div className="manager-filters">
-          <Field label="Mã kho" hint="Phải là duy nhất trong cơ sở.">
-            <Input aria-label="Mã kho" required value={form.unitCode} onChange={(e) => change("unitCode", e.target.value)} />
-          </Field>
-          <Field label="Kích cỡ">
-            <Select label="Kích cỡ kho" value={form.size} onChange={(value) => change("size", value)} options={BOM_UNIT_SIZES} />
-          </Field>
-          <Field label="Chiều dài (m)">
-            <Input aria-label="Chiều dài kho (mét)" inputMode="decimal" required value={form.lengthM} onChange={(e) => change("lengthM", e.target.value)} />
-          </Field>
-          <Field label="Chiều rộng (m)">
-            <Input aria-label="Chiều rộng kho (mét)" inputMode="decimal" required value={form.widthM} onChange={(e) => change("widthM", e.target.value)} />
-          </Field>
-          <Field label="Chiều cao (m)">
-            <Input aria-label="Chiều cao kho (mét)" inputMode="decimal" required value={form.heightM} onChange={(e) => change("heightM", e.target.value)} />
-          </Field>
-          <Field label="Thể tích tính toán" hint="Thể tích được tính từ kích thước.">
-            <Input aria-label="Thể tích tính toán" readOnly value={volume ? `${volume.toFixed(3)} m³` : "—"} />
-          </Field>
-        </div>
-        <Field label="Mô tả" hint="Không bắt buộc, tối đa 2000 ký tự.">
-          <Input aria-label="Mô tả kho" value={form.description} onChange={(e) => change("description", e.target.value)} />
+    <form className="space-y-5" onSubmit={submit}>
+      <div className="manager-filters">
+        <Field label="Mã kho" hint="Phải là duy nhất trong cơ sở.">
+          <Input aria-label="Mã kho" required value={form.unitCode} onChange={(e) => change("unitCode", e.target.value)} />
         </Field>
-        <ImageEditor
-          label="Hình ảnh kho"
-          target="storage-unit"
-          images={form.images}
-          onChange={(next) => change("images", next)}
-        />
-        <p className="bom-warning">
-          {editing
-            ? "Không sửa được kho đang được giữ hoặc đang sử dụng; hãy hoàn tất hoặc giải phóng đơn trước."
-            : "Chỉ tạo được kho trong cơ sở đang hoạt động và có dịch vụ Thuê kho riêng."}
-        </p>
-        <Message error={error} />
-        <div className="flex flex-wrap gap-3">
-          <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : editing ? "Lưu kho" : "Tạo kho"}</Button>
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
-        </div>
-      </form>
-    </Dialog>
+        <Field label="Kích cỡ">
+          <Select label="Kích cỡ kho" value={form.size} onChange={(value) => change("size", value)} options={BOM_UNIT_SIZES} />
+        </Field>
+        <Field label="Chiều dài (m)">
+          <Input aria-label="Chiều dài kho (mét)" inputMode="decimal" required value={form.lengthM} onChange={(e) => change("lengthM", e.target.value)} />
+        </Field>
+        <Field label="Chiều rộng (m)">
+          <Input aria-label="Chiều rộng kho (mét)" inputMode="decimal" required value={form.widthM} onChange={(e) => change("widthM", e.target.value)} />
+        </Field>
+        <Field label="Chiều cao (m)">
+          <Input aria-label="Chiều cao kho (mét)" inputMode="decimal" required value={form.heightM} onChange={(e) => change("heightM", e.target.value)} />
+        </Field>
+        <Field label="Thể tích tính toán" hint="Thể tích được tính từ kích thước.">
+          <Input aria-label="Thể tích tính toán" readOnly value={volume ? `${volume.toFixed(3)} m³` : "—"} />
+        </Field>
+      </div>
+      <Field label="Mô tả" hint="Không bắt buộc, tối đa 2000 ký tự.">
+        <Input aria-label="Mô tả kho" value={form.description} onChange={(e) => change("description", e.target.value)} />
+      </Field>
+      <ImageEditor
+        label="Hình ảnh kho"
+        target="storage-unit"
+        images={form.images}
+        onChange={(next) => change("images", next)}
+      />
+      <p className="bom-warning">
+        {editing
+          ? "Không sửa được kho đang được giữ hoặc đang sử dụng; hãy hoàn tất hoặc giải phóng đơn trước."
+          : "Chỉ tạo được kho trong cơ sở đang hoạt động và có dịch vụ Thuê kho riêng."}
+      </p>
+      <Message error={error} />
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : editing ? "Lưu kho" : "Tạo kho"}</Button>
+        <Button type="button" variant="outline" disabled={pending} onClick={onClose}>Hủy</Button>
+      </div>
+    </form>
   );
 }
 
