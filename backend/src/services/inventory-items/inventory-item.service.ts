@@ -210,7 +210,7 @@ async function lockReservationForInbound(item: IInventoryItem, session: ClientSe
     : { inventoryVersion: version };
   const reservation = await ReservationModel.findOneAndUpdate({ ...identity, activeClosureRequestId: null,
     $and: [eligibleStates, versionFilter] } as any, { $inc: { inventoryVersion: 1 } },
-  { new: true, session, runValidators: true }).exec() as IReservation | null;
+  { returnDocument: 'after', session, runValidators: true }).exec() as IReservation | null;
   if (!reservation) throw new InventoryItemError(409, allowDepositPaidRequest ? 'An active or deposit-paid version 2 Managed reservation is required to request inbound' : 'An active, in-term Managed Inventory rental is required to confirm inbound');
   const overdue = await ReservationModel.exists({
     customerId: item.customerId,
@@ -249,7 +249,7 @@ async function lockReservationForRegistration(reservation: IReservation, session
     ...versionPredicate,
   };
   const locked = await ReservationModel.findOneAndUpdate(filter, { $inc: { inventoryVersion: 1 } },
-    { new: true, session, runValidators: true }).exec();
+    { returnDocument: 'after', session, runValidators: true }).exec();
   if (!locked) throw new InventoryItemError(409, 'Managed reservation changed or closure is pending; reload and retry registration');
   return locked as IReservation;
 }
@@ -273,7 +273,7 @@ async function lockReservationLifecycle(item: IInventoryItem, session: ClientSes
   const locked = await ReservationModel.findOneAndUpdate({ ...identity,
     ...(options.rejectClosure ? { activeClosureRequestId: null } : {}),
     $and: [eligibility, versionFilter] }, { $inc: { inventoryVersion: 1 } },
-  { new: true, session, runValidators: true }).exec() as IReservation | null;
+  { returnDocument: 'after', session, runValidators: true }).exec() as IReservation | null;
   if (!locked) {
     if (options.rejectClosure && current.activeClosureRequestId) throw new InventoryItemError(409, 'Reservation closure is pending; relocation or metadata changes are blocked');
     throw new InventoryItemError(409, 'Reservation lifecycle changed; reload and retry');
@@ -324,7 +324,7 @@ async function lockReservationForMetadata(item: IInventoryItem, session: ClientS
     facilityId: item.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
     activeClosureRequestId: null, $and: [statusFilter, versionFilter] };
   const locked = await ReservationModel.findOneAndUpdate(fenceFilter, { $inc: { inventoryVersion: 1 } },
-  { new: true, session, runValidators: true }).exec();
+  { returnDocument: 'after', session, runValidators: true }).exec();
   if (!locked) throw new InventoryItemError(409, eligible.activeClosureRequestId
     ? 'Reservation closure is pending; Item metadata changes are blocked'
     : 'Reservation lifecycle changed; reload and retry Item metadata update');
@@ -377,7 +377,7 @@ async function assertV2FirstInboundPrerequisites(reservation: any, item: IInvent
 async function lockZoneForInbound(zoneId: Types.ObjectId, facilityId: Types.ObjectId, session: ClientSession) {
   const zone = await WarehouseZoneModel.findOneAndUpdate({
     _id: zoneId, facilityId, isActive: true, ...live,
-  }, { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  }, { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!zone) throw new InventoryItemError(409, 'Destination Zone must be active');
   return zone;
 }
@@ -385,7 +385,7 @@ async function lockZoneForInbound(zoneId: Types.ObjectId, facilityId: Types.Obje
 async function lockRackForInbound(rackId: Types.ObjectId, facilityId: Types.ObjectId, zoneId: Types.ObjectId, session: ClientSession) {
   const rack = await WarehouseRackModel.findOneAndUpdate({
     _id: rackId, facilityId, zoneId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live,
-  }, { $inc: { layoutVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  }, { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!rack) throw new InventoryItemError(409, 'Destination Rack must be active and AVAILABLE');
   return rack;
 }
@@ -549,14 +549,14 @@ async function reconcileOutboundAccounting(item: IInventoryItem, cell: any, rese
 
 async function lockZoneForOutbound(zoneId: Types.ObjectId, facilityId: Types.ObjectId, session: ClientSession) {
   const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId, ...live },
-    { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+    { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!zone) throw new InventoryItemError(409, 'Current Cell Zone is missing');
   return zone;
 }
 
 async function lockRackForOutbound(rackId: Types.ObjectId, facilityId: Types.ObjectId, zoneId: Types.ObjectId, session: ClientSession) {
   const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId, ...live },
-    { $inc: { layoutVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+    { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!rack) throw new InventoryItemError(409, 'Current Cell Rack is missing');
   return rack;
 }
@@ -564,7 +564,7 @@ async function lockRackForOutbound(rackId: Types.ObjectId, facilityId: Types.Obj
 async function lockZoneForRelocation(zoneId: Types.ObjectId, facilityId: Types.ObjectId, requireActive: boolean, session: ClientSession) {
   const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId,
     ...(requireActive ? { isActive: true } : {}), ...live },
-  { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!zone) throw new InventoryItemError(409, requireActive ? 'Destination Zone must be active' : 'Source Zone is missing');
   return zone;
 }
@@ -573,7 +573,7 @@ async function lockRackForRelocation(rackId: Types.ObjectId, facilityId: Types.O
   requireAvailable: boolean, session: ClientSession) {
   const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId,
     ...(requireAvailable ? { operationalStatus: WarehouseOperationalStatus.AVAILABLE } : {}), ...live },
-  { $inc: { layoutVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!rack) throw new InventoryItemError(409, requireAvailable ? 'Destination Rack must be AVAILABLE' : 'Source Rack is missing');
   return rack;
 }
@@ -581,7 +581,7 @@ async function lockRackForRelocation(rackId: Types.ObjectId, facilityId: Types.O
 async function lockCellForRelocation(cellId: Types.ObjectId, facilityId: Types.ObjectId, available: boolean, session: ClientSession) {
   const cell = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, facilityId,
     ...(available ? { operationalStatus: WarehouseOperationalStatus.AVAILABLE } : {}), ...live },
-  { $inc: { allocationVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  { $inc: { allocationVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!cell) throw new InventoryItemError(409, available ? 'Destination Cell must be AVAILABLE' : 'Source Cell is missing');
   return cell;
 }
@@ -789,7 +789,7 @@ export class InventoryItemService {
       const item = await InventoryItemModel.findOneAndUpdate({ _id: itemId, customerId: actor._id,
         managedReservationId: current.managedReservationId, facilityId: current.facilityId,
         status: InventoryItemStatus.REGISTERED, currentCellId: null, __v: itemVersion, ...live },
-      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) throw new InventoryItemError(409, 'Item changed concurrently; reload and retry metadata update');
 
       // Item CAS precedes the shared Reservation fence. The same transaction
@@ -837,7 +837,7 @@ export class InventoryItemService {
       }, {
         $set: { status: InventoryItemStatus.PENDING_INBOUND, inboundRequestedAt: now, inboundRequestedBy: actor._id },
         $unset: { inboundRejection: 1 }, $inc: { __v: 1 },
-      }, { new: true, session, runValidators: true }).exec();
+      }, { returnDocument: 'after', session, runValidators: true }).exec();
       if (!pending) throw new InventoryItemError(409, 'Inventory item changed; reload and retry inbound request');
       const reservation = await lockReservationForInbound(item, session, now, true);
       const facility = await FacilityModel.findOne({
@@ -875,7 +875,7 @@ export class InventoryItemService {
       // -> Rack -> Cell, matching structural update lock order.
       const item = await InventoryItemModel.findOneAndUpdate({
         _id: current._id, status: current.status, currentCellId: null, ...live,
-      }, { $inc: { __v: 1 } }, { new: true, session }).exec();
+      }, { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry');
 
       const cell = await WarehouseCellModel.findOne({ _id: data.cellId, ...live }).session(session).exec();
@@ -886,7 +886,7 @@ export class InventoryItemService {
       if (!reservationPreflight) throw new InventoryItemError(409, 'Managed reservation is missing or outside item scope');
       if (reservationPreflight.bookingFlowVersion === 2) {
         const capacityLock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId: item.facilityId },
-          { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+          { $inc: { bookingVersion: 1 } }, { returnDocument: 'after', session }).exec();
         if (!capacityLock) throw new InventoryItemError(409, 'Managed capacity configuration is missing');
       }
       await lockZoneForInbound(cell.zoneId, item.facilityId, session);
@@ -993,7 +993,7 @@ export class InventoryItemService {
           { $lte: [{ $add: ['$usedWeightKg', totalWeightKg] }, '$maxWeightKg'] },
           { $lte: [{ $add: ['$usedVolumeM3', totalVolumeM3] }, cellVolumeM3] },
         ] },
-      }, { $inc: { usedWeightKg: totalWeightKg, usedVolumeM3: totalVolumeM3 } }, { new: true, session, runValidators: true }).exec();
+      }, { $inc: { usedWeightKg: totalWeightKg, usedVolumeM3: totalVolumeM3 } }, { returnDocument: 'after', session, runValidators: true }).exec();
       if (!updatedCell) throw new InventoryItemError(409, 'Destination Cell capacity changed; reload and retry');
 
       reservation.usedCapacityM3 = rounded(usedQuotaM3 + totalVolumeM3, 6);
@@ -1044,7 +1044,7 @@ export class InventoryItemService {
       if (item.status !== InventoryItemStatus.PENDING_INBOUND || item.currentCellId !== null) throw new InventoryItemError(409, 'Only PENDING_INBOUND inventory can be rejected');
       const locked = await InventoryItemModel.findOneAndUpdate({
         _id: item._id, status: InventoryItemStatus.PENDING_INBOUND, currentCellId: null, ...live,
-      }, { $inc: { __v: 1 } }, { new: true, session }).exec();
+      }, { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!locked) throw new InventoryItemError(409, 'Inventory item changed; reload and retry');
       locked.status = InventoryItemStatus.REGISTERED;
       locked.inboundRejection = { reason, rejectedAt: new Date(), rejectedBy: actor._id } as any;
@@ -1066,7 +1066,7 @@ export class InventoryItemService {
       const item = await InventoryItemModel.findOneAndUpdate({
         _id: current._id, customerId: actor._id, status: InventoryItemStatus.IN_STORAGE,
         currentCellId: current.currentCellId, ...live,
-      }, { $inc: { __v: 1 } }, { new: true, session }).exec();
+      }, { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound request');
       await assertNoUnresolvedRepeatedInbound(item, session);
 
@@ -1121,7 +1121,7 @@ export class InventoryItemService {
       // Lock order follows inbound: Item -> Zone -> Reservation -> Rack -> Cell/allocation.
       const item = await InventoryItemModel.findOneAndUpdate({ _id: current._id,
         status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
-      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound confirmation');
       await assertNoUnresolvedRepeatedInbound(item, session);
 
@@ -1173,7 +1173,7 @@ export class InventoryItemService {
           { $gte: ['$usedVolumeM3', totalVolumeM3] },
         ] },
       }, { $inc: { usedWeightKg: -totalWeightKg, usedVolumeM3: -totalVolumeM3 } },
-      { new: true, session, runValidators: true }).exec();
+      { returnDocument: 'after', session, runValidators: true }).exec();
       if (!updatedCell) throw new InventoryItemError(409, 'Cell physical usage changed; reload and retry outbound');
 
       reservation.usedCapacityM3 = nextReservationVolumeM3;
@@ -1225,7 +1225,7 @@ export class InventoryItemService {
       }
       const item = await InventoryItemModel.findOneAndUpdate({ _id: current._id,
         status: InventoryItemStatus.PENDING_OUTBOUND, currentCellId: current.currentCellId, ...live },
-      { $inc: { __v: 1 } }, { new: true, session }).exec();
+      { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) throw new InventoryItemError(409, 'Inventory item changed; reload and retry outbound rejection');
       await assertNoUnresolvedRepeatedInbound(item, session);
       const reservation = await lockReservationForOutboundResolution(item, session);

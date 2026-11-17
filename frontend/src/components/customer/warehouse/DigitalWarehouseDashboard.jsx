@@ -730,6 +730,10 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
               <p className="wm-muted">
                 Đã chọn = ô trong giỏ thuê. Ô của bạn không đồng nghĩa có thể đặt thuê lại.
               </p>
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                <span className="wm-owned-chip">Ô thuê của bạn</span>
+                Nhãn này được xác định từ phân bổ thuê do Backend trả về.
+              </p>
             </div>
             <div className="wm-inventory-context-slot"><InventoryMapContext controller={inventory} /></div>
           </div>

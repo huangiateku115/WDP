@@ -215,7 +215,7 @@ async function withTransaction<T>(operation: (session: ClientSession) => Promise
   } finally { await session.endSession(); }
 }
 async function lockCapacity(facilityId: Types.ObjectId, session: ClientSession, requireActive = true) {
-  const capacity = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId, ...(requireActive ? { isActive: true } : {}) }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+  const capacity = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId, ...(requireActive ? { isActive: true } : {}) }, { $inc: { bookingVersion: 1 } }, { returnDocument: 'after', session }).exec();
   if (!capacity) fail(409, 'Managed capacity configuration is missing or inactive');
   return capacity;
 }
@@ -233,21 +233,21 @@ async function lockSelectedCells(cellIds: Types.ObjectId[], facilityId: Types.Ob
   const zoneIds = [...new Set(cells.map(cell => cell.zoneId.toString()))].sort();
   for (const zoneId of zoneIds) {
     const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId, isActive: true, deletedAt: { $exists: false } },
-      { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
+      { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session }).exec();
     if (!zone) fail(409, 'Selected Cell parent Zone must be active');
   }
   const rackIds = [...new Set(cells.map(cell => cell.rackId.toString()))].sort();
   for (const rackId of rackIds) {
     const source = cells.find(cell => cell.rackId.toString() === rackId);
     const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId, zoneId: source.zoneId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, deletedAt: { $exists: false } },
-      { $inc: { layoutVersion: 1 } }, { new: true, session }).exec();
+      { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session }).exec();
     if (!rack) fail(409, 'Selected Cell parent Rack must be active');
   }
   const locked = [] as any[];
   for (const cell of cells) {
     const row = await WarehouseCellModel.findOneAndUpdate({ _id: cell._id, facilityId, operationalStatus: WarehouseOperationalStatus.AVAILABLE,
       deletedAt: { $exists: false }, usedWeightKg: { $eq: 0, $exists: true }, usedVolumeM3: { $eq: 0, $exists: true } },
-      { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+      { $inc: { allocationVersion: 1 } }, { returnDocument: 'after', session }).exec();
     if (!row) fail(409, 'Selected Cell is not physically available for a new reservation');
     locked.push(row);
   }
@@ -497,8 +497,13 @@ export class ManagedReservationService {
     const reservationId = id(idInput, 'reservationId');
     const reservation = await ReservationModel.findOne({ _id: reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY }).exec();
     if (!reservation) fail(404, 'Managed reservation not found');
-    if (actor.role === UserRole.CUSTOMER) { if (!reservation.customerId.equals(actor._id)) fail(404, 'Managed reservation not found'); }
-    else { requireManagement(actor); assertFacilityScope(actor, reservation.facilityId); }
+    if (actor.role === UserRole.CUSTOMER) {
+      if (!reservation.customerId.equals(actor._id)) fail(404, 'Managed reservation not found');
+    } else if (actor.role === UserRole.FACILITY_STAFF) {
+      assertFacilityScope(actor, reservation.facilityId);
+    } else {
+      requireManagement(actor); assertFacilityScope(actor, reservation.facilityId);
+    }
     return reservation;
   }
   static async approve(idInput: unknown, actor: Actor) {

@@ -120,7 +120,7 @@ async function lockRequestItem(itemId: Types.ObjectId, reservationId: Types.Obje
   const version = Number.isSafeInteger(item.__v) ? { __v: item.__v } : { __v: { $exists: false } };
   const locked = await InventoryItemModel.findOneAndUpdate({ ...identity,
     status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.CHECKED_OUT] }, ...version },
-  { $inc: { __v: 1 } }, { new: true, session }).exec();
+  { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
   if (!locked) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Item changed concurrently; reload and retry');
   return locked;
 }
@@ -142,7 +142,7 @@ async function lockRequestReservation(request: IInventoryInboundRequest, session
   const locked = await ReservationModel.findOneAndUpdate({ ...identity, ...versionFilter,
     ...(options.rejectClosure ? { activeClosureRequestId: null } : {}),
     ...(options.requireActiveTerm ? { status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now } } : {}) },
-  { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  { $inc: { inventoryVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!locked) {
     if (options.rejectClosure && current.activeClosureRequestId) {
       fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Inbound acceptance is blocked while reservation closure is pending');
@@ -163,7 +163,7 @@ async function lockRequestReservationByIdentity(identity: { reservationId: Types
     ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
     : { inventoryVersion: version };
   const locked = await ReservationModel.findOneAndUpdate({ ...scope, ...versionFilter, activeClosureRequestId: null },
-    { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+    { $inc: { inventoryVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
   if (!locked) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Reservation lifecycle changed concurrently; reload and retry');
   return locked;
 }
@@ -244,7 +244,7 @@ export class RepeatedInboundOperationsService {
         uploadLeaseToken: randomUUID(), uploadLeaseUntil: new Date(Date.now() + 2 * 60 * 60 * 1000), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), nextDeleteAt: new Date() }]);
       const asset = await CloudinaryService.uploadInventoryImage(file.buffer, folder, generated);
       if (!asset.secureUrl.startsWith('https://') || asset.width !== image.width || asset.height !== image.height || asset.format.toLowerCase() !== image.format) fail(502, 'EVIDENCE_UPLOAD_FAILED', 'Cloudinary metadata did not match the validated image');
-      const saved = await ReceivingInspectionUploadModel.findOneAndUpdate({ _id: upload._id, status: 'UPLOADING' }, { $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, nextDeleteAt: new Date() }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 } }, { new: true }).exec();
+      const saved = await ReceivingInspectionUploadModel.findOneAndUpdate({ _id: upload._id, status: 'UPLOADING' }, { $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, nextDeleteAt: new Date() }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 } }, { returnDocument: 'after' }).exec();
       if (!saved) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Evidence upload changed during completion');
       return { uploadId: saved._id, secureUrl: saved.secureUrl, publicId: saved.publicId, width: saved.width, height: saved.height, format: saved.format, expiresAt: saved.expiresAt };
     } catch (error) {
@@ -370,7 +370,7 @@ export class RepeatedInboundOperationsService {
     return recoverEvent(requestId, actor._id, Operation.CONFIRM, idem, payloadHash, () => transaction(async session => {
       const item = await InventoryItemModel.findOneAndUpdate({ _id: itemProbe._id, __v: itemProbe.__v,
         customerId: preflightRequest.customerId, managedReservationId: preflightRequest.reservationId, facilityId: preflightRequest.facilityId,
-        status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.CHECKED_OUT] }, ...live }, { $inc: { __v: 1 } }, { new: true, session }).exec();
+        status: { $in: [InventoryItemStatus.IN_STORAGE, InventoryItemStatus.CHECKED_OUT] }, ...live }, { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
       if (!item) fail(409, 'INBOUND_REQUEST_VERSION_CONFLICT', 'Item changed concurrently; reload and retry');
       const now = new Date();
       const structuralCellId = item.status === InventoryItemStatus.IN_STORAGE ? item.currentCellId : destinationCellId;
@@ -378,7 +378,7 @@ export class RepeatedInboundOperationsService {
       const lockCell = await WarehouseCellModel.findOne({ _id: structuralCellId, facilityId: item.facilityId, ...live }).session(session).exec();
       if (!lockCell) fail(409, 'CAPACITY_UNKNOWN', 'Destination Cell is missing or outside the Item Facility');
       const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: lockCell.zoneId, facilityId: lockCell.facilityId, isActive: true, ...live },
-        { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
+        { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session }).exec();
       if (!zone) fail(409, 'CAPACITY_UNKNOWN', 'Destination Zone is unavailable');
       const reservation = await lockRequestReservationByIdentity({ reservationId: preflightRequest.reservationId,
         facilityId: preflightRequest.facilityId, customerId: preflightRequest.customerId }, session, now);
@@ -419,7 +419,7 @@ export class RepeatedInboundOperationsService {
       if (!allocation || !(reservation.allocatedCellIds ?? []).some((allocatedId: Types.ObjectId) => allocatedId.equals(cellId))) fail(409, 'INBOUND_REQUEST_INELIGIBLE', 'Destination Cell must remain allocated to this reservation');
       const cell = await WarehouseCellModel.findOne({ _id: cellId, facilityId: reservation.facilityId, ...live }).session(session).exec();
       if (!cell || cell.operationalStatus !== WarehouseOperationalStatus.AVAILABLE || cell.dimensions.usableHeightM === undefined) fail(409, 'CAPACITY_UNKNOWN', 'Destination Cell must be active, available and have measured usable height');
-      const rack = await WarehouseRackModel.findOneAndUpdate({ _id: cell.rackId, zoneId: cell.zoneId, facilityId: cell.facilityId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }, { $inc: { layoutVersion: 1 } }, { new: true, session }).exec();
+      const rack = await WarehouseRackModel.findOneAndUpdate({ _id: cell.rackId, zoneId: cell.zoneId, facilityId: cell.facilityId, operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }, { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session }).exec();
       if (!rack) fail(409, 'CAPACITY_UNKNOWN', 'Destination Rack is unavailable');
       const unit: Dimensions = inspection.actualUnitDimensionsM, quantity = current.requestedQuantity;
       const weight = round(inspection.actualUnitWeightKg * quantity, 3), volume = round(unit.widthM * unit.depthM * unit.heightM * quantity, 6);
@@ -474,7 +474,7 @@ export class RepeatedInboundOperationsService {
       const nextWeight = round(stock.actualTotalWeightKg + weight, 3), nextVolume = round(stock.actualTotalVolumeM3 + volume, 6);
       const cellUpdate = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, usedWeightKg: fullCell.usedWeightKg, usedVolumeM3: fullCell.usedVolumeM3, operationalStatus: WarehouseOperationalStatus.AVAILABLE,
         $expr: { $and: [{ $lte: [{ $add: ['$usedWeightKg', weight] }, '$maxWeightKg'] }, { $lte: [{ $add: ['$usedVolumeM3', volume] }, capacityVolume] }] } },
-      { $inc: { usedWeightKg: weight, usedVolumeM3: volume } }, { new: true, session }).exec();
+      { $inc: { usedWeightKg: weight, usedVolumeM3: volume } }, { returnDocument: 'after', session }).exec();
       if (!cellUpdate) fail(409, 'CAPACITY_EXCEEDED', 'Cell usage changed concurrently; retry');
       reservation.usedCapacityM3 = nextReservationVolume; await reservation.save({ session });
       await movement.save({ session });

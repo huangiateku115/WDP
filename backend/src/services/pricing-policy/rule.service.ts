@@ -87,7 +87,7 @@ export class RuleService {
     try {
       return await session.withTransaction(async () => {
         // This must be the first transaction operation, before any interval reads.
-        const guard = await ScopeModel.findOneAndUpdate({ _id }, { $inc: { sequence: 1 } }, { new: true, session }).exec();
+        const guard = await ScopeModel.findOneAndUpdate({ _id }, { $inc: { sequence: 1 } }, { returnDocument: 'after', session }).exec();
         if (!guard || !Number.isSafeInteger(guard.sequence)) throw new RuleError(409, 'Version allocation failed');
         return operation(session, guard.sequence);
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });

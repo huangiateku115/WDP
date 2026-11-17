@@ -256,7 +256,7 @@ async function lockItemForRequest(scope: Scope, session: ClientSession) {
   const locked = await InventoryItemModel.findOneAndUpdate({ _id: scope.itemId, customerId: scope.customerId,
     managedReservationId: scope.reservationId, facilityId: scope.facilityId,
     status: { $in: ['IN_STORAGE', 'CHECKED_OUT'] }, ...versionFilter, ...live } as any,
-  { $inc: { __v: 1 } }, { new: true, session }).exec();
+  { $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
   if (!locked) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_VERSION_CONFLICT, 'Item changed concurrently; reload and retry');
   return locked;
 }
@@ -280,7 +280,7 @@ async function lockReservationFence(scope: Scope, session: ClientSession, option
   const locked = await ReservationModel.findOneAndUpdate({ ...identity, ...versionFilter,
     ...(options.now ? { status: ReservationStatus.ACTIVE, startDate: { $lte: options.now }, endDate: { $gt: options.now } } : {}),
     ...(options.rejectClosure ? { activeClosureRequestId: null } : {}) } as any,
-  { $inc: { inventoryVersion: 1 } }, { new: true, session, runValidators: true }).exec() as any;
+  { $inc: { inventoryVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec() as any;
   if (!locked) return fail(409, ManagedStockErrorCode.INBOUND_REQUEST_VERSION_CONFLICT, 'Reservation lifecycle changed concurrently; reload and retry');
   return locked;
 }

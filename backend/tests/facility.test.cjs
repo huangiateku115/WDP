@@ -213,7 +213,7 @@ test('update uses dotted nested fields and validation without upsert', async t =
     assert.equal(filter._id, id);
     assert.deepEqual(filter.deletedAt, { $exists: false });
     assert.deepEqual(update, { $set: { name: 'Updated', 'address.city': 'Da Nang' } });
-    assert.deepEqual(options, { new: true, runValidators: true });
+    assert.deepEqual(options, { returnDocument: 'after', runValidators: true });
     return query({ name: 'Updated' });
   });
   assert.equal((await service.updateFacility(id, { name: ' Updated ', address: { city: 'Da Nang' } })).name, 'Updated');

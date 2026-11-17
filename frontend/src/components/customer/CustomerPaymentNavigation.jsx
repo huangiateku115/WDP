@@ -3,6 +3,21 @@ import { eligiblePayosPurpose } from "@/lib/selfStoragePayos";
 import { Button, recordId } from "./RentalBackendUI";
 
 export function SelfPaymentNavigation({ contract, reservation }) {
+  if (reservation?.serviceType === "MANAGED_INVENTORY" && reservation?.bookingFlowVersion === 3 &&
+      reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
+      ["PAID", "CHECKIN_READY", "ACTIVE"].includes(reservation.status)) {
+    const statusText = reservation.status === "PAID"
+      ? "Đã xác nhận thanh toán 100%. Hợp đồng đang chờ khách hàng và cơ sở hoàn tất thủ tục ký."
+      : reservation.status === "CHECKIN_READY"
+        ? "Hợp đồng đã được xác minh; đơn thuê đang chờ hoàn tất bàn giao."
+        : "Đơn thuê đã được kích hoạt sau khi hoàn tất bàn giao.";
+    return (
+      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+        <p className="text-sm font-semibold text-emerald-800">{statusText}</p>
+        <Button asChild variant="outline"><Link to={`/portal/contracts/${recordId(reservation)}`}>Xem hợp đồng</Link></Button>
+      </div>
+    );
+  }
   if (reservation?.serviceType !== "SELF_STORAGE") return null;
   const purpose = eligiblePayosPurpose(reservation, contract);
 

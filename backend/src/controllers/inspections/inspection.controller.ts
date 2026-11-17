@@ -117,7 +117,7 @@ export const completeInspection = async (req: Request, res: Response) => {
             deletedAt: { $exists: false },
             ...versionCas(storageUnit.bookingVersion, 'bookingVersion'),
           }, { $inc: { bookingVersion: 1 } },
-          { new: true, session }).exec();
+          { returnDocument: 'after', session }).exec();
           if (!lockedUnit) throw new InspectionActivationError(409, 'StorageUnit changed before CHECK_IN activation.');
 
           const activated = await reservationWriter.findOneAndUpdate({
@@ -131,7 +131,7 @@ export const completeInspection = async (req: Request, res: Response) => {
             $inc: { __v: 1 },
             $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
               reason: 'Hoàn tất bàn giao kho (CHECK_IN)', createdAt: new Date() } } },
-          { new: true, session }).exec();
+          { returnDocument: 'after', session }).exec();
           if (!activated) throw new InspectionActivationError(409, 'Reservation changed before CHECK_IN activation.');
 
           completedInspection = await inspectionWriter.findOneAndUpdate({
@@ -142,7 +142,7 @@ export const completeInspection = async (req: Request, res: Response) => {
             facilityId: linkedReservation.facilityId,
             storageUnitId: linkedReservation.storageUnitId,
             ...versionCas(before.__v, '__v'),
-          }, { $set: { status: InspectionStatus.COMPLETED }, $inc: { __v: 1 } }, { new: true, session }).exec();
+          }, { $set: { status: InspectionStatus.COMPLETED }, $inc: { __v: 1 } }, { returnDocument: 'after', session }).exec();
           if (!completedInspection) throw new InspectionActivationError(409, 'Inspection changed before CHECK_IN activation.');
 
           const occupiedUnit = await storageUnitWriter.findOneAndUpdate({
@@ -150,7 +150,7 @@ export const completeInspection = async (req: Request, res: Response) => {
             facilityId: before.facilityId,
             deletedAt: { $exists: false },
             bookingVersion: currentVersion(storageUnit.bookingVersion) + 1,
-          }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { new: true, session }).exec();
+          }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { returnDocument: 'after', session }).exec();
           if (!occupiedUnit) throw new InspectionActivationError(409, 'StorageUnit changed before CHECK_IN could be committed.');
         }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       } catch (error: any) {
@@ -203,7 +203,7 @@ export const completeInspection = async (req: Request, res: Response) => {
     }
     const inspection = await InspectionModel.findOneAndUpdate(
       { _id: req.params.id, status: InspectionStatus.DRAFT } as any,
-      { status: InspectionStatus.COMPLETED }, { new: true }
+      { status: InspectionStatus.COMPLETED }, { returnDocument: 'after' }
     );
     if (!inspection) return res.status(404).json({ success: false, message: 'Inspection not found or already completed' });
     

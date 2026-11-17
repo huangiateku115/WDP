@@ -123,7 +123,7 @@ export const signContract = async (req: Request, res: Response) => {
           let signed: any = null;
           await session.withTransaction(async () => {
             const capacityLock = await ManagedFacilityCapacityModel.findOneAndUpdate(
-              { facilityId: linkedReservation.facilityId }, { $inc: { bookingVersion: 1 } }, { new: true, session },
+              { facilityId: linkedReservation.facilityId }, { $inc: { bookingVersion: 1 } }, { returnDocument: 'after', session },
             ).exec();
             if (!capacityLock) return;
             const managedContract = await contracts.findOne({ _id: existing._id, customerId: req.user!._id, status: ContractStatus.DRAFT }).session(session).exec();
@@ -150,7 +150,7 @@ export const signContract = async (req: Request, res: Response) => {
         status: ContractStatus.SIGNED, 
         signedByCustomerAt: new Date() 
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!contract) return res.status(400).json({ success: false, message: 'Contract cannot be signed (not found or already signed).' });
     return res.json({ success: true, data: contract });
@@ -250,7 +250,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
               paperContractProofUrl: uploaded.secureUrl, paperContractVerifiedBy: req.user!._id, paperContractVerifiedAt: now },
             $push: { statusHistory: { status: ReservationStatus.CHECKIN_READY, actorId: req.user!._id,
               reason: 'Authorized Facility representative verified actual two-party signed contract evidence', createdAt: now } },
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!updated) throw new ContractControllerError(409, 'Reservation changed concurrently; reload and retry.');
           currentContract.signatures = [
             ...(currentContract.signatures ?? []).filter(signature => !(signature.version === currentVersion.version && signature.contentHash === currentVersion.contentHash)),
@@ -361,7 +361,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
             $set: { status: ReservationStatus.CHECKIN_READY },
             $push: { statusHistory: { status: ReservationStatus.CHECKIN_READY, actorId: req.user!._id,
               reason: 'Staff confirmed signed paper contract with proof image', createdAt: now } },
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!updatedReservation) throw new ContractControllerError(409,
             'Managed reservation changed or closure is pending; reload and retry.');
 
