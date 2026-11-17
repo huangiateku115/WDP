@@ -132,7 +132,11 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
         <strong>{cell.code || `Cell C${cell.cellNumber}`}</strong>
 
-        <CellPeriodStatus cell={cell} />
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <CellPeriodStatus cell={cell} />
+          {cell.isMine === true && <span className="wm-owned-chip">Ô thuê của bạn</span>}
+          {cell.hasMyInventory === true && <span className="wm-owned-chip">Hàng của bạn</span>}
+        </span>
 
       </div>
 
@@ -447,11 +451,9 @@ export default function WarehouseCells({
 
                       <CellPeriodStatus cell={cell} />
 
-                      {cell.hasMyInventory === true && (
+                      {cell.isMine === true && <span className="wm-owned-chip">Ô thuê của bạn</span>}
 
-                        <span>Hàng của bạn</span>
-
-                      )}
+                      {cell.hasMyInventory === true && <span className="wm-owned-chip">Hàng của bạn</span>}
 
                       {picked && <span>Trong giỏ thuê</span>}
 

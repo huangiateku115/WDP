@@ -123,12 +123,12 @@ async function reconcileExpiredReservationSessions(reservationId: Types.ObjectId
     const ended = await SessionModel.findOneAndUpdate({ _id: row._id, reservationId, status: SS.ACTIVE, expiresAt: { $lte: now } },
       { $set: { status: SS.EXPIRED, endedAt: row.expiresAt }, $inc: { revision: 1 },
         $push: { audit: systemAudit('SESSION_EXPIRED', row.expiresAt, { visitId: String(row.visitId), reconciliationAt: now.toISOString() }) } },
-      { new: true, session: dbSession }).exec();
+      { returnDocument: 'after', session: dbSession }).exec();
     if (!ended) continue;
     const closed: any = await (VisitModel as any).findOneAndUpdate({ _id: ended.visitId, reservationId, status: VS.CHECKED_IN },
       { $set: { status: VS.COMPLETED, checkedOutAt: ended.expiresAt }, $inc: { revision: 1 },
         $push: { audit: systemAudit('ACCESS_SESSION_EXPIRED', ended.expiresAt, { sessionId: String(ended._id) }) } },
-      { new: true, session: dbSession }).exec();
+      { returnDocument: 'after', session: dbSession }).exec();
     if (!closed) fail(409, 'EXPIRY_RECONCILIATION_CONFLICT', 'Expired Session Visit state is inconsistent; reconciliation was rolled back.');
   }
 }
@@ -169,7 +169,7 @@ export class ManagedAccessService {
       await session.withTransaction(async () => {
         const facility: any = await FacilityModel.findOneAndUpdate({ _id: reservation.facilityId, status: FacilityStatus.ACTIVE,
           serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } },
-        { $inc: { managedAccessRevision: 1 } }, { new: true, session }).select('managedVisitSchedule').exec();
+        { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session }).select('managedVisitSchedule').exec();
         if (!facility) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
         const latestReservation = await ReservationModel.findOne({ _id: reservationId, customerId: actor._id,
           serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
@@ -255,7 +255,7 @@ export class ManagedAccessService {
         // The Facility revision is the shared serialization fence used by Visit create and amend.
         const facility: any = await FacilityModel.findOneAndUpdate({ _id: visit.facilityId, status: FacilityStatus.ACTIVE,
           serviceTypes: FacilityServiceType.MANAGED_INVENTORY, deletedAt: { $exists: false } },
-        { $inc: { managedAccessRevision: 1 } }, { new: true, session: dbSession }).select('managedVisitSchedule').exec();
+        { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: dbSession }).select('managedVisitSchedule').exec();
         if (!facility) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
         const latest: any = await VisitModel.findOne({ _id: id, customerId: actor._id }).session(dbSession).exec();
         if (!latest) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
@@ -311,7 +311,7 @@ export class ManagedAccessService {
     await markMissedVisits({ _id: id, customerId: actor._id }, now, 1);
     const cancelled = await VisitModel.findOneAndUpdate({ _id: id, customerId: actor._id, status: VS.SCHEDULED, revision, endsAt: { $gt: new Date() } },
       { $set: { status: VS.CANCELLED }, $inc: { revision: 1 }, $push: { audit: audit('VISIT_CANCELLED', actor, now) } },
-      { new: true, runValidators: true }).exec();
+      { returnDocument: 'after', runValidators: true }).exec();
     if (cancelled) return cancelled;
     await markMissedVisits({ _id: id, customerId: actor._id }, new Date(), 1);
     const current = await VisitModel.findOne({ _id: id, customerId: actor._id }).select('status revision').lean().exec();
@@ -348,13 +348,13 @@ export class ManagedAccessService {
     try {
       await dbSession.withTransaction(async () => {
         // This per-Staff write fence makes concurrent assignment transactions serialize before checking time overlap.
-        const staff = await UserModel.findOneAndUpdate({ _id: staffId, role: UserRole.FACILITY_STAFF, assignedFacilityId: visit.facilityId, isActive: true }, { $inc: { managedAccessScheduleRevision: 1 } }, { new: true, session: dbSession }).select('_id').exec();
+        const staff = await UserModel.findOneAndUpdate({ _id: staffId, role: UserRole.FACILITY_STAFF, assignedFacilityId: visit.facilityId, isActive: true }, { $inc: { managedAccessScheduleRevision: 1 } }, { returnDocument: 'after', session: dbSession }).select('_id').exec();
         if (!staff) fail(403, 'STAFF_FACILITY_MISMATCH', 'Nhân viên không hoạt động hoặc thuộc Facility khác.');
         const conflict = await VisitModel.findOne({ _id: { $ne: visit._id }, assignedStaffId: staffId, facilityId: visit.facilityId, status: { $in: [VS.SCHEDULED, VS.CHECKED_IN] }, startsAt: { $lt: visit.endsAt }, endsAt: { $gt: visit.startsAt } }).select('_id').session(dbSession).lean().exec();
         if (conflict) fail(409, 'ASSIGNMENT_CONFLICT', 'Nhân viên đã có lịch trùng thời gian.');
         const entry = { staffId, actorId: actor._id, at: now, reason: (input.reason as string).trim() };
         assigned = await VisitModel.findOneAndUpdate({ _id: visit._id, facilityId: visit.facilityId, status: VS.SCHEDULED, revision: Number(expectedRevision) },
-          { $set: { assignedStaffId: staffId }, $inc: { revision: 1 }, $push: { assignmentHistory: entry, audit: audit('STAFF_ASSIGNED', actor, now, { staffId: String(staffId), reason: entry.reason }) } }, { new: true, session: dbSession }).exec();
+          { $set: { assignedStaffId: staffId }, $inc: { revision: 1 }, $push: { assignmentHistory: entry, audit: audit('STAFF_ASSIGNED', actor, now, { staffId: String(staffId), reason: entry.reason }) } }, { returnDocument: 'after', session: dbSession }).exec();
         if (!assigned) fail(412, 'STALE_REVISION', 'Lịch vừa thay đổi; tải lại trước khi phân công.');
       });
     } finally { await dbSession.endSession(); }
@@ -378,12 +378,12 @@ export class ManagedAccessService {
           const ended = await SessionModel.findOneAndUpdate({ _id: row._id, status: SS.ACTIVE, expiresAt: { $lte: now } },
             { $set: { status: SS.EXPIRED, endedAt: row.expiresAt }, $inc: { revision: 1 },
               $push: { audit: systemAudit('SESSION_EXPIRED', row.expiresAt, { visitId: String(row.visitId), reconciliationAt: now.toISOString() }) } },
-            { new: true, session: dbSession }).exec();
+            { returnDocument: 'after', session: dbSession }).exec();
           if (!ended) return;
           const closed: any = await (VisitModel as any).findOneAndUpdate({ _id: ended.visitId, status: VS.CHECKED_IN },
             { $set: { status: VS.COMPLETED, checkedOutAt: ended.expiresAt }, $inc: { revision: 1 },
               $push: { audit: systemAudit('ACCESS_SESSION_EXPIRED', ended.expiresAt, { sessionId: String(ended._id) }) } },
-            { new: true, session: dbSession }).exec();
+            { returnDocument: 'after', session: dbSession }).exec();
           if (!closed) fail(409, 'EXPIRY_RECONCILIATION_CONFLICT', 'Expired Session Visit state is inconsistent; reconciliation was rolled back.');
           changed = true;
         });
@@ -428,7 +428,7 @@ export class ManagedAccessService {
           serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).session(dbSession).exec();
         if (!reservationCandidate) fail(409, 'RESERVATION_SCOPE_CHANGED', 'Reservation không còn khớp với lịch.');
         const fencedReservation = await ReservationModel.findOneAndUpdate({ _id: reservationCandidate._id, customerId: currentVisit.customerId, facilityId: currentVisit.facilityId,
-          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }, { $inc: { managedAccessRevision: 1 } }, { new: true, session: dbSession }).exec();
+          serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }, { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: dbSession }).exec();
         if (!fencedReservation) fail(409, 'RESERVATION_SCOPE_CHANGED', 'Reservation vừa thay đổi; tải lại trước khi check-in.');
         const reservation = await ReservationModel.findById(fencedReservation._id).session(dbSession).exec();
         if (!reservation || reservation.status !== ReservationStatus.ACTIVE || reservation.startDate > now || reservation.endDate <= now || !reservation.handoverAt || !reservation.handoverByStaffId) fail(409, 'RENTAL_NOT_ACTIVE', 'Chỉ rental V3 đã ACTIVE, trong kỳ thuê và đã bàn giao mới được check-in.');
@@ -439,7 +439,7 @@ export class ManagedAccessService {
           const target: any = await ReservationModel.findOneAndUpdate({ _id: scopedId, customerId: currentVisit.customerId, facilityId: currentVisit.facilityId,
             serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3, status: ReservationStatus.ACTIVE,
             startDate: { $lte: now }, endDate: { $gt: now }, handoverAt: { $exists: true, $ne: null }, handoverByStaffId: { $exists: true, $ne: null },
-            $or: [{ activeClosureRequestId: null }, { activeClosureRequestId: { $exists: false } }] }, { $inc: { managedAccessRevision: 1 } }, { new: true, session: dbSession }).exec();
+            $or: [{ activeClosureRequestId: null }, { activeClosureRequestId: { $exists: false } }] }, { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: dbSession }).exec();
           if (!target) fail(409, 'INVALID_RESERVATION_SCOPE', 'Reservation đích không còn cùng Customer/Facility, hoạt động và đã bàn giao.');
           const targetContract: any = await ContractModel.findOne({ reservationId: target._id, customerId: currentVisit.customerId, status: ContractStatus.SIGNED }).session(dbSession).lean().exec();
           const targetVersion = targetContract?.contentVersions?.find((version: any) => version.version === targetContract.currentContentVersion);
@@ -451,7 +451,7 @@ export class ManagedAccessService {
           const targetPaymentFilter = { _id: target.fullPaymentId, reservationId: target._id, customerId: currentVisit.customerId, facilityId: currentVisit.facilityId,
             serviceType: FacilityServiceType.MANAGED_INVENTORY, purpose: PaymentPurpose.FULL_RENT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,
             providerSettlementStatus: ProviderSettlementStatus.VERIFIED, applicationStatus: PaymentApplicationStatus.APPLIED };
-          const targetPayment = await PaymentModel.findOneAndUpdate(targetPaymentFilter, { $inc: { managedAccessRevision: 1 } }, { new: true, session: dbSession }).select('_id').exec();
+          const targetPayment = await PaymentModel.findOneAndUpdate(targetPaymentFilter, { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: dbSession }).select('_id').exec();
           if (!targetPayment) fail(409, 'PAYMENT_NOT_VERIFIED', 'Thanh toán Reservation đích chưa được xác minh.');
           await ContractModel.updateOne({ _id: targetContract._id, status: ContractStatus.SIGNED }, { $inc: { managedAccessRevision: 1 } }, { session: dbSession }).exec();
           additionalReservations.push(target);
@@ -460,7 +460,7 @@ export class ManagedAccessService {
           { $inc: { managedAccessRevision: 1 } }, { session: dbSession }).exec();
         if (facilityFence.matchedCount !== 1) fail(409, 'FACILITY_UNAVAILABLE', 'Cơ sở Managed Inventory không khả dụng.');
         const staffFence = await UserModel.findOneAndUpdate({ _id: actor._id, role: UserRole.FACILITY_STAFF, assignedFacilityId: reservation.facilityId, isActive: true },
-          { $inc: { managedAccessScheduleRevision: 1 } }, { new: true, session: dbSession }).select('_id').exec();
+          { $inc: { managedAccessScheduleRevision: 1 } }, { returnDocument: 'after', session: dbSession }).select('_id').exec();
         if (!staffFence) fail(403, 'ASSIGNMENT_REQUIRED', 'Nhân viên không còn được phân công hoặc đã bị vô hiệu hóa.');
         const requestedCells = [...new Set([...(reservation.allocatedCellIds ?? []), ...additionalReservations.flatMap(row => row.allocatedCellIds ?? [])].map(String))].map(value => new Types.ObjectId(value));
         if (!requestedCells.length) fail(409, 'ALLOCATION_INVALID', 'Reservation chưa có Cell được phân bổ.');
@@ -539,11 +539,11 @@ export class ManagedAccessService {
         const filter: Record<string, unknown> = { _id: asId(sessionId, 'sessionId'), facilityId: actor.assignedFacilityId, status: SS.ACTIVE, revision: Number(expectedRevision) };
         if (actor.role === UserRole.FACILITY_STAFF) filter.assignedStaffId = actor._id;
         const update: Record<string, unknown> = { $set: { status: revoke ? SS.REVOKED : SS.CHECKED_OUT, endedAt: now, ...(revoke ? { revokedAt: now, revokedBy: actor._id, revokeReason: (input.reason as string).trim() } : {}) }, $inc: { revision: 1 }, $push: { audit: audit(revoke ? 'SESSION_REVOKED' : 'SESSION_CHECKED_OUT', actor, now, revoke ? { reason: (input.reason as string).trim() } : undefined) } };
-        const ended = await SessionModel.findOneAndUpdate(filter, update, { new: true, session: dbSession }).exec();
+        const ended = await SessionModel.findOneAndUpdate(filter, update, { returnDocument: 'after', session: dbSession }).exec();
         if (!ended) fail(412, 'STALE_OR_INACTIVE_SESSION', 'Session đã hết hạn, kết thúc hoặc thay đổi; tải lại trước khi thao tác.');
         if (ended.expiresAt <= now && !revoke) { ended.status = SS.EXPIRED; ended.audit.push(audit('SESSION_EXPIRED_CHECKED_OUT', actor, now)); await ended.save({ session: dbSession }); }
         if (!revoke) {
-          const visit = await VisitModel.findOneAndUpdate({ _id: ended.visitId, status: VS.CHECKED_IN }, { $set: { status: VS.COMPLETED, checkedOutAt: now }, $inc: { revision: 1 }, $push: { audit: audit('CUSTOMER_CHECKED_OUT', actor, now) } }, { new: true, session: dbSession }).exec();
+          const visit = await VisitModel.findOneAndUpdate({ _id: ended.visitId, status: VS.CHECKED_IN }, { $set: { status: VS.COMPLETED, checkedOutAt: now }, $inc: { revision: 1 }, $push: { audit: audit('CUSTOMER_CHECKED_OUT', actor, now) } }, { returnDocument: 'after', session: dbSession }).exec();
           if (!visit) fail(409, 'VISIT_SESSION_STATE_CONFLICT', 'Trạng thái Visit không khớp Session; thao tác đã hủy.');
         } else {
           const closedVisit = await VisitModel.updateOne({ _id: ended.visitId, status: VS.CHECKED_IN }, { $set: { status: VS.COMPLETED, checkedOutAt: now }, $inc: { revision: 1 }, $push: { audit: audit('SESSION_REVOKED', actor, now, { reason: (input.reason as string).trim() }) } }, { session: dbSession }).exec();
@@ -572,7 +572,7 @@ export async function assertManagedAccessSessionScope(input: { sessionId: string
     allowedPurposes: input.purpose, allowedCellIds: { $all: cellIds } },
   { $inc: { revision: 1 }, $push: { audit: { action: 'SESSION_SCOPE_FENCED', actorId: new Types.ObjectId(String(input.customerId)), actorRole: UserRole.CUSTOMER, at: now,
     details: { purpose: input.purpose, cellIds: cellIdStrings, priorRevision: input.expectedRevision } } } },
-  { new: true, session: input.dbSession }).exec();
+  { returnDocument: 'after', session: input.dbSession }).exec();
   const sessionReservationIds = new Set((record?.scopedReservationIds?.length ? record.scopedReservationIds : [record?.reservationId]).map((value: any) => String(value)));
   if (!record || requestedReservationIds.some(value => !sessionReservationIds.has(value))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Access Session không bao phủ đầy đủ các Reservation của thao tác.');
   if (!record || !isAccessSessionAllowed({ status: record.status, startedAt: record.startedAt, expiresAt: record.expiresAt, revision: record.revision,
@@ -581,7 +581,7 @@ export async function assertManagedAccessSessionScope(input: { sessionId: string
     expected: { now, revision: input.expectedRevision + 1, customerId: String(input.customerId), reservationId: String(input.reservationId), facilityId: String(input.facilityId), purpose: input.purpose, cellId: cellIdStrings[0]! } })) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Access Session không còn hiệu lực hoặc không khớp scope của thao tác.');
   const reservationFilter = { _id: input.reservationId, customerId: input.customerId, facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
     bookingFlowVersion: 3, status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now }, handoverAt: { $exists: true }, handoverByStaffId: { $exists: true } };
-  const reservationFence = await (ReservationModel as any).findOneAndUpdate(reservationFilter, { $inc: { managedAccessRevision: 1 } }, { new: true, session: input.dbSession }).exec();
+  const reservationFence = await (ReservationModel as any).findOneAndUpdate(reservationFilter, { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: input.dbSession }).exec();
   if (!reservationFence) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Rental không còn hoạt động hoặc đã thay đổi.');
   const reservation = await ReservationModel.findById(input.reservationId).session(input.dbSession).exec();
   if (!reservation || reservation.rentalPaymentFlow !== 'FULL_UPFRONT_V1' || !reservation.fullPaymentId) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Reservation không còn đáp ứng điều kiện Managed V3.');
@@ -589,7 +589,7 @@ export async function assertManagedAccessSessionScope(input: { sessionId: string
   for (const reservationId of requestedReservationIds.filter(value => value !== String(input.reservationId)).sort()) {
     const filter = { _id: new Types.ObjectId(reservationId), customerId: input.customerId, facilityId: input.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
       bookingFlowVersion: 3, status: ReservationStatus.ACTIVE, startDate: { $lte: now }, endDate: { $gt: now }, handoverAt: { $exists: true }, handoverByStaffId: { $exists: true } };
-    const target: any = await (ReservationModel as any).findOneAndUpdate(filter, { $inc: { managedAccessRevision: 1 } }, { new: true, session: input.dbSession }).exec();
+    const target: any = await (ReservationModel as any).findOneAndUpdate(filter, { $inc: { managedAccessRevision: 1 } }, { returnDocument: 'after', session: input.dbSession }).exec();
     if (!target || target.rentalPaymentFlow !== 'FULL_UPFRONT_V1' || !target.fullPaymentId) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Reservation đích không còn đủ điều kiện hoạt động.');
     const targetPaymentFilter = { _id: target.fullPaymentId, reservationId: target._id, customerId: input.customerId, facilityId: input.facilityId,
       serviceType: FacilityServiceType.MANAGED_INVENTORY, purpose: PaymentPurpose.FULL_RENT, provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED,

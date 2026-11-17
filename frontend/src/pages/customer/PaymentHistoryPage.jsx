@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import reservationApi from "@/api/reservationApi";
 import paymentApi from "@/api/paymentApi";
 import { useAuthSession, getAccessToken } from "@/lib/authSession";
@@ -8,20 +8,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatPayosVnd } from "@/lib/selfStoragePayos";
 import { MANAGED_INVENTORY, SELF_STORAGE, serviceType } from "@/lib/customerReservationService";
 import { customerPaymentStatus, selectOwnedSelfStorageReservation } from "@/lib/selfStoragePaymentHistory";
+import { isPayosPaymentPollable } from "@/lib/selfStoragePayosPolling";
 import { BackendScreen, LoadState, Message, recordId, rows, useBackend } from "@/components/customer/RentalBackendUI";
 
 function ReservationHistory({ reservation, reservationId, requestedPaymentId, cancelReturn }) {
   const session = useAuthSession();
+  const navigate = useNavigate();
   const service = serviceType(reservation);
   const resource = useBackend(
     () => paymentApi.listPayosPaymentsForReservation(reservationId, { serviceType: service }),
     [reservationId, service],
   );
+  const retryHistory = useRef(resource.retry);
+  retryHistory.current = resource.retry;
   const [page, setPage] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [reconcileBusy, setReconcileBusy] = useState(false);
   const [reconcileError, setReconcileError] = useState("");
+  const [settlementCheckExpired, setSettlementCheckExpired] = useState(false);
   const autoPageCount = useRef(0);
   const autoReconcileKey = useRef("");
 
@@ -57,6 +62,49 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
 
   const payments = page?.items || [];
   const relevantPayment = requestedPaymentId ? payments.find((payment) => payment.id === requestedPaymentId) : payments[0];
+
+  useEffect(() => { setSettlementCheckExpired(false); }, [relevantPayment?.id]);
+
+  useEffect(() => {
+    if (!relevantPayment || !isPayosPaymentPollable(relevantPayment)) return undefined;
+    const token = getAccessToken();
+    let active = true;
+    let attempts = 0;
+    let inFlight = false;
+    let timer;
+    const poll = async () => {
+      if (!active || inFlight || getAccessToken() !== token) return;
+      inFlight = true;
+      attempts += 1;
+      try {
+        const latest = await paymentApi.getPayosPaymentStatus(reservationId, relevantPayment.id, service);
+        if (!active || getAccessToken() !== token) return;
+        setPage((current) => current && ({ ...current, items: current.items.map((item) => item.id === latest.id ? { ...item, ...latest } : item) }));
+        if (latest.providerSettlementStatus === "VERIFIED" && latest.applicationStatus === "APPLIED") {
+          if (service === MANAGED_INVENTORY && reservation.bookingFlowVersion === 3 && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1") {
+            navigate(`/portal/contracts/${encodeURIComponent(reservationId)}`, { replace: true });
+          } else {
+            retryHistory.current();
+          }
+          return;
+        }
+      } catch {
+        // A status read failure does not change payment state or create a new attempt.
+      } finally {
+        inFlight = false;
+      }
+      if (attempts >= 30 && timer) window.clearInterval(timer);
+      if (attempts >= 30) setSettlementCheckExpired(true);
+    };
+    timer = window.setInterval(() => { void poll(); }, 2000);
+    void poll();
+    return () => {
+      active = false;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [relevantPayment?.id, relevantPayment?.status, relevantPayment?.checkoutState,
+    relevantPayment?.providerSettlementStatus, relevantPayment?.applicationStatus,
+    reservationId, service, reservation.bookingFlowVersion, reservation.rentalPaymentFlow, navigate]);
 
   const selfStorageUpfront = service === "SELF_STORAGE" && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1";
 
@@ -110,9 +158,11 @@ function ReservationHistory({ reservation, reservationId, requestedPaymentId, ca
   return (
     <>
       {applied && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status" aria-live="polite">{reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" && reservation.status === "PAID" ? "Đã thanh toán — Chờ ký hợp đồng và bàn giao. Quyền sử dụng kho chưa được kích hoạt." : "Thanh toán đã được xác minh và ghi nhận thành công."}</div>}
-      {applied && reservation.serviceType === "SELF_STORAGE" && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
+      {applied && reservation.rentalPaymentFlow === "FULL_UPFRONT_V1" &&
+        (reservation.serviceType === "SELF_STORAGE" || reservation.serviceType === MANAGED_INVENTORY) &&
         <Button asChild variant="outline"><Link to={`/portal/contracts/${reservationId}`}>Xem tiến độ hợp đồng</Link></Button>}
       {confirmedCancel && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status" aria-live="polite">Đã hủy thanh toán. Reservation không bị hủy.</div>}
+      {settlementCheckExpired && relevantPayment && isPayosPaymentPollable(relevantPayment) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status" aria-live="polite">Backend vẫn đang chờ xác nhận thanh toán từ PayOS. Không thanh toán lại hoặc tạo giao dịch mới; hãy làm mới lịch sử sau ít phút.</div>}
       {awaitingCancelCheck && <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="status" aria-live="polite">Đang xác minh trạng thái hủy với Backend. Chưa xác nhận hủy.</div>}
       {cancelReturn && awaitingCancelCheck && <div className="mt-3"><Message error={reconcileError}/><Button variant="outline" disabled={reconcileBusy} onClick={() => void verifyCancellation()}>{reconcileBusy ? "Đang kiểm tra…" : "Kiểm tra trạng thái hủy"}</Button></div>}
       <Card><CardContent>

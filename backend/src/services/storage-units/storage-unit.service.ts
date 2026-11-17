@@ -358,7 +358,7 @@ export class StorageUnitService {
       const restored = await StorageUnitModel.findOneAndUpdate(
         { _id: id, deletedAt: { $exists: true } },
         { $unset: { deletedAt: 1, deletedBy: 1 } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       ).exec();
       if (!restored) throw new StorageUnitError(404, 'Deleted storage unit not found');
       return restored;

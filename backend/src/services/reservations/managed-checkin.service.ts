@@ -45,7 +45,7 @@ async function tx<T>(work: (session: ClientSession) => Promise<T>): Promise<T> {
   finally { await session.endSession(); }
 }
 async function lockFacility(facilityId: Types.ObjectId, session: ClientSession) {
-  const lock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+  const lock = await ManagedFacilityCapacityModel.findOneAndUpdate({ facilityId }, { $inc: { bookingVersion: 1 } }, { returnDocument: 'after', session }).exec();
   if (!lock) fail(409, 'Managed capacity configuration is missing');
 }
 function assertFacilityRepresentative(actor: Actor, facilityId: Types.ObjectId) {
@@ -113,6 +113,73 @@ async function audit(reservation: any, actor: Actor, action: ManagedReservationA
 }
 
 export class ManagedCheckinService {
+  /**
+   * Materialize the Managed V3 contract as part of the verified FULL_RENT
+   * payment transaction. The contract remains DRAFT until the existing
+   * signature and handover workflow completes.
+   */
+  static async createV3ContractForVerifiedPayment(reservation: any, fullPayment: any, session: ClientSession) {
+    if (!reservation || reservation.serviceType !== FacilityServiceType.MANAGED_INVENTORY || reservation.bookingFlowVersion !== 3 ||
+        reservation.status !== ReservationStatus.PAID || reservation.rentalPaymentFlow !== 'FULL_UPFRONT_V1' ||
+        String(reservation.fullPaymentId) !== String(fullPayment?._id) ||
+        !fullPayment || fullPayment.purpose !== PaymentPurpose.FULL_RENT ||
+        fullPayment.status !== PaymentStatus.SUCCEEDED ||
+        fullPayment.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED ||
+        fullPayment.applicationStatus !== PaymentApplicationStatus.APPLIED ||
+        String(fullPayment.reservationId) !== String(reservation._id) ||
+        String(fullPayment.customerId) !== String(reservation.customerId) ||
+        String(fullPayment.facilityId) !== String(reservation.facilityId)) {
+      fail(409, 'Verified Managed V3 full-rent payment is required to create the contract');
+    }
+    if (!reservation.termsAcceptance || reservation.termsAcceptance.serviceType !== FacilityServiceType.MANAGED_INVENTORY ||
+        !reservation.allocatedCellIds?.length) fail(409, 'Managed V3 terms and Cell allocation snapshots are required');
+
+    const facility = await FacilityModel.findById(reservation.facilityId).session(session).lean().exec();
+    const profile = await CustomerProfileModel.findOne({ userId: reservation.customerId }).session(session).exec();
+    const customer = await UserModel.findById(reservation.customerId).session(session).exec();
+    if (!facility || !profile || !customer) fail(409, 'Managed V3 contract snapshot dependencies are unavailable');
+
+    const pricing = reservation.managedPricingSnapshot as any;
+    const content = { schemaVersion: 3,
+      reservation: { id: String(reservation._id), code: reservation.reservationCode, serviceType: reservation.serviceType,
+        facilityId: String(reservation.facilityId), cellIds: (reservation.allocatedCellIds ?? []).map(String).sort(),
+        allocatedCapacityM3: reservation.allocatedCapacity, startDate: reservation.startDate, endDate: reservation.endDate,
+        term: pricing?.term ?? pricing?.pricingRule?.term, signingDeadline: reservation.signingDeadline },
+      facility: { id: String(facility._id), name: facility.name, code: facility.code, address: facility.address },
+      pricing: { snapshot: pricing, estimatedRent: reservation.estimatedRent, depositAmount: reservation.depositAmount,
+        taxAmount: reservation.taxAmount, discountAmount: reservation.discountAmount,
+        totalPaid: fullPayment.amount, currency: fullPayment.currency, paymentId: String(fullPayment._id),
+        paymentStatus: fullPayment.applicationStatus },
+      termsAcceptance: { documentCode: reservation.termsAcceptance.documentCode, version: reservation.termsAcceptance.version,
+        versionId: reservation.termsAcceptance.versionId, serviceType: reservation.termsAcceptance.serviceType,
+        contentHash: reservation.termsAcceptance.contentHash, acceptedAt: reservation.termsAcceptance.acceptedAt } };
+    const contentHash = hashContent(content);
+    let contract = await ContractModel.findOne({ reservationId: reservation._id }).session(session).exec();
+    if (contract) {
+      const current = contract.contentVersions?.find(version => version.version === contract!.currentContentVersion);
+      if (!current || current.contentHash !== contentHash) fail(409, 'Managed V3 contract snapshot changed; support review is required');
+      return contract;
+    }
+
+    contract = new ContractModel({ contractCode: `CTR-${reservation.reservationCode}`, reservationId: reservation._id,
+      customerId: reservation.customerId, status: ContractStatus.DRAFT,
+      customerSnapshot: { fullName: customer.displayName, email: customer.email, phone: customer.phone, address: profile.address },
+      pricingSnapshot: content.pricing,
+      paymentSnapshot: { paymentId: fullPayment._id, purpose: fullPayment.purpose, amount: fullPayment.amount,
+        currency: fullPayment.currency, status: fullPayment.status,
+        providerSettlementStatus: fullPayment.providerSettlementStatus,
+        applicationStatus: fullPayment.applicationStatus, verifiedAt: fullPayment.succeededAt ?? new Date(),
+        appliedAt: new Date() },
+      currentContentVersion: 1,
+      contentVersions: [{ version: 1, contentHash, content, createdBy: reservation.customerId, createdAt: new Date() }],
+      signatures: [], termsVersion: reservation.termsAcceptance.version });
+    await contract.save({ session });
+    await audit(reservation, { _id: reservation.customerId, role: UserRole.CUSTOMER } as Actor,
+      ManagedReservationAction.CONTRACT_VERSION_CREATED,
+      { contractId: contract._id, version: 1, contentHash, source: 'VERIFIED_PAYOS_FULL_RENT_WEBHOOK' }, session);
+    return contract;
+  }
+
   static async inspectItem(itemIdInput: unknown, body: unknown, actor: Actor) {
     if (!enabled()) fail(404, 'Managed check-in flow is disabled');
     const itemId = id(itemIdInput, 'itemId');
@@ -168,20 +235,20 @@ export class ManagedCheckinService {
       const zoneIds = [...new Set(cells.map(cell => String(cell.zoneId)))].sort();
       for (const zoneId of zoneIds) {
         const zone = await WarehouseZoneModel.findOneAndUpdate({ _id: zoneId, facilityId: reservation.facilityId, isActive: true, ...live },
-          { $inc: { structureVersion: 1 } }, { new: true, session }).exec();
+          { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session }).exec();
         if (!zone) fail(409, 'Inspected Cell Zone must remain active');
       }
       const rackIds = [...new Set(cells.map(cell => String(cell.rackId)))].sort();
       for (const rackId of rackIds) {
         const source = cells.find(cell => String(cell.rackId) === rackId)!;
         const rack = await WarehouseRackModel.findOneAndUpdate({ _id: rackId, facilityId: reservation.facilityId, zoneId: source.zoneId,
-          operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }, { $inc: { layoutVersion: 1 } }, { new: true, session }).exec();
+          operationalStatus: WarehouseOperationalStatus.AVAILABLE, ...live }, { $inc: { layoutVersion: 1 } }, { returnDocument: 'after', session }).exec();
         if (!rack) fail(409, 'Inspected Cell Rack must remain available');
       }
       for (const cell of cells) {
         const locked = await WarehouseCellModel.findOneAndUpdate({ _id: cell._id, facilityId: reservation.facilityId,
           operationalStatus: WarehouseOperationalStatus.AVAILABLE, usedWeightKg: { $eq: 0, $exists: true }, usedVolumeM3: { $eq: 0, $exists: true }, ...live },
-        { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+        { $inc: { allocationVersion: 1 } }, { returnDocument: 'after', session }).exec();
         if (!locked) fail(409, 'Inspected Cell physical usage must be known and empty');
       }
       if (input.decision === ReceivingInspectionDecision.ACCEPTED &&
@@ -314,7 +381,13 @@ export class ManagedCheckinService {
       }
       contract = new ContractModel({ contractCode: `CTR-${reservation.reservationCode}`, reservationId, customerId: reservation.customerId,
         status: ContractStatus.DRAFT, customerSnapshot: { fullName: customer.displayName, email: customer.email, phone: customer.phone, address: profile.address },
-        pricingSnapshot: content.pricing, currentContentVersion: 1,
+        pricingSnapshot: content.pricing,
+        ...(fullPayment ? { paymentSnapshot: { paymentId: fullPayment._id, purpose: fullPayment.purpose,
+          amount: fullPayment.amount, currency: fullPayment.currency, status: fullPayment.status,
+          providerSettlementStatus: fullPayment.providerSettlementStatus,
+          applicationStatus: fullPayment.applicationStatus, verifiedAt: fullPayment.succeededAt ?? new Date(),
+          appliedAt: new Date() } } : {}),
+        currentContentVersion: 1,
         contentVersions: [{ version: 1, contentHash, content, createdBy: actor._id, createdAt: new Date() }], signatures: [],
         termsVersion: reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1' ? reservation.termsAcceptance!.version : 'MI-V3-1' });
       await contract.save({ session });

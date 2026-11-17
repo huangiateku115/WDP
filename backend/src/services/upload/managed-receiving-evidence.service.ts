@@ -43,7 +43,7 @@ export class ManagedReceivingEvidenceService {
       if (upload.sha256 !== image.sha256) fail(409, 'Idempotency-Key was already used with different image bytes');
       if (upload.status === 'UNATTACHED' && upload.expiresAt > new Date()) return this.dto(upload);
       if (upload.status !== 'UPLOADING' || upload.expiresAt <= new Date()) fail(409, 'Evidence upload is no longer available');
-      upload = await (ReceivingInspectionUploadModel as any).findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', expiresAt: { $gt: new Date() }, $or: [{ uploadLeaseUntil: { $exists: false } }, { uploadLeaseUntil: { $lte: new Date() } }] }, { $set: { uploadLeaseToken: leaseToken, uploadLeaseUntil: new Date(Date.now() + UPLOAD_LEASE_MS) } }, { new: true }).exec();
+      upload = await (ReceivingInspectionUploadModel as any).findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', expiresAt: { $gt: new Date() }, $or: [{ uploadLeaseUntil: { $exists: false } }, { uploadLeaseUntil: { $lte: new Date() } }] }, { $set: { uploadLeaseToken: leaseToken, uploadLeaseUntil: new Date(Date.now() + UPLOAD_LEASE_MS) } }, { returnDocument: 'after' }).exec();
       if (!upload) fail(409, 'Evidence upload is already in progress; retry shortly');
     } else {
       const generatedPublicId = randomUUID();
@@ -75,7 +75,7 @@ export class ManagedReceivingEvidenceService {
       if (!asset.secureUrl.startsWith('https://') || asset.width !== image.width || asset.height !== image.height || asset.format.toLowerCase() !== image.format) fail(502, 'Cloudinary metadata did not match the validated image');
       const finalized = await (ReceivingInspectionUploadModel as any).findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', uploadLeaseToken: leaseToken }, {
         $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, nextDeleteAt: new Date() }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
       if (!finalized) fail(409, 'Evidence upload changed while finalizing; retry with the same key');
       return this.dto(finalized);
     } catch (error) {
@@ -108,13 +108,13 @@ export class ManagedReceivingEvidenceService {
     let deleted = 0;
     for (let i = 0; i < limit; i += 1) {
       const token = randomUUID();
-      const upload = await EvidenceUploads.findOneAndUpdate({ status: { $in: ['UPLOADING', 'UNATTACHED'] }, expiresAt: { $lte: now }, $or: [{ uploadLeaseUntil: { $exists: false } }, { uploadLeaseUntil: { $lte: now } }] }, { $set: { status: 'DELETE_PENDING', cleanupLeaseToken: token, cleanupLeaseUntil: new Date(Date.now() + CLEANUP_LEASE_MS) }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 } }, { new: true }).sort({ expiresAt: 1 }).exec();
+      const upload = await EvidenceUploads.findOneAndUpdate({ status: { $in: ['UPLOADING', 'UNATTACHED'] }, expiresAt: { $lte: now }, $or: [{ uploadLeaseUntil: { $exists: false } }, { uploadLeaseUntil: { $lte: now } }] }, { $set: { status: 'DELETE_PENDING', cleanupLeaseToken: token, cleanupLeaseUntil: new Date(Date.now() + CLEANUP_LEASE_MS) }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 } }, { returnDocument: 'after' }).sort({ expiresAt: 1 }).exec();
       if (!upload) break;
       if (await this.deleteClaimed(upload)) deleted += 1;
     }
     for (let i = 0; i < limit; i += 1) {
       const nowRetry = new Date(), token = randomUUID();
-      const upload = await EvidenceUploads.findOneAndUpdate({ status: 'DELETE_PENDING', nextDeleteAt: { $lte: nowRetry }, $or: [{ cleanupLeaseUntil: { $exists: false } }, { cleanupLeaseUntil: { $lte: nowRetry } }] }, { $set: { cleanupLeaseToken: token, cleanupLeaseUntil: new Date(Date.now() + CLEANUP_LEASE_MS) } }, { new: true }).sort({ nextDeleteAt: 1 }).exec();
+      const upload = await EvidenceUploads.findOneAndUpdate({ status: 'DELETE_PENDING', nextDeleteAt: { $lte: nowRetry }, $or: [{ cleanupLeaseUntil: { $exists: false } }, { cleanupLeaseUntil: { $lte: nowRetry } }] }, { $set: { cleanupLeaseToken: token, cleanupLeaseUntil: new Date(Date.now() + CLEANUP_LEASE_MS) } }, { returnDocument: 'after' }).sort({ nextDeleteAt: 1 }).exec();
       if (!upload) break;
       if (await this.deleteClaimed(upload)) deleted += 1;
     }

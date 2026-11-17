@@ -36,7 +36,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
     const profile = await CustomerProfileModel.findOneAndUpdate(
       { userId },
       { identityCard, address, taxCode, verificationStatus: VerificationStatus.PENDING },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     ).populate('userId', 'email phone fullName');
     
     return res.json({ success: true, data: profile });
@@ -58,7 +58,7 @@ export const verifyProfile = async (req: Request, res: Response) => {
         verifiedAt: new Date(),
         note 
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('userId', 'email phone fullName');
     
     if (!profile) return res.status(404).json({ success: false, message: 'Profile không tồn tại.' });

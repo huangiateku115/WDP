@@ -73,7 +73,7 @@ export class FacilityService {
       const facility = await FacilityModel.findOneAndUpdate(
         { _id: id, deletedAt: { $exists: false } },
         { $set: { deletedAt: new Date(), deletedBy: actor._id } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       ).exec();
       if (!facility) throw new FacilityError(404, 'Facility not found');
       return facility;
@@ -88,7 +88,7 @@ export class FacilityService {
       const facility = await FacilityModel.findOneAndUpdate(
         { _id: id, deletedAt: { $exists: true } },
         { $unset: { deletedAt: 1, deletedBy: 1 } },
-        { new: true, runValidators: true },
+        { returnDocument: 'after', runValidators: true },
       ).exec();
       if (!facility) throw new FacilityError(404, 'Deleted facility not found');
       return facility;
@@ -97,7 +97,7 @@ export class FacilityService {
   private static async update(id: string, data: Record<string, unknown>) {
     return execute(async () => {
       const facility = await FacilityModel.findOneAndUpdate({ _id: id, deletedAt: { $exists: false } }, { $set: data }, {
-        new: true, runValidators: true,
+        returnDocument: 'after', runValidators: true,
       }).exec();
       if (!facility) throw new FacilityError(404, 'Facility not found');
       return facility;
