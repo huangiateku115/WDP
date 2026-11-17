@@ -397,3 +397,29 @@ test('Audit and inventory console print dictionary labels',()=>{
   assert.match(inventory,/facilityLabel\(r\.category\)/);
   assert.doesNotMatch(inventory,/Unknown facility/);
 });
+
+// Column sizing: a status badge, an action button or an action link must stay on one line, and a
+// table with many columns must not be squeezed into the 640px floor. The rules live in the BOM and
+// Admin stylesheets only, so the shared Manager/Staff tables keep their old behaviour.
+test('BOM and Admin tables never wrap a status badge or an action control',()=>{
+  const table=read('../src/components/manager/ManagerUI.jsx');
+  assert.match(table,/data-cols=\{columns\.length\}/,'Table must expose its column count');
+
+  for(const [file,shell] of [['../src/layouts/bom.css','bom-shell'],['../src/layouts/admin.css','admin-shell']]){
+    const css=read(file);
+    assert.match(css,new RegExp(`\\.${shell} \\.manager-table td \\.badge\\{white-space:nowrap\\}`),`${file} must keep status badges on one line`);
+    assert.match(css,new RegExp(`\\.${shell} \\.manager-table td \\.flex\\.flex-wrap\\{flex-wrap:nowrap`),`${file} must keep action buttons in one row`);
+    assert.match(css,new RegExp(`\\.${shell} \\.manager-table td:last-child \\.manager-link\\{white-space:nowrap\\}`),`${file} must keep action links on one line`);
+    // A floor per column count, so 9-11 column tables are not compressed into 640px.
+    for(const count of [6,7,8,9,10,11]){
+      assert.match(css,new RegExp(`\\.${shell} \\.manager-table\\[data-cols="${count}"\\]\\{min-width:\\d+px\\}`),`${file} is missing the ${count}-column floor`);
+    }
+    // The rules must stay inside the BOM/Admin shell; an unscoped selector would reshape Manager/Staff.
+    assert.doesNotMatch(css,/^\s*\.manager-table (td|th)[^{]*\{[^}]*white-space:nowrap(?!\})/m,`${file} must not style every workspace table`);
+  }
+
+  // Admin used to break long tokens mid-word, which shrank the intrinsic table width.
+  const admin=read('../src/layouts/admin.css');
+  assert.doesNotMatch(admin,/\.admin-shell \.manager-table td\{overflow-wrap:anywhere\}/);
+  assert.match(admin,/\.admin-shell \.manager-table td\{overflow-wrap:break-word\}/);
+});

@@ -1,4 +1,4 @@
-.bom-warning{border:1px solid #f1d8b6;background:#fff8ef;border-radius:12px;padding:16px;color:#946020;font-size:12px;line-height:1.8}.bom-note{border:1px solid #cfe0f3;background:#f3f8ff;border-radius:12px;padding:16px;color:#2f4f7a;font-size:12px;line-height:1.8}.bom-error{border:1px solid #f3c2c2;background:#fdf2f2;border-radius:12px;padding:16px;color:#991b1b;font-size:12px;line-height:1.8}.admin-shell .manager-identity{max-width:330px}.admin-shell .manager-identity b{overflow-wrap:anywhere}.admin-shell .manager-table td{overflow-wrap:anywhere}.admin-shell .manager-demo{line-height:1.8}.admin-demo-label{border:1px solid #f1d8b6;background:#fff8ef;border-radius:12px;padding:16px;color:#946020;font-size:12px;line-height:1.8}.admin-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.admin-form .admin-wide{grid-column:1/-1}.admin-shell .manager-screen :is(h1,h2,h3){overflow-wrap:anywhere}
+.bom-warning{border:1px solid #f1d8b6;background:#fff8ef;border-radius:12px;padding:16px;color:#946020;font-size:12px;line-height:1.8}.bom-note{border:1px solid #cfe0f3;background:#f3f8ff;border-radius:12px;padding:16px;color:#2f4f7a;font-size:12px;line-height:1.8}.bom-error{border:1px solid #f3c2c2;background:#fdf2f2;border-radius:12px;padding:16px;color:#991b1b;font-size:12px;line-height:1.8}.admin-shell .manager-identity{max-width:330px}.admin-shell .manager-identity b{overflow-wrap:anywhere}.admin-shell .manager-table td{overflow-wrap:break-word}.admin-shell .manager-demo{line-height:1.8}.admin-demo-label{border:1px solid #f1d8b6;background:#fff8ef;border-radius:12px;padding:16px;color:#946020;font-size:12px;line-height:1.8}.admin-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.admin-form .admin-wide{grid-column:1/-1}.admin-shell .manager-screen :is(h1,h2,h3){overflow-wrap:anywhere}
 @media(max-width:760px){.admin-form{grid-template-columns:1fr}.admin-shell .manager-identity>span:not(.manager-avatar){display:none}}
 
 .bom-advanced{border:1px solid #dbe6dc;background:#f8fbf7;border-radius:12px;padding:0 16px 16px}
@@ -8,3 +8,17 @@
 .bom-advanced-hint{margin:0 0 14px;font-size:12px;line-height:1.7;color:#4b5563}
 .bom-advanced-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 @media (max-width:640px){.bom-advanced-body{grid-template-columns:minmax(0,1fr)}}
+
+/* Nhãn trạng thái, nút thao tác và liên kết thao tác phải nằm trên một dòng. Trước đây bố cục
+   bảng tự động bóp các cột này cho tới khi chữ tự xuống dòng, khiến trạng thái và nút bị vỡ.
+   Nay cột văn bản dài mới là cột phải xuống dòng, còn mỗi bảng giữ độ rộng tối thiểu tăng theo
+   số cột nên không bị nén vào mức 640px chung. */
+.admin-shell .manager-table td .badge{white-space:nowrap}
+.admin-shell .manager-table td .flex.flex-wrap{flex-wrap:nowrap;gap:8px}
+.admin-shell .manager-table td:last-child .manager-link{white-space:nowrap}
+.admin-shell .manager-table[data-cols="6"]{min-width:820px}
+.admin-shell .manager-table[data-cols="7"]{min-width:900px}
+.admin-shell .manager-table[data-cols="8"]{min-width:980px}
+.admin-shell .manager-table[data-cols="9"]{min-width:1060px}
+.admin-shell .manager-table[data-cols="10"]{min-width:1140px}
+.admin-shell .manager-table[data-cols="11"]{min-width:1220px}
