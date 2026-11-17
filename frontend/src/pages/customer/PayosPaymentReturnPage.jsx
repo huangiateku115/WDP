@@ -42,31 +42,40 @@ export default function PayosPaymentReturnPage() {
     if (verifying.current) return;
     verifying.current = true;
     const token = getAccessToken();
+    let verifiedApplied = false;
     setBusy(true);
     setError("");
     try {
-      const payment = !cancelReturn && serviceType === "SELF_STORAGE"
-        ? await paymentApi.getPayosPaymentStatus(reservationId, paymentId, serviceType)
-        : null;
-      if (getAccessToken() !== token) return;
-      if (cancelReturn || payment?.purpose !== "FULL_RENT") await reconcilePayosPayment(reservationId, paymentId, serviceType);
+      // One reconciliation request is sufficient for both services. The Backend
+      // returns immediately for an already-applied payment and performs at most
+      // one signed PayOS lookup when settlement is still pending.
       const result = await reconcilePayosPayment(reservationId, paymentId, serviceType);
-      if (getAccessToken() === token) setPayment(result);
+      if (getAccessToken() === token) {
+        setPayment(result);
+        verifiedApplied = result?.providerSettlementStatus === "VERIFIED" && result?.applicationStatus === "APPLIED";
+      }
     } catch {
       if (getAccessToken() !== token) return;
       try {
         const current = await paymentApi.getPayosPaymentStatus(reservationId, paymentId, serviceType);
-        if (getAccessToken() === token) setPayment(current);
-        setError("Chưa hoàn tất được đối soát. Trạng thái hiện tại lấy từ Backend; bạn có thể thử kiểm tra lại.");
+        if (getAccessToken() === token) {
+          setPayment(current);
+          verifiedApplied = current?.providerSettlementStatus === "VERIFIED" && current?.applicationStatus === "APPLIED";
+        }
+        if (!verifiedApplied) setError("Chưa hoàn tất được đối soát. Trạng thái hiện tại lấy từ Backend; bạn có thể thử kiểm tra lại.");
       } catch {
         if (getAccessToken() === token) setError("Không kết nối được với dịch vụ xác minh. Kết quả trên URL không xác nhận thanh toán; vui lòng thử lại sau.");
       }
     } finally {
       verifying.current = false;
       if (getAccessToken() === token) {
-        const query = new URLSearchParams({ reservationId, paymentId });
-        if (cancelReturn) query.set("cancel", "true");
-        navigate(`/portal/payments?${query}`, { replace: true });
+        if (verifiedApplied && serviceType === "MANAGED_INVENTORY") {
+          navigate(`/portal/contracts/${encodeURIComponent(reservationId)}`, { replace: true });
+        } else {
+          const query = new URLSearchParams({ reservationId, paymentId });
+          if (cancelReturn) query.set("cancel", "true");
+          navigate(`/portal/payments?${query}`, { replace: true });
+        }
       }
       setBusy(false);
       if (getAccessToken() === token) setBusy(false);

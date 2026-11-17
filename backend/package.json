@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "test:statistics-offline": "npm run build && node --test tests/statistics*.test.cjs tests/payment-accounting.test.cjs",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "seed:fe": "tsx src/scripts/seed-fe-demo.ts"
@@ -31,6 +32,7 @@
     "multer": "^2.4.0",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.0.15",
+    "pdfmake": "^0.3.14",
     "sharp": "^0.35.5",
     "xlsx": "^0.18.5"
   },

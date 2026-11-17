@@ -46,7 +46,7 @@ export class ManagedInventoryImageService {
       uploadLeaseToken = randomUUID();
       upload = await InventoryImageUploadModel.findOneAndUpdate({
         _id: upload._id, status: 'UPLOADING', sha256: image.sha256, discardRequestedAt: { $exists: false }, expiresAt: { $gt: new Date() }, ...ACTIVE_UPLOAD_LEASE(new Date()),
-      }, { $set: { uploadLeaseToken, uploadLeaseUntil: new Date(Date.now() + UPLOAD_LEASE_MS) } }, { new: true }).exec();
+      }, { $set: { uploadLeaseToken, uploadLeaseUntil: new Date(Date.now() + UPLOAD_LEASE_MS) } }, { returnDocument: 'after' }).exec();
       if (!upload) throw new InventoryItemError(409, 'This image upload is already in progress; retry the same request shortly');
     } else {
       uploadLeaseToken = randomUUID();
@@ -66,7 +66,7 @@ export class ManagedInventoryImageService {
       const finalized = await InventoryImageUploadModel.findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', uploadLeaseToken }, {
         $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, width: image.width, height: image.height, format: image.format, nextDeleteAt: new Date() },
         $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
       if (!finalized) throw new InventoryItemError(409, 'Upload changed while finalizing; retry with the same Idempotency-Key');
       return this.dto(finalized);
     } catch (error) {
@@ -130,7 +130,7 @@ export class ManagedInventoryImageService {
     if (upload.status === 'ATTACHED') throw new InventoryItemError(409, 'Attached item images are retained and cannot be deleted through upload cleanup');
     if (upload.status === 'DELETED') return { deleted: true };
     if (upload.status === 'UPLOADING' || upload.status === 'UNATTACHED') {
-      const scheduled = await InventoryImageUploadModel.findOneAndUpdate({ _id: upload._id, customerId: actor._id, status: upload.status }, { $set: { discardRequestedAt: new Date() } }, { new: true }).exec();
+      const scheduled = await InventoryImageUploadModel.findOneAndUpdate({ _id: upload._id, customerId: actor._id, status: upload.status }, { $set: { discardRequestedAt: new Date() } }, { returnDocument: 'after' }).exec();
       if (!scheduled) throw new InventoryItemError(409, 'Image upload changed; refresh and retry');
       return { deleted: false, scheduledFor: scheduled.expiresAt };
     }
@@ -233,7 +233,7 @@ export class ManagedInventoryImageService {
         }, {
           $set: { status: 'DELETE_PENDING', cleanupLeaseToken, cleanupLeaseUntil: new Date(Date.now() + CLEANUP_LEASE_MS) },
           $unset: { discardRequestedAt: 1, uploadLeaseToken: 1, uploadLeaseUntil: 1 },
-        }, { new: true, session }).exec();
+        }, { returnDocument: 'after', session }).exec();
       });
       return claimed;
     } finally { await session.endSession(); }
@@ -243,7 +243,7 @@ export class ManagedInventoryImageService {
     const now = new Date(), cleanupLeaseToken = randomUUID();
     return InventoryImageUploadModel.findOneAndUpdate({
       status: 'DELETE_PENDING', nextDeleteAt: { $lte: now }, ...AVAILABLE_CLEANUP_LEASE(now),
-    }, { $set: { cleanupLeaseToken, cleanupLeaseUntil: new Date(now.getTime() + CLEANUP_LEASE_MS) } }, { new: true }).sort({ nextDeleteAt: 1 }).exec();
+    }, { $set: { cleanupLeaseToken, cleanupLeaseUntil: new Date(now.getTime() + CLEANUP_LEASE_MS) } }, { returnDocument: 'after' }).sort({ nextDeleteAt: 1 }).exec();
   }
 
   private static async deleteClaimed(upload: any) {

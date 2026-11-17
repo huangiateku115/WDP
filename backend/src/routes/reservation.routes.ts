@@ -22,7 +22,7 @@ router.post('/managed', requireRole([UserRole.CUSTOMER]), ManagedReservationCont
 router.get('/managed/capacity/:facilityId', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.getCapacity);
 router.put('/managed/capacity/:facilityId', requireRole([UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.configureCapacity);
 router.get('/managed/:id/closure-readiness', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.getClosureReadiness);
-router.get('/managed/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.get);
+router.get('/managed/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ManagedReservationController.get);
 router.patch('/managed/:id/cancel', requireRole([UserRole.CUSTOMER]), ManagedReservationController.cancel);
 router.post('/managed/:id/contract', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedCheckinController.createContract);
 router.post('/managed/:id/handover', requireRole([UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER]), ManagedReservationController.confirmHandover);

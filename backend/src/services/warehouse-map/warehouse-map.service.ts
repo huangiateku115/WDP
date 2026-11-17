@@ -313,14 +313,14 @@ async function lockZone(zoneId: string, session: ClientSession, options: { facil
   if (options.active) query.isActive = true;
   if (options.deleted) query.deletedAt = { $exists: true };
   else query.deletedAt = { $exists: false };
-  return WarehouseZoneModel.findOneAndUpdate(query, { $inc: { structureVersion: 1 } }, { new: true, session, runValidators: true }).exec();
+  return WarehouseZoneModel.findOneAndUpdate(query, { $inc: { structureVersion: 1 } }, { returnDocument: 'after', session, runValidators: true }).exec();
 }
 
 async function lockRack(rackId: string, session: ClientSession, scope: { facilityId: Types.ObjectId; zoneId: Types.ObjectId }) {
   return WarehouseRackModel.findOneAndUpdate(
     { _id: rackId, facilityId: scope.facilityId, zoneId: scope.zoneId, ...live },
     { $inc: { layoutVersion: 1 } },
-    { new: true, session, runValidators: true },
+    { returnDocument: 'after', session, runValidators: true },
   ).exec();
 }
 
@@ -409,7 +409,7 @@ export class WarehouseMapService {
       const restored = await WarehouseZoneModel.findOneAndUpdate(
         { _id: zoneId, deletedAt: { $exists: true } },
         { $unset: { deletedAt: 1, deletedBy: 1 }, $inc: { structureVersion: 1 } },
-        { new: true, session, runValidators: true },
+        { returnDocument: 'after', session, runValidators: true },
       ).exec();
       if (!restored) throw new WarehouseMapError(409, 'Warehouse zone changed; reload and retry');
       return zoneDto(restored);
@@ -584,7 +584,7 @@ export class WarehouseMapService {
       const restoredRack = await WarehouseRackModel.findOneAndUpdate(
         { _id: rackId, deletedAt: { $exists: true } },
         { $unset: { deletedAt: 1, deletedBy: 1 }, $inc: { layoutVersion: 1 } },
-        { new: true, session, runValidators: true },
+        { returnDocument: 'after', session, runValidators: true },
       ).exec();
       if (!restoredRack) throw new WarehouseMapError(409, 'Rack changed; reload and retry');
       await WarehouseCellModel.updateMany(
@@ -633,7 +633,7 @@ export class WarehouseMapService {
       if (!zone) throw new WarehouseMapError(409, 'Cell parent zone must be active');
       const rack = await lockRack(initial.rackId.toString(), session, { facilityId: initial.facilityId, zoneId: initial.zoneId });
       if (!rack) throw new WarehouseMapError(404, 'Rack not found');
-      const cell = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, ...live }, { $inc: { allocationVersion: 1 } }, { new: true, session }).exec();
+      const cell = await WarehouseCellModel.findOneAndUpdate({ _id: cellId, ...live }, { $inc: { allocationVersion: 1 } }, { returnDocument: 'after', session }).exec();
       if (!cell) throw new WarehouseMapError(404, 'Rack cell not found');
       if (Object.keys(data).length && await hasBlockingAllocation({ cellId: cell._id }, session)) {
         throw new WarehouseMapError(409, 'Cell cannot be structurally changed while it is reserved or occupied');

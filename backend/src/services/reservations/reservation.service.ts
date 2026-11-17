@@ -382,7 +382,7 @@ export class ReservationService {
         const unit = await StorageUnitModel.findOneAndUpdate(
           { _id: data.storageUnitId, facilityId: data.facilityId },
           { $inc: { bookingVersion: 1 } },
-          { new: true, session }
+          { returnDocument: 'after', session }
         ).exec();
 
         if (!unit) {

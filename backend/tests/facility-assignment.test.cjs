@@ -154,7 +154,7 @@ test('role changes clear Facility assignment for non-Manager/Staff roles', async
     assert.equal(id, targetId);
     assert.equal(update.$set.role, 'CUSTOMER');
     assert.equal(update.$set.assignedFacilityId, null);
-    assert.deepEqual(options, { new: true, runValidators: true });
+    assert.deepEqual(options, { returnDocument: 'after', runValidators: true });
     return query({ ...existing, role: 'CUSTOMER', assignedFacilityId: null });
   });
   const result = await UserService.adminUpdateRole(targetId, 'CUSTOMER');

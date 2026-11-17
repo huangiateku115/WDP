@@ -4,7 +4,7 @@ import { IManagedAccessSession, ManagedAccessPurpose, ManagedAccessSessionStatus
 const audit = new Schema({ action: { type: String, required: true }, actorId: { type: Schema.Types.ObjectId, ref: 'User' }, actorRole: { type: String, required: true }, at: { type: Date, required: true }, details: { type: Schema.Types.Mixed } }, { _id: false });
 const schema = new Schema<IManagedAccessSession>({
   visitId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessVisit', required: true, index: true },
-  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },
+  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true },
   scopedReservationIds: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }],
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
@@ -16,6 +16,7 @@ const schema = new Schema<IManagedAccessSession>({
   checkInRequestHash: { type: String, match: /^[a-f\d]{64}$/i },
   audit: { type: [audit], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
+schema.index({ reservationId: 1, status: 1 });
 schema.index({ reservationId: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE } });
 schema.index({ visitId: 1, checkInIdempotencyKey: 1 }, { unique: true });
 schema.index({ facilityId: 1, status: 1, expiresAt: 1 });
