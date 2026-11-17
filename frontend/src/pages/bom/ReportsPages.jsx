@@ -5,8 +5,10 @@ import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName } from "@/lib/bomApiData";
-import { defaultRevenuePeriod, loadRevenueReport, revenueSource } from "@/lib/reportSources";
-import { downloadCsv } from "@/lib/csvExport";
+import { serviceLabel } from "@/lib/bomMappers";
+import { apiErrorMessage } from "@/lib/apiError";
+import { defaultRevenuePeriod, exportRevenueReport, loadRevenueReport, revenueSource } from "@/lib/reportSources";
+import { saveBlob } from "@/lib/csvExport";
 import { capability } from "@/lib/backendCapabilities";
 
 // Reports shared by the BOM and Admin workspaces.
@@ -63,11 +65,27 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [facility, setFacility] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const facilities = useAsyncData(loadFacilities, []);
   const report = useAsyncData(({ signal }) => loadRevenueReport({ from, to, facilityId: facility, signal }), [from, to, facility]);
   const source = revenueSource();
   const exportCapability = capability("serverExport");
   const value = (amount) => (amount === null || amount === undefined ? "—" : money(amount));
+
+  async function runExport() {
+    if (exporting) return;
+    setExportError("");
+    setExporting(true);
+    try {
+      const file = await exportRevenueReport({ format: "csv", from, to, facilityId: facility });
+      saveBlob(file.filename, file.blob);
+    } catch (error) {
+      setExportError(apiErrorMessage(error));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <Screen
@@ -78,15 +96,17 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
       <AsyncBoundary state={report} render={(data) => {
         const directory = facilities.data || [];
         const rows = data.byFacility || [];
+        const services = data.byService || [];
         return (
           <>
             <Kpis items={[
               ["Đã thu", value(data.totals.paid), `${from} → ${to}`],
-              ["Đang chờ", value(data.totals.pending), "Chưa ghi nhận thanh toán"],
-              ["Đã hoàn", value(data.totals.refunded), "Hoàn tiền đã xử lý"],
-              ["Số đơn", data.totals.orders ?? "—", "Đơn phát sinh trong kỳ"],
+              ["Đang chờ", value(data.totals.pending), "Chưa có nguồn tổng hợp"],
+              ["Đã hoàn", value(data.totals.refunded), "Chưa có sổ hoàn tiền"],
+              ["Số thanh toán", data.totals.orders ?? "—", "Giao dịch đã xác minh trong kỳ"],
             ]} />
             {!data.available && <p className="bom-note">{data.reason}</p>}
+            {data.available && <p className="bom-note">Chỉ tính các giao dịch PayOS đã xác minh. Hoàn tiền và ghi nhận doanh thu chưa có nguồn dữ liệu nên để trống.</p>}
             <Panel title="Bộ lọc">
               <div className="manager-filters">
                 <Field label="Từ ngày">
@@ -104,17 +124,14 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
                 <Button variant="outline" onClick={report.reload}>Tính lại</Button>
                 <Button
                   variant="outline"
-                  disabled={!source.ready || !rows.length}
+                  disabled={!source.ready || exporting}
                   title={source.ready ? undefined : exportCapability.reason}
-                  onClick={() => downloadCsv(
-                    `doanh-thu-${from}-${to}.csv`,
-                    [["facilityName", "Cơ sở"], ["orders", "Số đơn"], ["paid", "Đã thu"], ["pending", "Đang chờ"], ["refunded", "Đã hoàn"]],
-                    rows,
-                  )}
+                  onClick={runExport}
                 >
-                  Xuất CSV
+                  {exporting ? "Đang xuất…" : "Xuất CSV"}
                 </Button>
               </div>
+              {exportError && <p role="alert" className="bom-error mt-4">{exportError}</p>}
             </Panel>
             <Panel title="Theo cơ sở" subtitle={`${rows.length} cơ sở`}>
               <Table
@@ -122,7 +139,7 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
                 rows={rows}
                 columns={[
                   { key: "facilityName", label: "Cơ sở", render: (r) => facilityName(directory, r.facilityId) },
-                  { key: "orders", label: "Số đơn", render: (r) => r.orders ?? "—" },
+                  { key: "orders", label: "Số thanh toán", render: (r) => r.orders ?? "—" },
                   { key: "paid", label: "Đã thu", render: (r) => value(r.paid) },
                   { key: "pending", label: "Đang chờ", render: (r) => value(r.pending) },
                   { key: "refunded", label: "Đã hoàn", render: (r) => value(r.refunded) },
@@ -130,6 +147,20 @@ export function RevenueReportPendingPage({ basePath = "/bom" }) {
                 empty="Chưa có dữ liệu doanh thu cho khoảng thời gian này."
               />
             </Panel>
+            {services.length > 0 && (
+              <Panel title="Theo dịch vụ" subtitle={`${services.length} mô hình dịch vụ`}>
+                <Table
+                  label="Doanh thu theo dịch vụ"
+                  rows={services}
+                  columns={[
+                    { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
+                    { key: "orders", label: "Số thanh toán", render: (r) => r.orders ?? "—" },
+                    { key: "paid", label: "Đã thu", render: (r) => value(r.paid) },
+                  ]}
+                  empty="Chưa có dữ liệu."
+                />
+              </Panel>
+            )}
             <Panel title="Báo cáo khác">
               <div className="flex flex-wrap gap-3">
                 <Button asChild variant="outline"><Link to={`${basePath}/reports/utilization`}>Báo cáo mức sử dụng</Link></Button>

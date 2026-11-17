@@ -196,6 +196,10 @@ export function assertConfirmedRequest(config) {
   const bomAdminResource =
     (method === "GET" &&
       (/^facilities(\/[^/]+)?$/.test(path) ||
+        /^statistics\/(overview|revenue|facilities-ranking|customers|service-mix|unit-demand|rental-trends|utilization|storage-capacity|managed-capacity|reservations|contracts-lifecycle|managed-operations|incidents|payments-analysis|financial-analytics|product-and-operations|facilities-kpi|filters)$/.test(
+          path,
+        ) ||
+        /^statistics\/export\/(csv|xlsx|pdf)$/.test(path) ||
         /^pricing-rules(\/[^/]+)?$/.test(path) ||
         /^policies(\/[^/]+)?$/.test(path) ||
         /^inventory-items$/.test(path) ||

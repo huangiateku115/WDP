@@ -11,11 +11,15 @@ import {
   facilityName, loadFacilities, loadFacilityInventory, loadFacilityUnits, loadManagedCapacity, loadWarehouseStructure,
 } from "@/lib/bomApiData";
 import { BOM_UNIT_SIZES } from "@/lib/bomMappers";
+import { loadUtilizationSummary } from "@/lib/reportSources";
 import { countBy, formatKg as kg, formatM3 as m3, percent as pct, sumBy } from "@/lib/bomMetrics";
 
 const UNIT_ALLOCATED = ["OCCUPIED"];
 const UNIT_FREE = ["AVAILABLE"];
 const UNIT_BLOCKED = ["HELD", "MAINTENANCE", "INACTIVE"];
+
+// Backend utilization rates are already percentages (0–100); null means "not available".
+const rate = (value) => (typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : "—");
 
 // The managed-capacity read is interval based, so we report on the current calendar month.
 function currentMonthWindow() {
@@ -31,6 +35,7 @@ function currentMonthWindow() {
 // based utilization and historical time series stay unavailable and are labelled as such.
 export default function UtilizationReportLivePage({ basePath = "/bom" }) {
   const directory = useAsyncData(loadFacilities, []);
+  const summary = useAsyncData(({ signal }) => loadUtilizationSummary({ signal }), []);
   const [facilityId, setFacilityId] = useState("");
   const window = currentMonthWindow();
 
@@ -59,6 +64,21 @@ export default function UtilizationReportLivePage({ basePath = "/bom" }) {
               ["Thuê kho riêng", facilities.filter((f) => f.serviceTypes.includes("SELF_STORAGE")).length, "Mô hình Thuê kho riêng"],
               ["Lưu trữ hàng hóa", facilities.filter((f) => f.serviceTypes.includes("MANAGED_INVENTORY")).length, "Mô hình Lưu trữ hàng hóa"],
           ]} />
+
+          <Panel title="Tổng hợp toàn hệ thống" subtitle="Số liệu tổng hợp từ máy chủ trên mọi cơ sở bạn được xem.">
+            {summary.error
+              ? <p className="bom-note">{summary.error}</p>
+              : summary.loading
+                ? <p role="status" className="text-sm text-slate-500">Đang tải số liệu tổng hợp…</p>
+                : <Kpis items={[
+                    ["Cơ sở", summary.data?.facilities ?? "—", "Trong phạm vi được xem"],
+                    ["Kho riêng", summary.data?.totalUnits ?? "—", "Tổng số kho"],
+                    ["Đang sử dụng", summary.data?.occupied ?? "—", "Kho đã có khách"],
+                    ["Tỷ lệ lấp đầy kho riêng", rate(summary.data?.selfStorageRate), "Kho đang dùng / kho cho thuê"],
+                    ["Thể tích lưu trữ đã dùng", rate(summary.data?.managedVolumeRate), "Thể tích đã dùng / công suất"],
+                    ["Tải trọng đã dùng", rate(summary.data?.managedWeightRate), "Khối lượng đã dùng / tải trọng"],
+                  ]} />}
+          </Panel>
 
           <Panel
             title="Phạm vi báo cáo"

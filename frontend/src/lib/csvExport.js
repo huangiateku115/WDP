@@ -13,6 +13,11 @@ export function toCsv(headers, rows) {
 
 export function downloadCsv(filename, headers, rows) {
   const blob = new Blob([`\uFEFF${toCsv(headers, rows)}`], { type: "text/csv;charset=utf-8;" });
+  saveBlob(filename, blob);
+}
+
+// Saves a file the backend already rendered (GET /statistics/export/{csv|xlsx|pdf}).
+export function saveBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

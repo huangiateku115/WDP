@@ -13,11 +13,13 @@ export const BACKEND_CAPABILITIES = {
   // POST /storage-units/:id/image-uploads → { url, publicId } (Cloudinary)
   storageUnitImageUpload: false,
   // GET  /reports/revenue?facilityId=&from=&to=  +  /reports/revenue/export
-  revenueReport: false,
+  // Delivered by the statistics read model: GET /statistics/revenue (+ /statistics/export).
+  revenueReport: true,
   // GET  /audit?entityType=&action=&actorId=&facilityId=&from=&to=&page=
   globalAuditSearch: false,
   // GET  /reports/:kind/export?format=csv|xlsx  (server-side export for large ranges)
-  serverExport: false,
+  // Delivered by GET /statistics/export/{csv|xlsx|pdf}?reportType=…
+  serverExport: true,
   // Backend creates Notification rows from reservation / support / maintenance flows.
   notificationProducer: false,
 };

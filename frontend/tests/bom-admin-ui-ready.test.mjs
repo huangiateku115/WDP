@@ -25,14 +25,25 @@ test('Facility and storage unit forms share the capability-aware image editor',(
 
 test('Revenue report keeps its full shell on top of a capability-gated adapter',()=>{
   const page=read('../src/pages/bom/ReportsPages.jsx');
-  for(const marker of [/loadRevenueReport/,/revenueSource/,/defaultRevenuePeriod/,/Xuất CSV/,/Doanh thu theo cơ sở/]){
+  for(const marker of [/loadRevenueReport/,/revenueSource/,/defaultRevenuePeriod/,/exportRevenueReport/,/Xuất CSV/,/Doanh thu theo cơ sở/]){
     assert.match(page,marker);
   }
   const adapter=read('../src/lib/reportSources.js');
   assert.match(adapter,/export async function loadRevenueReport/);
   assert.match(adapter,/export function defaultRevenuePeriod/);
+  assert.match(adapter,/export async function loadUtilizationSummary/);
+  assert.match(adapter,/statistics\/revenue|statisticsApi\.revenue/);
+  const api=read('../src/api/statisticsApi.js');
+  assert.match(api,/\/statistics\/revenue/);
+  assert.match(api,/\/statistics\/export\/\$\{format\}/);
+  const allowlist=read('../src/api/confirmedContract.js');
+  assert.match(allowlist,/revenue\|facilities-ranking/);
+  assert.match(allowlist,/statistics\\\/export\\\/\(csv\|xlsx\|pdf\)/);
+  // The statistics read model now serves revenue and server export; the rest still waits on backend.
   const capabilities=read('../src/lib/backendCapabilities.js');
-  for(const flag of ['facilityImageUpload','storageUnitImageUpload','revenueReport','globalAuditSearch','serverExport','notificationProducer']){
+  assert.match(capabilities,/revenueReport: true/);
+  assert.match(capabilities,/serverExport: true/);
+  for(const flag of ['facilityImageUpload','storageUnitImageUpload','globalAuditSearch','notificationProducer']){
     assert.match(capabilities,new RegExp(`${flag}: false`));
   }
 });
