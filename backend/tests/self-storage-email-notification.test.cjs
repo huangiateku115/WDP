@@ -7,6 +7,8 @@ process.env.GMAIL_USER = process.env.GMAIL_USER || 'vaultspace.noreply@gmail.com
 process.env.GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'dummy-app-password';
 
 const { EmailService } = require('../dist/services/email/email.service');
+const NotificationModel = require('../dist/models/notifications/notification.model').default;
+NotificationModel.create = async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc });
 const ReservationModel = require('../dist/models/reservations/reservation.model').default;
 const StorageUnitModel = require('../dist/models/storage-units/storage-unit.model').default;
 const ContractModel = require('../dist/models/contracts/contract.model').default;
