@@ -26,3 +26,5 @@
 .manager-shell:not(.admin-shell):not(.bom-shell) [data-connection-placeholder="true"]{display:none}
 @media(max-width:760px){.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar nav a{flex:0 0 auto;min-width:max-content}.manager-shell:not(.admin-shell):not(.bom-shell) .manager-sidebar{max-width:100%;overflow-x:auto}}
 @media(max-width:640px){.facility-outbound select{min-width:0}.facility-outbound .manager-link{align-self:center}}
+@media(max-width:760px){.manager-shell:not(.admin-shell):not(.bom-shell):not(.staff-shell) .manager-identity>span:not(.manager-avatar){display:none}}
+body:has(.manager-statistics){min-width:0}

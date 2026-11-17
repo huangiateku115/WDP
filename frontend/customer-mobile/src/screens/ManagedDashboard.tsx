@@ -24,7 +24,9 @@ export function ManagedDashboard(){
   const activity=useResource(owner+':'+(preview?.map(item=>item._id).join(',')??''),async signal=>{
     const results=await Promise.allSettled((preview??[]).map(item=>mobileRepo.inventoryMovements(item,owner,signal)
       .then(history=>history.kind==='V3'
-        ? history.rows.map(move=>({_id:move._id,type:move.v3Effect.action,performedAt:move.performedAt,itemName:item.name}))
+        ? history.rows.map(move=>({_id:move._id,type:(move.schemaVersion===4
+          ?(move.stockEffect as {action:keyof typeof movementLabel}).action
+          :(move.v3Effect as {action:keyof typeof movementLabel}).action),performedAt:move.performedAt,itemName:item.name}))
         : history.rows.map(move=>({_id:move._id,type:move.type,performedAt:move.performedAt,itemName:item.name})))));
     return {partial:results.some(result=>result.status==='rejected'),rows:results.flatMap<{_id:string;type:keyof typeof movementLabel;performedAt:string;itemName:string}>(result=>result.status==='fulfilled'?result.value:[])
       .sort((a,b)=>Date.parse(b.performedAt)-Date.parse(a.performedAt)).slice(0,5)};
@@ -55,12 +57,12 @@ export function ManagedDashboard(){
     {items?.length===0&&<StateCard title="Chưa có hàng hóa"/>}
     {items?.map(item=><Card key={item._id}>
       <CardHeading icon="cube-outline" title={item.name}/>
-      <AppText>Mã hàng {item.itemCode} · Đăng ký {item.quantity} {item.quantityUnit}</AppText>
+      <AppText>Mã hàng {item.itemCode}{item.inventorySchemaVersion===3?' · SKU V3':` · Đăng ký ${item.quantity} ${item.quantityUnit}`}</AppText>
       <Button label={stockItem===item._id?'Ẩn tồn kho':'Xem tồn kho'} variant="quiet" onPress={()=>setStockItem(stockItem===item._id?'':item._id)}/>
       {inspected?._id===item._id&&<>
         <ResourceState {...stock}/>
         {stock.data?.kind==='V3'&&(stock.data.stock.reconciliationStatus==='RECONCILED'
-          ? <AppText>Đang lưu theo sổ V3: {stock.data.stock.onHandQuantity} {item.quantityUnit}</AppText>
+          ? <AppText>Đang lưu theo sổ V3: {stock.data.stock.onHandQuantity} {stock.data.stock.byBatch[0]?.quantityUnit??'đơn vị'}</AppText>
           : <AppText>Tồn kho chưa được xác minh. Cần đối soát sổ kho.</AppText>)}
         {stock.data?.kind==='LEGACY'&&<>
           <AppText variant="caption">{stock.data.stock.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu đã đối chiếu từ dữ liệu cũ'}</AppText>

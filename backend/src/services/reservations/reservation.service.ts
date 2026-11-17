@@ -13,6 +13,7 @@ import { FacilityServiceType } from '../../types/facility.type';
 import { VerificationStatus } from '../../types/customer-profile.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { captureTermsAcceptance } from '../terms/terms.catalog';
+import { isBookingDateAllowed } from '../../utils/booking-date';
 import { EmailService } from '../email/email.service';
 
 export interface SuggestedStorageUnit {
@@ -345,8 +346,7 @@ export class ReservationService {
       throw new ReservationError(400, 'Ngày bắt đầu hoặc ngày kết thúc không hợp lệ.');
     }
 
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (startDate < todayStart) {
+    if (!isBookingDateAllowed(startDate, now)) {
       throw new ReservationError(400, 'Ngày bắt đầu thuê không được nằm trong quá khứ.');
     }
 

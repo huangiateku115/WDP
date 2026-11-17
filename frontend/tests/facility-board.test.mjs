@@ -21,7 +21,7 @@ test('board excludes foreign facilities and closed work; inspector is not an ass
  const reservations=[{_id:'r',facilityId:'facility',serviceType:'SELF_STORAGE',status:'ACTIVE',endDate:'2026-10-25T17:00:00Z'}, {_id:'foreign',facilityId:'other',serviceType:'SELF_STORAGE',status:'PAID'}];
  const rows=buildFacilityBoard({reservations,inspections:[{_id:'i',facilityId:'facility',reservationId:'r',status:'DRAFT',type:'CHECK_OUT',inspectedBy:'staff'}],maintenance:[{_id:'m',facilityId:'facility',status:'OPEN',priority:'HIGH'},{_id:'closed',facilityId:'facility',status:'CLOSED'},{_id:'foreign-ticket',facilityId:'other',status:'OPEN'}]},user,'manager');
  assert.equal(rows.length,3);assert.equal(rows[0].date,'2026-10-26');assert.equal(rows[1].assignee,'');assert.equal(rows[1].assignable,false);
- assert.equal(boardAttention(rows[2],'2026-10-26'),'High priority, unassigned');
+ assert.equal(boardAttention(rows[2],'2026-10-26'),'Ưu tiên cao, chưa phân công');
  assert.equal(boardDayRows(rows,'2026-10-25').some(r=>r.type==='CHECK_OUT'),false);
  assert.deepEqual(boardDayRows(rows,'2026-10-26','','unassigned').map(r=>r.id),['maintenance:m']);
 });
@@ -31,5 +31,5 @@ test('Staff sees only own assigned tickets, including support explicitly assigne
 });
 test('date grouping uses Vietnam time; missing dates and aged tickets do not invent SLA breaches',()=>{
  assert.equal(facilityDay('2026-10-25T18:00:00Z'),'2026-10-26');assert.equal(facilityDay('invalid'),'');
- assert.equal(boardAttention({type:'support',date:'2026-10-24',assignee:'a',assignable:true},'2026-10-26'),'Open from a previous day');
+ assert.equal(boardAttention({type:'support',date:'2026-10-24',assignee:'a',assignable:true},'2026-10-26'),'Công việc tồn từ ngày trước');
 });

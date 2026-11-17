@@ -28,6 +28,17 @@ test('login/registration use source DTO, exclude role/consent/password confirmat
 test.each(['ADMIN','BOM','FACILITY_MANAGER','FACILITY_STAFF'])('native current-user rejects %s',role=>expect(()=>mapCurrentUser(ok({...user,role}))).toThrow());
 test('missing user/inactive account invalid and never filled with fixture',()=>{for(const value of [null,{}, {...user,isActive:false}])expect(()=>mapCurrentUser(ok(value))).toThrow();});
 test('registration requires displayName and rejects unconfirmed fields',()=>{expect(()=>buildRegistration({name:'',email:'test@example.test',password:'Password123'})).toThrow();expect(customerUser.safeParse({...user,role:'UNKNOWN'}).success).toBe(false);});
+test.each([
+ ['2026-11-14T17:05:00.000Z','2026-11-15'],
+ ['2026-11-15T05:00:00.000Z','2026-11-15'],
+ ['2026-11-15T16:55:00.000Z','2026-11-15'],
+])('Self Storage and Managed V3 accept same VN calendar date at %s', (now,day)=>{
+ const startDate=day+'T00:00:00.000Z',endDate='2026-12-15T00:00:00.000Z',clock=Date.parse(now);
+ expect(selfBookingBody({facilityId:fid,storageUnitId:cid,pricingPolicyId:rule,startDate,endDate},clock).startDate).toBe(startDate);
+ expect(managedBookingBody({facilityId:fid,allocatedCapacityM3:1,startDate,term:{value:1,unit:'MONTH'},cellIds:[cid]},clock).startDate).toBe(startDate);
+ expect(()=>selfBookingBody({facilityId:fid,storageUnitId:cid,pricingPolicyId:rule,startDate:'2026-11-14T00:00:00.000Z',endDate},clock)).toThrow();
+ expect(()=>managedBookingBody({facilityId:fid,allocatedCapacityM3:1,startDate:'2026-11-14T00:00:00.000Z',term:{value:1,unit:'MONTH'},cellIds:[cid]},clock)).toThrow();
+});
 test('owner checks independent of shape or role; lists have no fixture fallback',()=>{expect(mapReservation(ok(reservation),uid)._id).toBe(rid);expect(()=>mapReservation(ok(reservation),fid)).toThrow();expect(()=>mapReservations(ok([reservation,{...reservation,customerId:fid}]),uid)).toThrow();expect(()=>mapReservations(ok(null),uid)).toThrow();});
 test('server Self lifecycle distinguishes contracted/deposit/checkin/paid/active',()=>{
  for(const status of ['CONTRACTED','DEPOSIT_PAID','CHECKIN_READY','PAID'] as const)expect(lifecycle({...owned(),status}).active).toBe(false);
@@ -47,8 +58,8 @@ const range={startDate:'2090-01-01',endDate:'2090-01-10'};
 const availability={storageUnitId:cid,month:'2090-01',intervals:[],availabilityState:'VERIFIED',rangeAvailability:'AVAILABLE',requestedRange:{startDate:range.startDate+'T00:00:00Z',endDate:range.endDate+'T00:00:00Z'},evaluatedAt:'2089-12-01T00:00:00Z'};
 test.each(['UNKNOWN','UNIT_UNAVAILABLE'])('availability %s cannot enable booking',state=>expect(mapAvailability(ok({...availability,availabilityState:state}),cid,'2090-01',range).canBook).toBe(false));
 test('availability validates identity/month/range and UTC boundary',()=>{expect(mapAvailability(ok(availability),cid,'2090-01',range).canBook).toBe(true);expect(()=>mapAvailability(ok(availability),fid,'2090-01',range)).toThrow();expect(()=>mapAvailability(ok(availability),cid,'2090-02',range)).toThrow();expect(()=>mapAvailability(ok(availability),cid,'2090-01',{...range,endDate:'2090-01-11'})).toThrow();expect(day.safeParse('2090-02-30').success).toBe(false);});
-test('Self command future instant/IDs/policy, no fixture amounts',()=>{
- const body={facilityId:fid,storageUnitId:cid,pricingPolicyId:rule,startDate:reservation.startDate,endDate:reservation.endDate};expect(selfBookingBody(body)).toEqual(body);expect(()=>selfBookingBody({...body,estimatedRent:5})).toThrow();expect(()=>selfBookingBody(body,Date.parse(body.startDate))).toThrow();expect(()=>selfBookingBody({...body,storageUnitId:'UNIT-DEMO'})).toThrow();
+test('Self command date/IDs/policy, no fixture amounts',()=>{
+ const body={facilityId:fid,storageUnitId:cid,pricingPolicyId:rule,startDate:reservation.startDate,endDate:reservation.endDate};expect(selfBookingBody(body)).toEqual(body);expect(()=>selfBookingBody({...body,estimatedRent:5})).toThrow();expect(selfBookingBody(body,Date.parse(body.startDate))).toEqual(body);expect(()=>selfBookingBody({...body,startDate:'2089-12-31T00:00:00.000Z'},Date.parse(body.startDate))).toThrow();expect(()=>selfBookingBody({...body,storageUnitId:'UNIT-DEMO'})).toThrow();
 });
 test('Self creation accepts CONTRACTED but never fabricates embedded contract or retries unknown',()=>{
  const body=selfBookingBody({facilityId:fid,storageUnitId:cid,pricingPolicyId:rule,startDate:reservation.startDate,endDate:reservation.endDate});expect(mapSelfCreation(ok(reservation),body,uid).contractRetrieval).toBe('SAFE_GET_REQUIRED');expect(()=>mapSelfCreation(ok({...reservation,status:'RESERVED'}),body,uid)).toThrow();expect(normalizeApiFailure({response:{status:503}}).automaticMutationRetry).toBe(false);
