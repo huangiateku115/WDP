@@ -256,8 +256,8 @@ function ServiceAdminActions({ config, row, onDone }) {
         <Field label="Trạng thái mới">
           <Select label="Trạng thái mới" value={status} onChange={setStatus} options={[["", "Chọn trạng thái"], ...SERVICE_STATUSES]} />
         </Field>
-        <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là RESOLVED.">
-          <Input aria-label="Ghi ch� x? l?" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+            <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là Đã giải quyết.">
+          <Input aria-label="Ghi chú xử lý" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
       <div className="mt-5 flex flex-wrap gap-3">
@@ -356,8 +356,8 @@ function ServiceStatusActions({ config, row, onDone }) {
         <Field label="Trạng thái mới">
           <Select label="Trạng thái mới" value={status} onChange={setStatus} options={[["", "Chọn trạng thái"], ...SERVICE_STATUSES]} />
         </Field>
-        <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là RESOLVED.">
-          <Input aria-label="Ghi ch� x? l?" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
+        <Field label="Ghi chú xử lý" hint="Chỉ gửi khi trạng thái mới là Đã giải quyết.">
+          <Input aria-label="Ghi chú xử lý" value={note} onChange={(e) => setNote(e.target.value)} disabled={status !== "RESOLVED"} />
         </Field>
       </div>
       <div className="mt-5 flex flex-wrap gap-3">

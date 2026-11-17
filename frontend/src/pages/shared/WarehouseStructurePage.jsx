@@ -15,7 +15,8 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 // facilityForMap, which requires status ACTIVE + serviceTypes MANAGED_INVENTORY. Facilities
 // that do not qualify answer 409, so the selector only offers eligible facilities.
 const eligible = (facility) => facility.status === "ACTIVE" && facility.serviceTypes.includes("MANAGED_INVENTORY");
-const dims = (d) => `${d.widthM}×${d.depthM}×${d.heightM} m`;
+// Dimensions are printed with their meaning instead of a bare "2×0.6×2 m" sequence.
+const dims = (d) => `rộng ${d.widthM} × sâu ${d.depthM} × cao ${d.heightM} m`;
 
 // The capacity read is interval based, so the console reports on the current calendar month.
 function currentMonthWindow() {
@@ -80,7 +81,7 @@ export default function WarehouseStructurePage() {
   return (
     <Screen
       title="Thông tin kho"
-      description="Khu vực, kệ và ô chứa của cơ sở lưu trữ hàng hóa."
+      description="Khu vực, kệ và ô lưu trữ của cơ sở lưu trữ hàng hóa."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);
@@ -91,7 +92,7 @@ export default function WarehouseStructurePage() {
               ["Số cơ sở hiển thị", options.length, "Cơ sở đang hoạt động có dịch vụ Lưu trữ hàng hóa"],
               ["Khu vực", zones.data?.total ?? "—", "Khu vực của cơ sở đã chọn"],
               ["Kệ", racks.data?.total ?? "—", "Kệ của cơ sở đã chọn"],
-              ["Ô chứa", sumBy(racks.data?.rows || [], "cellCount") || "—", "Tạo tự động theo kệ"],
+              ["Ô lưu trữ", sumBy(racks.data?.rows || [], "cellCount") || "—", "Tạo tự động theo kệ"],
             ]} />
 
             <Panel
@@ -126,7 +127,7 @@ export default function WarehouseStructurePage() {
 
             {!facilityId && (
               <Panel title="Chọn cơ sở">
-                <p className="text-sm text-slate-500">Khu vực, kệ và ô chứa thuộc một cơ sở.</p>
+                <p className="text-sm text-slate-500">Khu vực, kệ và ô lưu trữ thuộc một cơ sở.</p>
               </Panel>
             )}
 
@@ -142,7 +143,7 @@ export default function WarehouseStructurePage() {
                       ["Khoảng thời gian", `${String(data.interval?.startDate || window.startDate).slice(0, 10)} → ${String(data.interval?.endDate || window.endDate).slice(0, 10)}`],
                       ["Sellable capacity", m3(data.sellableCapacityM3)],
                       ["Committed peak", m3(data.committedPeakCapacityM3)],
-                      ["Available", m3(data.availableCapacityM3)],
+                      ["Available capacity", m3(data.availableCapacityM3)],
                       ["Overdue obligation", m3(data.unresolvedOverdueObligationM3)],
                     ]} />
                   ) : (
@@ -206,16 +207,16 @@ export default function WarehouseStructurePage() {
                         { key: "zone", label: "Zone", render: (r) => (zones.data?.rows || []).find((z) => z.id === r.zoneId)?.code || "—" },
                         { key: "aisleCode", label: "Aisle" },
                         { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-                        { key: "layout", label: "Layout", render: (r) => `${r.levelCount} levels × ${r.cellsPerLevel} cells (${r.cellCount})` },
+                        { key: "layout", label: "Layout", render: (r) => `${r.levelCount} tầng × ${r.cellsPerLevel} ô (tổng ${r.cellCount} ô)` },
                         { key: "dimensions", label: "Dimensions", render: (r) => dims(r.dimensions) },
-                        { key: "maxWeightKg", label: "Rated weight", render: (r) => `${kg(r.maxWeightKg)} · ${kg(r.maxWeightKgPerLevel)}/level` },
-                        { key: "map", label: "Map", render: (r) => `X ${r.mapX} · Y ${r.mapY} · ${r.orientation}°` },
+                        { key: "maxWeightKg", label: "Rated weight", render: (r) => `${kg(r.maxWeightKg)} · ${kg(r.maxWeightKgPerLevel)} mỗi tầng` },
+                        { key: "map", label: "Map", render: (r) => `Ngang ${r.mapX} · Dọc ${r.mapY} · hướng ${r.orientation}°` },
                         {
                           key: "actions",
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Ô chứa</Button>
+                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Ô lưu trữ</Button>
                               <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Sửa</Button>
                               <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Xóa</Button>
                             </div>
@@ -231,7 +232,7 @@ export default function WarehouseStructurePage() {
                   <AsyncBoundary state={cells} render={(data) => (data ? (
                     <Panel
                       title="Ô trên kệ"
-                      subtitle={`${data.total} ô chứa`}
+                      subtitle={`${data.total} ô lưu trữ`}
                       action={<Button variant="outline" onClick={() => setRackId("")}>Đóng danh sách ô</Button>}
                     >
                       <Details values={[
@@ -248,7 +249,7 @@ export default function WarehouseStructurePage() {
                             { key: "code", label: "Cell" },
                             { key: "levelNumber", label: "Level" },
                             { key: "cellNumber", label: "Position" },
-                            { key: "dimensions", label: "Dimensions", render: (r) => `${r.dimensions.widthM}×${r.dimensions.depthM} m · ${r.dimensions.usableHeightM ?? "—"} m usable` },
+                            { key: "dimensions", label: "Dimensions", render: (r) => `${r.dimensions.widthM}×${r.dimensions.depthM} m · cao dùng được ${r.dimensions.usableHeightM ?? "—"} m` },
                             { key: "maxWeightKg", label: "Max weight", render: (r) => kg(r.maxWeightKg) },
                             { key: "usableVolumeM3", label: "Volume", render: (r) => (r.usableVolumeM3 === null ? "—" : m3(r.usableVolumeM3)) },
                             { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
@@ -258,7 +259,7 @@ export default function WarehouseStructurePage() {
                               render: (r) => <Button size="sm" variant="outline" onClick={() => setCellDialog(r)}>Sửa</Button>,
                             },
                           ]}
-                          empty="Kệ này chưa có ô chứa nào."
+                          empty="Kệ này chưa có ô lưu trữ nào."
                         />
                       </div>
                     </Panel>

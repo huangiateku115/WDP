@@ -252,7 +252,7 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
         <Details values={[
           ["Khu vực", structure.zones.length],
           ["Kệ", racks.length],
-          ["Ô chứa", cells ? `${availableCells} / ${cells} ô trống` : "—"],
+          ["Ô lưu trữ", cells ? `${availableCells} / ${cells} ô trống` : "—"],
           ["Tải trọng định mức", kg(ratedKg)],
           ["Tải trọng có thể phân bổ", kg(allocatableKg)],
           ["Thể tích bao kệ", m3(envelopeM3)],
@@ -264,13 +264,13 @@ function FacilityUtilization({ facilityId, facilities, data, window, onReload })
             columns={[
               { key: "rackCode", label: "Kệ" },
               { key: "zone", label: "Khu vực", render: (r) => `${r.zoneCode} · ${r.zoneName}` },
-              { key: "aisleCode", label: "Lối đi" },
+              { key: "aisleCode", label: "Dãy" },
               { key: "operationalStatus", label: "Trạng thái", render: (r) => <Status value={r.operationalStatus} /> },
-              { key: "cells", label: "Ô chứa", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
+              { key: "cells", label: "Ô lưu trữ", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
               { key: "envelopeM3", label: "Thể tích bao kệ", render: (r) => m3(r.envelopeM3) },
               { key: "ratedCapacityKg", label: "Định mức / phân bổ được", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
             ]}
-            empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
+            empty="Chưa cấu hình khu vực, kệ hoặc ô lưu trữ cho cơ sở này."
           />
         </div>
       </Panel>

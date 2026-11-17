@@ -139,7 +139,7 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
       {offersManaged && <Kpis items={[
         ["Khu vực", structure.zones.length, `Khu vực đang hoạt động · ${facilityName(facilities, facilityId)}`],
         ["Kệ", racks.length, "Trong mọi khu vực đang hoạt động"],
-        ["Ô chứa", cells, `${availableCells} ô còn trống để xếp hàng`],
+        ["Ô lưu trữ", cells, `${availableCells} ô còn trống để xếp hàng`],
         ["Tải trọng định mức", kg(ratedKg), `${kg(allocatableKg)} có thể phân bổ theo ô`],
       ]} />}
 
@@ -160,17 +160,17 @@ function FacilityScope({ facilityId, facilities, data, reservationsBase }) {
             { key: "capacity", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
             { key: "utilizationStatus", label: "Utilization", render: (r) => <Status value={r.utilizationStatus} /> },
           ]}
-          empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
+          empty="Chưa cấu hình khu vực, kệ hoặc ô lưu trữ cho cơ sở này."
         />
       </Panel>}
 
       {offersSelfStorage && <Panel title="Kho riêng" subtitle={`${units.rows.length} / ${units.total} kho`}>
         {units.truncated && <TruncatedNotice total={units.total} shown={units.rows.length} />}
         <Details values={[
-          ["Occupied", countBy(units.rows, "status", "OCCUPIED")],
-          ["Available", countBy(units.rows, "status", "AVAILABLE")],
-          ["Held / maintenance", countBy(units.rows, "status", "HELD") + countBy(units.rows, "status", "MAINTENANCE")],
-          ["By size", BOM_UNIT_SIZES.map((size) => `${size}: ${countBy(units.rows, "size", size)}`).join(" · ")],
+          ["Đang sử dụng", countBy(units.rows, "status", "OCCUPIED")],
+          ["Kho trống", countBy(units.rows, "status", "AVAILABLE")],
+          ["Đang giữ / bảo trì", countBy(units.rows, "status", "HELD") + countBy(units.rows, "status", "MAINTENANCE")],
+          ["Theo kích cỡ", BOM_UNIT_SIZES.map((size) => `${size}: ${countBy(units.rows, "size", size)}`).join(" · ")],
         ]} />
         <div className="mt-5">
           <Table

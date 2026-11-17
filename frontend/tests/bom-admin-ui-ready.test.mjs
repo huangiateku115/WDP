@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 
 // Guards the "UI built ahead of the API" work: every screen must keep its final shape and
 // route the missing endpoints through lib/backendCapabilities.js so that shipping a backend
 // endpoint only flips a flag. These assertions also catch a merge that silently reverts it.
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const walk = (dir) => readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })
+  .flatMap((entry) => (entry.isDirectory()
+    ? walk(`${dir}/${entry.name}`)
+    : /\.[jt]sx?$/.test(entry.name) ? [`${dir}/${entry.name}`] : []));
 
 test('Facility and storage unit forms share the capability-aware image editor',()=>{
   const editor=read('../src/components/bom/ImageEditor.jsx');
@@ -186,4 +190,57 @@ test('Contract pricing snapshot never invents English labels or prints raw ids',
   assert.match(page,/"Pricing policy", shortRef\(pricing\.pricingPolicyId\)/);
   assert.doesNotMatch(page,/No pricing values were captured/);
   assert.doesNotMatch(page,/could not be opened/);
+});
+
+test('Warehouse forms explain every field and fold technical values away',()=>{
+  const dialogs=read('../src/components/bom/WarehouseStructureDialogs.jsx');
+  // One name per concept across roles: Manager/Staff say "Mã dãy" / "Tọa độ ngang, dọc".
+  assert.match(dialogs,/label="Mã dãy"/);
+  assert.match(dialogs,/label="Tọa độ ngang"/);
+  assert.match(dialogs,/label="Tọa độ dọc"/);
+  for(const legacy of [/Mã lối đi/,/Tọa độ X/,/Tọa độ Y/,/Hướng xoay/]){
+    assert.doesNotMatch(dialogs,legacy);
+  }
+  // Map coordinates and the zone colour are optional/technical: they sit behind a disclosure that
+  // still explains what each value means, so opening it never leaves the user guessing.
+  const advanced=dialogs.match(/<AdvancedFields[\s\S]*?<\/AdvancedFields>/g) || [];
+  assert.equal(advanced.length,2,'rack and zone forms each carry one advanced section');
+  for(const block of advanced){
+    const hints=block.match(/hint="/g) || [];
+    const fields=block.match(/<Field label="/g) || [];
+    assert.ok(hints.length >= fields.length,`every folded field keeps a hint: ${fields.length} fields / ${hints.length} hints`);
+  }
+  assert.match(dialogs,/Ba giá trị dưới đây chỉ dùng để vẽ kệ lên bản đồ kho/);
+  assert.match(dialogs,/Chỉ dùng khi bạn muốn khu vực này có màu riêng trên bản đồ kho/);
+});
+
+test('BOM/Admin warehouse wording matches the Manager and Staff vocabulary',()=>{
+  const dictionary=read('../src/lib/facilityLabels.js');
+  assert.match(dictionary,/Cells: 'Ô lưu trữ'/);
+  assert.match(dictionary,/Cell: 'Ô lưu trữ'/);
+  assert.match(dictionary,/Aisle: 'Dãy'/);
+  assert.match(dictionary,/Level: 'Tầng kệ'/);
+  assert.match(dictionary,/Position: 'Thứ tự ô'/);
+  assert.match(dictionary,/Map: 'Vị trí trên bản đồ kho'/);
+  const files=[
+    'pages/bom/FacilityPage.jsx','pages/bom/OversightLivePage.jsx','pages/bom/UtilizationReportLivePage.jsx',
+    'pages/bom/DashboardLivePage.jsx','pages/shared/WarehouseStructurePage.jsx','components/bom/WarehouseStructureDialogs.jsx',
+  ];
+  const legacy=[/ô chứa/i,/Ô chứa/,/label="Lối đi"/,/label: "Lối đi"/];
+  for(const file of files){
+    const source=read(`../src/${file}`);
+    for(const pattern of legacy) assert.doesNotMatch(source,pattern,`${file} still uses the old wording: ${pattern}`);
+  }
+  // English units must not survive inside rendered values.
+  const warehouse=read('../src/pages/shared/WarehouseStructurePage.jsx');
+  assert.doesNotMatch(warehouse,/levels ×/);
+  assert.doesNotMatch(warehouse,/\/level/);
+  assert.doesNotMatch(warehouse,/m usable/);
+});
+
+test('No source file contains a broken UTF-8 replacement character',()=>{
+  const files=[...walk('../src')];
+  assert.ok(files.length > 100,'walk() found sources to scan');
+  const broken=files.filter((file)=>readFileSync(new URL(file,import.meta.url),'utf8').includes('\uFFFD'));
+  assert.deepEqual(broken,[],`files with U+FFFD (wrong encoding on write): ${broken.join(', ')}`);
 });

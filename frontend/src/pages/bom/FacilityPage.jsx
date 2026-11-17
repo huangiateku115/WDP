@@ -250,7 +250,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                         { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
                         { key: "ratedCapacityKg", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
                       ]}
-                      empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
+                      empty="Chưa cấu hình khu vực, kệ hoặc ô lưu trữ cho cơ sở này."
                     />
                   </div>
                 </Panel>

@@ -67,10 +67,10 @@ export default function DashboardLivePage() {
                 columns={[
                   { key: "name", label: "Facility", render: (r) => <Link className="manager-link" to={`/bom/facilities/${r.id}`} state={{ from: "/bom/dashboard" }}>{r.name}</Link> },
                   { key: "status", label: "Business status", render: (r) => <Status value={r.status} /> },
-                  { key: "total", label: "Reservations" },
-                  { key: "reserved", label: "Reserved" },
-                  { key: "active", label: "Active" },
-                  { key: "overdue", label: "Overdue" },
+                  { key: "total", label: "Tổng đơn" },
+                  { key: "reserved", label: "Chờ xử lý" },
+                  { key: "active", label: "Đang thuê" },
+                  { key: "overdue", label: "Quá hạn" },
                 ]}
                 empty="Chưa có cơ sở để hiển thị."
               />

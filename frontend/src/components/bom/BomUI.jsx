@@ -9,6 +9,19 @@ export function BomUnavailable() {
   return <Panel title="Không xem được bản ghi"><Link className="manager-link" to="/bom/dashboard">Quay lại tổng quan</Link></Panel>;
 }
 
+// Technical/optional fields live behind this disclosure so the main form only asks for what an
+// operator must decide. Every field inside still carries a plain-language hint, because a folded
+// section must never hide the meaning of a value.
+export function AdvancedFields({ title = 'Tùy chọn nâng cao', description, children }) {
+  return (
+    <details className="bom-advanced">
+      <summary>{title}</summary>
+      {description && <p className="bom-advanced-hint">{description}</p>}
+      <div className="bom-advanced-body">{children}</div>
+    </details>
+  );
+}
+
 export function Kpis({ items }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
