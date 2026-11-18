@@ -1,0 +1,91 @@
+{
+  "info": {
+    "name": "VaultSpace BOM/Admin Audit System",
+    "description": "Read-only AuditLog search and role-scoped subject directories. LoginHistory remains on the existing per-user endpoints. Set accessToken to a suitable Admin or BOM token; no credentials are stored.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "facilityId", "value": "64f000000000000000000001" },
+    { "key": "userId", "value": "64f000000000000000000002" }
+  ],
+  "item": [
+    {
+      "name": "Global Audit Logs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/audit/logs?action=UPDATE_PROFILE&entityType=User&facilityId={{facilityId}}&from=2026-11-01&to=2026-11-18&page=1&limit=20&sortOrder=desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["audit", "logs"],
+          "query": [
+            { "key": "action", "value": "UPDATE_PROFILE" },
+            { "key": "entityType", "value": "User" },
+            { "key": "facilityId", "value": "{{facilityId}}" },
+            { "key": "from", "value": "2026-11-01" },
+            { "key": "to", "value": "2026-11-18" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "sortOrder", "value": "desc" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin Audit Subjects",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/audit/admin/subjects?role=FACILITY_MANAGER&search=Lan&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["audit", "admin", "subjects"],
+          "query": [
+            { "key": "role", "value": "FACILITY_MANAGER" },
+            { "key": "search", "value": "Lan" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "BOM Audit Subjects",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/audit/bom/subjects?role=CUSTOMER&facilityId={{facilityId}}&status=ACTIVE&search=Lan&page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["audit", "bom", "subjects"],
+          "query": [
+            { "key": "role", "value": "CUSTOMER" },
+            { "key": "facilityId", "value": "{{facilityId}}" },
+            { "key": "status", "value": "ACTIVE" },
+            { "key": "search", "value": "Lan" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Existing BOM Audit Logs by Actor",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/audit/bom/audit-logs/{{userId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["audit", "bom", "audit-logs", "{{userId}}"]
+        }
+      }
+    }
+  ]
+}

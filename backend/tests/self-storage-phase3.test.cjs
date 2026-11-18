@@ -170,6 +170,9 @@ test('Phase 3.3: checkSigningSla hủy đơn quá 3 ngày, phạt 10% và giải
   t.mock.method(ReservationModel, 'find', () => ({
     exec: async () => [expiredReservation]
   }));
+  t.mock.method(ContractModel, 'find', () => ({
+    select() { return this; }, lean() { return this; }, exec: async () => []
+  }));
 
   let unitFreed = false;
   t.mock.method(StorageUnitModel, 'findByIdAndUpdate', async (id, update) => {

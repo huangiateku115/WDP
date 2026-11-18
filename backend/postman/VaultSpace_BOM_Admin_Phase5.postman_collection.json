@@ -1,0 +1,30 @@
+{
+  "info": {
+    "name": "VaultSpace BOM/Admin Phase 5 Operations",
+    "description": "Offline-ready request definitions for cross-Facility Reservation listing. No credentials are stored.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "facilityId", "value": "64f000000000000000000001" }
+  ],
+  "item": [{
+    "name": "Reservations — Admin/BOM cross-Facility list",
+    "request": {
+      "method": "GET", "header": [],
+      "url": {
+        "raw": "{{baseUrl}}/reservations/admin-list?serviceType=MANAGED_INVENTORY&status=ACTIVE&page=1&limit=20&sortOrder=desc",
+        "host": ["{{baseUrl}}"], "path": ["reservations", "admin-list"],
+        "query": [
+          { "key": "serviceType", "value": "MANAGED_INVENTORY" },
+          { "key": "status", "value": "ACTIVE" },
+          { "key": "page", "value": "1" },
+          { "key": "limit", "value": "20" },
+          { "key": "sortOrder", "value": "desc" }
+        ]
+      }
+    }
+  }]
+}

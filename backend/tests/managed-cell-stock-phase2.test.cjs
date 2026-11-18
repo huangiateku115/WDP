@@ -5,7 +5,7 @@ const domain = require('../dist/services/inventory-items/managed-cell-stock.doma
 const CellStock = require('../dist/models/inventory-items/managed-cell-stock.model').default;
 const ItemInstance = require('../dist/models/inventory-items/managed-item-instance.model').default;
 const ItemMovement = require('../dist/models/inventory-items/item-movement.model').default;
-const { customerSafeStockDto } = require('../dist/services/inventory-items/managed-cell-stock-read.service');
+const { customerSafeStockDto, reconcileManagedV4SkuEvidence } = require('../dist/services/inventory-items/managed-cell-stock-read.service');
 const oid = n => new Types.ObjectId(String(n).padStart(24, '0'));
 const ids = { skuId: oid(1), specA: oid(2), specB: oid(3), reservationId: oid(4), facilityId: oid(5), customerId: oid(6), c1: oid(7), c2: oid(8), c3: oid(9) };
 function lot(overrides = {}) {
@@ -109,6 +109,30 @@ function movement(action, revision, lines, overrides = {}) {
     operationId: `op-${revision}`, stockEffect: { action, operationId: `op-${revision}`, requestHash: 'a'.repeat(64), ledgerRevision: revision,
       source: action === 'ADD' ? [] : lines, destination: action === 'REMOVE' ? [] : lines }, ...overrides };
 }
+test('shared V4 SKU evidence reconciler preserves replay, projection, scope, and fail-closed semantics', () => {
+  const add = movement('ADD', 1, [stockLine({ quantity: 10, unitWeightKgSnapshot: 1, unitVolumeM3Snapshot: .008,
+    unitDimensionsSnapshot: { widthM: .2, depthM: .2, heightM: .2 }, allocatedWeightKg: 10, allocatedVolumeM3: .08 })]);
+  const replay = domain.replayManagedStockMovements([add]);
+  const specification = { _id: ids.specA, quantityUnitId: { _id: oid(10), code: 'BOX', name: 'thùng' } };
+  const valid = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: [add], stocks: replay.lots, instances: replay.instances,
+    specifications: [specification], canonicalScopeMatches: true, initialized: false });
+  assert.equal(valid.ledgerStatus, 'REPLAYED'); assert.equal(valid.totalWeightKg, 10); assert.equal(valid.totalVolumeM3, .08);
+  assert.deepEqual(valid.quantityByUnit.map(row => ({ unit: row.quantityUnit, quantity: row.quantity })), [{ unit: 'thùng', quantity: 10 }]);
+  const mismatch = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: [{ ...add, stockEffect: { ...add.stockEffect, ledgerRevision: 2 } }],
+    stocks: replay.lots, instances: replay.instances, specifications: [specification], canonicalScopeMatches: true, initialized: false });
+  assert.equal(mismatch.ledgerStatus, 'MISMATCH'); assert.equal(mismatch.totalWeightKg, null);
+  const projectionMismatch = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: [add], stocks: [], instances: replay.instances,
+    specifications: [specification], canonicalScopeMatches: true, initialized: false });
+  assert.equal(projectionMismatch.ledgerStatus, 'UNKNOWN'); assert.equal(projectionMismatch.totalVolumeM3, null);
+  const outOfScope = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: [add], stocks: replay.lots, instances: replay.instances,
+    specifications: [specification], canonicalScopeMatches: false, initialized: false });
+  assert.equal(outOfScope.reasonCode, 'STOCK_SCOPE_MISMATCH'); assert.equal(outOfScope.totalWeightKg, null);
+  const empty = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: [], stocks: [], instances: [], specifications: [], canonicalScopeMatches: true, initialized: true });
+  assert.equal(empty.ledgerStatus, 'NOT_REQUIRED'); assert.equal(empty.totalWeightKg, 0); assert.equal(empty.totalVolumeM3, 0);
+  const overLimit = reconcileManagedV4SkuEvidence({ skuId: ids.skuId, movements: Array.from({ length: 10001 }, () => ({ schemaVersion: 4 })),
+    stocks: [], instances: [], specifications: [], canonicalScopeMatches: true, initialized: false });
+  assert.equal(overLimit.ledgerStatus, 'UNKNOWN'); assert.equal(overLimit.reasonCode, 'MOVEMENT_HISTORY_LIMIT_EXCEEDED');
+});
 function stockLine({cellId=ids.c1,receiptId='receipt-1',quantity=10,unitWeightKgSnapshot=2,unitVolumeM3Snapshot=.01,unitDimensionsSnapshot={widthM:.2,depthM:.2,heightM:.25},allocatedWeightKg=quantity*unitWeightKgSnapshot,allocatedVolumeM3=quantity*unitVolumeM3Snapshot,itemInstanceId}={}) {
   return { itemSpecId: ids.specA, receiptId, ...(itemInstanceId?{itemInstanceId}:{}), cellId, quantity, unitWeightKgSnapshot, unitVolumeM3Snapshot, unitDimensionsSnapshot, allocatedWeightKg, allocatedVolumeM3 };
 }

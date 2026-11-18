@@ -52,7 +52,6 @@ test('Contract Extension: Chặn tạo yêu cầu gia hạn nếu đơn không �
     exec: async () => null,
     then: (resolve) => resolve(null),
   });
-
   t.after(() => {
     ReservationModel.findById = origFindById;
   });
@@ -399,10 +398,19 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
     applicationStatus: 'APPLIED', amount: 2400000, currency: 'VND',
   }) }) });
 
+  let contractUpdateCalls = 0;
   const origContractUpdate = ContractModel.findOneAndUpdate;
-  ContractModel.findOneAndUpdate = () => ({
-    exec: async () => ({ success: true })
-  });
+  ContractModel.findOneAndUpdate = () => { contractUpdateCalls++; return { exec: async () => ({ success: true }) }; };
+  t.mock.method(ReservationPaymentModel, 'findOne', filter => ({ exec: async () => {
+    assert.equal(String(filter._id), String(fakeReservation.extendContract[0].paymentId));
+    assert.equal(filter.status, 'SUCCEEDED');
+    assert.equal(filter.providerSettlementStatus, 'VERIFIED');
+    assert.equal(filter.applicationStatus, 'APPLIED');
+    return ({
+    amount: 2400000, purpose: 'RENEWAL', status: 'SUCCEEDED', provider: 'PAYOS',
+    providerSettlementStatus: 'VERIFIED', applicationStatus: 'APPLIED',
+    });
+  } }));
 
   t.after(() => {
     ReservationModel.findById = origFindById;
@@ -426,6 +434,7 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
   assert.equal(ext.status, 'ACTIVE');
   assert.equal(ext.paperProofUrl, 'https://res.cloudinary.com/test/image/upload/v1/extension_proof.jpg');
   assert.equal(ext.verifiedBy.toString(), staffId.toString());
+  assert.equal(contractUpdateCalls, 0, 'Renewal confirmation must not mutate the original Contract snapshot');
   // Ngày kết thúc của đơn chính CHÍNH THỨC được cộng dồn sang ngày mới
   assert.equal(fakeReservation.endDate.toISOString(), targetNewEndDate.toISOString());
 
@@ -433,6 +442,8 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
   await ReservationController.confirmExtension(req, duplicateRes);
   assert.equal(duplicateRes.statusCode, 400, 'an already ACTIVE Extension cannot be confirmed twice');
   assert.equal(fakeReservation.endDate.toISOString(), targetNewEndDate.toISOString(), 'duplicate confirm must not add the term again');
+
+  assert.equal(fakeReservation.statusHistory.length, 1, 'replay must not append history');
 
   const secondExtensionId = new mongoose.Types.ObjectId(), secondPaymentId = new mongoose.Types.ObjectId();
   const secondEndDate = new Date('2027-05-01T00:00:00.000Z');

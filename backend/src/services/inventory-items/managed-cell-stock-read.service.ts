@@ -41,6 +41,37 @@ function sameInstanceProjection(replayed: any[], projected: any[]) {
     return expected.every((line: any, index: number) => idText(line.cellId) === idText(actual[index]?.cellId) && line.weightKg === actual[index]?.weightKg && line.volumeM3 === actual[index]?.volumeM3);
   });
 }
+export function reconcileManagedV4SkuEvidence(input: { skuId: unknown; movements: any[]; stocks: any[]; instances: any[]; specifications: any[]; canonicalScopeMatches: boolean; initialized: boolean }) {
+  const historyBounded = input.movements.length <= 10000;
+  const legacyMovement = input.movements.some(row => row.schemaVersion !== 4);
+  const v4Events = input.movements.filter(row => row.schemaVersion === 4);
+  let replay: any = null, replayError: string | null = null;
+  if (historyBounded && v4Events.length === input.movements.length && v4Events.length) {
+    try { replay = replayManagedStockMovements(v4Events); } catch (error: any) { replayError = error?.code || 'STOCK_LEDGER_UNKNOWN'; }
+  }
+  const replayMatchesProjection = input.canonicalScopeMatches && historyBounded && !!replay &&
+    sameProjection(replay.lots, input.stocks, row => `${idText(row.reservationId)}|${idText(row.itemSpecId)}|${row.receiptId}|${idText(row.cellId)}`,
+      ['skuId','itemSpecId','reservationId','facilityId','customerId','cellId','receiptId','quantityOnHand','quantityHeld','quantityAvailable','totalWeightKg','totalVolumeM3','unitWeightKgSnapshot','unitVolumeM3Snapshot','quantityUnitSnapshot','ledgerRevision']) &&
+    sameInstanceProjection(replay.instances, input.instances);
+  const ledgerStatus = input.initialized ? 'NOT_REQUIRED' : replayMatchesProjection ? 'REPLAYED' : replayError ? 'MISMATCH' : 'UNKNOWN';
+  const reasonCode = input.initialized ? 'NO_STOCK_HISTORY' : !input.canonicalScopeMatches ? 'STOCK_SCOPE_MISMATCH' : replayError ||
+    (legacyMovement ? 'LEGACY_MOVEMENT_NOT_REPLAYED' : historyBounded ? 'CANONICAL_LEDGER_OR_PROJECTION_UNVERIFIED' : 'MOVEMENT_HISTORY_LIMIT_EXCEEDED');
+  const canonicalRows = replayMatchesProjection ? replay.lots : [], canonicalInstances = replayMatchesProjection ? replay.instances : [];
+  const summary = physicalSummary(canonicalRows, canonicalInstances);
+  const quantityByUnit = new Map<string, { quantityUnitId: string | null; quantityUnit: string | null; quantity: number }>();
+  for (const spec of input.specifications) {
+    const value = summary.specs.get(idText(spec._id));
+    const quantityUnitId = idText(spec.quantityUnitId?._id ?? spec.quantityUnitId) || null;
+    const key = quantityUnitId ?? `unknown:${idText(spec._id)}`;
+    const row = quantityByUnit.get(key) ?? { quantityUnitId, quantityUnit: spec.quantityUnitId?.name ?? null, quantity: 0 };
+    if (input.initialized || replayMatchesProjection) row.quantity += value?.quantityOnHand ?? 0;
+    quantityByUnit.set(key, row);
+  }
+  const weight = input.initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0) : null;
+  const volume = input.initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0) : null;
+  return { replay, replayMatchesProjection, ledgerStatus, reconciliationStatus: input.initialized ? 'NOT_REQUIRED' : ledgerStatus === 'MISMATCH' ? 'MISMATCH' : 'UNKNOWN', reasonCode, historyBounded, legacyMovement,
+    canonicalRows, canonicalInstances, summary, quantityByUnit: [...quantityByUnit.values()], totalWeightKg: weight, totalVolumeM3: volume };
+}
 function assertSkuAccess(sku: any, actor: any) {
   if (!actor?._id) fail(401, 'Authentication required', 'AUTH_REQUIRED');
   if (sku.inventorySchemaVersion !== 3) fail(409, 'Stock reads are available only for V3 SKU records', 'UNSUPPORTED_INVENTORY_VERSION');
@@ -118,16 +149,9 @@ export class ManagedCellStockReadService {
       : [];
     const cellScopeMatches = placementCellList.length <= 10000 && placementCells.length === placementCellList.length;
     const canonicalScopeMatches = scopeRowsMatch && cellScopeMatches;
-    const legacyMovement = movements.some((row: any) => row.schemaVersion !== 4), historyBounded = movements.length <= 10000;
-    const v4Events = movements.filter((row: any) => row.schemaVersion === 4);
-    let replay: any = null, replayError: string | null = null;
-    if (v4Events.length === movements.length && v4Events.length) { try { replay = replayManagedStockMovements(v4Events); } catch (error: any) { replayError = error?.code || 'STOCK_LEDGER_UNKNOWN'; } }
     const initialized = canonicalScopeMatches && movements.length === 0 && stocks.length === 0 && instances.every((row: any) => row.status === 'REMOVED') && legacySku?.quantity == null && legacySku?.currentCellId == null;
-    const replayMatchesProjection = canonicalScopeMatches && historyBounded && !!replay && sameProjection(replay.lots, stocks, row => `${idText(row.reservationId)}|${idText(row.itemSpecId)}|${row.receiptId}|${idText(row.cellId)}`, ['skuId','itemSpecId','reservationId','facilityId','customerId','cellId','receiptId','quantityOnHand','quantityHeld','quantityAvailable','totalWeightKg','totalVolumeM3','unitWeightKgSnapshot','unitVolumeM3Snapshot','quantityUnitSnapshot','ledgerRevision']) &&
-      sameInstanceProjection(replay.instances, instances);
-    const ledgerStatus = initialized ? 'NOT_REQUIRED' : replayMatchesProjection ? 'REPLAYED' : replayError ? 'MISMATCH' : 'UNKNOWN';
-    const canonicalRows = replayMatchesProjection ? replay.lots : [], canonicalInstances = replayMatchesProjection ? replay.instances : [];
-    const summary = physicalSummary(canonicalRows, canonicalInstances);
+    const reconciled = reconcileManagedV4SkuEvidence({ skuId, movements, stocks, instances, specifications, canonicalScopeMatches, initialized });
+    const { replay, replayMatchesProjection, ledgerStatus, reasonCode, historyBounded, legacyMovement, canonicalRows, canonicalInstances, summary } = reconciled;
     const byReservation = replayMatchesProjection ? [...new Set([...canonicalRows.map((row: any) => idText(row.reservationId)), ...canonicalInstances.filter((row: any) => row.status === 'PLACED').map((row: any) => idText(row.reservationId))])].map(resId => ({
       reservationId: resId, reservationCode: reservationRows.find((row: any) => idText(row._id) === resId)?.reservationCode ?? null,
       quantityOnHand: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).length,
@@ -135,11 +159,11 @@ export class ManagedCellStockReadService {
       totalVolumeM3: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0),
     })) : [];
     const result = { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
-      ledgerStatus, reconciliationStatus: initialized ? 'NOT_REQUIRED' : ledgerStatus === 'MISMATCH' ? 'MISMATCH' : 'UNKNOWN', reasonCode: initialized ? 'NO_STOCK_HISTORY' : !canonicalScopeMatches ? 'STOCK_SCOPE_MISMATCH' : replayError || (legacyMovement ? 'LEGACY_MOVEMENT_NOT_REPLAYED' : historyBounded ? 'CANONICAL_LEDGER_OR_PROJECTION_UNVERIFIED' : 'MOVEMENT_HISTORY_LIMIT_EXCEEDED'),
+      ledgerStatus, reconciliationStatus: reconciled.reconciliationStatus, reasonCode,
       totalQuantity: initialized ? 0 : replayMatchesProjection ? summary.byCell.size === 0 ? 0 : [...summary.byCell.values()].reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) : null,
-      totalWeightKg: initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0) : null,
-      totalVolumeM3: initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0) : null,
-      itemSpecifications: specifications.map((spec: any) => { const value = summary.specs.get(idText(spec._id)); return { itemSpecId: spec._id, code: spec.code, name: spec.name, quantityUnit: spec.quantityUnitId?.name ?? null,
+      totalWeightKg: reconciled.totalWeightKg,
+      totalVolumeM3: reconciled.totalVolumeM3,
+      itemSpecifications: specifications.map((spec: any) => { const value = summary.specs.get(idText(spec._id)); return { itemSpecId: spec._id, code: spec.code, name: spec.name, quantityUnitId: idText(spec.quantityUnitId?._id ?? spec.quantityUnitId) || null, quantityUnit: spec.quantityUnitId?.name ?? null,
         quantityOnHand: initialized ? 0 : replayMatchesProjection ? value?.quantityOnHand ?? 0 : null, quantityHeld: initialized ? 0 : replayMatchesProjection ? value?.quantityHeld ?? 0 : null, quantityAvailable: initialized ? 0 : replayMatchesProjection ? value?.quantityAvailable ?? 0 : null,
         totalWeightKg: initialized ? 0 : replayMatchesProjection ? value?.totalWeightKg ?? 0 : null, totalVolumeM3: initialized ? 0 : replayMatchesProjection ? value?.totalVolumeM3 ?? 0 : null,
         byCell: initialized ? [] : replayMatchesProjection && value ? [...value.byCell.values()] : [], byReceipt: initialized ? [] : replayMatchesProjection ? value?.byReceipt ?? [] : [] }; }),

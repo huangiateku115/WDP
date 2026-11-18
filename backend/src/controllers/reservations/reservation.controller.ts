@@ -6,6 +6,8 @@ import FacilityModel from '../../models/facilities/facility.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import { ReservationService, ReservationError } from '../../services/reservations/reservation.service';
 import { ReservationStatus } from '../../types/reservation.type';
+import { reservationDetailDto } from '../../services/reservations/reservation-detail.dto';
+import { withSelfStorageRentalInterval } from '../../services/contracts/self-storage-pricing-snapshot';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
@@ -410,7 +412,7 @@ export const getReservationById = async (req: Request, res: Response) => {
     if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(req.user!.role as UserRole) && req.user!.assignedFacilityId?.toString() !== String(reservationFacilityId)) {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });
     }
-    return res.json({ success: true, data: reservation });
+    return res.json({ success: true, data: reservationDetailDto(reservation) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -453,11 +455,11 @@ export const approveReservation = async (req: Request, res: Response) => {
         email: user.email,
         phone: user.phone
       },
-      pricingSnapshot: {
+      pricingSnapshot: withSelfStorageRentalInterval(reservation, {
         estimatedRent: reservation.estimatedRent,
         depositAmount: reservation.depositAmount,
         pricingPolicyId: reservation.pricingPolicyId
-      }
+      })
     });
 
     return res.json({ success: true, data: reservation, contract });
@@ -871,14 +873,14 @@ export const confirmMockDeposit = async (req: Request, res: Response) => {
           email: user.email,
           phone: user.phone,
         },
-        pricingSnapshot: {
+        pricingSnapshot: withSelfStorageRentalInterval(reservation, {
           estimatedRent: reservation.estimatedRent,
           depositAmount: reservation.depositAmount,
           pricingPolicyId: reservation.pricingPolicyId,
           totalDue: breakdown.totalDue,
           depositCredit: breakdown.depositCredit,
           balanceDue: breakdown.balanceDue,
-        },
+        }),
         status: ContractStatus.DRAFT,
       });
     }
@@ -1852,7 +1854,6 @@ export const confirmExtension = async (req: Request, res: Response) => {
     if (extItem.status !== 'PAID') {
       return res.status(400).json({ success: false, message: `Yêu cầu gia hạn chưa thanh toán hoặc đã được xử lý (trạng thái: ${extItem.status}).` });
     }
-
     const verifiedPayment = extItem.paymentId ? await ReservationPaymentModel.findById(extItem.paymentId).where({
       reservationId: reservation._id, customerId: reservation.customerId,
       facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
@@ -1912,12 +1913,8 @@ export const confirmExtension = async (req: Request, res: Response) => {
           createdAt: now,
         });
         await current.save({ session });
-        const contract = await ContractModel.findOneAndUpdate(
-          { reservationId: current._id, customerId: current.customerId, status: ContractStatus.SIGNED },
-          { $set: { 'pricingSnapshot.endDate': currentExtension.newEndDate, updatedAt: now } },
-          { new: true, session }
-        ).exec();
-        if (!contract) throw new ReservationControllerError(409, 'The current Contract could not be updated; renewal confirmation was rolled back');
+        // Preserve the signed original snapshot. Contract reads expose the current
+        // rental period and verified addenda through contractRentalPeriodDto.
         activatedReservation = current;
         activatedExtension = currentExtension;
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });

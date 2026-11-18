@@ -71,7 +71,7 @@ export const verifyProfile = async (req: Request, res: Response) => {
 
 export const getCustomers = async (req: Request, res: Response) => {
   try {
-    const profiles = await CustomerProfileModel.find().populate('userId', 'email phone fullName').exec();
+    const profiles = await CustomerProfileModel.find().populate('userId', 'email phone displayName').exec();
     return res.json({ success: true, data: profiles });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
@@ -80,7 +80,7 @@ export const getCustomers = async (req: Request, res: Response) => {
 
 export const getCustomerById = async (req: Request, res: Response) => {
   try {
-    const profile = await CustomerProfileModel.findById(req.params.id).populate('userId', 'email phone fullName').exec();
+    const profile = await CustomerProfileModel.findById(req.params.id).populate('userId', 'email phone displayName').exec();
     if (!profile) return res.status(404).json({ success: false, message: 'Không tìm thấy khách hàng.' });
     return res.json({ success: true, data: profile });
   } catch (error: any) {

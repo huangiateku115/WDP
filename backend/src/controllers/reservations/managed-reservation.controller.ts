@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ManagedReservationError, ManagedReservationService } from '../../services/reservations/managed-reservation.service';
 import { ManagedClosureReadinessError, ManagedClosureReadinessService } from '../../services/reservations/managed-closure-readiness.service';
+import { reservationDetailDto } from '../../services/reservations/reservation-detail.dto';
 
 function handle(error: unknown, res: Response) {
   if (error instanceof ManagedReservationError) return res.status(error.status).json({ success: false, message: error.message });
@@ -22,7 +23,7 @@ export const create = endpoint(req => {
 }, 201);
 export const configureCapacity = endpoint(req => ManagedReservationService.configureCapacity(req.params.facilityId, req.body, req.user!));
 export const getCapacity = endpoint(req => ManagedReservationService.getCapacity(req.params.facilityId, req.query, req.user!));
-export const get = endpoint(req => ManagedReservationService.get(req.params.id, req.user!));
+export const get = endpoint(async req => reservationDetailDto(await ManagedReservationService.get(req.params.id, req.user!)));
 export const getClosureReadiness = endpoint(req => ManagedClosureReadinessService.get(req.params.id, req.user!));
 export const cancel = endpoint(req => ManagedReservationService.cancel(req.params.id, req.user!));
 export const confirmHandover = endpoint(req => ManagedReservationService.confirmHandover(req.params.id, req.body, req.user!));
