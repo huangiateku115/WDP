@@ -6,6 +6,8 @@ import FacilityModel from '../../models/facilities/facility.model';
 import CustomerProfileModel from '../../models/users/customer-profile.model';
 import { ReservationService, ReservationError } from '../../services/reservations/reservation.service';
 import { ReservationStatus } from '../../types/reservation.type';
+import { reservationDetailDto } from '../../services/reservations/reservation-detail.dto';
+import { withSelfStorageRentalInterval } from '../../services/contracts/self-storage-pricing-snapshot';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { ContractStatus } from '../../types/contract.type';
@@ -410,7 +412,7 @@ export const getReservationById = async (req: Request, res: Response) => {
     if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(req.user!.role as UserRole) && req.user!.assignedFacilityId?.toString() !== String(reservationFacilityId)) {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });
     }
-    return res.json({ success: true, data: reservation });
+    return res.json({ success: true, data: reservationDetailDto(reservation) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -453,11 +455,11 @@ export const approveReservation = async (req: Request, res: Response) => {
         email: user.email,
         phone: user.phone
       },
-      pricingSnapshot: {
+      pricingSnapshot: withSelfStorageRentalInterval(reservation, {
         estimatedRent: reservation.estimatedRent,
         depositAmount: reservation.depositAmount,
         pricingPolicyId: reservation.pricingPolicyId
-      }
+      })
     });
 
     return res.json({ success: true, data: reservation, contract });
@@ -871,14 +873,14 @@ export const confirmMockDeposit = async (req: Request, res: Response) => {
           email: user.email,
           phone: user.phone,
         },
-        pricingSnapshot: {
+        pricingSnapshot: withSelfStorageRentalInterval(reservation, {
           estimatedRent: reservation.estimatedRent,
           depositAmount: reservation.depositAmount,
           pricingPolicyId: reservation.pricingPolicyId,
           totalDue: breakdown.totalDue,
           depositCredit: breakdown.depositCredit,
           balanceDue: breakdown.balanceDue,
-        },
+        }),
         status: ContractStatus.DRAFT,
       });
     }
@@ -1866,6 +1868,17 @@ export const confirmExtension = async (req: Request, res: Response) => {
     if (extItem.status !== 'PAID') {
       return res.status(400).json({ success: false, message: `Yêu cầu gia hạn chưa thanh toán hoặc đã được xử lý (trạng thái: ${extItem.status}).` });
     }
+    const verifiedRenewalPayment = extItem.paymentId ? await ReservationPaymentModel.findOne({
+      _id: extItem.paymentId, reservationId: reservation._id, customerId: reservation.customerId,
+      facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+      purpose: PaymentPurpose.RENEWAL, provider: PaymentProvider.PAYOS,
+      status: PaymentStatus.SUCCEEDED, providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+      applicationStatus: PaymentApplicationStatus.APPLIED, amount: extItem.amount,
+    }).exec() : null;
+    if (!verifiedRenewalPayment) {
+      return res.status(409).json({ success: false, code: 'RENEWAL_PAYMENT_NOT_VERIFIED',
+        message: 'Không thể kích hoạt kỳ gia hạn nếu chưa có thanh toán PayOS đã xác minh và được áp dụng.' });
+    }
 
     let proofUrl = req.body?.paperProofUrl;
     if (req.file) {
@@ -1877,39 +1890,41 @@ export const confirmExtension = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Vui lòng tải lên ảnh chụp bản phụ lục hợp đồng giấy đã ký.' });
     }
 
-    extItem.status = 'ACTIVE';
-    extItem.paperProofUrl = proofUrl;
-    if (req.user?._id) {
-      extItem.verifiedBy = req.user._id;
+    const confirmedAt = new Date();
+    const confirmedReservation = await ReservationModel.findOneAndUpdate({
+      _id: reservation._id,
+      serviceType: FacilityServiceType.SELF_STORAGE,
+      extendContract: { $elemMatch: { _id: extItem._id, status: 'PAID', paymentId: extItem.paymentId } },
+    }, {
+      $set: {
+        endDate: extItem.newEndDate,
+        'extendContract.$.status': 'ACTIVE',
+        'extendContract.$.paperProofUrl': proofUrl,
+        'extendContract.$.verifiedBy': req.user?._id,
+        'extendContract.$.verifiedAt': confirmedAt,
+        'extendContract.$.updatedAt': confirmedAt,
+      },
+      $push: { statusHistory: {
+        status: reservation.status,
+        ...(req.user?._id ? { actorId: req.user._id } : {}),
+        reason: `Staff xác nhận phụ lục hợp đồng giấy ${extItem.extensionCode} (+${extItem.durationMonths} tháng). Hạn kết thúc mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}`,
+        createdAt: confirmedAt,
+      } },
+    }, { returnDocument: 'after' }).exec();
+    if (!confirmedReservation) {
+      return res.status(409).json({ success: false, code: 'RENEWAL_ALREADY_PROCESSED',
+        message: 'Yêu cầu gia hạn đã được xử lý đồng thời; tải lại thời hạn thuê hiện tại.' });
     }
-    extItem.verifiedAt = new Date();
-    extItem.updatedAt = new Date();
+    const confirmedExtension = (confirmedReservation.extendContract || []).find((entry: any) => String(entry._id) === String(extItem._id));
 
-    // Chính thức cộng dồn ngày kết thúc hợp đồng
-    reservation.endDate = extItem.newEndDate;
-    reservation.statusHistory.push({
-      status: reservation.status,
-      ...(req.user?._id ? { actorId: req.user._id } : {}),
-      reason: `Staff xác nhận phụ lục hợp đồng giấy ${extItem.extensionCode} (+${extItem.durationMonths} tháng). Hạn kết thúc mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}`,
-      createdAt: new Date(),
-    });
-
-    await reservation.save();
-
-    // Đồng bộ sang Contract
-    await ContractModel.findOneAndUpdate(
-      { reservationId: reservation._id },
-      { $set: { 'pricingSnapshot.endDate': extItem.newEndDate, updatedAt: new Date() } }
-    ).exec();
-
-    void EmailService.sendExtensionConfirmedEmail(reservation, extItem).catch(() => {});
+    void EmailService.sendExtensionConfirmedEmail(confirmedReservation, confirmedExtension).catch(() => {});
 
     return res.json({
       success: true,
       message: `Xác nhận gia hạn thành công! Hạn hợp đồng mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}.`,
       data: {
-        reservation,
-        extension: extItem,
+        reservation: confirmedReservation,
+        extension: confirmedExtension,
       },
     });
   } catch (error: any) {
@@ -2018,79 +2033,19 @@ export const cancelExtensionRequest = async (req: Request, res: Response) => {
  */
 export const renewReservation = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
-    const reservation = await ReservationModel.findById(id);
-    if (!reservation) {
-      return res.status(404).json({ success: false, message: 'Reservation not found.' });
-    }
+    const reservation = await ReservationModel.findById(req.params.id);
+    if (!reservation) return res.status(404).json({ success: false, message: 'Reservation not found.' });
     if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
       return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
+    }
+    if (req.user?.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
     }
     if (reservation.status !== ReservationStatus.ACTIVE) {
       return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
     }
-    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
-      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
-    }
-
-    let monthlyPrice = 0;
-    if (reservation.pricingPolicyId) {
-      const PricingRuleModel = mongoose.model('PricingRule');
-      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
-      if (rule && typeof rule.price === 'number') {
-        monthlyPrice = rule.price;
-      }
-    }
-    if (!monthlyPrice) {
-      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
-      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
-    }
-
-    const totalAmount = monthlyPrice * durationMonths;
-    const oldEndDate = new Date(reservation.endDate);
-    const newEndDate = new Date(oldEndDate);
-    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
-
-    if (!Array.isArray(reservation.renewals)) {
-      reservation.renewals = [];
-    }
-    reservation.renewals.push({
-      renewalDate: new Date(),
-      durationMonths,
-      amount: totalAmount,
-      oldEndDate,
-      newEndDate,
-    });
-    reservation.endDate = newEndDate;
-    reservation.statusHistory.push({
-      status: ReservationStatus.ACTIVE,
-      actorId: req.user!._id,
-      reason: `Gia hạn hợp đồng thêm ${durationMonths} tháng thành công (Hạn mới: ${newEndDate.toLocaleDateString('vi-VN')})`,
-      createdAt: new Date(),
-    });
-    await reservation.save();
-
-    await ContractModel.findOneAndUpdate(
-      { reservationId: reservation._id },
-      {
-        $set: {
-          'pricingSnapshot.endDate': newEndDate,
-        },
-      }
-    ).exec();
-
-    return res.json({
-      success: true,
-      message: `Gia hạn thành công thêm ${durationMonths} tháng. Thời hạn mới: ${newEndDate.toLocaleDateString('vi-VN')}.`,
-      data: {
-        reservation,
-        durationMonths,
-        amount: totalAmount,
-        oldEndDate,
-        newEndDate,
-      },
-    });
+    return res.status(409).json({ success: false, code: 'BUSINESS_DECISION_REQUIRED',
+      message: 'Direct renewal is unavailable because it has no verified renewal payment or signed addendum. Use the extension request, verified payment, and paper-addendum confirmation flow.' });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }

@@ -324,7 +324,8 @@ test('Cloudinary success with Mongo update failure is recovered by same-key retr
   const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'development';
   const reservationGuard = require('../dist/services/reservations/managed-inventory-reservation.guard');
   t.mock.method(reservationGuard, 'requireManagedInventoryReservationForRegistration', async () => ({ _id: reservationId, facilityId: new mongoose.Types.ObjectId() }));
-  let record = null, callCount = 0, assetIds = [];
+  let record = null, callCount = 0, assetIds = [], operationalLog;
+  t.mock.method(console, 'error', value => { operationalLog = value; });
   t.mock.method(Upload, 'findOne', () => new Query(record));
   t.mock.method(Upload, 'countDocuments', () => new Query(0));
   t.mock.method(Upload, 'create', async docs => { record = { ...docs[0], _id: new mongoose.Types.ObjectId() }; return [record]; });
@@ -342,6 +343,8 @@ test('Cloudinary success with Mongo update failure is recovered by same-key retr
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png().toBuffer();
   const file = { buffer: bytes, size: bytes.length, mimetype: 'image/png' };
   await assert.rejects(service.upload(file, reservationId.toString(), 'mongo-recovery-key', actor), error => error.status === 502);
+  assert.equal(JSON.parse(operationalLog).stage, 'metadata_persistence');
+  assert.equal(JSON.parse(operationalLog).correlationId.length > 0, true);
   assert.equal(record.status, 'UPLOADING'); assert.ok(record.publicId);
   record.uploadLeaseUntil = new Date(0);
   const recovered = await service.upload(file, reservationId.toString(), 'mongo-recovery-key', actor);
@@ -352,7 +355,8 @@ test('Cloudinary success with Mongo update failure is recovered by same-key retr
 
 test('Cloudinary deletion succeeds but Mongo status write fails; expired lease allows an idempotent retry', async t => {
   const upload = existingUpload({ expiresAt: new Date(0), nextDeleteAt: new Date(0) });
-  let row = { ...upload }, deleteCalls = 0, statusWriteCalls = 0;
+  let row = { ...upload }, deleteCalls = 0, statusWriteCalls = 0, operationalLog;
+  t.mock.method(console, 'error', value => { operationalLog = value; });
   t.mock.method(mongoose, 'startSession', async () => session);
   t.mock.method(Upload, 'find', () => new Query(row.status === 'UNATTACHED' ? [{ _id: row._id }] : []).sort().limit().select().lean());
   t.mock.method(Upload, 'findOne', () => new Query(row.status === 'UNATTACHED' ? row : null));
@@ -370,6 +374,7 @@ test('Cloudinary deletion succeeds but Mongo status write fails; expired lease a
   });
   await service.cleanupExpired();
   assert.equal(row.status, 'DELETE_PENDING'); assert.equal(deleteCalls, 1);
+  assert.equal(JSON.parse(operationalLog).stage, 'metadata_persistence');
   row.cleanupLeaseUntil = new Date(0);
   await service.cleanupExpired();
   assert.equal(row.status, 'DELETED'); assert.equal(deleteCalls, 2);

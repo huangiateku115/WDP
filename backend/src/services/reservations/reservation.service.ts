@@ -15,6 +15,7 @@ import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { captureTermsAcceptance } from '../terms/terms.catalog';
 import { isBookingDateAllowed } from '../../utils/booking-date';
 import { EmailService } from '../email/email.service';
+import { withSelfStorageRentalInterval } from '../contracts/self-storage-pricing-snapshot';
 
 export interface SuggestedStorageUnit {
   _id: Types.ObjectId | string;
@@ -512,13 +513,13 @@ export class ReservationService {
             email: profileUser.email,
             phone: profileUser.phone,
           },
-          pricingSnapshot: {
+          pricingSnapshot: withSelfStorageRentalInterval(reservation, {
             estimatedRent,
             depositAmount,
             taxAmount: reservation.taxAmount || 0,
             discountAmount: reservation.discountAmount || 0,
             pricingPolicyId: reservation.pricingPolicyId,
-          },
+          }),
           currentContentVersion: 1,
           contentVersions: [{ version: 1, contentHash: contractContentHash, content: contractContent,
             createdBy: reservation.customerId, createdAt: now }],
