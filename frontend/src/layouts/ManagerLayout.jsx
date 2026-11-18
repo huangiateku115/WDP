@@ -1,3 +1,4 @@
+import useAssignedFacility from '@/lib/useAssignedFacility';
 import { facilityHome, facilityPageVisible } from '@/lib/facilityWorkspace';
 import { managerDemoEnabled } from '@/lib/managerDemoStore';
 import RoleWorkspaceOutlet from '@/components/common/RoleWorkspaceOutlet';
@@ -10,5 +11,29 @@ import Brand from '@/components/common/Brand';
 import { assignedFacility } from '@/mocks/managerData';
 import './experience.css';
 import './manager.css';
-const links = [['dashboard', LayoutDashboard, "Tổng quan"], ['reservations', CalendarCheck, "Đơn đặt thuê"], ['customers', Users, "Khách hàng"], ['storage-units', Warehouse, "Kho riêng"], ['storage-locations', Layers, "Vị trí lưu trữ"], ['managed', ClipboardList, 'Hàng hóa và tồn kho'], ['managed-access', ClipboardList, 'Lịch đến kho và phiên truy cập'], ['warehouse-settings', Layers, 'Cấu hình không gian'], ['warehouse-map', Building2, "Bản đồ kho"], ['operations', ClipboardList, "Công việc hằng ngày"], ['access', ClipboardList, "Mô phỏng mở cửa"], ['tasks', UserCheck, "Phân công hỗ trợ và bảo trì"], ['extensions', CalendarPlus, "Gia hạn"], ['maintenance', Wrench, "Bảo trì"], ['notifications', ClipboardList, 'Thông báo'], ['support', LifeBuoy, "Hỗ trợ"], ['refunds', RotateCcw, "Hoàn tiền"], ['charges', Receipt, "Phụ phí"], ['reports', ChartNoAxesCombined, 'Thống kê và báo cáo']];
-export default function ManagerLayout() { const { user } = useAuthSession(); return <div className="experience-theme manager-shell"><header className="manager-topbar"><Link to={facilityHome('manager')} aria-label="VaultSpace dành cho quản lý"><Brand /></Link><div className="manager-facility"><Building2 size={17} /><span><b>{managerDemoEnabled ? assignedFacility.name : "Cơ sở được phân công"}</b><small>Cơ sở được phân công · {managerDemoEnabled ? assignedFacility.id : user?.assignedFacilityId || "Chưa được phân công cơ sở"}</small></span></div><div className="manager-identity"><span className="manager-avatar">ML</span><span><b>{user?.displayName || (managerDemoEnabled ? assignedFacility.manager : "Không gian quản lý")}</b><small>Quản lý cơ sở</small></span><LogoutButton compact /></div></header><div className="manager-workspace"><aside className="manager-sidebar"><p className="px-3 pb-3 text-[10px] font-bold uppercase tracking-widest text-[#7A8B7F]">Quản lý cơ sở</p><nav aria-label="Điều hướng quản lý">{[...links, ...(!managerDemoEnabled ? [['work/INSPECTION', ClipboardList, "Kiểm tra kho"], ['work/CHECK_IN', ClipboardList, "Tiếp nhận khách"], ['work/HANDOVER', ClipboardList, "Bàn giao kho"], ['work/CHECKOUT', ClipboardList, "Trả kho"]] : [])].filter(([path]) => facilityPageVisible('manager', path)).map(([path, Icon, label]) => <NavLink key={path} to={`/manager/${path}`}><Icon size={17} />{label}</NavLink>)}</nav><div className="manager-scope"><Building2 size={18} /><p>Một cơ sở.<br /><b>Theo dõi đầy đủ hoạt động.</b></p><span>Phạm vi {managerDemoEnabled ? assignedFacility.id : user?.assignedFacilityId || "Chưa được phân công cơ sở"}</span></div></aside><main className="manager-main"><RoleWorkspaceOutlet role="manager" /></main></div></div>; }
+const links = [
+  ["dashboard", LayoutDashboard, "Tổng quan", "Đơn và khách hàng"],
+  ["reservations", CalendarCheck, "Đơn đặt thuê", "Đơn và khách hàng"],
+  ["customers", Users, "Khách hàng", "Đơn và khách hàng"],
+  ["work/CHECK_IN", ClipboardList, "Tiếp nhận khách", "Nhận và trả kho riêng"],
+  ["work/HANDOVER", ClipboardList, "Bàn giao kho", "Nhận và trả kho riêng"],
+  ["access", ClipboardList, "Mô phỏng mở cửa", "Nhận và trả kho riêng"],
+  ["work/INSPECTION", ClipboardList, "Kiểm tra kho", "Nhận và trả kho riêng"],
+  ["work/CHECKOUT", ClipboardList, "Trả kho", "Nhận và trả kho riêng"],
+  ["extensions", CalendarPlus, "Gia hạn", "Nhận và trả kho riêng"],
+  ["managed-access", ClipboardList, "Lịch đến kho và phiên truy cập", "Lưu trữ hàng hóa"],
+  ["managed", ClipboardList, "Hàng hóa và tồn kho", "Lưu trữ hàng hóa"],
+  ["warehouse-map", Building2, "Bản đồ kho", "Lưu trữ hàng hóa"],
+  ["storage-units", Warehouse, "Kho riêng", "Quản trị và báo cáo"],
+  ["storage-locations", Layers, "Vị trí lưu trữ", "Quản trị và báo cáo"],
+  ["warehouse-settings", Layers, "Cấu hình không gian", "Quản trị và báo cáo"],
+  ["reports", ChartNoAxesCombined, "Thống kê và báo cáo", "Quản trị và báo cáo"],
+  ["operations", ClipboardList, "Công việc hằng ngày", "Hỗ trợ và bảo trì"],
+  ["tasks", UserCheck, "Phân công hỗ trợ và bảo trì", "Hỗ trợ và bảo trì"],
+  ["support", LifeBuoy, "Hỗ trợ", "Hỗ trợ và bảo trì"],
+  ["maintenance", Wrench, "Bảo trì", "Hỗ trợ và bảo trì"],
+  ["notifications", ClipboardList, "Thông báo", "Hỗ trợ và bảo trì"],
+  ["refunds", RotateCcw, "Hoàn tiền", "Hỗ trợ và bảo trì"],
+  ["charges", Receipt, "Phụ phí", "Hỗ trợ và bảo trì"]
+];
+export default function ManagerLayout() { const { user } = useAuthSession(); const facilityState = useAssignedFacility(user?.assignedFacilityId, !managerDemoEnabled); const facility = managerDemoEnabled ? assignedFacility : facilityState.facility; const facilityName = facility?.name || (facilityState.loading ? 'Đang tải cơ sở…' : user?.assignedFacilityId ? 'Chưa tải được tên cơ sở' : 'Chưa được phân công cơ sở'); return <div className="experience-theme manager-shell"><header className="manager-topbar"><Link to={facilityHome('manager')} aria-label="VaultSpace dành cho quản lý"><Brand /></Link><div className="manager-facility"><Building2 size={17} /><span><b>{facilityName}</b><small>Cơ sở được phân công · {facility?.code || "Cơ sở được phân công"}</small></span></div><div className="manager-identity"><span className="manager-avatar">ML</span><span><b>{user?.displayName || (managerDemoEnabled ? assignedFacility.manager : "Không gian quản lý")}</b><small>Quản lý cơ sở</small></span><LogoutButton compact /></div></header><div className="manager-workspace"><aside className="manager-sidebar"><div className="manager-nav-brand"><span className="manager-nav-brand-icon"><Building2 size={20} aria-hidden="true" /></span><div><p>Quản lý cơ sở</p></div></div><nav aria-label="Điều hướng quản lý">{links.filter(([path]) => !managerDemoEnabled || !path.startsWith('work/')).filter(([path]) => facilityPageVisible('manager', path)).map(([path, Icon, label, group], index, visible) => <div key={path} className="facility-nav-item">{(index === 0 || visible[index - 1][3] !== group) && <p className="facility-nav-heading">{group}</p>}<NavLink to={`/manager/${path}`}><Icon size={17} />{label}</NavLink></div>)}</nav><div className="manager-scope"><Building2 size={18} /><p>Cơ sở đang quản lý<br /><b>{facilityName}</b></p>{facility?.code && <span>Mã cơ sở: {facility.code}</span>}</div></aside><main className="manager-main"><RoleWorkspaceOutlet role="manager" /></main></div></div>; }

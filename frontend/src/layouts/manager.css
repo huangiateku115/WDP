@@ -28,3 +28,14 @@
 @media(max-width:640px){.facility-outbound select{min-width:0}.facility-outbound .manager-link{align-self:center}}
 @media(max-width:760px){.manager-shell:not(.admin-shell):not(.bom-shell):not(.staff-shell) .manager-identity>span:not(.manager-avatar){display:none}}
 body:has(.manager-statistics){min-width:0}
+/* Staff and Manager navigation groups follow the operational demo order. */
+.manager-shell:not(.admin-shell):not(.bom-shell) .facility-nav-heading{margin:16px 12px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#7a8b7f}
+.manager-shell:not(.admin-shell):not(.bom-shell) .facility-nav-item:first-child .facility-nav-heading{margin-top:0}
+@media(max-width:760px){.manager-shell .facility-nav-item{display:contents}.manager-shell .facility-nav-heading{display:none}}
+/* Distinguish the workspace identity from its navigation groups. */
+.manager-shell .manager-nav-brand{display:flex;align-items:center;gap:11px;margin:0 0 22px;padding:14px 12px;border:1px solid #dcebe2;border-radius:14px;background:linear-gradient(135deg,#edf6f0,#fafcf9)}
+.manager-shell .manager-nav-brand-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:#176b3a;color:#fff}
+.manager-shell .manager-nav-brand p{margin:0;color:#173d28;font-size:14px;line-height:1.4;font-weight:700}
+.manager-shell .manager-nav-brand div>span{display:block;margin-top:3px;color:#738377;font-size:10px;line-height:1.5}
+.manager-shell:not(.admin-shell):not(.bom-shell) .facility-nav-heading{margin:20px 12px 8px;color:#738377;font-size:10px;line-height:1.6;letter-spacing:.06em}
+@media(max-width:760px){.manager-shell .manager-nav-brand{display:none}}

@@ -4,7 +4,7 @@ import {managerStatisticsApi as api} from '@/api/managerStatisticsApi';
 import {useAuthSession} from '@/lib/authSession';
 import useFacilityResource from '@/lib/useFacilityResource';
 import {reviewError,objectId} from '@/lib/facilityReview';
-import {statisticsReports,snapshotReports,exportReports,reportFields,statisticsQuery,scopedStatistics,statisticLabel,statisticValue} from '@/lib/managerStatistics';
+import {statisticsReports,snapshotReports,exportReports,reportFields,statisticsQuery,scopedStatistics,statisticLabel,statisticValue,reportChart} from '@/lib/managerStatistics';
 import {Screen,Panel,Field,Input,Select,Button,Message,Details,Table} from '@/components/manager/ManagerUI';
 import {Kpis} from '@/components/bom/BomUI';
 import {facilityLabel} from '@/lib/facilityLabels';
@@ -26,6 +26,22 @@ function DataSections({data,depth=0}){
   const values=Object.entries(value).filter(([child,entry])=>scalar(entry)&&!excluded(child));
   return <section key={key} className="space-y-4"><h3 className="font-semibold">{statisticLabel(key)}</h3>{values.length>0&&<Details values={values.map(([child,entry])=>[statisticLabel(child),display(entry,child)])}/>}<DataSections data={value} depth={depth+1}/></section>;
  });
+}
+function ReportChart({report,data}){
+ const chart=reportChart(report,data);
+ if(!chart)return null;
+ const total=chart.rows.reduce((sum,row)=>sum+row.value,0),max=Math.max(0,...chart.rows.map(row=>row.value));
+ const colors=['#176b3a','#f28c28','#327b9d','#8556a0','#b44b53'];
+ let offset=0;
+ return <Panel title={chart.title} subtitle={chart.type==='pie'?'Tỷ trọng trong tổng số của phạm vi đang xem':'So sánh trên cùng đơn vị đo'}>
+  {chart.unknown?<p role="status">Chưa đủ dữ liệu xác minh để vẽ biểu đồ.</p>:total===0?<p>Chưa phát sinh số liệu trong phạm vi đã chọn.</p>:chart.type==='pie'?<div className="grid items-center gap-6 sm:grid-cols-[200px_minmax(0,1fr)]">
+   <svg viewBox="0 0 120 120" className="mx-auto w-full max-w-[200px]" role="img" aria-label={`${chart.title}. Tổng ${statisticValue(total)}. ${chart.rows.map(row=>`${row.label}: ${statisticValue(row.value)}`).join('; ')}`}>
+    {chart.rows.map((row,index)=>{const share=row.value/total*100,start=offset;offset+=share;return <circle key={row.label} cx="60" cy="60" r="44" fill="none" stroke={colors[index%colors.length]} strokeWidth="22" pathLength="100" strokeDasharray={`${share} ${100-share}`} strokeDashoffset={-start} transform="rotate(-90 60 60)"/>;})}
+    <text x="60" y="57" textAnchor="middle" fontSize="9" fill="#627168">Tổng</text><text x="60" y="71" textAnchor="middle" fontSize="12" fontWeight="700" fill="#173d28">{statisticValue(total)}</text>
+   </svg>
+   <ul className="space-y-3">{chart.rows.map((row,index)=><li key={row.label} className="flex flex-wrap items-center gap-2 text-sm"><span aria-hidden="true" className="h-3 w-3 shrink-0 rounded" style={{background:colors[index%colors.length]}}/><span className="min-w-0 flex-1 break-words">{row.label}</span><b>{statisticValue(row.value)}</b><span className="text-slate-500">({statisticValue(row.value/total*100)}%)</span></li>)}</ul>
+  </div>:<div className="space-y-4">{chart.rows.map(row=><div key={row.label} className="grid items-center gap-2 text-sm sm:grid-cols-[minmax(100px,180px)_minmax(0,1fr)]"><span className="break-words">{row.label}</span><div className="flex min-w-0 items-center gap-3"><div className="h-6 min-w-0 flex-1 overflow-hidden rounded bg-emerald-50" aria-hidden="true"><div className="h-full rounded bg-emerald-700" style={{width:`${row.value/max*100}%`}}/></div><b className="shrink-0">{statisticValue(row.value)} {chart.unit}</b></div></div>)}</div>}
+ </Panel>;
 }
 function Trend({data}){
  const found=Object.entries(data).find(([key,rows])=>/Trend$|ByTime$/.test(key)&&Array.isArray(rows)&&rows.length);
@@ -90,6 +106,7 @@ function Statistics({facilityId,report,onReport}){
    </Panel>
    {values.length>0&&<Kpis items={values.slice(0,12).map(([key,value])=>[statisticLabel(key),display(value,key),snapshot?'Hiện tại':'Trong phạm vi báo cáo'])}/>}
    {values.length>12&&<Panel title="Chỉ số bổ sung"><Details values={values.slice(12).map(([key,value])=>[statisticLabel(key),display(value,key)])}/></Panel>}
+   <ReportChart report={report} data={body.data}/>
    <Trend data={body.data}/>
    <Panel title="Chi tiết thống kê"><div className="space-y-8"><DataSections data={body.data}/></div></Panel>
    {totalPages!==null&&<div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={page<=1||resource.loading} onClick={()=>setPage(value=>value-1)}>Trang trước</Button><span>Trang {page}/{Math.max(1,totalPages)} · {pagination.total??0} bản ghi</span><Button variant="outline" disabled={page>=totalPages||resource.loading} onClick={()=>setPage(value=>value+1)}>Trang sau</Button></div>}
