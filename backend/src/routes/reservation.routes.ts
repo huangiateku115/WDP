@@ -76,12 +76,12 @@ router.get('/checkout-queue', requireRole(staffAndFmRoles), ReservationControlle
 router.post('/:id/checkout-request', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.requestCheckout);
 router.post('/:id/complete-checkout', requireRole(staffAndFmRoles), ReservationController.completeCheckout);
 router.post('/:id/reject-checkout', requireRole(staffAndFmRoles), ReservationController.rejectCheckout);
-router.post('/:id/renew-quote', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewQuote);
+router.post('/:id/renew-quote', requireRole([UserRole.CUSTOMER]), ReservationController.renewQuote);
 router.post('/:id/renew', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.renewReservation);
 
 // Contract Extension Routes (4-step lifecycle with paper proof)
-router.post('/:id/extension-request', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.createExtensionRequest);
-router.post('/:id/extension-payments/payos', requireRole([UserRole.CUSTOMER]), ReservationController.createExtensionPayosCheckout);
+router.post('/:id/extension-request', requireRole([UserRole.CUSTOMER]), ReservationController.createExtensionRequest);
+router.post('/:id/extension-payments/payos', requireRole([UserRole.CUSTOMER]), PayosPaymentController.createSelfStorageRenewalCheckout);
 router.post('/:id/extension-payments/mock-pay', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.mockPayExtension);
 router.post('/:id/extension-contracts/:extensionId/confirm', requireRole(staffAndFmRoles), uploadProofMiddleware.single('file'), ReservationController.confirmExtension);
 router.post('/:id/extension-contracts/:extensionId/reject', requireRole(staffAndFmRoles), ReservationController.rejectExtension);

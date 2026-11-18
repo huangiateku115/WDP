@@ -1,0 +1,368 @@
+<!-- VaultSpace — Khám phá kho ký gửi -->
+<!DOCTYPE html>
+
+<html lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-tertiary-container": "#ffe7d0", "outline": "#6f7a71", "on-error-container": "#93000a", "surface-container-high": "#dbece1", "inverse-primary": "#80d9a5", "on-primary-fixed-variant": "#005231", "surface": "#ecfef2", "secondary": "#3c6752", "error": "#ba1a1a", "on-primary-container": "#a4fec9", "on-primary": "#ffffff", "primary": "#005f3a", "on-error": "#ffffff", "secondary-fixed-dim": "#a3d1b8", "surface-bright": "#ecfef2", "surface-container-highest": "#d6e7dc", "primary-fixed-dim": "#80d9a5", "on-secondary-fixed": "#002114", "on-tertiary-fixed": "#2a1700", "on-surface": "#101e18", "outline-variant": "#bec9bf", "on-background": "#101e18", "surface-tint": "#006d43", "surface-container-low": "#e7f8ed", "on-secondary-fixed-variant": "#244f3c", "on-secondary": "#ffffff", "secondary-fixed": "#beedd3", "error-container": "#ffdad6", "on-tertiary-fixed-variant": "#653e00", "tertiary-fixed": "#ffddb8", "surface-container": "#e1f2e7", "surface-dim": "#cdded3", "inverse-on-surface": "#e4f5ea", "on-tertiary": "#ffffff", "background": "#ecfef2", "primary-container": "#18794e", "secondary-container": "#bbead0", "on-secondary-container": "#406b56", "on-surface-variant": "#3f4942", "tertiary-fixed-dim": "#ffb95f", "primary-fixed": "#9bf5c0", "tertiary": "#744800", "inverse-surface": "#25342c", "on-primary-fixed": "#002111", "tertiary-container": "#955e00", "surface-container-lowest": "#ffffff", "surface-variant": "#d6e7dc" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2rem", "margin": "1.25rem", "gutter": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem", "gutter-sm": "0.75rem", "space-sm": "0.5rem", "space-md": "1rem", "margin-sm": "1rem" }, "fontFamily": { "headline-lg": ["Inter"], "label-sm": ["Inter"], "label-md": ["Inter"], "display": ["Inter"], "currency-display": ["Inter"], "body-lg": ["Inter"], "label-lg": ["Inter"], "body-md-medium": ["Inter"], "headline-md": ["Inter"], "body-lg-medium": ["Inter"], "headline-sm": ["Inter"], "body-md": ["Inter"] }, "fontSize": { "headline-lg": ["26px", { "lineHeight": "34px", "letterSpacing": "-0.015em", "fontWeight": "700" }], "label-sm": ["10px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "500" }], "display": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "currency-display": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }], "label-lg": ["13px", { "lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600" }], "body-md-medium": ["14px", { "lineHeight": "20px", "fontWeight": "500" }], "headline-md": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "body-lg-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }], "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.005em", "fontWeight": "600" }], "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }] } } } }</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[20px]">warehouse</span></div><h1 class="font-headline-sm text-headline-sm text-on-surface tracking-tight truncate">Facility List</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Hỗ trợ trực tuyến" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[24px]">support_agent</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 w-full bg-surface pt-16 pb-28"><div class="flex flex-col w-full pb-6">
+<!-- Search & Active Context Bar -->
+<div class="px-margin pt-space-xs pb-space-sm flex flex-col gap-space-sm">
+<!-- Live Quick Status Notification / Delight Banner -->
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container rounded-xl shadow-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="relative flex h-2.5 w-2.5 shrink-0">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+</span>
+<p class="font-body-md-medium text-body-md-medium text-on-surface truncate">
+          Cập nhật khả dụng thực tế lúc <span class="text-primary font-semibold">14:30 hôm nay</span>
+</p>
+</div>
+<span class="material-symbols-outlined text-[18px] text-primary shrink-0">verified</span>
+</div>
+<!-- Interactive Search Field -->
+<div class="relative flex items-center w-full">
+<span class="material-symbols-outlined absolute left-3.5 text-outline text-[22px] pointer-events-none">search</span>
+<input class="w-full h-12 pl-11 pr-10 bg-surface-container-lowest text-on-surface placeholder:text-outline font-body-md text-body-md rounded-xl shadow-sm focus:outline-none focus:bg-surface-container-low transition-colors" id="facility-search-input" placeholder="Tìm kiếm theo quận, tuyến đường hoặc tên kho..." type="text"/>
+<button aria-label="Xóa nội dung tìm kiếm" class="hidden absolute right-3 w-7 h-7 rounded-full bg-surface-container flex items-center justify-center text-outline hover:text-on-surface transition-colors" id="facility-search-clear" type="button">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+<!-- Filter Chips Carousel -->
+<div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar -mx-margin px-margin py-1">
+<button class="filter-chip active shrink-0 px-3.5 py-1.5 rounded-full font-label-md text-label-md transition-all flex items-center gap-1.5 bg-primary text-on-primary shadow-sm" data-filter="all" type="button">
+<span class="material-symbols-outlined text-[16px]">domain</span>
+<span>Tất cả cơ sở</span>
+</button>
+<button class="filter-chip shrink-0 px-3.5 py-1.5 rounded-full font-label-md text-label-md transition-all flex items-center gap-1.5 bg-surface-container-lowest text-on-surface-variant shadow-sm hover:bg-surface-container" data-filter="available" type="button">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+<span>Có sẵn ô trống</span>
+</button>
+<button class="filter-chip shrink-0 px-3.5 py-1.5 rounded-full font-label-md text-label-md transition-all flex items-center gap-1.5 bg-surface-container-lowest text-on-surface-variant shadow-sm hover:bg-surface-container" data-filter="cool" type="button">
+<span class="material-symbols-outlined text-[16px]">ac_unit</span>
+<span>Kho mát (18-22°C)</span>
+</button>
+<button class="filter-chip shrink-0 px-3.5 py-1.5 rounded-full font-label-md text-label-md transition-all flex items-center gap-1.5 bg-surface-container-lowest text-on-surface-variant shadow-sm hover:bg-surface-container" data-filter="dock" type="button">
+<span class="material-symbols-outlined text-[16px]">rv_hookup</span>
+<span>Gần bốc xếp container</span>
+</button>
+</div>
+</div>
+<!-- Facilities Listing Grid -->
+<div class="px-margin flex flex-col gap-space-lg mt-space-xs" id="facilities-container">
+<!-- Facility Card 1: East Metro Logistics Hub -->
+<article class="facility-card flex flex-col bg-surface-container-lowest rounded-xl shadow-md overflow-hidden transition-transform active:scale-[0.99]" data-name="east metro logistics hub thu duc khu cong nghe cao">
+<!-- Media Header with Ambient Overlay -->
+<div class="relative w-full h-48 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A sunlit, hyper-modern emerald-trimmed logistics warehouse center in Thu Duc Hi-Tech Park Vietnam with pristine heavy-duty container loading bays, polished concrete floor, climate-controlled HVAC vents, and industrial trucks parked in neat alignment under bright architectural daytime lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAN3bt9tqU-TO9cMXtYutX9xrStff9_codAKXlxY0VZ5kZ9Z8iaDJhr63hHLkbTLJ459jUiVydl08GXoYu2sArVnED4BGKftFt9tKaZlEkRebfNMz10s-r5rC835XTzYAvu3Zo3POtz-yxcS6Mp0M1cuSZN2VSiHZJ6ytYo1Ul-ALYPV2gvHrCnwSgVYcbFgdvXN7MOXUcY4FanlpnpgTYeF6ySZMkH28SQPoGYMlAR"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-variant/90 via-transparent to-black/20 pointer-events-none"></div>
+<!-- Top Pill Badges -->
+<div class="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-md shadow-sm">
+<span class="material-symbols-outlined text-primary text-[15px]">inventory_2</span>
+<span class="font-label-sm text-label-sm text-primary tracking-wide uppercase font-semibold">Managed Inventory V3</span>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container shadow-sm">
+<span class="material-symbols-outlined text-[15px]">local_shipping</span>
+<span class="font-label-sm text-label-sm font-semibold">Cổng bốc dỡ 3.5T</span>
+</div>
+</div>
+<!-- Metric Highlight Bar -->
+<div class="absolute bottom-3 left-3 right-3 flex items-center justify-between text-on-surface">
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">thermostat</span>
+<span>Kho mát 20°C • Ẩm 50%</span>
+</span>
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">security</span>
+<span>Camera AI 24/7</span>
+</span>
+</div>
+</div>
+<!-- Facility Specs & Content -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">East Metro Logistics Hub</h2>
+<div class="flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">pin_drop</span>
+<p class="font-body-md text-body-md truncate">Khu Công nghệ Cao, TP. Thủ Đức, TP.HCM</p>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">
+          Trung tâm lưu trữ phân tầng chuyên dụng cho hàng tiêu dùng và thực phẩm đóng gói. Hệ thống kiểm soát nhiệt ẩm tự động 24/7.
+        </p>
+<!-- Dynamic Real-Time Availability Widget -->
+<div class="flex items-center justify-between py-2 px-3 bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse"></div>
+<span class="font-label-lg text-label-lg text-primary font-semibold">Đang có 18 ô trống khả dụng</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Tiêu chuẩn C1-A</span>
+</div>
+<!-- Action Section -->
+<div class="pt-1 flex items-center justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline">Đơn giá khởi điểm</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-currency-display text-currency-display text-primary">₫1.850.000</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">/tháng</span>
+</div>
+</div>
+<a class="h-11 px-5 rounded-xl bg-primary text-on-primary font-label-lg text-label-lg font-semibold flex items-center gap-1.5 shadow-sm active:bg-primary-container transition-all" data-path="facility-detail" href="#">
+<span>Xem kho</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</article>
+<!-- Facility Card 2: Saigon South Logistics Center -->
+<article class="facility-card flex flex-col bg-surface-container-lowest rounded-xl shadow-md overflow-hidden transition-transform active:scale-[0.99]" data-name="saigon south logistics center nguyen van linh quan 7 tphcm">
+<!-- Media Header with Ambient Overlay -->
+<div class="relative w-full h-48 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Modern high-density interior of an organized logistics facility on Nguyen Van Linh District 7 Ho Chi Minh City, with high-bay pallet racking, precision electric reach trucks maneuvering safely, ambient mint-emerald accents, polished floor and clean barcode shelf management." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4y_NQWdrAm0mqYdssqFxg8BeEySjskjuW9gT-n4PARj-8IKiMI2TERWdMs8etjEbyluGK9SZrWTF9ohD3tmXTwRe3LRbAkcD0hrsyduzXTCYazRvegm-x1Bw5S_b5huyuez3o_4oqrDbymGnwhsXck7BPqqL61yFDcR_wda6CNCJZSLN1Rc3sLtqfZ1eVrR1_YWef2eTWKAuCX6JwRLi9lKpgOmz28XBO_YyIkZKO"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-variant/90 via-transparent to-black/20 pointer-events-none"></div>
+<!-- Top Pill Badges -->
+<div class="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-md shadow-sm">
+<span class="material-symbols-outlined text-primary text-[15px]">inventory_2</span>
+<span class="font-label-sm text-label-sm text-primary tracking-wide uppercase font-semibold">Managed Inventory V3</span>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[15px]">precision_manufacturing</span>
+<span class="font-label-sm text-label-sm font-semibold">Kệ cao tầng Reach Truck</span>
+</div>
+</div>
+<!-- Metric Highlight Bar -->
+<div class="absolute bottom-3 left-3 right-3 flex items-center justify-between text-on-surface">
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">forklift</span>
+<span>Độ cao trần 10.5m</span>
+</span>
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">qr_code_scanner</span>
+<span>Tự kiểm đếm WMS</span>
+</span>
+</div>
+</div>
+<!-- Facility Specs & Content -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Saigon South Logistics Center</h2>
+<div class="flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">pin_drop</span>
+<p class="font-body-md text-body-md truncate">Nguyễn Văn Linh, Quận 7, TP.HCM</p>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">
+          Tối ưu cho doanh nghiệp bán lẻ và thương mại điện tử. Sẵn sàng khu vực tự phân loại và kiểm đếm.
+        </p>
+<!-- Dynamic Real-Time Availability Widget -->
+<div class="flex items-center justify-between py-2 px-3 bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse"></div>
+<span class="font-label-lg text-label-lg text-primary font-semibold">Đang có 7 ô trống khả dụng</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Tiêu chuẩn R-Smart</span>
+</div>
+<!-- Action Section -->
+<div class="pt-1 flex items-center justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline">Đơn giá khởi điểm</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-currency-display text-currency-display text-primary">₫2.100.000</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">/tháng</span>
+</div>
+</div>
+<a class="h-11 px-5 rounded-xl bg-primary text-on-primary font-label-lg text-label-lg font-semibold flex items-center gap-1.5 shadow-sm active:bg-primary-container transition-all" data-path="facility-detail" href="#">
+<span>Xem kho</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</article>
+<!-- Facility Card 3: Hanoi West Metro Logistics -->
+<article class="facility-card flex flex-col bg-surface-container-lowest rounded-xl shadow-md overflow-hidden transition-transform active:scale-[0.99]" data-name="hanoi west metro logistics dai lo thang long nam tu liem ha noi">
+<!-- Media Header with Ambient Overlay -->
+<div class="relative w-full h-48 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Sleek architecture of Hanoi West Metro smart logistics warehouse along Thang Long Avenue in Hanoi Vietnam, featuring high-security bay entrances, pristine automated storage racking systems, subtle ambient green LED perimeter lighting, and climate monitoring screens." src="https://lh3.googleusercontent.com/aida-public/AB6AXuADNvcciaOV86BwRpOqulPnZLvmzeR5deEiPP_g6D2yWc-WVnAp2ROsKY4GZX9XI2N7cJuVvQ1bkd50eqgHJ_kC4kOaEjkdzogJoLI1onspCA6i3l2NrUN_-R35jcfvaS1LPFCMhfSZc1puszCssgq0rGX2mlaGuNTFwJvNN9u16J2L7tX9C2OIOD5as-AUiJ5yUyaHdTonX5ex1a9bSpWaIcp5CqYQ9GC0F3leS_nk"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-variant/90 via-transparent to-black/20 pointer-events-none"></div>
+<!-- Top Pill Badges -->
+<div class="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-md shadow-sm">
+<span class="material-symbols-outlined text-primary text-[15px]">inventory_2</span>
+<span class="font-label-sm text-label-sm text-primary tracking-wide uppercase font-semibold">Managed Inventory V3</span>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container shadow-sm">
+<span class="material-symbols-outlined text-[15px]">water_drop</span>
+<span class="font-label-sm text-label-sm font-semibold">Kiểm soát độ ẩm &lt;55%</span>
+</div>
+</div>
+<!-- Metric Highlight Bar -->
+<div class="absolute bottom-3 left-3 right-3 flex items-center justify-between text-on-surface">
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">speed</span>
+<span>Xuất nhập siêu tốc</span>
+</span>
+<span class="px-2.5 py-1 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md font-label-md text-label-md font-medium flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">local_police</span>
+<span>Bảo hiểm PCCC A+</span>
+</span>
+</div>
+</div>
+<!-- Facility Specs & Content -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Hanoi West Metro Logistics</h2>
+<div class="flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">pin_drop</span>
+<p class="font-body-md text-body-md truncate">Đại lộ Thăng Long, Nam Từ Liêm, Hà Nội</p>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">
+          Hạ tầng tiêu chuẩn quốc tế tại cửa ngõ phía Tây Thủ đô. Tích hợp giải pháp đóng gói chuyên biệt cho hàng linh kiện &amp; thiết bị công nghệ.
+        </p>
+<!-- Dynamic Real-Time Availability Widget -->
+<div class="flex items-center justify-between py-2 px-3 bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse"></div>
+<span class="font-label-lg text-label-lg text-primary font-semibold">Đang có 12 ô trống khả dụng</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Tiêu chuẩn Tech-Pack</span>
+</div>
+<!-- Action Section -->
+<div class="pt-1 flex items-center justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline">Đơn giá khởi điểm</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-currency-display text-currency-display text-primary">₫1.950.000</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">/tháng</span>
+</div>
+</div>
+<a class="h-11 px-5 rounded-xl bg-primary text-on-primary font-label-lg text-label-lg font-semibold flex items-center gap-1.5 shadow-sm active:bg-primary-container transition-all" data-path="facility-detail" href="#">
+<span>Xem kho</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</a>
+</div>
+</div>
+</article>
+</div>
+<!-- Interactive Empty State Placeholder -->
+<div class="hidden px-margin py-10 flex-col items-center justify-center text-center" id="search-empty-state">
+<div class="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-outline mb-3">
+<span class="material-symbols-outlined text-[32px]">warehouse</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Không tìm thấy cơ sở phù hợp</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xs mt-1">
+      Thử điều chỉnh từ khóa tìm kiếm khu vực hoặc xóa bộ lọc để xem toàn bộ 3 trung tâm lưu trữ thông minh.
+    </p>
+<button class="mt-4 px-4 py-2 rounded-xl bg-secondary-container text-on-secondary-container font-label-md text-label-md font-semibold" id="reset-search-btn" type="button">
+      Xóa tìm kiếm
+    </button>
+</div>
+<!-- Assurance Guarantee Card (Emerald Vault Modernist Touch) -->
+<div class="px-margin mt-space-lg">
+<div class="p-space-md rounded-xl bg-surface-container flex items-center gap-space-md">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[22px]">shield_with_heart</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Tiêu chuẩn bảo quản VaultSafe</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Mọi đơn lưu kho đều bao gồm bảo hiểm cơ sở vật chất &amp; độ ẩm tự động.</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function () {
+    const searchInput = document.getElementById('facility-search-input');
+    const searchClear = document.getElementById('facility-search-clear');
+    const emptyState = document.getElementById('search-empty-state');
+    const cardsContainer = document.getElementById('facilities-container');
+    const resetBtn = document.getElementById('reset-search-btn');
+    const filterChips = document.querySelectorAll('.filter-chip');
+
+    let activeFilter = 'all';
+
+    function filterCards() {
+      const query = (searchInput.value || '').trim().toLowerCase();
+      const cards = cardsContainer.querySelectorAll('.facility-card');
+      let visibleCount = 0;
+
+      cards.forEach(card => {
+        const text = (card.getAttribute('data-name') || '') + ' ' + card.innerText.toLowerCase();
+        let matchesQuery = !query || text.includes(query);
+        let matchesTag = true;
+
+        if (activeFilter === 'cool') {
+          matchesTag = text.includes('kho mát') || text.includes('20°c') || text.includes('nhiệt ẩm');
+        } else if (activeFilter === 'dock') {
+          matchesTag = text.includes('cổng bốc dỡ') || text.includes('container') || text.includes('3.5t');
+        } else if (activeFilter === 'available') {
+          matchesTag = text.includes('khả dụng');
+        }
+
+        if (matchesQuery && matchesTag) {
+          card.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+
+      if (visibleCount === 0) {
+        emptyState.classList.remove('hidden');
+        emptyState.classList.add('flex');
+      } else {
+        emptyState.classList.add('hidden');
+        emptyState.classList.remove('flex');
+      }
+
+      if (query.length > 0) {
+        searchClear.classList.remove('hidden');
+      } else {
+        searchClear.classList.add('hidden');
+      }
+    }
+
+    searchInput.addEventListener('input', filterCards);
+
+    searchClear.addEventListener('click', function () {
+      searchInput.value = '';
+      searchInput.focus();
+      filterCards();
+    });
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        searchInput.value = '';
+        activeFilter = 'all';
+        filterChips.forEach(chip => {
+          chip.classList.remove('bg-primary', 'text-on-primary');
+          chip.classList.add('bg-surface-container-lowest', 'text-on-surface-variant');
+        });
+        const allChip = document.querySelector('[data-filter="all"]');
+        if (allChip) {
+          allChip.classList.add('bg-primary', 'text-on-primary');
+          allChip.classList.remove('bg-surface-container-lowest', 'text-on-surface-variant');
+        }
+        filterCards();
+      });
+    }
+
+    filterChips.forEach(chip => {
+      chip.addEventListener('click', function () {
+        filterChips.forEach(c => {
+          c.classList.remove('bg-primary', 'text-on-primary');
+          c.classList.add('bg-surface-container-lowest', 'text-on-surface-variant');
+        });
+        chip.classList.add('bg-primary', 'text-on-primary');
+        chip.classList.remove('bg-surface-container-lowest', 'text-on-surface-variant');
+        activeFilter = chip.getAttribute('data-filter') || 'all';
+        filterCards();
+      });
+    });
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/85 backdrop-blur-xl shadow-[0_-4px_16px_rgba(0,0,0,0.04)]" data-active-classes="text-primary font-body-md-medium"><div class="flex justify-around items-center h-16 px-space-xs"><a aria-current="page" class="flex flex-col items-center justify-center w-14 h-11 transition-colors text-primary font-body-md-medium" data-path="facility-list" href="#"><span class="material-symbols-outlined text-[24px]">apartment</span><span class="font-label-sm text-label-sm mt-0.5">Cơ sở</span></a><a class="flex flex-col items-center justify-center w-14 h-11 text-on-surface-variant transition-colors" data-path="quote" href="#"><span class="material-symbols-outlined text-[24px]">request_quote</span><span class="font-label-sm text-label-sm mt-0.5">Báo giá</span></a><a class="flex flex-col items-center justify-center w-14 h-11 text-on-surface-variant transition-colors" data-path="rental-period" href="#"><span class="material-symbols-outlined text-[24px]">calendar_clock</span><span class="font-label-sm text-label-sm mt-0.5">Thuê kho</span></a><a class="flex flex-col items-center justify-center w-14 h-11 text-on-surface-variant transition-colors" data-path="reservation-confirmation" href="#"><span class="material-symbols-outlined text-[24px]">assignment_turned_in</span><span class="font-label-sm text-label-sm mt-0.5">Đã đặt</span></a><a class="flex flex-col items-center justify-center w-14 h-11 text-on-surface-variant transition-colors" data-path="rental-detail" href="#"><span class="material-symbols-outlined text-[24px]">inventory_2</span><span class="font-label-sm text-label-sm mt-0.5">Kho của tôi</span></a></div></nav></body></html>

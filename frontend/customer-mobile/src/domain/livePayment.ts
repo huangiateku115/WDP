@@ -4,7 +4,7 @@ import type {ReservationDto} from '../api/contracts/customer';
 import {refId} from '../api/contracts/core';
 
 type Payment=z.infer<typeof paymentDto>;
-export type PaymentPurpose=Payment['purpose'];
+export type PaymentPurpose=Exclude<Payment['purpose'],'RENEWAL'>;
 type Contract=z.infer<typeof contractDto>;
 export function depositEligible(reservation:ReservationDto, contract:z.infer<typeof contractDto>|null, now=Date.now()){
   return reservation.rentalPaymentFlow!=='FULL_UPFRONT_V1'&&reservation.serviceType==='SELF_STORAGE'&&reservation.status==='CONTRACTED'&&

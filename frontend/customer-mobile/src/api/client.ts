@@ -48,7 +48,7 @@ apiClient.interceptors.response.use(response => response, (error: unknown) => {
   return Promise.reject(error);
 });
 
-export async function wire(method: 'GET'|'POST'|'PATCH'|'PUT', url: string, options: {
+export async function wire(method: 'GET'|'POST'|'PATCH'|'PUT'|'DELETE', url: string, options: {
   anonymous?: boolean; token?: string; body?: unknown; params?: Record<string, unknown>; key?: string; clientPlatform?: 'MOBILE'; ifMatch?: number; signal?: AbortSignal;
 } = {}) {
   const token = options.anonymous ? undefined : options.token ?? activeToken;
@@ -81,4 +81,11 @@ export function apiIssue(error: unknown) {
     503:'Dịch vụ tạm thời chưa sẵn sàng. Hãy kiểm tra trạng thái.',
   };
   return messages[error.response.status] ?? 'Máy chủ gặp lỗi. Vui lòng thử lại sau.';
+}
+
+export function apiIssueWithStatus(error:unknown){
+  const message=apiIssue(error);
+  if(!axios.isAxiosError(error)||!error.response)return message;
+  const code=typeof error.response.data?.code==='string'?error.response.data.code:undefined;
+  return [message,`HTTP ${error.response.status}`,code?`Mã lỗi: ${code}`:undefined].filter(Boolean).join(' · ');
 }

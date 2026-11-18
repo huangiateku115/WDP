@@ -363,11 +363,11 @@ test('route is authenticated and scoped to the existing Managed read roles', () 
   assert.ok(route.stack.length >= 2);
 });
 
-test('the existing MI-06B inbound route and generic Self-Storage inspection route remain mounted', () => {
+test('Managed closure-readiness and handover routes remain mounted while legacy activation stays retired', () => {
   const paths = router.stack.map(layer => layer.route).filter(Boolean).map(route => route.path);
   assert.ok(paths.includes('/managed/:id/closure-readiness'));
-  assert.ok(paths.includes('/managed/:id/activate'));
   assert.ok(paths.includes('/:id/handover'));
+  assert.equal(paths.includes('/managed/:id/activate'), false);
 });
 
 test('API controller returns the established 200 success envelope for readiness', async t => {

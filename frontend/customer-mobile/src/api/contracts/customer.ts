@@ -15,8 +15,12 @@ export function mapLogin(response:unknown){
 }
 export const identityProfile=z.object({userId:idRef,verificationStatus:z.enum(['UNVERIFIED','PENDING','VERIFIED','REJECTED']),identityCard:z.string().nullish(),address:z.string().nullish(),taxCode:z.string().nullish()}).passthrough();
 export const facilityDto=z.object({_id:objectId,name:z.string().min(1),serviceTypes:z.array(service).min(1),address:z.object({street:z.string().optional(),district:z.string().optional(),city:z.string().optional()}).passthrough(),images:z.array(z.string().url()).optional(),description:z.string().optional()}).passthrough();
-export const reservationDto=z.object({_id:objectId,reservationCode:z.string().min(1),customerId:idRef,facilityId:idRef,storageUnitId:idRef.nullish(),serviceType:service,status:reservationStatus,
+const reservationUnitRef=z.union([objectId,z.object({_id:objectId,unitCode:z.string().optional(),size:z.enum(['SMALL','MEDIUM','LARGE']).optional()}).passthrough()]);
+export const reservationDto=z.object({_id:objectId,reservationCode:z.string().min(1),customerId:idRef,facilityId:idRef,storageUnitId:reservationUnitRef.nullish(),serviceType:service,status:reservationStatus,
   rentalPaymentFlow:z.literal('FULL_UPFRONT_V1').optional(),customerCancellationEligible:z.boolean().optional(),signingDeadline:instant.nullish(),
+  extendContract:z.array(z.object({_id:objectId.optional(),extensionCode:z.string().optional(),durationMonths:whole.optional(),amount:nonnegative.optional(),
+    status:z.string(),signingDeadline:instant.optional(),paymentId:objectId.optional(),oldEndDate:instant.optional(),newEndDate:instant.optional(),
+    createdAt:instant.optional(),updatedAt:instant.optional(),verifiedAt:instant.optional(),rejectionReason:z.string().optional()}).passthrough()).optional(),
   startDate:instant,endDate:instant,expiresAt:instant.nullish(),bookingFlowVersion:z.union([z.literal(1),z.literal(2),z.literal(3)]).optional(),
   checkoutRequest:z.object({requestedAt:instant.optional(),note:z.string().optional(),status:z.enum(['PENDING','COMPLETED','CANCELLED']).optional()}).nullish(),
   actualCheckoutDate:instant.nullish(),

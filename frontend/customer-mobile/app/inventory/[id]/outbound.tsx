@@ -1,1 +1,1 @@
-export {UnavailableScreen as default} from '../../../src/components/liveUI';
+export {ManagedOutboundScreen as default} from '../../../src/screens/ManagedStockOperations';

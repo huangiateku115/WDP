@@ -1,0 +1,355 @@
+<!-- VaultSpace — Customer Dashboard -->
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-container-low": "#e7f8ed", "on-primary": "#ffffff", "on-surface": "#101e18", "on-secondary-fixed-variant": "#244f3c", "surface-container-high": "#dbece1", "tertiary-container": "#955e00", "background": "#ecfef2", "on-tertiary-fixed-variant": "#653e00", "on-secondary-fixed": "#002114", "on-primary-fixed": "#002111", "surface-container-lowest": "#ffffff", "tertiary-fixed": "#ffddb8", "on-background": "#101e18", "surface-tint": "#006d43", "inverse-on-surface": "#e4f5ea", "primary-fixed-dim": "#80d9a5", "error-container": "#ffdad6", "on-tertiary": "#ffffff", "surface": "#ecfef2", "on-tertiary-container": "#ffe7d0", "surface-dim": "#cdded3", "primary-container": "#18794e", "primary-fixed": "#9bf5c0", "inverse-surface": "#25342c", "tertiary-fixed-dim": "#ffb95f", "inverse-primary": "#80d9a5", "on-primary-fixed-variant": "#005231", "secondary-fixed": "#beedd3", "on-error": "#ffffff", "on-error-container": "#93000a", "surface-variant": "#d6e7dc", "secondary-fixed-dim": "#a3d1b8", "primary": "#005f3a", "outline": "#6f7a71", "tertiary": "#744800", "on-secondary-container": "#406b56", "outline-variant": "#bec9bf", "on-surface-variant": "#3f4942", "on-primary-container": "#a4fec9", "secondary-container": "#bbead0", "on-tertiary-fixed": "#2a1700", "secondary": "#3c6752", "surface-container-highest": "#d6e7dc", "surface-container": "#e1f2e7", "surface-bright": "#ecfef2", "on-secondary": "#ffffff", "error": "#ba1a1a" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-xl": "2rem", "margin-sm": "1rem", "space-md": "1rem", "space-lg": "1.5rem", "gutter": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "margin": "1.25rem", "gutter-sm": "0.75rem" }, fontFamily: { "body-md-medium": ["Inter"], "body-lg-medium": ["Inter"], "label-lg": ["Inter"], "body-lg": ["Inter"], "body-md": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"], "display": ["Inter"], "headline-lg": ["Inter"], "label-md": ["Inter"], "currency-display": ["Inter"], "label-sm": ["Inter"] }, fontSize: { "body-md-medium": ["14px", { lineHeight: "20px", fontWeight: "500" }], "body-lg-medium": ["16px", { lineHeight: "24px", fontWeight: "500" }], "label-lg": ["13px", { lineHeight: "18px", letterSpacing: "0.01em", fontWeight: "600" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }], "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }], "headline-md": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }], "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.005em", fontWeight: "600" }], "display": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }], "headline-lg": ["26px", { lineHeight: "34px", letterSpacing: "-0.015em", fontWeight: "700" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "currency-display": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "700" }], "label-sm": ["10px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "600" }] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;min-height:100%;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col antialiased selection:bg-primary/20"><header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs min-w-0"><img alt="VaultSpace Brand Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzrBZPuRd-_mKInF0iUsDZD_YEL35AwAzkaItyD2PHdxJDlWQvZ6dcHHepELW6PFxEvR-jJCnWOY2uinI01s_XaSGKO7LCn6l-fbRIESJCeX0jZPoCfXiHJmxhDpWyADSEhUjg5iJFr11xIF5vsHQvGXDcDLZ68uAAGSN6B5F8RdI0rLXmzKXBjDaA_jz7-gD8kFoyqX0AmmTZ50xNatfhHXNzJP1Efuuw7iMW1fNh"/><div class="flex flex-col min-w-0 pl-1"><div class="flex items-center gap-1 leading-none"><span class="font-headline-sm text-headline-sm text-primary font-bold tracking-tight">VaultSpace</span><span class="hidden">Home Dashboard</span></div><button class="flex items-center gap-0.5 text-on-surface-variant hover:text-primary transition-colors text-left pt-0.5 group"><span class="font-label-sm text-label-sm truncate max-w-[125px]">Ho Chi Minh City, VN</span><span class="material-symbols-outlined text-[14px] text-outline group-hover:text-primary shrink-0">arrow_drop_down</span></button></div></div><div class="flex items-center gap-space-xs shrink-0"><button aria-label="Notifications" class="w-11 h-11 relative flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface"></span></button><button aria-label="User Profile" class="w-11 h-11 flex items-center justify-center rounded-full p-1.5 focus:outline-none"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-surface-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBXc971_K8wjoUpMYeKsJ7cxkKwRkkFn_42i2tq95SMD6-w-qgiyfexMW3z8nhRm2gZs1sjW-YAAgEcT8x31geJbQUSChotNV3qz5UAsBDbZMZm77K5wQaUl06HgGLn_OZiybqhC_7IDqEgGe4DzilXu_qtozpPmZxigOQvsMKoaEqA-NzH5Wo-Sg-DV1PN0oNkiiMP6AdeetkXJolPXQkQUBCpfJN_siDGi0hnEf9"/></button></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface min-h-[calc(100vh-5rem)]"><div class="flex flex-col w-full px-margin pb-space-xl">
+<!-- Greeting Section -->
+<section class="flex flex-col pt-space-md pb-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
+        Thursday, Oct 24 • Ho Chi Minh City
+      </span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+        Vault Sync
+      </span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight mt-1">
+      Xin chào, Linh Nguyen! <span class="inline-block animate-bounce origin-bottom">👋</span>
+</h1>
+<div class="flex items-center gap-2 mt-2">
+<div class="inline-flex items-center gap-1.5 bg-surface-container-low px-3 py-1 rounded-full">
+<span class="material-symbols-outlined text-[15px] text-primary">lock</span>
+<span class="font-label-md text-label-md text-primary font-semibold">2 Active Rentals</span>
+</div>
+<div class="inline-flex items-center gap-1.5 bg-secondary-container px-3 py-1 rounded-full">
+<span class="material-symbols-outlined text-[15px] text-secondary">inventory_2</span>
+<span class="font-label-md text-label-md text-on-secondary-container font-semibold">38 Stored SKUs</span>
+</div>
+</div>
+</section>
+<!-- Action Required Alert Banner -->
+<section class="mt-space-md">
+<div class="relative overflow-hidden bg-tertiary-fixed rounded-xl p-space-md shadow-sm">
+<div class="flex items-start gap-space-sm">
+<div class="w-9 h-9 rounded-full bg-tertiary-container flex items-center justify-center shrink-0 text-on-tertiary">
+<span class="material-symbols-outlined text-[20px]">priority_high</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-tertiary-fixed-variant font-bold">Action Required</span>
+<span class="font-label-sm text-label-sm text-on-tertiary-fixed-variant">Due Oct 26</span>
+</div>
+<p class="font-body-md-medium text-body-md-medium text-on-tertiary-fixed mt-0.5 leading-snug">
+            Deposit Pending for Saigon Hi-Tech Park
+          </p>
+<p class="font-label-md text-label-md text-on-tertiary-fixed-variant mt-1">
+            Cell #THP-Z2-R04 requires deposit of <strong class="text-on-tertiary-fixed font-bold font-currency-display text-sm">₫1,850,000</strong> to start inbound inspection.
+          </p>
+<div class="mt-3 flex items-center gap-2">
+<button class="bg-tertiary text-on-tertiary px-3.5 py-1.5 rounded-lg font-label-md text-label-md flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform">
+<span>Review &amp; Pay Deposit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Featured Active Rental Card (Smart Pass) -->
+<section class="mt-space-lg">
+<div class="flex items-center justify-between mb-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Primary Active Unit</h2>
+<a class="font-label-md text-label-md text-primary flex items-center gap-0.5" href="#">
+        All Units (2)
+        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</a>
+</div>
+<div class="relative bg-surface-container-lowest rounded-xl p-space-md shadow-md overflow-hidden">
+<!-- Glow decoration -->
+<div class="absolute -top-12 -right-12 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none"></div>
+<!-- Facility & Type Tag -->
+<div class="flex items-start justify-between gap-2">
+<div class="min-w-0">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="bg-surface-container-low text-primary px-2 py-0.5 rounded-full font-label-sm text-label-sm flex items-center gap-1 font-semibold">
+<span class="material-symbols-outlined text-[12px]">lock</span>
+              Self Storage
+            </span>
+<span class="bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-full font-label-sm text-label-sm">
+              Unit B-204 • 9.5 m²
+            </span>
+</div>
+<h3 class="font-body-lg-medium text-body-lg-medium text-on-surface mt-2 font-bold leading-tight">
+            Saigon South Flagship Facility
+          </h3>
+<p class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[14px]">location_on</span>
+            Nguyen Van Linh Blvd, District 7
+          </p>
+</div>
+<div class="flex flex-col items-end shrink-0">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-low text-primary font-label-sm text-label-sm font-semibold">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+            ACTIVE
+          </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-1">68 days left</span>
+</div>
+</div>
+<!-- Digital Smart Key Access Block -->
+<div class="mt-4 rounded-xl bg-inverse-surface text-inverse-on-surface p-space-sm relative overflow-hidden">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<div class="w-10 h-10 rounded-lg bg-primary-container text-on-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">contactless</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-surface-container-high uppercase tracking-wider">Digital Access PIN</p>
+<p class="font-currency-display text-currency-display font-bold text-primary-fixed tracking-widest mt-0.5" id="pinDisplay">•• 8294 ••</p>
+</div>
+</div>
+<button class="bg-primary hover:bg-primary-container text-on-primary px-3 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1.5 active:scale-95 transition-all" id="tapUnlockBtn">
+<span class="material-symbols-outlined text-[18px]">key</span>
+<span>Tap Pass</span>
+</button>
+</div>
+<div class="mt-2 pt-2 flex items-center justify-between text-surface-container font-label-sm text-label-sm">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary-fixed">sensors</span>
+            Gate Reader Auto-Sync (NFC ready)
+          </span>
+<span class="text-primary-fixed-dim" id="timerBadge">Exp: 04:59</span>
+</div>
+</div>
+<!-- Unit Specifics & Metrics -->
+<div class="mt-3.5 pt-3 flex items-center justify-between text-on-surface-variant font-label-md text-label-md">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-primary">ac_unit</span>
+<span>Climate 22°C • 55% RH</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-primary">date_range</span>
+<span>Oct 1 – Dec 31, 2024</span>
+</div>
+</div>
+<!-- Card Quick Links -->
+<div class="mt-3 grid grid-cols-2 gap-2">
+<button class="w-full py-2 px-3 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span>View Contract</span>
+</button>
+<button class="w-full py-2 px-3 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span>Facility &amp; Gate Map</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Quick Action Shortcuts -->
+<section class="mt-space-lg">
+<div class="grid grid-cols-4 gap-2">
+<!-- Action 1 -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group">
+<div class="w-11 h-11 rounded-full bg-surface-container-low text-primary flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[22px]">add_box</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1.5 font-medium text-center leading-tight">Book Space</span>
+</button>
+<!-- Action 2 -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group">
+<div class="w-11 h-11 rounded-full bg-secondary-container text-secondary flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[22px]">qr_code_scanner</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1.5 font-medium text-center leading-tight">Item Audit</span>
+</button>
+<!-- Action 3 -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group">
+<div class="w-11 h-11 rounded-full bg-tertiary-fixed text-tertiary flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[22px]">local_shipping</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1.5 font-medium text-center leading-tight">Request Out</span>
+</button>
+<!-- Action 4 -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group">
+<div class="w-11 h-11 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[22px]">support_agent</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1.5 font-medium text-center leading-tight">Help Desk</span>
+</button>
+</div>
+</section>
+<!-- Storage Services Quick Launcher -->
+<section class="mt-space-lg">
+<div class="flex items-center justify-between mb-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Explore Storage Tiers</h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant">HCM Network</span>
+</div>
+<div class="flex flex-col gap-3">
+<!-- Service 1: Self Storage -->
+<div class="relative bg-surface-container-lowest rounded-xl p-space-md shadow-sm overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between gap-3">
+<div class="min-w-0">
+<div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-low text-primary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[13px]">shield</span>
+              Personal &amp; Business Rooms
+            </div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mt-1.5">Self Storage</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 leading-snug">
+              Private secure units for personal goods, household furniture &amp; e-commerce stock. 24/7 self-access with keycard.
+            </p>
+</div>
+<div class="w-12 h-12 rounded-xl bg-surface-container-low text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[28px]">lock_clock</span>
+</div>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between">
+<div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Starting from</span>
+<p class="font-currency-display text-currency-display font-bold text-primary">
+              ₫1,200,000 <span class="font-label-md text-label-md font-normal text-on-surface-variant">/ tháng</span>
+</p>
+</div>
+<button class="bg-primary text-on-primary px-3.5 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1 shadow-sm active:scale-95 transition-transform">
+<span>Find Locker</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Service 2: Managed Inventory -->
+<div class="relative bg-surface-container-lowest rounded-xl p-space-md shadow-sm overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between gap-3">
+<div class="min-w-0">
+<div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-tertiary-fixed text-tertiary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[13px]">shelves</span>
+              High-Density Micro-Fulfillment
+            </div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mt-1.5">Managed Inventory</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 leading-snug">
+              Rack &amp; cell climate-controlled storage with staff inbound verification, automated barcode tagging &amp; delivery courier handling.
+            </p>
+</div>
+<div class="w-12 h-12 rounded-xl bg-tertiary-fixed text-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[28px]">inventory</span>
+</div>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between">
+<div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Cell allocation</span>
+<p class="font-currency-display text-currency-display font-bold text-tertiary">
+              ₫450,000 <span class="font-label-md text-label-md font-normal text-on-surface-variant">/ cell / mo</span>
+</p>
+</div>
+<button class="bg-secondary text-on-secondary px-3.5 py-2 rounded-lg font-label-md text-label-md flex items-center gap-1 shadow-sm active:scale-95 transition-transform">
+<span>Book Cells</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Recent Activity & Movement Feed -->
+<section class="mt-space-lg">
+<div class="flex items-center justify-between mb-3">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Recent Activity</h2>
+<a class="font-label-md text-label-md text-primary flex items-center gap-0.5" href="#">
+        Audit Log
+        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</a>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-3">
+<!-- Item 1: Inbound Received -->
+<div class="flex items-start gap-3">
+<div class="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[18px]">input</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Inbound Received</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Yesterday, 14:30</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-0.5 leading-snug">
+            15 cartons Organic Coffee Beans verified &amp; racked at Thu Duc Zone B, Cell B-14.
+          </p>
+<div class="mt-1 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary font-medium flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>
+              SKU: CF-VN-ROB-01
+            </span>
+</div>
+</div>
+</div>
+<div class="w-full h-[1px] bg-surface-container"></div>
+<!-- Item 2: Deposit Settled -->
+<div class="flex items-start gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[18px]">payments</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Deposit Settled</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Oct 18</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-0.5">
+            Security guarantee of <strong class="text-on-surface">₫1,850,000</strong> received for Unit B-204 (D7 Facility).
+          </p>
+<span class="font-label-sm text-label-sm text-outline mt-0.5 block">Ref: VLT-INV-99482</span>
+</div>
+</div>
+<div class="w-full h-[1px] bg-surface-container"></div>
+<!-- Item 3: Monthly Pass Renewed -->
+<div class="flex items-start gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[18px]">autorenew</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Monthly Pass Renewed</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Oct 15</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-0.5">
+            Saigon South Facility automated billing renewed through Dec 31, 2024.
+          </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Interactive Feedback Toast Placeholder -->
+<div class="fixed bottom-20 inset-x-margin max-w-[350px] mx-auto bg-inverse-surface text-inverse-on-surface p-3 rounded-xl shadow-xl flex items-center gap-2.5 transition-all duration-300 opacity-0 pointer-events-none translate-y-3 z-50" id="unlockToast">
+<span class="material-symbols-outlined text-primary-fixed text-[22px]">verified</span>
+<div class="min-w-0 flex-1">
+<p class="font-body-md-medium text-body-md-medium text-inverse-on-surface">Gate 02 Turnstile Unlocked</p>
+<p class="font-label-sm text-label-sm text-surface-container-high">Safe passage window: 45 seconds</p>
+</div>
+</div>
+</div>
+<script>
+  // Simple micro-interaction for Smart Pass
+  const unlockBtn = document.getElementById('tapUnlockBtn');
+  const toast = document.getElementById('unlockToast');
+  const pinDisplay = document.getElementById('pinDisplay');
+  let isTapped = false;
+
+  if (unlockBtn && toast) {
+    unlockBtn.addEventListener('click', () => {
+      // Toggle visual pin state
+      pinDisplay.textContent = '0829 - OPEN';
+      pinDisplay.classList.add('text-primary-fixed');
+      
+      // Trigger toast
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3');
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        pinDisplay.textContent = '•• 8294 ••';
+      }, 3000);
+    });
+  }
+</script></main><nav class="fixed bottom-0 inset-x-0 z-50 bg-surface-container-lowest/95 backdrop-blur-xl pb-safe shadow-[0_-2px_12px_rgba(16,61,43,0.06)]" data-active-classes="text-primary font-body-md-medium"><div class="flex items-center justify-around h-16 px-1 max-w-[430px] mx-auto"><a aria-current="page" class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 transition-colors text-primary font-body-md-medium" data-path="home-dashboard" href="#"><span class="material-symbols-outlined text-[22px]">roofing</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Home</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="explore-facilities" href="#"><span class="material-symbols-outlined text-[22px]">domain</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Explore</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="my-rentals" href="#"><span class="material-symbols-outlined text-[22px]">key</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">My Rentals</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="inventory" href="#"><span class="material-symbols-outlined text-[22px]">inventory_2</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Inventory</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="profile-settings" href="#"><span class="material-symbols-outlined text-[22px]">person</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Profile</span></a></div></nav></body></html>

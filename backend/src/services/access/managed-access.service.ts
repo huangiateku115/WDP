@@ -58,6 +58,21 @@ function windowInput(input: Record<string, unknown>, now: Date) {
 function v3Purpose(value: unknown): ManagedAccessPurpose {
   if (!Object.values(ManagedAccessPurpose).includes(value as ManagedAccessPurpose)) fail(400, 'INVALID_PURPOSE', 'Mục đích truy cập không hợp lệ.'); return value as ManagedAccessPurpose;
 }
+export function normalizedReservationScope(primaryId: Types.ObjectId, input: unknown, allowMissing = false) {
+  if (input === undefined && allowMissing) return [primaryId];
+  if (!Array.isArray(input) || input.length === 0) fail(409, 'INVALID_RESERVATION_SCOPE', 'Reservation scope phải là danh sách không rỗng.');
+  let ids: Types.ObjectId[];
+  try { ids = input.map(value => {
+    if (!(value instanceof Types.ObjectId) && (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value))) throw new Error('invalid id');
+    return new Types.ObjectId(String(value));
+  }); }
+  catch { return fail(409, 'INVALID_RESERVATION_SCOPE', 'Reservation scope chứa ID không hợp lệ.'); }
+  const normalized = ids.map(value => value.toHexString());
+  if (new Set(normalized).size !== normalized.length || !ids.some(value => value.equals(primaryId))) {
+    fail(409, 'INVALID_RESERVATION_SCOPE', 'Reservation scope phải có primary ID và không được trùng.');
+  }
+  return [primaryId, ...ids.filter(value => !value.equals(primaryId)).sort((a, b) => a.toHexString().localeCompare(b.toHexString()))];
+}
 async function findCustomerReservation(reservationId: Types.ObjectId, customerId: Types.ObjectId) {
   const r = await ReservationModel.findOne({ _id: reservationId, customerId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).exec();
   if (!r) fail(404, 'RESERVATION_NOT_FOUND', 'Không tìm thấy đơn thuê Managed Inventory V3.'); return r;
@@ -122,15 +137,22 @@ async function cellsCoveringWindow(reservation: IReservation, startsAt: Date, en
   return reservation.allocatedCellIds;
 }
 const systemAudit = (action: string, at: Date, details?: Record<string, unknown>): ManagedAccessAudit => ({ action, actorRole: 'SYSTEM', at, ...(details ? { details } : {}) });
-async function reconcileExpiredReservationSessions(reservationId: Types.ObjectId, now: Date, dbSession: mongoose.ClientSession) {
-  const rows = await SessionModel.find({ reservationId, status: SS.ACTIVE, expiresAt: { $lte: now } }).sort({ expiresAt: 1 }).session(dbSession).lean().exec();
+function sessionReservationScopeFilter(reservationIds: Types.ObjectId[]) {
+  return { $or: [{ reservationId: { $in: reservationIds } }, { scopedReservationIds: { $in: reservationIds } }] };
+}
+export function activeSessionScopeFilter(reservationIds: Types.ObjectId[], at: Date) {
+  return { ...sessionReservationScopeFilter(reservationIds), status: SS.ACTIVE, expiresAt: { $gt: at } };
+}
+async function reconcileExpiredReservationSessions(reservationIds: Types.ObjectId[], now: Date, dbSession: mongoose.ClientSession) {
+  const rows = await SessionModel.find({ ...sessionReservationScopeFilter(reservationIds), status: SS.ACTIVE, expiresAt: { $lte: now } })
+    .sort({ expiresAt: 1 }).session(dbSession).lean().exec();
   for (const row of rows) {
-    const ended = await SessionModel.findOneAndUpdate({ _id: row._id, reservationId, status: SS.ACTIVE, expiresAt: { $lte: now } },
+    const ended = await SessionModel.findOneAndUpdate({ _id: row._id, status: SS.ACTIVE, expiresAt: { $lte: now } },
       { $set: { status: SS.EXPIRED, endedAt: row.expiresAt }, $inc: { revision: 1 },
         $push: { audit: systemAudit('SESSION_EXPIRED', row.expiresAt, { visitId: String(row.visitId), reconciliationAt: now.toISOString() }) } },
       { returnDocument: 'after', session: dbSession }).exec();
     if (!ended) continue;
-    const closed: any = await (VisitModel as any).findOneAndUpdate({ _id: ended.visitId, reservationId, status: VS.CHECKED_IN },
+    const closed: any = await (VisitModel as any).findOneAndUpdate({ _id: ended.visitId, reservationId: ended.reservationId, status: VS.CHECKED_IN },
       { $set: { status: VS.COMPLETED, checkedOutAt: ended.expiresAt }, $inc: { revision: 1 },
         $push: { audit: systemAudit('ACCESS_SESSION_EXPIRED', ended.expiresAt, { sessionId: String(ended._id) }) } },
       { returnDocument: 'after', session: dbSession }).exec();
@@ -586,8 +608,8 @@ export class ManagedAccessService {
         const finalScopeEnd = new Date(activationAt.getTime() + SESSION_RESERVATION_MIN_REMAINING_MS);
         if (reservation.status !== ReservationStatus.ACTIVE || reservation.startDate > activationAt || reservation.endDate <= finalScopeEnd || additionalReservations.some(row => row.endDate <= finalScopeEnd)) fail(409, 'RENTAL_NOT_ACTIVE', 'Reservation trong phạm vi phải còn hoạt động và hơn 7 ngày thuê tại thời điểm kích hoạt Session.');
         const cells = [...new Set([...(await cellsCoveringWindow(reservation, currentVisit.startsAt, currentVisit.endsAt, dbSession)), ...additionalCells.flat()].map(String))].map(value => new Types.ObjectId(value));
-        await reconcileExpiredReservationSessions(reservation._id, activationAt, dbSession);
-        const existing = await SessionModel.findOne({ reservationId: { $in: scopedReservationIds }, status: SS.ACTIVE, expiresAt: { $gt: activationAt } }).session(dbSession).exec();
+        await reconcileExpiredReservationSessions(scopedReservationIds, activationAt, dbSession);
+        const existing = await SessionModel.findOne(activeSessionScopeFilter(scopedReservationIds, activationAt)).session(dbSession).exec();
         if (existing) fail(409, 'ACTIVE_SESSION_EXISTS', 'Reservation đã có Access Session đang hoạt động.');
         const expiresAt = sessionExpiry(activationAt, [reservation.endDate, ...additionalReservations.map(row => row.endDate), currentVisit.endsAt]);
         if (expiresAt <= activationAt) fail(409, 'SESSION_WINDOW_EXPIRED', 'Thời hạn Rental hoặc Visit đã kết thúc; không thể cấp Session.');

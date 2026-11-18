@@ -283,7 +283,7 @@ async function applyProjection(plan: any, scope: Plain, actor: Actor, session: C
         customerId: actor._id, cellId: line.cellId, receiptId: line.receiptId, quantityUnitSnapshot: line.quantityUnitSnapshot, quantityOnHand: quantity, quantityHeld: 0,
         quantityAvailable: quantity, unitWeightKgSnapshot: line.unitWeightKgSnapshot, unitVolumeM3Snapshot: line.unitVolumeM3Snapshot,
         unitDimensionsSnapshot: line.unitDimensionsSnapshot, totalWeightKg: round(line.unitWeightKgSnapshot * quantity, 3), totalVolumeM3: round(line.unitVolumeM3Snapshot * quantity, 6),
-        ledgerRevision: movement.stockEffect.ledgerRevision, revision: 0 }], { session });
+        ledgerRevision: movement.stockEffect.ledgerRevision, revision: 0 }], { session, ordered: true });
     }
   }
   const instanceIds = [...new Set(plan.source.filter((row: any) => row.itemInstanceId).map((row: any) => row.itemInstanceId))].sort();

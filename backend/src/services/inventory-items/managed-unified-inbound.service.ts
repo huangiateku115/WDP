@@ -26,6 +26,9 @@ import { ReservationStatus } from '../../types/reservation.type';
 import { UserRole } from '../../types/user.type';
 
 const r: any = { Item, ItemSpec, QuantityUnit, CellStock, ItemInstance, InventoryStockBalance, ManagedV3StockProjection, ManagedV3BatchPlacement, ManagedV3PhysicalUnit, ManagedV3Footprint, Movement, Cell, Rack, Allocation, Reservation, AccessSession, Contract };
+export async function createInTransactionOrdered(model: any, documents: any[], session: mongoose.ClientSession) {
+  return model.create(documents, { session, ordered: true });
+}
 type Actor = { _id: Types.ObjectId; role: UserRole };
 export class ManagedUnifiedInboundError extends Error { constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); } }
 const fail = (status: number, code: string, message: string, details?: unknown): never => { throw new ManagedUnifiedInboundError(status, code, message, details); };
@@ -309,8 +312,8 @@ export class ManagedUnifiedInboundService {
         if (skuFence.matchedCount !== 1) fail(412, 'STALE_SKU_REVISION', 'SKU vừa thay đổi.');
         const movementId = new Types.ObjectId(), occurredAt = new Date();
         for (const stock of prepared.stocksToCreate) stock.ledgerRevision = ledgerRevision;
-        if (prepared.stocksToCreate.length) await r.CellStock.create(prepared.stocksToCreate, { session: dbSession });
-        if (prepared.instancesToCreate.length) await r.ItemInstance.create(prepared.instancesToCreate, { session: dbSession });
+        if (prepared.stocksToCreate.length) await createInTransactionOrdered(r.CellStock, prepared.stocksToCreate, dbSession);
+        if (prepared.instancesToCreate.length) await createInTransactionOrdered(r.ItemInstance, prepared.instancesToCreate, dbSession);
         const unitSet = new Set(prepared.effectLines.filter((line: any) => line.itemInstanceId).map((line: any) => line.itemInstanceId));
         const quantityUnit = new Set(prepared.effectLines.map((line: any) => line.quantityUnitSnapshot)).size === 1 ? prepared.effectLines[0].quantityUnitSnapshot : 'MIXED';
         const first = prepared.effectLines[0], idempotencyKey = requestKey;

@@ -17,6 +17,7 @@ import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatu
 import { ReservationStatus } from '../../types/reservation.type';
 import { calculateRentalPaymentBreakdown, roundVndAmount } from './payment-accounting';
 import { EmailService } from '../email/email.service';
+import { PAYOS_LIVE_TEST_AMOUNT, resolvePayosLiveTestMode } from '../../config/payos-mock-mode';
 
 const PAYOS_INTENT_PREFIX = 'PAYOS-SS-';
 const MAX_ORDER_CODE = 9_999_999_999;
@@ -357,8 +358,8 @@ function assertKey(input: unknown): string {
   return input.trim();
 }
 function assertPurpose(input: unknown): PaymentPurpose {
-  if (input !== PaymentPurpose.DEPOSIT && input !== PaymentPurpose.BALANCE && input !== PaymentPurpose.FULL_RENT) {
-    throw new PayosPaymentError(400, 'INVALID_PAYMENT_PURPOSE', 'purpose must be DEPOSIT, BALANCE or FULL_RENT');
+  if (input !== PaymentPurpose.DEPOSIT && input !== PaymentPurpose.BALANCE && input !== PaymentPurpose.FULL_RENT && input !== PaymentPurpose.RENEWAL) {
+    throw new PayosPaymentError(400, 'INVALID_PAYMENT_PURPOSE', 'purpose must be DEPOSIT, BALANCE, FULL_RENT or RENEWAL');
   }
   return input;
 }
@@ -401,6 +402,7 @@ function statusDto(payment: any, currentIntentEligible = false, retryAllowed = f
       typeof payment.providerPaymentLinkId === 'string' && payment.providerPaymentLinkId.trim()
       ? { orderCode, paymentLinkId: payment.providerPaymentLinkId } : {}),
     id: id(payment._id), reservationId: id(payment.reservationId), purpose: payment.purpose,
+    ...(payment.extensionId ? { extensionId: id(payment.extensionId) } : {}),
     amount: payment.amount, currency: payment.currency, provider: payment.provider,
     providerSettlementStatus: payment.providerSettlementStatus ?? ProviderSettlementStatus.NOT_VERIFIED,
     status: payment.status, applicationStatus: payment.applicationStatus ?? PaymentApplicationStatus.NOT_APPLIED,
@@ -469,6 +471,41 @@ export class PayosPaymentService {
     return this.gatewayValue;
   }
 
+  async preflightLiveTest(): Promise<{ verified: true; orderCode: number; amount: number; status: string }> {
+    const liveTest = resolvePayosLiveTestMode(process.env);
+    if (process.env.NODE_ENV !== 'development' || !liveTest) {
+      throw new PayosPaymentError(404, 'PAYOS_LIVE_TEST_DISABLED', 'PayOS live test preflight is available only in its isolated development mode');
+    }
+
+    let signaturePresent = false;
+    const sdk = new PayOS({
+      clientId: liveTest.clientId,
+      apiKey: liveTest.apiKey,
+      checksumKey: liveTest.checksumKey,
+      logLevel: 'off',
+      fetch: async (input, init) => {
+        const response = await globalThis.fetch(input, init);
+        if (response.ok) {
+          const envelope = await response.clone().json().catch(() => null);
+          signaturePresent = typeof envelope?.signature === 'string' && /^[a-f0-9]{64}$/.test(envelope.signature);
+        }
+        return response;
+      },
+    });
+
+    try {
+      const link = await sdk.paymentRequests.get(liveTest.probeOrderCode);
+      if (!signaturePresent || link.orderCode !== liveTest.probeOrderCode || link.amount !== PAYOS_LIVE_TEST_AMOUNT ||
+          link.amountPaid !== 0 || link.status !== 'PENDING' || typeof link.id !== 'string' || !link.id.trim() ||
+          (link.transactions?.length ?? 0) !== 0) {
+        throw new Error('PayOS live-test probe response did not match the expected signed unpaid order');
+      }
+      return { verified: true, orderCode: link.orderCode, amount: link.amount, status: link.status };
+    } catch {
+      throw new PayosPaymentError(502, 'PAYOS_LIVE_TEST_PREFLIGHT_FAILED', 'PayOS live-test probe could not be verified');
+    }
+  }
+
   private assertConfiguration(channel: 'WEB' | 'MOBILE' = 'WEB'): void {
     void this.gateway;
     if (channel === 'WEB') configuredCustomerOrigin();
@@ -491,6 +528,9 @@ export class PayosPaymentService {
     }
     const channel = channelInput;
     const purpose = assertPurpose(purposeInput);
+    if (purpose === PaymentPurpose.RENEWAL) {
+      throw new PayosPaymentError(400, 'EXTENSION_ID_REQUIRED', 'Renewal checkout must use the extension-scoped checkout endpoint');
+    }
     const key = paymentKey(assertKey(keyInput));
     const reservationId = id(reservationIdInput);
     if (!Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
@@ -530,6 +570,53 @@ export class PayosPaymentService {
     if (intent.replayed) return this.replayExisting(intent.payment, reservationId, purpose, customerId, channel);
 
     return this.createProviderLink(intent.payment, channel);
+  }
+
+  async createRenewalCheckout(reservationIdInput: unknown, extensionIdInput: unknown, keyInput: unknown,
+    customerId: unknown, channelInput: unknown = 'WEB') {
+    assertEnabled(this.enabled);
+    if (channelInput !== 'WEB' && channelInput !== 'MOBILE') {
+      throw new PayosPaymentError(400, 'INVALID_PAYMENT_RETURN_CHANNEL', 'Payment return channel is invalid');
+    }
+    const reservationId = id(reservationIdInput);
+    const extensionId = id(extensionIdInput);
+    if (!Types.ObjectId.isValid(reservationId)) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
+    if (!Types.ObjectId.isValid(extensionId)) throw new PayosPaymentError(404, 'EXTENSION_NOT_FOUND', 'Extension not found');
+    const key = paymentKey(assertKey(keyInput));
+    this.assertConfiguration(channelInput);
+    const prior = await Payments.findOne({ idempotencyKey: key }).exec();
+    if (prior) {
+      if (id(prior.reservationId) !== reservationId || id(prior.customerId) !== id(customerId) ||
+          prior.purpose !== PaymentPurpose.RENEWAL || id(prior.extensionId) !== extensionId || prior.provider !== PaymentProvider.PAYOS) {
+        throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Idempotency-Key belongs to a different renewal payment');
+      }
+      return this.replayExisting(prior, reservationId, PaymentPurpose.RENEWAL, customerId, channelInput);
+    }
+    let intent: any;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        intent = await this.createIntentTransaction(reservationId, PaymentPurpose.RENEWAL, key, customerId,
+          newOrderCode(), extensionId);
+        break;
+      } catch (error: any) {
+        if (error instanceof PayosPaymentError) throw error;
+        if (error?.code === 11000) {
+          const winner = await Payments.findOne({ idempotencyKey: key }).exec();
+          if (winner) return this.replayExisting(winner, reservationId, PaymentPurpose.RENEWAL, customerId, channelInput);
+          throw new PayosPaymentError(409, 'RENEWAL_PAYMENT_CONFLICT', 'A renewal payment for this extension is already being created');
+        }
+        if (errorHasLabel(error, 'UnknownTransactionCommitResult')) {
+          const committed = await Payments.findOne({ idempotencyKey: key }).exec().catch(() => null);
+          if (committed) return this.replayExisting(committed, reservationId, PaymentPurpose.RENEWAL, customerId, channelInput);
+          throw new PayosPaymentError(503, 'PAYMENT_INTENT_OUTCOME_UNKNOWN', 'Renewal payment outcome is uncertain; retry with the same Idempotency-Key');
+        }
+        if (isConflict(error)) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed concurrently; refresh and retry');
+        throw error;
+      }
+    }
+    if (!intent) throw new PayosPaymentError(503, 'PAYMENT_INTENT_OUTCOME_UNKNOWN', 'Renewal payment outcome is uncertain; retry with the same Idempotency-Key');
+    if (intent.replayed) return this.replayExisting(intent.payment, reservationId, PaymentPurpose.RENEWAL, customerId, channelInput);
+    return this.createProviderLink(intent.payment, channelInput);
   }
 
   private async settleManagedZeroBalance(reservationId: string, customerId: unknown, idempotencyKey: string) {
@@ -606,6 +693,16 @@ export class PayosPaymentService {
         throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Self Storage full-rent booking requires its current Draft Contract');
       }
       expectedAmount = fullRentAmount(reservation);
+    } else if (purpose === PaymentPurpose.RENEWAL) {
+      const extension = payment.extensionId && (reservation.extendContract || []).find((entry: any) =>
+        String(entry._id) === String(payment.extensionId) && String(entry.paymentId) === String(payment._id));
+      if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE || reservation.status !== ReservationStatus.ACTIVE ||
+          !extension || extension.status !== 'PENDING_PAYMENT' || extension.payosOrderCode !== Number(payment.providerReference) ||
+          reservation.checkoutRequest?.status === 'PENDING' || !reservation.paperContractProofUrl || !contract ||
+          contract.status !== ContractStatus.SIGNED || !contract.signedProofUrl || !contract.verifiedAt) {
+        throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Original Renewal payment is no longer eligible; query its status separately');
+      }
+      expectedAmount = Number(extension.amount);
     } else if (purpose === PaymentPurpose.DEPOSIT) {
       if (managedV3(reservation)) {
         if (reservation.status !== ReservationStatus.RESERVED || !reservation.expiresAt || reservation.expiresAt <= now) throw new PayosPaymentError(409, 'PAYMENT_INTENT_NO_LONGER_ELIGIBLE', 'Managed V3 Deposit requires an unexpired RESERVED reservation');
@@ -676,7 +773,16 @@ export class PayosPaymentService {
     const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
     if (!serviceSupported(reservation) || reservation.serviceType !== payment.serviceType) return 'NOT_ELIGIBLE';
     let expectedAmount: number;
-    if (payment.purpose === PaymentPurpose.FULL_RENT) {
+    if (payment.purpose === PaymentPurpose.RENEWAL) {
+      const extension = payment.extensionId && (reservation.extendContract || []).find((entry: any) =>
+        String(entry._id) === String(payment.extensionId) && String(entry.paymentId) === String(payment._id));
+      if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE || !extension ||
+          extension.status !== 'PENDING_PAYMENT' || extension.payosOrderCode !== Number(payment.providerReference) ||
+          reservation.status !== ReservationStatus.ACTIVE || reservation.checkoutRequest?.status === 'PENDING' ||
+          !reservation.paperContractProofUrl || !contract || contract.status !== ContractStatus.SIGNED ||
+          !contract.signedProofUrl || !contract.verifiedAt) return 'NOT_ELIGIBLE';
+      expectedAmount = Number(extension.amount);
+    } else if (payment.purpose === PaymentPurpose.FULL_RENT) {
       if (!isFullUpfrontBooking(reservation) || !reservation.expiresAt || reservation.expiresAt <= this.now()) return 'NOT_ELIGIBLE';
       if (managedV3(reservation)) {
         if (reservation.status !== ReservationStatus.RESERVED) return 'NOT_ELIGIBLE';
@@ -717,7 +823,7 @@ export class PayosPaymentService {
   }
 
   private async createIntentTransaction(reservationId: string, purpose: PaymentPurpose, idempotencyKey: string,
-    customerId: unknown, orderCode: number) {
+    customerId: unknown, orderCode: number, extensionId?: string) {
     const session = await this.createSession();
     let outcome: any;
     try {
@@ -726,6 +832,7 @@ export class PayosPaymentService {
         if (prior) {
           if (id(prior.reservationId) !== reservationId || id(prior.customerId) !== id(customerId) ||
               prior.purpose !== purpose || prior.provider !== PaymentProvider.PAYOS ||
+              (purpose === PaymentPurpose.RENEWAL && id(prior.extensionId) !== extensionId) ||
               ![FacilityServiceType.SELF_STORAGE, FacilityServiceType.MANAGED_INVENTORY].includes(prior.serviceType)) {
             throw new PayosPaymentError(409, 'IDEMPOTENCY_KEY_CONFLICT', 'Idempotency-Key belongs to a different payment identity');
           }
@@ -738,14 +845,57 @@ export class PayosPaymentService {
           $or: [{ serviceType: FacilityServiceType.SELF_STORAGE }, { serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }] }).session(session).exec();
         if (!reservation) throw new PayosPaymentError(404, 'RESERVATION_NOT_FOUND', 'Reservation not found');
         if (!serviceSupported(reservation)) throw new PayosPaymentError(409, 'PAYMENT_SERVICE_UNSUPPORTED', 'PayOS supports Self Storage and Managed V3 reservations only');
-        if ((managedV3(reservation) || isFullUpfrontBooking(reservation)) && purpose !== PaymentPurpose.FULL_RENT) {
+        let renewal: any;
+        if (purpose === PaymentPurpose.RENEWAL) {
+          if (!extensionId || reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+            throw new PayosPaymentError(409, 'RENEWAL_NOT_SUPPORTED', 'Renewal payment requires a Self Storage Extension');
+          }
+          renewal = (reservation.extendContract || []).find((entry: any) => String(entry._id) === extensionId);
+          if (!renewal) throw new PayosPaymentError(404, 'EXTENSION_NOT_FOUND', 'Extension not found for this Reservation');
+          const openExtensions = (reservation.extendContract || []).filter((entry: any) => ['PENDING_PAYMENT', 'PAID'].includes(entry.status));
+          if (openExtensions.length !== 1 || String(openExtensions[0]?._id) !== extensionId) {
+            throw new PayosPaymentError(409, 'RENEWAL_EXTENSION_CONFLICT', 'Only the single current in-progress Extension may receive a Renewal payment');
+          }
+          if (renewal.status !== 'PENDING_PAYMENT') throw new PayosPaymentError(409, 'EXTENSION_NOT_PAYABLE', 'Extension is not waiting for payment');
+          if (renewal.paymentId) {
+            const linked = await Payments.findOne({ _id: renewal.paymentId, reservationId, customerId,
+              extensionId, purpose: PaymentPurpose.RENEWAL, provider: PaymentProvider.PAYOS }).session(session).exec();
+            if (linked && linked.amount === roundVndAmount(Number(renewal.amount)) && linked.currency === 'VND' &&
+                [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED].includes(linked.status)) {
+              outcome = { payment: linked, replayed: true }; return;
+            }
+            const terminalAndVerified = !!linked && (
+              (linked.status === PaymentStatus.CANCELLED && !!linked.cancelVerifiedAt && linked.checkoutState === 'CANCELLED') ||
+              (linked.status === PaymentStatus.FAILED && linked.checkoutState === 'FAILED')) &&
+              linked.providerSettlementStatus !== ProviderSettlementStatus.VERIFIED &&
+              linked.applicationStatus === PaymentApplicationStatus.NOT_APPLIED &&
+              (linked.providerCaptures ?? []).length === 0 && (linked.providerOutcomeEvents ?? []).length === 0;
+            if (!terminalAndVerified) {
+              throw new PayosPaymentError(409, 'EXTENSION_PAYMENT_LINK_INVALID', 'Extension payment link requires manual review');
+            }
+            // The old intent remains immutable and auditable. Re-link only after an authoritative terminal
+            // outcome with no funds or provider events; late webhooks then fail the exact extension link check.
+          }
+        }
+        if ((managedV3(reservation) || isFullUpfrontBooking(reservation)) &&
+            purpose !== PaymentPurpose.FULL_RENT && purpose !== PaymentPurpose.RENEWAL) {
           throw new PayosPaymentError(409, 'FULL_RENT_REQUIRED', 'Managed V3 reservations require one full-rent payment; Deposit and Balance are unavailable');
         }
         const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).session(session).exec();
         if (!managedV3(reservation) && !contract) throw new PayosPaymentError(409, 'CONTRACT_REQUIRED', 'The existing Reservation contract is required');
 
         let amount: number;
-        if (purpose === PaymentPurpose.FULL_RENT) {
+        if (purpose === PaymentPurpose.RENEWAL) {
+          if (reservation.status !== ReservationStatus.ACTIVE || new Date(reservation.endDate).getTime() <= now.getTime() ||
+              reservation.checkoutRequest?.status === 'PENDING' || !reservation.paperContractProofUrl || !contract ||
+              contract.status !== ContractStatus.SIGNED || !contract.signedProofUrl || !contract.verifiedAt) {
+            throw new PayosPaymentError(409, 'RENEWAL_NOT_ELIGIBLE', 'Reservation no longer meets renewal prerequisites');
+          }
+          amount = Number(renewal.amount);
+          if (!Number.isSafeInteger(amount) || amount <= 0) {
+            throw new PayosPaymentError(409, 'INVALID_RENEWAL_AMOUNT', 'Extension amount must be a positive whole-VND value');
+          }
+        } else if (purpose === PaymentPurpose.FULL_RENT) {
           if (!isFullUpfrontBooking(reservation) || !reservation.expiresAt || reservation.expiresAt <= now) {
             throw new PayosPaymentError(409, 'PAYMENT_NOT_ELIGIBLE', 'Full rent requires a new, terms-accepted booking with an active hold');
           }
@@ -771,7 +921,7 @@ export class PayosPaymentService {
               depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
             amount = roundVndAmount(breakdown.depositCredit);
           }
-        } else {
+        } else if (purpose === PaymentPurpose.BALANCE) {
           if (managedV3(reservation)) {
             if (reservation.status !== ReservationStatus.DEPOSIT_PAID || !contract || contract.status !== ContractStatus.SIGNED || !hasCurrentManagedSignatures(contract)) throw new PayosPaymentError(409, 'BALANCE_NOT_ELIGIBLE', 'Managed V3 Balance requires a deposited reservation and both current contract signatures');
           } else {
@@ -791,10 +941,11 @@ export class PayosPaymentService {
             depositAmount: reservation.depositAmount, taxAmount: reservation.taxAmount ?? 0, discountAmount: reservation.discountAmount ?? 0 });
           amount = roundVndAmount(breakdown.totalDue) - deposit.amount;
           if (amount <= 0) throw new PayosPaymentError(409, 'ZERO_BALANCE_REQUIRES_REVIEW', 'No positive Balance checkout is available; contact support');
-        }
+        } else throw new PayosPaymentError(400, 'INVALID_PAYMENT_PURPOSE', 'Payment purpose is not supported');
         if (!Number.isSafeInteger(amount) || amount <= 0) throw new PayosPaymentError(409, 'INVALID_PAYMENT_AMOUNT', 'PayOS requires a positive whole-VND amount');
 
-        const unresolved = await Payments.findOne({ reservationId: reservation._id, purpose,
+        const extensionPaymentFilter = purpose === PaymentPurpose.RENEWAL ? { extensionId } : {};
+        const unresolved = await Payments.findOne({ reservationId: reservation._id, purpose, ...extensionPaymentFilter,
           provider: PaymentProvider.PAYOS, $or: [
             { status: { $in: [PaymentStatus.PENDING, PaymentStatus.RECONCILIATION_REQUIRED] } },
             { status: PaymentStatus.CANCELLED, $or: [
@@ -806,7 +957,7 @@ export class PayosPaymentService {
             ] },
           ] }).session(session).exec();
         if (unresolved) throw new PayosPaymentError(409, 'PAYMENT_ATTEMPT_UNRESOLVED', 'An earlier payment attempt must be authoritatively reconciled first');
-        const priorSuccess = await Payments.findOne({ reservationId: reservation._id, purpose,
+        const priorSuccess = await Payments.findOne({ reservationId: reservation._id, purpose, ...extensionPaymentFilter,
           provider: PaymentProvider.PAYOS, status: PaymentStatus.SUCCEEDED }).session(session).exec();
         if (priorSuccess) throw new PayosPaymentError(409, 'PAYMENT_ALREADY_SETTLED', 'This payment purpose already has a verified settlement');
 
@@ -826,9 +977,16 @@ export class PayosPaymentService {
         if (!current) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation eligibility changed; refresh and retry');
         const payment = new ReservationPaymentModel({ reservationId: reservation._id, customerId: reservation.customerId,
           facilityId: reservation.facilityId, serviceType: reservation.serviceType, purpose, amount, currency: 'VND',
+          ...(purpose === PaymentPurpose.RENEWAL ? { extensionId } : {}),
           idempotencyKey, provider: PaymentProvider.PAYOS, providerReference: String(orderCode), status: PaymentStatus.PENDING,
           checkoutState: 'NOT_CREATED', applicationStatus: PaymentApplicationStatus.NOT_APPLIED, providerCaptures: [] });
         await payment.save({ session });
+        if (purpose === PaymentPurpose.RENEWAL) {
+          renewal.payosOrderCode = orderCode;
+          renewal.paymentId = payment._id;
+          renewal.updatedAt = now;
+          await reservation.save({ session });
+        }
         outcome = { payment, replayed: false };
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       if (!outcome) throw new PayosPaymentError(503, 'PAYMENT_INTENT_OUTCOME_UNKNOWN', 'Payment intent outcome is uncertain');
@@ -844,8 +1002,8 @@ export class PayosPaymentService {
     }
     const { returnUrl, cancelUrl } = customerPaymentUrls(payment, channel);
     const purpose = assertPurpose(payment.purpose);
-    const description = 'WDP' + (purpose === PaymentPurpose.DEPOSIT ? 'D' : purpose === PaymentPurpose.FULL_RENT ? 'F' : 'B') + id(payment.reservationId).slice(-5);
-    if (!/^WDP[DBF][a-f0-9]{5}$/i.test(description)) {
+    const description = 'WDP' + (purpose === PaymentPurpose.DEPOSIT ? 'D' : purpose === PaymentPurpose.FULL_RENT ? 'F' : purpose === PaymentPurpose.RENEWAL ? 'R' : 'B') + id(payment.reservationId).slice(-5);
+    if (!/^WDP[DBFR][a-f0-9]{5}$/i.test(description)) {
       throw new PayosPaymentError(503, 'PAYOS_DESCRIPTION_INVALID', 'Payment intent has an invalid checkout description');
     }
     const claim = await Payments.findOneAndUpdate({ _id: payment._id, provider: PaymentProvider.PAYOS,
@@ -1246,6 +1404,7 @@ export class PayosPaymentService {
         // already-applied or otherwise successful attempt.
         const competingSuccess = await Payments.findOne({ _id: { $ne: currentPayment._id },
           reservationId: currentPayment.reservationId, purpose: currentPayment.purpose,
+          ...(currentPayment.purpose === PaymentPurpose.RENEWAL ? { extensionId: currentPayment.extensionId } : {}),
           status: PaymentStatus.SUCCEEDED }).session(session).exec();
         const now = this.now();
         currentPayment.providerCaptures = [...(currentPayment.providerCaptures ?? []), {
@@ -1431,24 +1590,33 @@ export class PayosPaymentService {
             }
           }
         } else if (currentPayment.purpose === PaymentPurpose.RENEWAL) {
-          const extItem = (reservation.extendContract || []).find((e: any) =>
-            (currentPayment.metadata?.extensionId && String(e._id) === String(currentPayment.metadata.extensionId)) ||
-            (e.payosOrderCode && e.payosOrderCode === Number(verified.orderCode)) ||
-            (e.status === 'PENDING_PAYMENT')
-          );
-          if (extItem) {
-            extItem.status = 'PAID';
-            extItem.paymentId = currentPayment._id;
-            extItem.payosOrderCode = Number(verified.orderCode);
-            extItem.signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-            extItem.updatedAt = time;
-            reservation.statusHistory.push({
-              status: reservation.status,
-              reason: `Thanh toán phí gia hạn ${extItem.extensionCode} qua PayOS thành công. Hạn ký giấy: ${extItem.signingDeadline.toLocaleDateString('vi-VN')}`,
-              createdAt: time
-            });
-            await reservation.save({ session });
+          const extItem = currentPayment.extensionId && (reservation.extendContract || []).find((entry: any) =>
+            String(entry._id) === String(currentPayment.extensionId));
+          if (!extItem || String(extItem.paymentId) !== String(currentPayment._id) ||
+              extItem.status !== 'PENDING_PAYMENT' || extItem.amount !== currentPayment.amount ||
+              extItem.payosOrderCode !== Number(verified.orderCode) || currentPayment.serviceType !== FacilityServiceType.SELF_STORAGE ||
+              reservation.status !== ReservationStatus.ACTIVE || reservation.checkoutRequest?.status === 'PENDING' ||
+              !reservation.paperContractProofUrl || new Date(reservation.endDate).getTime() !== new Date(extItem.oldEndDate).getTime()) {
+            currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+            currentPayment.reconciliationReason = 'Verified Renewal payment does not match its exact Extension identity or current state';
+            await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
+          const signedContract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId,
+            status: ContractStatus.SIGNED }).session(session).exec();
+          if (!signedContract || !signedContract.signedProofUrl || !signedContract.verifiedAt) {
+            currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
+            currentPayment.reconciliationReason = 'Verified Renewal payment arrived after the current signed Contract became ineligible';
+            await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
+          }
+          extItem.status = 'PAID';
+          extItem.signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+          extItem.updatedAt = time;
+          reservation.statusHistory.push({
+            status: reservation.status,
+            reason: `Thanh toán phí gia hạn ${extItem.extensionCode} qua PayOS thành công. Hạn ký giấy: ${extItem.signingDeadline.toLocaleDateString('vi-VN')}`,
+            createdAt: time
+          });
+          await reservation.save({ session });
           currentPayment.applicationStatus = PaymentApplicationStatus.APPLIED;
           await currentPayment.save({ session });
           result = { applied: true, paymentId: currentPayment._id, purpose: currentPayment.purpose };

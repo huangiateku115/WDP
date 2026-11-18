@@ -2,10 +2,12 @@ import {ManagedSkuEdit} from '../components/ManagedSkuEditor';
 import {ManagedOperationLookup} from '../components/ManagedOperationLookup';
 import {useRef,useState} from 'react';
 import {useLocalSearchParams,useRouter,type Href} from 'expo-router';
-import {View} from 'react-native';
+import {Image,View} from 'react-native';
 import {apiIssue,wire,MobileInputError} from '../api/client';
 import {restoreNativePaymentReturnPath} from '../api/paymentReturnLink';
 import {mobileRepo} from '../api/mobileRepository';
+import {managedInventory} from '../api/managedInventory';
+import {refId} from '../api/contracts/core';
 import {buildRegistration,mapCurrentUser} from '../api/contracts/customer';
 import {accountUpdate,optionalAddress,profileUpdate} from '../api/contracts/profile';
 import {useLiveSession} from '../state/useLiveSession';
@@ -14,6 +16,7 @@ import {dateLabel,LiveScreen,ResourceState,UnavailableScreen,useResource} from '
 import {WarehouseArt} from '../components/WarehouseArt';
 import {CardHeading,MetricTile,TintedPanel} from '../components/livePresentation';
 import {colors} from '../theme/tokens';
+import {ManagedSpecifications} from '../components/ManagedSpecifications';
 import {RentalCard,RentalDetail} from './LiveRental';
 import {FacilityDetail} from './LiveCatalog';
 
@@ -215,27 +218,39 @@ function ItemDetail({id,accessSessionId}:{id:string;accessSessionId?:string}){
   const owner=useOwner(),router=useRouter();
   const item=useResource(owner+':'+id,signal=>mobileRepo.item(id,owner,signal));
   const stock=useResource(owner+':'+id,async signal=>mobileRepo.inventoryStock(await mobileRepo.item(id,owner,signal),owner,signal));
+  const stockCellIds=stock.data?.kind==='V3'?stock.data.stock.byCell.map(row=>row.cellId):[];
+  const cellLabels=useResource(owner+':stock-cell-labels:'+stockCellIds.join(','),signal=>item.data&&stockCellIds.length
+    ?managedInventory.cellLabels(refId(item.data.facilityId),stockCellIds,signal):Promise.resolve({} as Record<string,string>));
   return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký và tồn kho của mặt hàng." onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
     <ResourceState {...item}/>
     {item.data&&<Card><CardHeading icon="cube-outline" title={item.data.name}/><AppText>Mã hàng {item.data.itemCode}</AppText>
-      {item.data.inventorySchemaVersion===3?<AppText>SKU V3 · {item.data.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}. Số lượng và số đo được quản lý theo Item Specification.</AppText>:<>
+      {!!item.data.images?.length&&<View style={{gap:10}}>{item.data.images.map((url,index)=><Image key={`${url}-${index}`} source={{uri:url}} accessibilityLabel={`Ảnh hàng hóa ${index+1}`} resizeMode="cover" style={{width:'100%',height:220,borderRadius:12,backgroundColor:colors.surface}}/>)}</View>}
+      {item.data.inventorySchemaVersion===3?<AppText>{item.data.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}. Số lượng và kích thước được quản lý theo thông tin loại hàng.</AppText>:<>
         <AppText>Đăng ký {item.data.quantity} {item.data.quantityUnit}</AppText>
         <AppText>{({REGISTERED:'Đã đăng ký',PENDING_INBOUND:'Chờ nhập kho',RECEIVED_PENDING_ACCEPTANCE:'Đã nhận, chờ xác nhận',IN_STORAGE:'Đang lưu kho',PENDING_OUTBOUND:'Chờ xuất kho',CHECKED_OUT:'Đã xuất kho',ACTIVE:'Đang hoạt động',INACTIVE:'Ngừng hoạt động'})[item.data.status]}</AppText>
         <AppText>Khối lượng đăng ký mỗi đơn vị {item.data.unitWeightKg} kg</AppText>
         {!!item.data.unitDimensionsM&&<AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>}
       </>}
+      {item.data.inventorySchemaVersion===3&&<>
+        <Button label="Sửa thông tin SKU" variant="outline" onPress={()=>router.push({pathname:'/inventory/edit/[id]',params:{id}})}/>
+        <Button label="Xuất hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/outbound',params:{id}} as unknown as Href)}/>
+        <Button label="Chuyển vị trí" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/relocation',params:{id}} as unknown as Href)}/>
+        <Button label="Nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/inbound',params:{id}} as unknown as Href)}/>
+      </>}
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
+    {item.data?.inventorySchemaVersion===3&&<ManagedSpecifications item={item.data} owner={owner}/>}
     {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}} accessSessionId={accessSessionId}/>}
-    <ResourceState {...stock}/>
-    {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Sổ tồn kho V3"/>
+    <ResourceState {...stock} resource="tồn kho (đọc Reservation và GET /inventory-items/{skuId}/v3/stock)"/>
+    {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Tồn kho theo ô"/>
       {stock.data.stock.reconciliationStatus==='RECONCILED'?<>
         <AppText>Đang lưu: {stock.data.stock.onHandQuantity}</AppText>
         <AppText>Đang giữ: {stock.data.stock.heldQuantity}</AppText>
         <AppText>{stock.data.stock.totalWeightKg} kg · {stock.data.stock.totalVolumeM3} m³</AppText>
-        {stock.data.stock.byCell.map(row=><AppText key={row.cellId}>Ô {row.cellId} · {row.quantity} theo lô · {row.physicalUnitCount} kiện riêng</AppText>)}
+        <ResourceState {...cellLabels} resource="mã Cell từ sơ đồ kho"/>
+        {stock.data.stock.byCell.map(row=><AppText key={row.cellId}>Ô {cellLabels.data?.[row.cellId]??'Cell chưa xác định'} · {row.quantity} theo lô · {row.physicalUnitCount} kiện riêng</AppText>)}
         {stock.data.stock.byBatch.map(row=><AppText key={row.batchId+':'+row.cellId}>Lô {row.batchId} · {row.quantity} {row.quantityUnit} · Ô {row.cellId}</AppText>)}
         {stock.data.stock.byPhysicalUnit.map(row=><AppText key={row.physicalUnitId}>Kiện {row.physicalUnitId} · Ô {row.cellIds.join(', ')}</AppText>)}
-      </>:<AppText>Tồn kho chưa được xác minh. Cần đối soát sổ kho.</AppText>}
+      </>:<AppText>Tồn kho chưa thể xác minh. Hãy liên hệ bộ phận hỗ trợ.</AppText>}
     </Card>}
     {stock.data?.kind==='V3'&&item.data&&<ManagedOperationLookup key={owner+':'+id} item={item.data} owner={owner}/>}
     {stock.data?.kind==='LEGACY'&&<Card><CardHeading icon="layers-outline" title="Tồn kho"/>
@@ -271,4 +286,9 @@ export function Detail(){
   if(kind==='rental')return <RentalDetail key={id} id={id}/>;
   if(kind==='inventory'||kind==='item')return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId}/>;
   return <UnavailableScreen/>;
+}
+export function InventoryItemDetail(){
+  const {id,accessSessionId}=useLocalSearchParams<{id:string;accessSessionId?:string|string[]}>();
+  if(!id)return <UnavailableScreen/>;
+  return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId}/>;
 }

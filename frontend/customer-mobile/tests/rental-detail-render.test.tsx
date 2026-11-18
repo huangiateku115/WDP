@@ -1,8 +1,9 @@
-import {render,screen} from '@testing-library/react-native';
+import {fireEvent,render,screen} from '@testing-library/react-native';
 import type {ReactNode} from 'react';
 import {RentalDetail} from '../src/screens/LiveRental';
 
-jest.mock('expo-router',()=>({useRouter:()=>({push:jest.fn()})}));
+const mockPush=jest.fn();
+jest.mock('expo-router',()=>({useRouter:()=>({push:mockPush})}));
 jest.mock('../src/state/useLiveSession',()=>({
   useLiveSession:(select:(state:{user:{_id:string}})=>unknown)=>select({user:{_id:'customer'}}),
 }));
@@ -26,6 +27,9 @@ test('checkout and progress keep distinct sibling keys across refresh and rental
     await view.rerender(<RentalDetail id="second"/>);
     expect(screen.getByText('customer:second')).toBeTruthy();
     expect(screen.getByRole('button',{name:'Yêu cầu trả kho'})).toBeTruthy();
+    expect(screen.getByRole('button',{name:'Gia hạn hợp đồng'})).toBeTruthy();
+    fireEvent.press(screen.getByRole('button',{name:'Gia hạn hợp đồng'}));
+    expect(mockPush).toHaveBeenCalledWith('/rentals/second/renewal');
     expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/same key/i);
   } finally {
     consoleError.mockRestore();

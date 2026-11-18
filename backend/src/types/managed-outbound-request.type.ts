@@ -7,6 +7,12 @@ export enum ManagedOutboundRequestState {
   CANCELLED = 'CANCELLED',
 }
 
+export enum ManagedOutboundRequestOperation {
+  CREATE = 'CREATE',
+  CANCEL = 'CANCEL',
+  CONFIRM = 'CONFIRM',
+}
+
 export interface ManagedOutboundBatchAllocation {
   batchId: string;
   quantity: number;
@@ -37,6 +43,29 @@ export interface ManagedOutboundRequestFields {
   confirmedAt?: Date;
   cancelledBy?: Types.ObjectId;
   cancelledAt?: Date;
+}
+
+export interface ManagedOutboundRequestEventFields {
+  requestId: Types.ObjectId;
+  itemId: Types.ObjectId;
+  reservationId: Types.ObjectId;
+  facilityId: Types.ObjectId;
+  customerId: Types.ObjectId;
+  actorId: Types.ObjectId;
+  operation: ManagedOutboundRequestOperation;
+  idempotencyKey: string;
+  payloadHash: string;
+  inputSnapshot: Record<string, unknown>;
+  resultingState: ManagedOutboundRequestState;
+  resultingVersion: number;
+  resultSnapshot: {
+    confirmedMovementId?: Types.ObjectId | string;
+    confirmedQuantity?: number;
+    [key: string]: unknown;
+  };
+  occurredAt: Date;
+  movementId?: Types.ObjectId;
+  confirmedQuantity?: number;
 }
 
 export type IManagedOutboundRequest = HydratedDocument<ManagedOutboundRequestFields>;

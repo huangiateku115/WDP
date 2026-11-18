@@ -108,19 +108,19 @@ test('access records reject foreign owners or facilities and closure is read-onl
 
 test('SKU registration sends only metadata after verifying eligible V3 reservation',async()=>{
   const latest={...rental,status:'CHECKIN_READY'};
-  const input={managedReservationId:id,itemCode:'SKU-1',name:'Box',category:'Boxes',quantity:2,quantityUnit:'box',
-    unitWeightKg:1,unitDimensionsM:{widthM:1,depthM:1,heightM:1}};
+  const input={managedReservationId:id,itemCode:'SKU-1',name:'Box',categoryId:paymentId};
   const paths:string[]=[];
   apiClient.defaults.adapter=async config=>{
     paths.push(config.method+' '+config.url);
     if(config.method==='post')expect(JSON.parse(config.data)).toEqual(input);
     return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:config.method==='get'?latest:{
-      ...input,_id:cellId,customerId:owner,facilityId,inventorySchemaVersion:3,status:'REGISTERED',currentCellId:null,
+      _id:cellId,customerId:owner,managedReservationId:id,facilityId,inventorySchemaVersion:3,itemCode:'SKU-1',name:'Box',
+      categoryId:paymentId,category:'Boxes',revision:0,status:'ACTIVE',currentCellId:null,
     }}};
   };
   expect(managedSkuEligible(rental)).toBe(false);
   await expect(saveManagedSku(rental,owner,input,()=>false)).rejects.toThrow();
-  await expect(saveManagedSku(rental,owner,input,()=>true)).resolves.toMatchObject({itemCode:'SKU-1',status:'REGISTERED',currentCellId:null});
+  await expect(saveManagedSku(rental,owner,input,()=>true)).resolves.toMatchObject({itemCode:'SKU-1',status:'ACTIVE',inventorySchemaVersion:3,currentCellId:null});
   expect(paths).toEqual(['get /reservations/managed/'+id,'get /reservations/managed/'+id,'post /inventory-items']);
 });
 

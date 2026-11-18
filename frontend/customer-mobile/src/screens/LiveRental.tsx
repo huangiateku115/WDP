@@ -2,7 +2,7 @@ import { CardHeading, TintedPanel } from "../components/livePresentation";
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { AppState, Linking, Modal, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { apiIssue, MobileInputError } from "../api/client";
 import { mobileRepo } from "../api/mobileRepository";
 import { lifecycle, type ReservationDto } from "../api/contracts/customer";
@@ -64,6 +64,8 @@ function rentalLabel(r: ReservationDto) {
         CANCELLED: "Đã hủy",
       }[r.status as string] ?? "Đang cập nhật");
 }
+
+function extensionStatusLabel(status:string){return ({PENDING_PAYMENT:'Chờ thanh toán',PAID:'Đã thanh toán · chờ ký phụ lục',ACTIVE:'Đã gia hạn',CANCELLED:'Đã hủy',REJECTED:'Không được chấp thuận'} as Record<string,string>)[status]??'Đang cập nhật';}
 
 export function RentalCard({ r }: { r: ReservationDto }) {
   const router = useRouter();
@@ -201,9 +203,36 @@ export function RentalDetail({ id }: { id: string }) {
               }
             />
           )}
+          {r.serviceType === "SELF_STORAGE" && r.status === "ACTIVE" && (
+            <Button
+              label="Gia hạn hợp đồng"
+              icon="calendar-outline"
+              variant="outline"
+              onPress={() => router.push((`/rentals/${encodeURIComponent(id)}/renewal`) as Href)}
+            />
+          )}
         </Card>
       )}
       <SelfStorageCheckoutRequest key={"checkout:" + owner + ":" + id} rental={r} owner={owner} id={id} reload={data.reload} />
+      {r?.serviceType === "SELF_STORAGE" && (
+        <Card>
+          <AppText variant="card">Lịch sử gia hạn</AppText>
+          {!r.extendContract?.length && <AppText>Chưa có yêu cầu gia hạn.</AppText>}
+          {r.extendContract?.map((extension, index) => (
+            <View key={extension._id ?? `${extension.status}:${index}`} style={{gap:6,borderTopWidth:index?1:0,borderTopColor:'#DCE7E1',paddingTop:index?12:0}}>
+              <AppText variant="label">{extension.status==='ACTIVE'?'Gia hạn thành công':extensionStatusLabel(extension.status)}</AppText>
+              {extension.extensionCode && <AppText>Mã gia hạn: {extension.extensionCode}</AppText>}
+              {extension.createdAt && extension.status!=='ACTIVE' && <AppText>Ngày tạo yêu cầu: {dateLabel(extension.createdAt)}</AppText>}
+              {extension.durationMonths !== undefined && <AppText>Kỳ hạn gia hạn: {extension.durationMonths} tháng</AppText>}
+              {extension.amount !== undefined && <AppText>Phí gia hạn: {money(extension.amount)}</AppText>}
+              {extension.oldEndDate && <AppText>Hạn thuê trước gia hạn: {dateLabel(extension.oldEndDate)}</AppText>}
+              {extension.newEndDate && <AppText>Hạn thuê sau gia hạn: {dateLabel(extension.newEndDate)}</AppText>}
+              {extension.verifiedAt && <AppText>Ngày xác nhận: {dateLabel(extension.verifiedAt)}</AppText>}
+              {extension.rejectionReason && <AppText>{extension.rejectionReason}</AppText>}
+            </View>
+          ))}
+        </Card>
+      )}
       {cancellation && <Button label="Hủy đơn thuê" variant="outline" onPress={() => { setCancelError(""); setCancelOpen(true); }} />}
       <Modal visible={cancelOpen} transparent animationType="none" onRequestClose={() => { if (!cancelBusy.current) setCancelOpen(false); }}>
         <View accessibilityViewIsModal style={{flex:1, justifyContent:"center", padding:20, backgroundColor:"rgba(0,0,0,0.55)"}}>
@@ -247,7 +276,7 @@ function RentalProgress({
         kind="error"
         title="Chưa thể xác minh tiến độ"
         description={read.error}
-        onRetry={onRetry}
+        onRetry={read.reload}
       />
     );
   const progress = read.data
@@ -258,6 +287,8 @@ function RentalProgress({
     : null;
   if (!progress) return <ResourceState {...read} />;
   return (
+    <View style={{gap:12}}>
+    {!!read.data?.historyError&&<StateCard kind="error" title="Chưa tải được lịch sử thanh toán" description={read.data.historyError} onRetry={read.reload}/>}
     <ReservationProgressTracker
       progress={progress}
       onAction={(action) =>
@@ -277,6 +308,7 @@ function RentalProgress({
         )
       }
     />
+    </View>
   );
 }
 
@@ -808,8 +840,7 @@ function PaymentScreen({
       refreshing={data.loading}
     >
       <AppText>
-        Trạng thái thanh toán được xác nhận từ máy chủ. Khi trở lại ứng dụng,
-        giao dịch sẽ được kiểm tra lại.
+        Trạng thái thanh toán sẽ được cập nhật sau khi hệ thống xác minh giao dịch.
       </AppText>
       {data.error ? (
         <StateCard
@@ -917,10 +948,11 @@ function PaymentScreen({
         <Card key={p.id}>
           <CardHeading
             icon="card-outline"
-            title={p.purpose === "FULL_RENT" ? "100% tiền thuê" : p.purpose === "DEPOSIT" ? "Đặt cọc" : "Tiền thuê còn lại"}
+            title={p.purpose === "FULL_RENT" ? "100% tiền thuê" : p.purpose === "DEPOSIT" ? "Đặt cọc" : p.purpose === "BALANCE" ? "Tiền thuê còn lại" : "Gia hạn hợp đồng"}
             subtitle={p.provider}
           />
           <AppText variant="heading">{money(p.amount)}</AppText>
+          {p.extensionId&&<AppText>Mã gia hạn: {p.extensionId}</AppText>}
           <Chip
             label={paymentStatus[p.status]}
             tone={p.reconciliationRequired ? "orange" : "neutral"}
@@ -934,7 +966,7 @@ function PaymentScreen({
           </AppText>
           <AppText>{applicationStatus[p.applicationStatus]}</AppText>
           <AppText>
-            Đối soát:{" "}
+            Kiểm tra giao dịch:{" "}
             {p.reconciliationRequired || p.checkoutStatus === "UNKNOWN"
               ? "Cần kiểm tra"
               : "Không có yêu cầu"}
@@ -947,6 +979,7 @@ function PaymentScreen({
           )}
         </Card>
       ))}
+      {data.data?.historyError&&<StateCard kind="error" title="Chưa tải được lịch sử thanh toán" description={data.data.historyError} onRetry={data.reload}/>}
       <Button
         label="Kiểm tra trạng thái"
         icon="refresh-outline"

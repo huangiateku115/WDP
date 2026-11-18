@@ -1,0 +1,139 @@
+<!-- VaultSpace — Đăng nhập tài khoản -->
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-background": "#101e18", "surface-tint": "#006d43", "surface-container-low": "#e7f8ed", "primary-container": "#18794e", "primary": "#005f3a", "outline": "#6f7a71", "surface-container-lowest": "#ffffff", "on-secondary": "#ffffff", "on-error-container": "#93000a", "error": "#ba1a1a", "on-secondary-container": "#406b56", "on-tertiary-fixed": "#2a1700", "inverse-primary": "#80d9a5", "primary-fixed-dim": "#80d9a5", "on-primary": "#ffffff", "surface-bright": "#ecfef2", "surface-dim": "#cdded3", "inverse-on-surface": "#e4f5ea", "on-surface-variant": "#3f4942", "tertiary-container": "#955e00", "secondary-fixed": "#beedd3", "secondary-container": "#bbead0", "surface-container-highest": "#d6e7dc", "on-primary-fixed-variant": "#005231", "outline-variant": "#bec9bf", "tertiary-fixed-dim": "#ffb95f", "on-secondary-fixed-variant": "#244f3c", "surface-variant": "#d6e7dc", "on-tertiary": "#ffffff", "on-tertiary-fixed-variant": "#653e00", "error-container": "#ffdad6", "background": "#ecfef2", "secondary-fixed-dim": "#a3d1b8", "on-primary-container": "#a4fec9", "surface-container-high": "#dbece1", "primary-fixed": "#9bf5c0", "on-surface": "#101e18", "on-tertiary-container": "#ffe7d0", "secondary": "#3c6752", "surface-container": "#e1f2e7", "on-primary-fixed": "#002111", "surface": "#ecfef2", "on-error": "#ffffff", "tertiary": "#744800", "on-secondary-fixed": "#002114", "tertiary-fixed": "#ffddb8", "inverse-surface": "#25342c" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-lg": "1.5rem", "gutter": "1rem", "margin": "1.25rem", "gutter-sm": "0.75rem", "space-xs": "0.25rem", "margin-sm": "1rem", "space-md": "1rem", "space-xl": "2rem", "space-sm": "0.5rem" }, fontFamily: { "body-md-medium": ["Inter"], "headline-lg": ["Inter"], "body-md": ["Inter"], "label-sm": ["Inter"], "body-lg": ["Inter"], "headline-md": ["Inter"], "label-md": ["Inter"], "label-lg": ["Inter"], "body-lg-medium": ["Inter"], "display": ["Inter"], "headline-sm": ["Inter"], "currency-display": ["Inter"] }, fontSize: { "body-md-medium": ["14px", { lineHeight: "20px", fontWeight: "500" }], "headline-lg": ["26px", { lineHeight: "34px", letterSpacing: "-0.015em", fontWeight: "700" }], "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }], "label-sm": ["10px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "600" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }], "headline-md": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "label-lg": ["13px", { lineHeight: "18px", letterSpacing: "0.01em", fontWeight: "600" }], "body-lg-medium": ["16px", { lineHeight: "24px", fontWeight: "500" }], "display": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }], "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.005em", fontWeight: "600" }], "currency-display": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "700" }] } } } };</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><button aria-label="Quay lại" class="w-11 h-11 -ml-2 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors" onclick="history.back()" type="button"></button><div class="flex items-center gap-2"><div class="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">lock</span></div><span class="font-headline-sm text-headline-sm text-on-surface tracking-tight">VaultSpace</span></div></div><div class="flex items-center gap-space-sm"><button aria-label="Chuyển đổi ngôn ngữ" class="h-11 px-3 rounded-full flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high transition-colors" type="button"><span class="material-symbols-outlined text-[16px] text-primary">language</span><span class="font-label-lg text-label-lg text-on-surface">VN</span><span class="material-symbols-outlined text-[14px] text-on-surface-variant">expand_more</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-14 pb-safe bg-surface"><div class="flex flex-col w-full">
+<div class="px-margin pt-space-md pb-space-xl flex flex-col gap-space-lg">
+<!-- Hero Visual & Welcome Framing -->
+<div class="relative w-full rounded-2xl overflow-hidden bg-surface-container shadow-sm">
+<div class="relative h-44 w-full bg-cover bg-center" data-alt="A clean, modern, brightly lit indoor climate-controlled self-storage facility corridor with sleek deep emerald green metallic locker doors, illuminated digital smart-lock keypads, polished concrete floor reflecting ceiling LED lines, serene architectural ambiance with high-security feel." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCe3yjAxvUQTdO0dniQujtiUwSkDe86D3UsLgi3sjNoZh5t5OAbdI0Wwpn2TLj13HX5TQubKjp5jIv2g_uVR1Yz2ffj1bmCyQg6de0y8tXQTMV6I4zRi9_pBFSd5xqE9t6sXdqpZ3-BYFOCeMkrBQZ6ynIdG_pWG1xWcMQvTyhi-5pm9Ty_cRt6jJkTz4FMtMlLlFwDZ52istKYbOeXtvsIcVMQkoSLE3Nrc61wir1a')">
+<div class="absolute inset-0 bg-gradient-to-t from-on-background/85 via-on-background/40 to-transparent"></div>
+<div class="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-md shadow-sm">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-wider">Hệ thống sẵn sàng</span>
+</div>
+<div class="absolute bottom-3 left-3 right-3 text-surface-container-lowest">
+<div class="flex items-center gap-1.5 mb-1">
+<span class="material-symbols-outlined text-primary-fixed text-[18px]">verified_user</span>
+<span class="font-label-sm text-label-sm text-primary-fixed uppercase tracking-wider">An toàn tuyệt đối 24/7</span>
+</div>
+<p class="font-body-md text-body-md text-surface-container-lowest/90 font-medium">Kho lưu trữ thông minh chuẩn quốc tế</p>
+</div>
+</div>
+<div class="p-margin flex flex-col gap-1.5 bg-surface-container-lowest">
+<div class="flex items-center gap-2">
+<h1 class="font-headline-md text-headline-md text-on-surface font-bold tracking-tight">Chào mừng trở lại!</h1>
+<span class="material-symbols-outlined text-primary text-[22px]" style="font-variation-settings: 'FILL' 1;">waving_hand</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+          Đăng nhập để quản lý kho tự quản, theo dõi kiện hàng và mở khóa <span class="font-body-md-medium text-body-md-medium text-primary">Smart Pass</span>.
+        </p>
+</div>
+</div>
+<!-- Quick Biometric Tap Feature (Fintech-grade UX) -->
+
+<!-- Sign In Form -->
+<form class="flex flex-col gap-space-md" id="login-form" onsubmit="event.preventDefault();">
+<!-- Input: Email / Phone -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-lg text-label-lg text-on-surface flex items-center justify-between" for="identifier">
+<span class="">Email hoặc Số điện thoại</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-normal">Đã xác minh</span>
+</label>
+<div class="relative flex items-center">
+<div class="absolute left-3.5 text-on-surface-variant pointer-events-none flex items-center">
+<span class="material-symbols-outlined text-[20px]">contact_mail</span>
+</div>
+<input class="w-full h-12 pl-11 pr-4 bg-surface-container-lowest rounded-xl font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:bg-surface-container-lowest focus:shadow-[0_0_0_2px_#18794e] transition-shadow shadow-sm" id="identifier" name="identifier" placeholder="linh.nguyen@saigoncraft.vn hoặc 0918..." type="text" value="linh.nguyen@saigoncraft.vn">
+</div>
+</div>
+<!-- Input: Password -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-lg text-label-lg text-on-surface" for="password">Mật khẩu</label>
+<div class="relative flex items-center">
+<div class="absolute left-3.5 text-on-surface-variant pointer-events-none flex items-center">
+<span class="material-symbols-outlined text-[20px]">lock</span>
+</div>
+<input class="w-full h-12 pl-11 pr-11 bg-surface-container-lowest rounded-xl font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:bg-surface-container-lowest focus:shadow-[0_0_0_2px_#18794e] transition-shadow shadow-sm" id="password" name="password" placeholder="••••••••" type="password" value="VaultPass2025#">
+<button aria-label="Ẩn hiện mật khẩu" class="absolute right-3 text-on-surface-variant hover:text-on-surface p-1 rounded-md transition-colors" id="toggle-password-btn" type="button">
+<span class="material-symbols-outlined text-[20px]" id="eye-icon">visibility_off</span>
+</button>
+</div>
+</div>
+<!-- Utilities Row: Remember & Forgot -->
+<div class="flex items-center justify-between pt-1">
+<label class="flex items-center gap-2 cursor-pointer select-none">
+<input checked="" class="w-4 h-4 rounded text-primary focus:ring-0 accent-primary cursor-pointer" type="checkbox">
+<span class="font-body-md text-body-md text-on-surface-variant">Ghi nhớ đăng nhập</span>
+</label>
+<button class="font-label-lg text-label-lg text-primary hover:underline transition-all" type="button">
+          Quên mật khẩu?
+        </button>
+</div>
+<!-- Primary Action CTA -->
+<button class="w-full h-12 mt-2 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-headline-sm text-headline-sm flex items-center justify-center gap-2 shadow-md active:scale-[0.99] transition-all" id="submit-btn" type="submit">
+<span class="">Đăng nhập ngay</span>
+<span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+</form>
+<!-- Social / Alternate Authentication Divider -->
+<div class="flex items-center gap-3 my-1">
+<div class="h-px bg-surface-container-highest flex-1"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Hoặc tiếp tục với</span>
+<div class="h-px bg-surface-container-highest flex-1"></div>
+</div>
+<!-- OAuth Buttons Grid -->
+<div class="grid grid-cols-2 gap-space-sm">
+
+
+</div>
+<!-- Active Storage Locker Mini Preview -->
+
+<!-- Footer Links & Security Compliance Badge -->
+<div class="flex flex-col items-center gap-space-sm text-center pt-2">
+<div class="font-body-md text-body-md text-on-surface">
+        Chưa có tài khoản VaultSpace? 
+        <a class="font-body-md-medium text-body-md-medium text-primary hover:underline ml-1" href="#register">Đăng ký thuê kho ngay</a>
+</div>
+<div class="flex items-center justify-center gap-1.5 text-on-surface-variant/80 pt-1">
+<span class="material-symbols-outlined text-[16px] text-primary" style="font-variation-settings: 'FILL' 1;">shield</span>
+<span class="font-label-sm text-label-sm tracking-wide">
+          Bảo mật tiêu chuẩn ISO/IEC 27001 &amp; PCCC Cấp 1
+        </span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function initSignInInteractions() {
+    const toggleBtn = document.getElementById('toggle-password-btn');
+    const passwordInput = document.getElementById('password');
+    const eyeIcon = document.getElementById('eye-icon');
+    const biometricCard = document.getElementById('biometric-card');
+
+    if (toggleBtn && passwordInput && eyeIcon) {
+      toggleBtn.addEventListener('click', function() {
+        const isPassword = passwordInput.getAttribute('type') === 'password';
+        passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+        eyeIcon.textContent = isPassword ? 'visibility' : 'visibility_off';
+      });
+    }
+
+    if (biometricCard) {
+      biometricCard.addEventListener('click', function() {
+        const originalText = biometricCard.querySelector('.font-body-lg-medium').textContent;
+        const textElement = biometricCard.querySelector('.font-body-lg-medium');
+        textElement.textContent = 'Đang quét sinh trắc học...';
+        biometricCard.classList.add('bg-surface-container-high');
+        
+        setTimeout(() => {
+          textElement.textContent = 'Xác thực thành công ✓';
+          setTimeout(() => {
+            textElement.textContent = originalText;
+            biometricCard.classList.remove('bg-surface-container-high');
+          }, 1400);
+        }, 800);
+      });
+    }
+  })();
+</script></main>
+
+</body></html>

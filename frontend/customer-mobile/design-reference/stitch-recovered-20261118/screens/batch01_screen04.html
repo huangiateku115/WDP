@@ -1,0 +1,412 @@
+<!-- VaultSpace — Managed Inventory -->
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-container-low": "#e7f8ed", "on-primary": "#ffffff", "on-surface": "#101e18", "on-secondary-fixed-variant": "#244f3c", "surface-container-high": "#dbece1", "tertiary-container": "#955e00", "background": "#ecfef2", "on-tertiary-fixed-variant": "#653e00", "on-secondary-fixed": "#002114", "on-primary-fixed": "#002111", "surface-container-lowest": "#ffffff", "tertiary-fixed": "#ffddb8", "on-background": "#101e18", "surface-tint": "#006d43", "inverse-on-surface": "#e4f5ea", "primary-fixed-dim": "#80d9a5", "error-container": "#ffdad6", "on-tertiary": "#ffffff", "surface": "#ecfef2", "on-tertiary-container": "#ffe7d0", "surface-dim": "#cdded3", "primary-container": "#18794e", "primary-fixed": "#9bf5c0", "inverse-surface": "#25342c", "tertiary-fixed-dim": "#ffb95f", "inverse-primary": "#80d9a5", "on-primary-fixed-variant": "#005231", "secondary-fixed": "#beedd3", "on-error": "#ffffff", "on-error-container": "#93000a", "surface-variant": "#d6e7dc", "secondary-fixed-dim": "#a3d1b8", "primary": "#005f3a", "outline": "#6f7a71", "tertiary": "#744800", "on-secondary-container": "#406b56", "outline-variant": "#bec9bf", "on-surface-variant": "#3f4942", "on-primary-container": "#a4fec9", "secondary-container": "#bbead0", "on-tertiary-fixed": "#2a1700", "secondary": "#3c6752", "surface-container-highest": "#d6e7dc", "surface-container": "#e1f2e7", "surface-bright": "#ecfef2", "on-secondary": "#ffffff", "error": "#ba1a1a" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-xl": "2rem", "margin-sm": "1rem", "space-md": "1rem", "space-lg": "1.5rem", "gutter": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "margin": "1.25rem", "gutter-sm": "0.75rem" }, fontFamily: { "body-md-medium": ["Inter"], "body-lg-medium": ["Inter"], "label-lg": ["Inter"], "body-lg": ["Inter"], "body-md": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"], "display": ["Inter"], "headline-lg": ["Inter"], "label-md": ["Inter"], "currency-display": ["Inter"], "label-sm": ["Inter"] }, fontSize: { "body-md-medium": ["14px", { lineHeight: "20px", fontWeight: "500" }], "body-lg-medium": ["16px", { lineHeight: "24px", fontWeight: "500" }], "label-lg": ["13px", { lineHeight: "18px", letterSpacing: "0.01em", fontWeight: "600" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }], "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }], "headline-md": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }], "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.005em", fontWeight: "600" }], "display": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }], "headline-lg": ["26px", { lineHeight: "34px", letterSpacing: "-0.015em", fontWeight: "700" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "currency-display": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "700" }], "label-sm": ["10px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "600" }] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;min-height:100%;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col antialiased selection:bg-primary/20"><header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs min-w-0"><img alt="VaultSpace Brand Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzrBZPuRd-_mKInF0iUsDZD_YEL35AwAzkaItyD2PHdxJDlWQvZ6dcHHepELW6PFxEvR-jJCnWOY2uinI01s_XaSGKO7LCn6l-fbRIESJCeX0jZPoCfXiHJmxhDpWyADSEhUjg5iJFr11xIF5vsHQvGXDcDLZ68uAAGSN6B5F8RdI0rLXmzKXBjDaA_jz7-gD8kFoyqX0AmmTZ50xNatfhHXNzJP1Efuuw7iMW1fNh"/><div class="flex flex-col min-w-0 pl-1"><div class="flex items-center gap-1 leading-none"><span class="font-headline-sm text-headline-sm text-primary font-bold tracking-tight">VaultSpace</span><span class="hidden">Inventory</span></div><button class="flex items-center gap-0.5 text-on-surface-variant hover:text-primary transition-colors text-left pt-0.5 group"><span class="font-label-sm text-label-sm truncate max-w-[125px]">Ho Chi Minh City, VN</span><span class="material-symbols-outlined text-[14px] text-outline group-hover:text-primary shrink-0">arrow_drop_down</span></button></div></div><div class="flex items-center gap-space-xs shrink-0"><button aria-label="Notifications" class="w-11 h-11 relative flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface"></span></button><button aria-label="User Profile" class="w-11 h-11 flex items-center justify-center rounded-full p-1.5 focus:outline-none"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-surface-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBXc971_K8wjoUpMYeKsJ7cxkKwRkkFn_42i2tq95SMD6-w-qgiyfexMW3z8nhRm2gZs1sjW-YAAgEcT8x31geJbQUSChotNV3qz5UAsBDbZMZm77K5wQaUl06HgGLn_OZiybqhC_7IDqEgGe4DzilXu_qtozpPmZxigOQvsMKoaEqA-NzH5Wo-Sg-DV1PN0oNkiiMP6AdeetkXJolPXQkQUBCpfJN_siDGi0hnEf9"/></button></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-20 bg-surface min-h-[calc(100vh-5rem)]"><div class="flex flex-col w-full">
+<!-- Top Summary & Ambient Hub Header -->
+<section class="px-margin pt-space-md pb-space-lg flex flex-col gap-space-md">
+<!-- Hub Badge & Main Titles -->
+<div class="flex flex-col gap-1">
+<div class="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">warehouse</span>
+<span>East Metro Hub • Zone B</span>
+</div>
+<div class="flex items-center justify-between gap-2 mt-1">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Managed Inventory</h1>
+<button class="w-10 h-10 rounded-xl bg-surface-container-lowest text-primary shadow-sm flex items-center justify-center hover:bg-surface-container-low transition-colors" id="qrScannerBtn" title="Scan Barcode / QR">
+<span class="material-symbols-outlined text-[20px]">qr_code_scanner</span>
+</button>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Climate-controlled items under active custodial care.</p>
+</div>
+<!-- Metric Metric Chips Grid -->
+<div class="grid grid-cols-2 gap-gutter-sm">
+<!-- Total SKUs & On Hand -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-2 relative overflow-hidden">
+<div class="absolute -right-3 -top-3 w-14 h-14 bg-surface-container-low rounded-full opacity-60 pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant font-medium">Catalog SKUs</span>
+<span class="material-symbols-outlined text-primary text-[18px]">inventory_2</span>
+</div>
+<div class="flex items-baseline gap-1.5">
+<span class="font-display text-display text-on-surface font-bold">6</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Active lines</span>
+</div>
+<div class="mt-1 flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>420 Total On-Hand</span>
+</div>
+</div>
+<!-- Outbound Availability Balance -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-2 relative overflow-hidden">
+<div class="absolute -right-3 -top-3 w-14 h-14 bg-tertiary-fixed rounded-full opacity-40 pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant font-medium">Dispatch Ready</span>
+<span class="material-symbols-outlined text-tertiary text-[18px]">local_shipping</span>
+</div>
+<div class="flex items-baseline gap-1.5">
+<span class="font-display text-display text-primary font-bold">385</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Units</span>
+</div>
+<div class="mt-1 flex items-center gap-1.5 font-label-sm text-label-sm text-tertiary font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span>35 Held / Processing</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Sticky-Ready Controls & Quick Action Button -->
+<section class="px-margin flex flex-col gap-space-sm mb-space-md">
+<!-- Action Banner: Register Item CTA -->
+<div class="flex items-center gap-space-sm">
+<!-- Search Input -->
+<div class="relative flex-1">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">search</span>
+<input class="w-full h-12 pl-10 pr-9 rounded-xl bg-surface-container-lowest text-on-surface placeholder:text-outline text-body-md font-body-md focus:outline-none focus:bg-surface-container-lowest shadow-sm transition-all" id="skuSearchInput" placeholder="Search SKU, item name, batch..." type="text"/>
+<button class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface p-1" id="clearSearchBtn">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+<!-- Add New SKU Button -->
+<button class="h-12 px-3.5 bg-primary text-on-primary rounded-xl font-label-lg text-label-lg flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform shrink-0">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span class="whitespace-nowrap">New Item</span>
+</button>
+</div>
+<!-- Category Filter Scroll -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+<button class="category-chip shrink-0 px-3.5 py-1.5 rounded-full bg-primary text-on-primary font-label-sm text-label-sm active">
+        All SKUs (6)
+      </button>
+<button class="category-chip shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm shadow-sm">
+        Beverages &amp; Coffee
+      </button>
+<button class="category-chip shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm shadow-sm">
+        Packaged Goods
+      </button>
+<button class="category-chip shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm shadow-sm">
+        Raw Materials
+      </button>
+<button class="category-chip shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm shadow-sm">
+        Packaging
+      </button>
+</div>
+</section>
+<!-- Items Feed -->
+<section class="px-margin flex flex-col gap-space-md mb-space-xl" id="itemsList">
+<!-- Card 1: Highland Arabica Coffee -->
+<article class="inventory-card bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md" data-category="Beverages &amp; Coffee" data-name="Highland Arabica Coffee Beans" data-sku="SKU-CF-0891">
+<!-- Card Image & Header Badges -->
+<div class="relative w-full h-36 bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Premium whole bean highland coffee roasted in dark matte foil valve packs neatly organized on clean aluminum warehouse racks with soft emerald ambient backlighting in modern climate-controlled storage facility" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjU1aAplAM4fHcbaVp4sBUE1RcBFqLKGsHBCgi0oQ8NTysKkJ62t2guun7Rzl9c_Dk5s-T5uCMQCm4G5BvfLyV5LDyrbJG_RtRTmUtHsWW77uXEsL6wU-QvDkNsjRgrNTExiX9M55uNkRgHZZ578c76aIADEHul9XAWPWVHcPlUG8cise7LNilBKkqKGCmiLTiBHM7gTxscDTZF0U5fcBVH0tG7AKFxZPJJvOsuCI8"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/80 via-transparent to-transparent"></div>
+<div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md text-on-surface font-label-sm text-label-sm font-semibold tracking-wider">
+            SKU-CF-0891
+          </span>
+<span class="px-2 py-0.5 rounded-md bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+            Grade A
+          </span>
+</div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between text-on-primary">
+<div class="flex items-center gap-1.5 font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">tune</span>
+<span class="text-surface-container-low font-medium">Cell B04-L2-01</span>
+</div>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/20 backdrop-blur-sm text-on-primary font-label-sm text-label-sm">
+            Exp: 12/2025
+          </span>
+</div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<div class="flex items-center justify-between gap-2">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium">Packaged Dry Goods • Batch #VN-2410</span>
+<span class="w-2 h-2 rounded-full bg-primary" title="In Stock &amp; Verified"></span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight mt-0.5">
+            Highland Arabica Coffee Beans (1kg)
+          </h2>
+</div>
+<!-- Stock Gauge & Allocation Bar -->
+<div class="p-space-sm rounded-xl bg-surface-container-low flex flex-col gap-2">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Storage Allocation</span>
+<span class="font-bold text-on-surface">240 bags total</span>
+</div>
+<!-- Visual progress ratio (220 avail / 20 held) -->
+<div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden flex">
+<div class="bg-primary h-full" style="width: 91.6%;" title="Available: 220"></div>
+<div class="bg-tertiary h-full" style="width: 8.4%;" title="Held: 20"></div>
+</div>
+<div class="grid grid-cols-2 pt-1 font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span class="text-on-surface-variant">Available:</span>
+<strong class="text-on-surface">220 bags</strong>
+</div>
+<div class="flex items-center gap-1.5 justify-end">
+<span class="w-2 h-2 rounded-full bg-tertiary shrink-0"></span>
+<span class="text-on-surface-variant">Held / Reserved:</span>
+<strong class="text-tertiary">20 bags</strong>
+</div>
+</div>
+</div>
+<!-- Micro Actions -->
+<div class="flex items-center justify-between pt-1">
+<button class="text-tertiary hover:text-on-tertiary-fixed-variant font-label-lg text-label-lg flex items-center gap-1 py-1 group transition-colors">
+<span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">local_shipping</span>
+<span>Request Outbound</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg text-primary font-label-lg text-label-lg flex items-center gap-1 hover:bg-surface-container-low transition-colors">
+<span>Details</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Card 2: Organic Robusta Roasted Beans -->
+<article class="inventory-card bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md" data-category="Beverages &amp; Coffee" data-name="Organic Robusta Roasted Beans" data-sku="SKU-CF-0412">
+<div class="relative w-full h-36 bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Artisanal kraft pouches with matte bronze labels filled with organic dark roasted Robusta coffee beans positioned on steel cleanroom shelving under calm natural lighting in storage facility" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC0FflYfOZy1O_TN_ZEQpDohKHz9Mk5TuPdNAAeLwK4Ks_e0I-B4EhgfEZusk5lYby6Cm4gyf2u4hclcrJcCNLHAC9g2GOfM0AAbs09-QTth-Ku_cs6BFj-A2l0ZM9mZf4RedUshRGlWUOrVNFVEYGNyakpIuEjZpQT2530wyh6neFYT-yapu1t1a68iQGdzp4jH0vNQYWTf-I8tHJ-olkU-_S0CgbZpAZKGcH9Vfn5"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/80 via-transparent to-transparent"></div>
+<div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md text-on-surface font-label-sm text-label-sm font-semibold tracking-wider">
+            SKU-CF-0412
+          </span>
+<span class="px-2 py-0.5 rounded-md bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+            100% Organic
+          </span>
+</div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between text-on-primary">
+<div class="flex items-center gap-1.5 font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">tune</span>
+<span class="text-surface-container-low font-medium">Cell B04-L2-02</span>
+</div>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/20 backdrop-blur-sm text-on-primary font-label-sm text-label-sm">
+            100% Free Stock
+          </span>
+</div>
+</div>
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<div class="flex items-center justify-between gap-2">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium">Packaged Dry Goods • Batch #VN-2408</span>
+<span class="w-2 h-2 rounded-full bg-primary" title="In Stock"></span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight mt-0.5">
+            Organic Robusta Roasted Beans (500g)
+          </h2>
+</div>
+<!-- Stock Breakdown -->
+<div class="p-space-sm rounded-xl bg-surface-container-low flex flex-col gap-2">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Storage Allocation</span>
+<span class="font-bold text-on-surface">120 packs total</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden flex">
+<div class="bg-primary h-full" style="width: 100%;" title="Available: 120"></div>
+</div>
+<div class="grid grid-cols-2 pt-1 font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span class="text-on-surface-variant">Available:</span>
+<strong class="text-on-surface">120 packs</strong>
+</div>
+<div class="flex items-center gap-1.5 justify-end">
+<span class="w-2 h-2 rounded-full bg-outline shrink-0"></span>
+<span class="text-on-surface-variant">Held:</span>
+<span class="text-on-surface font-medium">0 packs</span>
+</div>
+</div>
+</div>
+<!-- Action Links -->
+<div class="flex items-center justify-between pt-1">
+<button class="text-tertiary hover:text-on-tertiary-fixed-variant font-label-lg text-label-lg flex items-center gap-1 py-1 group transition-colors">
+<span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">local_shipping</span>
+<span>Request Outbound</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg text-primary font-label-lg text-label-lg flex items-center gap-1 hover:bg-surface-container-low transition-colors">
+<span>Details</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Card 3: Eco Kraft Paper Shipping Cartons -->
+<article class="inventory-card bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md" data-category="Packaging" data-name="Eco Kraft Paper Shipping Cartons" data-sku="SKU-PKG-102">
+<div class="relative w-full h-36 bg-surface-container-high overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Neat flat-packed stacks of recycled corrugated kraft cardboard shipping boxes bundled with eco-friendly hemp twine in clean structured storage cell facility" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDaaC48d-wWhaTWascs49KtzTP7YpNEr77jtp8tiIZxIvM5Qh_dy04Dzkn1_yApq-HfLKh6SMG6FT4hClD_zbqnNge8PzwyVKZK_joBeSS9oq6ryp3ifR4VRhOHeCeXFR9j4vjF3Et7U4axx3W6Ycv0oFiFcPk3pVawvBuurKqtvTOudX36WCS1pCUZ06zI2mEAvwFBeSAXMJ5wjvoQrOXlDzx72JRGQbiQs_uGmIoK"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/80 via-transparent to-transparent"></div>
+<div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md text-on-surface font-label-sm text-label-sm font-semibold tracking-wider">
+            SKU-PKG-102
+          </span>
+<span class="px-2 py-0.5 rounded-md bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+            Size L
+          </span>
+</div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between text-on-primary">
+<div class="flex items-center gap-1.5 font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">tune</span>
+<span class="text-surface-container-low font-medium">Cell B04-L2-01</span>
+</div>
+<span class="px-2 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold">
+            15 Bundles Staged
+          </span>
+</div>
+</div>
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex flex-col">
+<div class="flex items-center justify-between gap-2">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-medium">Packaging Supplies • Non-Perishable</span>
+<span class="w-2 h-2 rounded-full bg-tertiary" title="Partially Reserved for Packout"></span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight mt-0.5">
+            Eco Kraft Paper Shipping Cartons (Box L)
+          </h2>
+</div>
+<!-- Stock Allocation -->
+<div class="p-space-sm rounded-xl bg-surface-container-low flex flex-col gap-2">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Storage Allocation</span>
+<span class="font-bold text-on-surface">60 bundles total</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden flex">
+<div class="bg-primary h-full" style="width: 75%;" title="Available: 45"></div>
+<div class="bg-tertiary h-full" style="width: 25%;" title="Held: 15"></div>
+</div>
+<div class="grid grid-cols-2 pt-1 font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span class="text-on-surface-variant">Available:</span>
+<strong class="text-on-surface">45 bundles</strong>
+</div>
+<div class="flex items-center gap-1.5 justify-end">
+<span class="w-2 h-2 rounded-full bg-tertiary shrink-0"></span>
+<span class="text-on-surface-variant">Staged/Held:</span>
+<strong class="text-tertiary">15 bundles</strong>
+</div>
+</div>
+</div>
+<!-- Action Links -->
+<div class="flex items-center justify-between pt-1">
+<button class="text-tertiary hover:text-on-tertiary-fixed-variant font-label-lg text-label-lg flex items-center gap-1 py-1 group transition-colors">
+<span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">local_shipping</span>
+<span>Request Outbound</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg text-primary font-label-lg text-label-lg flex items-center gap-1 hover:bg-surface-container-low transition-colors">
+<span>Details</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Empty State Fallback (hidden by default) -->
+<div class="hidden p-space-xl bg-surface-container-lowest rounded-xl shadow-sm text-center flex flex-col items-center gap-2" id="noResults">
+<span class="material-symbols-outlined text-[40px] text-outline">search_off</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-semibold">No matching SKUs</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-[260px]">Try refining your search keyword or selecting a different category filter.</p>
+</div>
+</section>
+<!-- Inbound Intake Banner / Logistics Action -->
+<section class="px-margin pb-space-xl">
+<div class="relative bg-secondary-container text-on-secondary-container rounded-xl p-space-md shadow-sm overflow-hidden flex flex-col gap-3">
+<div class="flex items-start gap-3">
+<div class="w-10 h-10 rounded-xl bg-surface-container-lowest text-primary flex items-center justify-center shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-[22px]">move_to_inbox</span>
+</div>
+<div class="flex flex-col gap-0.5">
+<span class="font-label-lg text-label-lg font-bold text-on-secondary-fixed">Restocking Goods?</span>
+<p class="font-body-md text-body-md text-on-secondary-container">
+            Need to bring new stock to the warehouse? Create an Inbound Request for Staff intake, climate verification &amp; barcoding.
+          </p>
+</div>
+</div>
+<button class="w-full h-11 bg-primary text-on-primary rounded-xl font-label-lg text-label-lg flex items-center justify-center gap-2 shadow-sm active:scale-[0.99] transition-transform">
+<span>Request Inbound Intake</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</div>
+</section>
+</div>
+<script>
+  (function initInventoryInteractions() {
+    const searchInput = document.getElementById('skuSearchInput');
+    const clearBtn = document.getElementById('clearSearchBtn');
+    const chips = document.querySelectorAll('.category-chip');
+    const cards = document.querySelectorAll('.inventory-card');
+    const noResults = document.getElementById('noResults');
+
+    let currentCategory = 'All SKUs (6)';
+    let searchQuery = '';
+
+    function filterItems() {
+      let visibleCount = 0;
+      cards.forEach(card => {
+        const category = card.getAttribute('data-category');
+        const name = (card.getAttribute('data-name') || '').toLowerCase();
+        const sku = (card.getAttribute('data-sku') || '').toLowerCase();
+
+        const matchCategory = currentCategory.startsWith('All') || 
+                              category.toLowerCase().includes(currentCategory.toLowerCase()) ||
+                              (currentCategory === 'Beverages & Coffee' && category.includes('Beverages')) ||
+                              (currentCategory === 'Packaging' && category.includes('Packaging'));
+
+        const matchSearch = !searchQuery || name.includes(searchQuery) || sku.includes(searchQuery);
+
+        if (matchCategory && matchSearch) {
+          card.style.display = 'flex';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (noResults) {
+        noResults.style.display = visibleCount === 0 ? 'flex' : 'none';
+      }
+    }
+
+    // Category click listeners
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        chips.forEach(c => {
+          c.classList.remove('bg-primary', 'text-on-primary', 'active');
+          c.classList.add('bg-surface-container-lowest', 'text-on-surface-variant');
+        });
+        chip.classList.add('bg-primary', 'text-on-primary', 'active');
+        chip.classList.remove('bg-surface-container-lowest', 'text-on-surface-variant');
+        currentCategory = chip.textContent.trim();
+        filterItems();
+      });
+    });
+
+    // Search query listener
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim().toLowerCase();
+        if (clearBtn) {
+          clearBtn.style.display = searchQuery.length > 0 ? 'block' : 'none';
+        }
+        filterItems();
+      });
+    }
+
+    if (clearBtn && searchInput) {
+      clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchQuery = '';
+        clearBtn.style.display = 'none';
+        searchInput.focus();
+        filterItems();
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 inset-x-0 z-50 bg-surface-container-lowest/95 backdrop-blur-xl pb-safe shadow-[0_-2px_12px_rgba(16,61,43,0.06)]" data-active-classes="text-primary font-body-md-medium"><div class="flex items-center justify-around h-16 px-1 max-w-[430px] mx-auto"><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="home-dashboard" href="#"><span class="material-symbols-outlined text-[22px]">roofing</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Home</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="explore-facilities" href="#"><span class="material-symbols-outlined text-[22px]">domain</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Explore</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="my-rentals" href="#"><span class="material-symbols-outlined text-[22px]">key</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">My Rentals</span></a><a aria-current="page" class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 transition-colors text-primary font-body-md-medium" data-path="inventory" href="#"><span class="material-symbols-outlined text-[22px]">inventory_2</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Inventory</span></a><a class="flex-1 flex flex-col items-center justify-center min-h-[44px] py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="profile-settings" href="#"><span class="material-symbols-outlined text-[22px]">person</span><span class="font-label-sm text-label-sm mt-0.5 tracking-tight">Profile</span></a></div></nav></body></html>

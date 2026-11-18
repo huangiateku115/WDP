@@ -410,33 +410,47 @@ test('Phase 5.1: Duyệt checkout ô kho BẨN/HƯ HẠI -> Unit chuyển sang M
 
 test('Phase 5.2: Báo giá gia hạn (Renew Quote) tính đúng tiền = monthlyPrice * số tháng', async (t) => {
   const reservationId = new mongoose.Types.ObjectId();
+  const customerId = new mongoose.Types.ObjectId();
   const pricingPolicyId = new mongoose.Types.ObjectId();
+  const facilityId = new mongoose.Types.ObjectId();
+  const unitId = new mongoose.Types.ObjectId();
   const currentEndDate = new Date('2026-12-11T00:00:00Z');
 
   const reservationDoc = {
     _id: reservationId,
+    customerId,
     serviceType: FacilityServiceType.SELF_STORAGE,
+    facilityId,
+    storageUnitId: unitId,
     status: ReservationStatus.ACTIVE,
     paperContractProofUrl: 'https://example.test/signed-contract.pdf',
     pricingPolicyId,
     startDate: new Date('2026-11-11T00:00:00Z'),
     endDate: currentEndDate,
-    estimatedRent: 1000000
+    estimatedRent: 1000000,
+    paperContractProofUrl: 'https://proof.example/original'
   };
 
   t.mock.method(ReservationModel, 'findById', async () => reservationDoc);
   t.mock.method(PricingRuleModel, 'findOne', filter => {
     assert.equal(filter['term.value'], 2);
     assert.equal(filter['term.unit'], 'MONTH');
-    return { exec: async () => ({ _id: pricingPolicyId, price: 1000000 }) };
-  });
-  t.mock.method(ReservationService, 'calculatePricing', async () => ({ estimatedRent: 2000000, basePrice: 1000000, currency: 'VND' }));
+    return ({
+    exec: async () => ({ _id: pricingPolicyId, price: 1000000 })
+  }); });
+  t.mock.method(PricingRuleModel, 'findById', () => ({
+    exec: async () => ({ price: 1000000, version: 1, currency: 'VND', effectiveFrom: new Date('2020-01-01'), isActive: true })
+  }));
+  t.mock.method(ContractModel, 'findOne', () => ({ exec: async () => ({ status: ContractStatus.SIGNED,
+    signedProofUrl: 'https://proof.example/signed', verifiedAt: new Date() }) }));
+  t.mock.method(StorageUnitModel, 'findById', async () => ({ _id: unitId, facilityId, size: 'SMALL', status: StorageUnitStatus.OCCUPIED }));
+  t.mock.method(ReservationModel, 'exists', () => ({ exec: async () => null }));
 
   // Thử báo giá 2 tháng
   const req = {
     params: { id: reservationId.toString() },
     body: { durationMonths: 2 },
-    user: { _id: new mongoose.Types.ObjectId(), role: UserRole.CUSTOMER }
+    user: { _id: customerId, role: UserRole.CUSTOMER }
   };
   const res = mockResponse();
 
@@ -445,13 +459,45 @@ test('Phase 5.2: Báo giá gia hạn (Renew Quote) tính đúng tiền = monthly
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);
   assert.equal(res.body.data.durationMonths, 2);
-  assert.equal(res.body.data.totalAmount, 2000000, '2 tháng phải có tổng tiền là 2.000.000 VND');
+  assert.equal(res.body.data.totalAmount, 2066667, 'Báo giá dùng số ngày kỳ hạn thực tế theo PricingRule, làm tròn VND');
+  assert.equal(res.body.data.canExtend, true);
   const expectedNewEnd = new Date(currentEndDate);
   expectedNewEnd.setUTCMonth(expectedNewEnd.getUTCMonth() + 2);
   assert.equal(new Date(res.body.data.newEndDate).toISOString(), expectedNewEnd.toISOString());
 });
 
-test('Legacy direct renewal is blocked without verified payment and signed addendum', async (t) => {
+test('Phase 5.2: Renew Quote clamps end-of-month dates instead of overflowing into the next month', async t => {
+  const reservationId = new mongoose.Types.ObjectId(), customerId = new mongoose.Types.ObjectId();
+  const pricingPolicyId = new mongoose.Types.ObjectId();
+  const reservation = { _id: reservationId, customerId, serviceType: FacilityServiceType.SELF_STORAGE,
+    status: ReservationStatus.ACTIVE, endDate: new Date('2027-01-31T00:00:00.000Z'),
+    paperContractProofUrl: 'https://proof.example/original' };
+  t.mock.method(ReservationModel, 'findById', async () => reservation);
+  t.mock.method(ContractModel, 'findOne', () => ({ exec: async () => ({ status: ContractStatus.SIGNED,
+    signedProofUrl: 'https://proof.example/signed', verifiedAt: new Date() }) }));
+  t.mock.method(PricingRuleModel, 'findOne', () => ({ exec: async () => ({ _id: pricingPolicyId }) }));
+  t.mock.method(PricingRuleModel, 'findById', () => ({ exec: async () => ({ price: 900000, version: 1,
+    currency: 'VND', effectiveFrom: new Date('2020-01-01'), isActive: true }) }));
+  const res = mockResponse();
+  await ReservationController.renewQuote({ params: { id: String(reservationId) }, body: { termUnit: 'MONTH', termValue: 1 },
+    user: { _id: customerId, role: UserRole.CUSTOMER } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(new Date(res.body.data.newEndDate).toISOString(), '2027-02-28T00:00:00.000Z');
+});
+
+test('Phase 5.2: Customer cannot quote a Reservation owned by another Customer', async t => {
+  const ownerId = new mongoose.Types.ObjectId(), callerId = new mongoose.Types.ObjectId();
+  const reservationId = new mongoose.Types.ObjectId();
+  t.mock.method(ReservationModel, 'findById', async () => ({ _id: reservationId, customerId: ownerId,
+    serviceType: FacilityServiceType.SELF_STORAGE, status: ReservationStatus.ACTIVE }));
+  const res = mockResponse();
+  await ReservationController.renewQuote({ params: { id: String(reservationId) }, body: { termValue: 1, termUnit: 'MONTH' },
+    user: { _id: callerId, role: UserRole.CUSTOMER } }, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.code, 'RESERVATION_FORBIDDEN');
+});
+
+test('Phase 5.2: Legacy Renew bị khóa và không thay đổi endDate, Contract hoặc PIN', async (t) => {
   const customerId = new mongoose.Types.ObjectId();
   const reservationId = new mongoose.Types.ObjectId();
   const unitId = new mongoose.Types.ObjectId();
@@ -473,6 +519,13 @@ test('Legacy direct renewal is blocked without verified payment and signed adden
     save: async function () { return this; }
   };
   t.mock.method(ReservationModel, 'findById', async () => reservationDoc);
+  let updatedContractSnapshotEndDate = null;
+  t.mock.method(ContractModel, 'findOneAndUpdate', (filter, update) => ({
+    exec: async () => {
+      updatedContractSnapshotEndDate = update.$set?.['pricingSnapshot.endDate'];
+      return { status: ContractStatus.SIGNED };
+    }
+  }));
 
   const req = {
     params: { id: reservationId.toString() },
@@ -483,8 +536,25 @@ test('Legacy direct renewal is blocked without verified payment and signed adden
 
   await ReservationController.renewReservation(req, res);
 
-  assert.equal(res.statusCode, 409);
-  assert.equal(res.body.code, 'BUSINESS_DECISION_REQUIRED');
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body.code, 'LEGACY_RENEWAL_DISABLED');
   assert.equal(reservationDoc.renewals.length, 0);
-  assert.equal(reservationDoc.endDate.toISOString(), initialEndDate.toISOString());
+  assert.equal(new Date(reservationDoc.endDate).toISOString(), initialEndDate.toISOString());
+  assert.equal(updatedContractSnapshotEndDate, null);
+
+  // Kiểm tra mã PIN vẫn mở khóa được bình thường sau gia hạn
+  t.mock.method(ReservationModel, 'findOne', async () => reservationDoc);
+  t.mock.method(ContractModel, 'findOne', async () => ({ status: ContractStatus.SIGNED }));
+  t.mock.method(StorageUnitModel, 'findById', async () => ({ status: StorageUnitStatus.OCCUPIED }));
+  t.mock.method(AccessLogModel, 'create', async (logData) => ({ ...logData, _id: new mongoose.Types.ObjectId() }));
+
+  const unlockReq = {
+    body: { reservationId: reservationId.toString(), pinCode: '987654' },
+    user: { _id: customerId, role: UserRole.CUSTOMER }
+  };
+  const unlockRes = mockResponse();
+  await AccessController.simulateUnlock(unlockReq, unlockRes);
+
+  assert.equal(unlockRes.statusCode, 200, 'Sau khi gia hạn, mã PIN vẫn mở cửa bình thường (200)');
+  assert.equal(unlockRes.body.success, true);
 });

@@ -6,14 +6,14 @@ const path = require('node:path');
 
 let PayosPaymentService, payosPaymentService, PayosPaymentError, ReservationPaymentModel,
   ReservationModel, ContractModel, ManagedReservationAuditModel, PaymentApplicationStatus, PaymentProvider, PaymentPurpose,
-  PaymentStatus, ReservationStatus, ContractStatus, Controller;
+  PaymentStatus, ProviderSettlementStatus, ReservationStatus, ContractStatus, Controller;
 try {
   ({ PayosPaymentService, payosPaymentService, PayosPaymentError } = require('../dist/services/payments/payos-payment.service'));
   ReservationPaymentModel = require('../dist/models/payments/reservation-payment.model').default;
   ReservationModel = require('../dist/models/reservations/reservation.model').default;
   ContractModel = require('../dist/models/contracts/contract.model').default;
   ManagedReservationAuditModel = require('../dist/models/reservations/managed-reservation-audit.model').default;
-  ({ PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus } = require('../dist/types/payment.type'));
+  ({ PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } = require('../dist/types/payment.type'));
   ({ ReservationStatus } = require('../dist/types/reservation.type'));
   ({ ContractStatus } = require('../dist/types/contract.type'));
   Controller = require('../dist/controllers/payments/payos-payment.controller');
@@ -23,7 +23,7 @@ try {
   ReservationModel = require('../src/models/reservations/reservation.model').default;
   ContractModel = require('../src/models/contracts/contract.model').default;
   ManagedReservationAuditModel = require('../src/models/reservations/managed-reservation-audit.model').default;
-  ({ PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus } = require('../src/types/payment.type'));
+  ({ PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } = require('../src/types/payment.type'));
   ({ ReservationStatus } = require('../src/types/reservation.type'));
   ({ ContractStatus } = require('../src/types/contract.type'));
   Controller = require('../src/controllers/payments/payos-payment.controller');
@@ -60,6 +60,25 @@ test('PayOS checkout controller forwards the fixed Mobile client channel and ret
     get: () => 'deposit-key', user: { _id: 'customer-1' } }, replay);
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.body.outcome, 'REPLAYED');
+});
+
+test('Renewal checkout controller accepts only extensionId and forwards Idempotency-Key and channel', async t => {
+  t.mock.method(payosPaymentService, 'createRenewalCheckout', async (...args) => {
+    assert.deepEqual(args, ['reservation-1', 'extension-1', 'renewal-key', 'customer-1', 'MOBILE']);
+    return { id: 'renewal-payment-1', outcome: 'CREATED', httpStatus: 201, purpose: PaymentPurpose.RENEWAL };
+  });
+  const res = response();
+  await Controller.createSelfStorageRenewalCheckout({ params: { id: 'reservation-1' }, body: { extensionId: 'extension-1' },
+    get: name => name === 'Idempotency-Key' ? 'renewal-key' : name === 'X-WDP-Payment-Client' ? 'MOBILE' : undefined,
+    user: { _id: 'customer-1' } }, res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.data.purpose, PaymentPurpose.RENEWAL);
+
+  const tamperedAmount = response();
+  await Controller.createSelfStorageRenewalCheckout({ params: { id: 'reservation-1' }, body: { extensionId: 'extension-1', amount: 1 },
+    get: name => name === 'Idempotency-Key' ? 'renewal-key' : undefined, user: { _id: 'customer-1' } }, tamperedAmount);
+  assert.equal(tamperedAmount.statusCode, 400);
+  assert.equal(tamperedAmount.body.code, 'INVALID_RENEWAL_PAYMENT_REQUEST');
 });
 
 test('Customer payment history controller uses the owner-scoped service and response envelope', async t => {
@@ -267,6 +286,88 @@ test('checkout creates a server-priced intent after Reservation CAS and reuses e
   assert.ok(operations.includes('checkout-link-save'));
 });
 
+test('Renewal checkout persists an Extension-scoped intent before creating a verified PayOS link', async t => {
+  setPayosCheckoutTestConfig();
+  const reservation = { ...baseReservation(ReservationStatus.ACTIVE), paperContractProofUrl: 'https://proof.example/original',
+    endDate: new Date(Date.now() + 40 * 86400000), inventoryVersion: 3, save: async options => { assert.equal(options.session, transaction); } };
+  const extension = { _id: oid(), extensionCode: 'EXT-TEST-01', status: 'PENDING_PAYMENT', amount: 250000,
+    oldEndDate: reservation.endDate, newEndDate: new Date(reservation.endDate.getTime() + 30 * 86400000) };
+  reservation.extendContract = [extension];
+  const transaction = session();
+  let saved, providerRequest, providerCalls = 0;
+  const gateway = { create: async body => { providerCalls += 1; providerRequest = body; return { orderCode: body.orderCode, amount: body.amount,
+    currency: 'VND', paymentLinkId: 'renewal-link-1', checkoutUrl: 'https://pay.example/renewal-1', status: 'PENDING' }; },
+    get: async () => null, verify: async () => null };
+  t.mock.method(ReservationPaymentModel, 'findOne', filter => query(filter.idempotencyKey ? saved ?? null : null));
+  t.mock.method(ReservationModel, 'findOne', () => query(reservation));
+  t.mock.method(ContractModel, 'findOne', () => query({ _id: oid(), status: ContractStatus.SIGNED,
+    signedProofUrl: 'https://proof.example/signed', verifiedAt: new Date() }));
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (_filter, update) => { reservation.inventoryVersion += update.$inc.inventoryVersion; return query(reservation); });
+  t.mock.method(ReservationPaymentModel.prototype, 'save', async function (options) { assert.equal(options.session, transaction); saved = this; return this; });
+  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => { Object.assign(saved, update.$set); return query(saved); });
+  t.mock.method(ReservationPaymentModel, 'updateOne', (_filter, update) => { Object.assign(saved, update.$set); return query({ matchedCount: 1 }); });
+  t.mock.method(ReservationPaymentModel, 'findById', () => query(saved));
+  const service = new PayosPaymentService({ enabled: true, gateway, createSession: async () => transaction });
+  const result = await service.createRenewalCheckout(String(reservation._id), String(extension._id), 'renewal-idempotency-1', reservation.customerId, 'MOBILE');
+  assert.equal(result.httpStatus, 201);
+  assert.equal(result.purpose, PaymentPurpose.RENEWAL);
+  assert.equal(result.amount, extension.amount);
+  assert.equal(saved.extensionId.toString(), extension._id.toString());
+  assert.equal(saved.providerReference, String(providerRequest.orderCode));
+  assert.equal(extension.paymentId.toString(), saved._id.toString());
+  assert.equal(extension.payosOrderCode, providerRequest.orderCode);
+  assert.equal(result.checkoutUrl, 'https://pay.example/renewal-1');
+  assert.match(providerRequest.description, /^WDPR[a-f\d]{5}$/i);
+  assert.match(providerRequest.returnUrl, /^vaultspace-customer:\/\/payments\/return/);
+  const replay = await service.createRenewalCheckout(String(reservation._id), String(extension._id), 'renewal-idempotency-1', reservation.customerId, 'MOBILE');
+  assert.equal(replay.httpStatus, 200);
+  assert.equal(replay.outcome, 'REPLAYED');
+  assert.equal(replay.checkoutUrl, result.checkoutUrl);
+  assert.equal(providerCalls, 1, 'idempotency replay must not create a second provider checkout');
+});
+
+test('Renewal terminal retry creates a new intent only after authoritative cancellation and retains the old payment', async t => {
+  setPayosCheckoutTestConfig();
+  const reservation = { ...baseReservation(ReservationStatus.ACTIVE), paperContractProofUrl: 'https://proof.example/original',
+    endDate: new Date(Date.now() + 40 * 86400000), inventoryVersion: 7 };
+  reservation.save = async options => { assert.equal(options.session, transaction); return reservation; };
+  const extensionId = oid(), oldPaymentId = oid();
+  const extension = { _id: extensionId, extensionCode: 'EXT-RETRY-01', status: 'PENDING_PAYMENT', amount: 125000,
+    oldEndDate: reservation.endDate, newEndDate: new Date(reservation.endDate.getTime() + 30 * 86400000), paymentId: oldPaymentId };
+  reservation.extendContract = [extension];
+  const transaction = session();
+  const oldPayment = { _id: oldPaymentId, reservationId: reservation._id, customerId: reservation.customerId,
+    extensionId, purpose: PaymentPurpose.RENEWAL, provider: PaymentProvider.PAYOS, amount: extension.amount, currency: 'VND',
+    status: PaymentStatus.CANCELLED, cancelVerifiedAt: new Date(), checkoutState: 'CANCELLED',
+    providerSettlementStatus: ProviderSettlementStatus.NOT_VERIFIED, applicationStatus: PaymentApplicationStatus.NOT_APPLIED,
+    providerCaptures: [], providerOutcomeEvents: [] };
+  let savedNewPayment;
+  t.mock.method(ReservationPaymentModel, 'findOne', filter => {
+    if (filter.idempotencyKey) return query(null);
+    if (filter._id) return query(oldPayment);
+    return query(null);
+  });
+  t.mock.method(ReservationModel, 'findOne', () => query(reservation));
+  t.mock.method(ContractModel, 'findOne', () => query({ _id: oid(), status: ContractStatus.SIGNED,
+    signedProofUrl: 'https://proof.example/signed', verifiedAt: new Date() }));
+  t.mock.method(ReservationModel, 'findOneAndUpdate', (_filter, update) => {
+    reservation.inventoryVersion += update.$inc.inventoryVersion;
+    return query(reservation);
+  });
+  t.mock.method(ReservationPaymentModel.prototype, 'save', async function (options) {
+    assert.equal(options.session, transaction); savedNewPayment = this; return this;
+  });
+  const service = new PayosPaymentService({ enabled: true, gateway: {}, createSession: async () => transaction });
+  const intent = await service.createIntentTransaction(String(reservation._id), PaymentPurpose.RENEWAL,
+    'renewal-retry-key-01', reservation.customerId, 1234567890, String(extensionId));
+  assert.equal(intent.replayed, false);
+  assert.notEqual(String(savedNewPayment._id), String(oldPaymentId));
+  assert.equal(String(savedNewPayment.extensionId), String(extensionId));
+  assert.equal(String(extension.paymentId), String(savedNewPayment._id));
+  assert.equal(extension.payosOrderCode, 1234567890);
+  assert.equal(oldPayment.status, PaymentStatus.CANCELLED, 'prior intent remains unchanged for audit');
+});
+
 test('Balance intent requires an applied PayOS Deposit and calculates only the remaining VND amount', async t => {
   process.env.PAYOS_ENABLED = 'true';
   process.env.PAYOS_CUSTOMER_ORIGIN = 'https://customer.example';
@@ -313,42 +414,19 @@ test('Balance intent requires an applied PayOS Deposit and calculates only the r
   assert.notEqual(providerRequest.returnUrl, 'https://customer.example/portal/payments/507f1f77bcf86cd799439011');
 });
 
-test('Managed V3 creates a server-priced PayOS Deposit intent and same key replays the same intent', async t => {
+test('Managed V3 Deposit checkout is rejected by the Full Rent contract without provider or payment writes', async t => {
   setPayosCheckoutTestConfig();
   const reservation = { ...baseReservation(ReservationStatus.RESERVED), serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
-    expiresAt: new Date(Date.now() + 60_000), allocatedCellIds: [oid()], allocatedCapacity: 0.5 };
-  const fakeSession = session(); let saved; let providerCalls = 0;
-  const gateway = { create: async data => { providerCalls++; assert.equal(data.amount, 100000); return { orderCode: data.orderCode,
-    amount: data.amount, currency: 'VND', paymentLinkId: 'managed-link', checkoutUrl: 'https://pay.example/managed', qrCode: DEPOSIT_QR, status: 'PENDING' }; },
-    get: async () => null, verify: async () => null };
-  t.mock.method(mongoose, 'startSession', async () => fakeSession);
-  t.mock.method(ReservationPaymentModel, 'findOne', filter => {
-    if (filter.idempotencyKey) return query(saved || null);
-    if (filter.status?.$in || filter.status === PaymentStatus.SUCCEEDED) return query(null);
-    return query(null);
-  });
+    rentalPaymentFlow: 'FULL_UPFRONT_V1', expiresAt: new Date(Date.now() + 60_000), allocatedCellIds: [oid()], allocatedCapacity: 0.5 };
+  let providerCalls = 0, paymentWrites = 0;
+  t.mock.method(ReservationPaymentModel, 'findOne', () => query(null));
   t.mock.method(ReservationModel, 'findOne', () => query(reservation));
-  t.mock.method(ReservationModel, 'findOneAndUpdate', (_filter, update) => { reservation.inventoryVersion += update.$inc.inventoryVersion; return query(reservation); });
-  t.mock.method(ContractModel, 'findOne', () => query(null));
-  t.mock.method(ReservationPaymentModel.prototype, 'save', async function () { saved = this; return this; });
-  t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (_filter, update) => { Object.assign(saved, update.$set); return query(saved); });
-  t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
-    if (filter.serviceType !== undefined && filter.serviceType !== saved.serviceType) return query({ matchedCount: 0 });
-    if (update.$set.checkoutState === 'READY') {
-      assert.equal(filter.serviceType, saved.serviceType);
-      for (const key of ['_id', 'reservationId', 'customerId', 'facilityId', 'purpose', 'provider', 'providerReference', 'amount', 'currency', 'status', 'checkoutState']) {
-        assert.equal(filter[key], saved[key]);
-      }
-    }
-    Object.assign(saved, update.$set);
-    return query({ matchedCount: 1 });
-  });
-  t.mock.method(ReservationPaymentModel, 'findById', () => query(saved));
-  const service = new PayosPaymentService({ enabled: true, gateway, createSession: async () => fakeSession });
-  const created = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'stable-managed-key', reservation.customerId);
-  assert.equal(created.httpStatus, 201); assert.equal(saved.serviceType, 'MANAGED_INVENTORY'); assert.equal(saved.amount, reservation.depositAmount);
-  const replay = await service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'stable-managed-key', reservation.customerId);
-  assert.equal(replay.httpStatus, 200); assert.equal(replay.id, String(saved._id)); assert.equal(providerCalls, 1);
+  t.mock.method(mongoose, 'startSession', async () => session());
+  t.mock.method(ReservationPaymentModel.prototype, 'save', async () => { paymentWrites += 1; });
+  const service = new PayosPaymentService({ enabled: true, gateway: { create: async () => { providerCalls += 1; throw Error('provider must not be called'); } } });
+  await assert.rejects(service.createCheckout(String(reservation._id), PaymentPurpose.DEPOSIT, 'managed-deposit-rejected-key', reservation.customerId), { code: 'FULL_RENT_REQUIRED' });
+  assert.equal(providerCalls, 0);
+  assert.equal(paymentWrites, 0);
 });
 
 for (const serviceType of ['SELF_STORAGE', 'MANAGED_INVENTORY']) {
@@ -1249,6 +1327,55 @@ test('valid verified Deposit webhook applies once; duplicate callback does not a
   assert.equal(payment.providerPaymentLinkId, 'link-1', 'signed webhook may arrive before create-link response persistence');
 });
 
+for (const extensionStatus of ['PENDING_PAYMENT', 'CANCELLED', 'REJECTED', 'PENDING_PAYMENT_AMOUNT_MISMATCH']) {
+  test(`verified Renewal webhook resolves only its exact Extension (${extensionStatus})`, async t => {
+    const reservation = { ...baseReservation(ReservationStatus.ACTIVE), statusHistory: [], paperContractProofUrl: 'https://proof.example/original',
+      endDate: new Date('2027-02-01T00:00:00Z'), save: async function (options) { assert.ok(options.session); return this; } };
+    const extension = { _id: oid(), extensionCode: 'EXT-WEBHOOK-1', status: extensionStatus, amount: 250000,
+      oldEndDate: reservation.endDate, newEndDate: new Date('2027-03-01T00:00:00Z') };
+    if (extensionStatus === 'PENDING_PAYMENT_AMOUNT_MISMATCH') extension.status = 'PENDING_PAYMENT';
+    const payment = { _id: oid(), reservationId: reservation._id, customerId: reservation.customerId, facilityId: reservation.facilityId,
+      serviceType: 'SELF_STORAGE', purpose: PaymentPurpose.RENEWAL, extensionId: extension._id, amount: extension.amount,
+      currency: 'VND', provider: PaymentProvider.PAYOS, providerReference: '1234567891', providerPaymentLinkId: 'renew-link',
+      providerCaptures: [], status: PaymentStatus.PENDING, save: async function (options) { assert.ok(options.session); return this; } };
+    extension.paymentId = payment._id; extension.payosOrderCode = Number(payment.providerReference); reservation.extendContract = [extension];
+    const fakeSession = session();
+    const gateway = { create: async () => { throw Error('unexpected'); }, get: async () => { throw Error('unexpected'); },
+      verify: async () => ({ orderCode: Number(payment.providerReference),
+        amount: payment.amount + (extensionStatus === 'PENDING_PAYMENT_AMOUNT_MISMATCH' ? 1 : 0), currency: 'VND',
+        paymentLinkId: 'renew-link', reference: 'bank-renew-ref', transactionDateTime: '2026-11-18 10:00:00', code: '00', desc: 'success' }) };
+    t.mock.method(mongoose, 'startSession', async () => fakeSession);
+    t.mock.method(ReservationPaymentModel, 'findOne', filter => query(filter._id?.$ne ? null : payment));
+    t.mock.method(ReservationModel, 'findOne', () => query(reservation));
+    t.mock.method(ReservationModel, 'findById', () => query(reservation));
+    t.mock.method(ContractModel, 'findOne', () => query({ status: ContractStatus.SIGNED,
+      signedProofUrl: 'https://proof.example/signed', verifiedAt: new Date() }));
+    t.mock.method(ReservationPaymentModel.prototype, 'save', async function (options) { assert.equal(options.session, fakeSession); return this; });
+    const service = new PayosPaymentService({ enabled: false, gateway, createSession: async () => fakeSession });
+    const result = await service.handleWebhook({ data: {}, signature: 'verified-by-test-gateway' });
+    assert.equal(result.success, true);
+    assert.equal(result.reconciled, extensionStatus !== 'PENDING_PAYMENT');
+    assert.equal(payment.status, PaymentStatus.SUCCEEDED);
+    assert.equal(payment.providerSettlementStatus, ProviderSettlementStatus.VERIFIED);
+    if (extensionStatus === 'PENDING_PAYMENT') {
+      assert.equal(extension.status, 'PAID');
+      assert.equal(payment.applicationStatus, PaymentApplicationStatus.APPLIED);
+    } else if (extensionStatus === 'PENDING_PAYMENT_AMOUNT_MISMATCH') {
+      assert.equal(extension.status, 'PENDING_PAYMENT');
+      assert.equal(payment.applicationStatus, PaymentApplicationStatus.MANUAL_REVIEW);
+    } else {
+      assert.equal(extension.status, extensionStatus);
+      assert.equal(payment.applicationStatus, PaymentApplicationStatus.MANUAL_REVIEW);
+    }
+    assert.equal(reservation.endDate.toISOString(), '2027-02-01T00:00:00.000Z');
+    if (extensionStatus === 'PENDING_PAYMENT') {
+      const duplicate = await service.handleWebhook({ data: {}, signature: 'verified-by-test-gateway' });
+      assert.equal(duplicate.duplicate, true, 'the exact signed Renewal callback must be idempotent');
+      assert.equal(extension.status, 'PAID');
+    }
+  });
+}
+
 function managedDepositFixture(t, issue, purpose = PaymentPurpose.DEPOSIT) {
   const now = new Date();
   const reservation = { ...baseReservation(ReservationStatus.RESERVED), serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
@@ -1452,88 +1579,20 @@ test('concurrent Managed V3 reservation write aborts cleanly and signed redelive
 });
 
 for (const zeroBalance of [false, true]) {
-  test('Managed V3 ' + (zeroBalance ? 'zero Balance' : 'Balance checkout and webhook') + ' permits handover with promoted Cells', async t => {
+  test('Managed V3 ' + (zeroBalance ? 'zero Balance' : 'Balance') + ' is rejected because Full Rent is required', async t => {
     setPayosCheckoutTestConfig();
-    const { ManagedReservationService } = require('../dist/services/reservations/managed-reservation.service');
-    const { payment: deposit, reservation, rows, apply } = managedDepositFixture(t);
-    if (zeroBalance) reservation.estimatedRent = deposit.amount;
-    assert.equal((await apply()).reconciled, false);
-    const hash = 'a'.repeat(64);
-    const signed = { status: 'SIGNED', currentContentVersion: 1, contentVersions: [{ version: 1, contentHash: hash }],
-      signatures: ['CUSTOMER', 'FACILITY_STAFF'].map(signerRole => ({ signerRole, version: 1, contentHash: hash })) };
-    const fakeSession = session();
-    t.mock.method(mongoose, 'startSession', async () => fakeSession);
-    let balance;
-    let providerCalls = 0;
-    let event;
-    t.mock.method(ContractModel, 'findOne', () => query(signed));
-    t.mock.method(ReservationModel, 'findOne', filter => query(
-      typeof filter.status === 'string' && filter.status !== reservation.status ? null : reservation,
-    ));
-    t.mock.method(ReservationModel, 'findOneAndUpdate', (filter, update) => {
-      assert.equal(filter.bookingFlowVersion, 3);
-      assert.equal(filter.status, reservation.status);
-      assert.deepEqual(filter.$and, [{ inventoryVersion: reservation.inventoryVersion }]);
-      reservation.inventoryVersion += update.$inc.inventoryVersion;
-      Object.assign(reservation, update.$set);
-      return query(reservation);
-    });
-    t.mock.method(ReservationPaymentModel, 'findOne', filter => {
-      if (filter._id?.$ne) return query(null);
-      if (filter.purpose === PaymentPurpose.DEPOSIT && filter._id === deposit._id) return query(deposit);
-      if (balance && (filter._id === balance._id || filter.providerReference === balance.providerReference)) return query(balance);
-      return query(null);
-    });
-    t.mock.method(ReservationPaymentModel.prototype, 'save', async function () { balance = this; return this; });
-    t.mock.method(ReservationPaymentModel, 'findOneAndUpdate', (filter, update) => {
-      assert.equal(filter._id, balance._id);
-      Object.assign(balance, update.$set);
-      return query(balance);
-    });
-    t.mock.method(ReservationPaymentModel, 'updateOne', (filter, update) => {
-      if (filter.serviceType !== balance.serviceType) return query({ matchedCount: 0 });
-      Object.assign(balance, update.$set);
-      return query({ matchedCount: 1 });
-    });
-    t.mock.method(ReservationPaymentModel, 'findById', () => query(balance));
-    const gateway = { async create({ orderCode, amount }) {
-      providerCalls++;
-      assert.equal(amount, 200000);
-      event = { orderCode, amount, currency: 'VND', paymentLinkId: 'balance-v3-link',
-        reference: 'balance-v3-bank-ref', transactionDateTime: '2026-11-10 10:00:00', code: '00', desc: 'success' };
-      return { ...event, status: 'PENDING', checkoutUrl: 'https://pay.example/managed-balance' };
-    }, verify: async () => event };
-    const service = new PayosPaymentService({ enabled: true, gateway, createSession: async () => fakeSession });
-    const result = await service.createCheckout(String(reservation._id), PaymentPurpose.BALANCE, 'balance-v3-key', reservation.customerId);
-    if (zeroBalance) {
-      assert.equal(result.httpStatus, 200);
-      assert.equal(result.outcome, 'SETTLED');
-      assert.equal(result.zeroBalance, true);
-      assert.equal(balance, undefined);
-      assert.equal((await service.createCheckout(String(reservation._id), PaymentPurpose.BALANCE, 'balance-v3-key', reservation.customerId)).outcome, 'SETTLED');
-    } else {
-      assert.equal(result.httpStatus, 201);
-      assert.equal(result.checkoutStatus, 'READY');
-      assert.equal(result.amount, 200000);
-      assert.equal(reservation.status, ReservationStatus.DEPOSIT_PAID);
-      assert.equal((await service.handleWebhook({})).reconciled, false);
-      assert.equal(balance.applicationStatus, PaymentApplicationStatus.APPLIED);
-    }
-    assert.equal(providerCalls, zeroBalance ? 0 : 1);
-    assert.equal(reservation.status, ReservationStatus.PAID);
-    t.mock.method(mongoose.model('CellAllocation'), 'countDocuments', filter => {
-      assert.equal(filter.status, 'RESERVED');
-      assert.deepEqual(filter.cellId.$in, reservation.allocatedCellIds);
-      return query(rows.filter(row => row.status === filter.status).length);
-    });
-    t.mock.method(mongoose.model('Facility'), 'findOne', () => query({}));
-    t.mock.method(ManagedReservationAuditModel.prototype, 'save', async function () { return this; });
-    reservation.save = async ({ session }) => { assert.equal(session, fakeSession); return reservation; };
-    const handedOver = await ManagedReservationService.confirmHandover(String(reservation._id),
-      { storageCondition: 'GOOD', accessNotes: 'Fixture access handover' },
-      { _id: oid(), role: 'FACILITY_STAFF', assignedFacilityId: reservation.facilityId });
-    assert.equal(handedOver.status, ReservationStatus.ACTIVE);
-    assert.ok(rows.every(row => row.status === 'RESERVED'));
+    const reservation = { ...baseReservation(ReservationStatus.RESERVED), serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
+      rentalPaymentFlow: 'FULL_UPFRONT_V1', estimatedRent: zeroBalance ? 0 : 300000 };
+    let providerCalls = 0, paymentWrites = 0;
+    t.mock.method(ReservationPaymentModel, 'findOne', () => query(null));
+    t.mock.method(ReservationModel, 'findOne', filter => query(filter.status?.$in ? null : reservation));
+    t.mock.method(mongoose, 'startSession', async () => session());
+    t.mock.method(ReservationPaymentModel.prototype, 'save', async () => { paymentWrites += 1; });
+    const service = new PayosPaymentService({ enabled: true, gateway: { create: async () => { providerCalls += 1; throw Error('provider must not be called'); } } });
+    await assert.rejects(service.createCheckout(String(reservation._id), PaymentPurpose.BALANCE, 'managed-balance-rejected-key', reservation.customerId), { code: 'FULL_RENT_REQUIRED' });
+    assert.equal(providerCalls, 0);
+    assert.equal(paymentWrites, 0);
+    assert.equal(reservation.status, ReservationStatus.RESERVED);
   });
 }
 

@@ -82,7 +82,7 @@ export default function WarehouseSettingsPage() {
         ]} />}
       </Panel>
       {selected && resource.data && <TopologyForm key={`${kind}:${recordId(selected) || 'new'}:${selected.updatedAt || ''}`} kind={kind} row={selected} data={resource.data} facilityId={facilityId} onClose={() => setSelected(null)} onSaved={() => { setSelected(null); setFeedback({ success: 'Đã lưu và xác minh cấu trúc từ hệ thống.' }); setCapacityRevision(value => value + 1); announceReviewChange(); }} />}
-      <Panel title="Tải trọng và đối soát theo ô" subtitle="Định mức là thông số do cơ sở cấu hình. Tải đang dùng được tính từ sổ tồn và counter vận hành; không chỉnh sửa thủ công ở màn hình này.">
+      <Panel title="Tải trọng và đối soát theo ô" subtitle="Theo dõi tải trọng, thể tích đang sử dụng và kết quả đối soát từng ô.">
         {capacityLoading && <p role="status">Đang tải báo cáo sức chứa…</p>}
         <Message error={capacityError} />
         {capacity && <Table label="Tải trọng và đối soát ô lưu trữ" rows={capacity.cells.map(cell => ({ ...cell, id: String(recordId(cell.cellId)) }))} empty="Chưa có ô lưu trữ trong cơ sở." columns={[
