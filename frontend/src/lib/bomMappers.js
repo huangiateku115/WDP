@@ -453,9 +453,12 @@ export const BOM_RESERVATION_STATUSES = [
 ];
 
 export function reservationFromDto(d) {
-  const customer = d?.customerId;
-  const unit = d?.storageUnitId;
-  const facility = d?.facilityId;
+  // Two confirmed reads feed this mapper: the facility collection (populated customerId /
+  // storageUnitId / facilityId) and GET /reservations/admin-list (flat customer / storageUnit /
+  // facility objects that carry no pricing amounts).
+  const customer = d?.customerId ?? d?.customer;
+  const unit = d?.storageUnitId ?? d?.storageUnit;
+  const facility = d?.facilityId ?? d?.facility;
   return {
     id: d?._id,
     code: d?.reservationCode || "",
@@ -474,6 +477,9 @@ export function reservationFromDto(d) {
     status: d?.status || "RESERVED",
     estimatedRent: d?.estimatedRent ?? 0,
     depositAmount: d?.depositAmount ?? 0,
+    // The paged list read does not project the pricing amounts, so screens can label them as
+    // unavailable instead of printing a real-looking 0 ₫.
+    amountsKnown: Number.isFinite(d?.estimatedRent) && Number.isFinite(d?.depositAmount),
     createdAt: d?.createdAt || "",
   };
 }

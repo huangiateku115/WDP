@@ -4,24 +4,28 @@ import { useAuthSession } from "@/lib/authSession";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, money,
 } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/manager/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { loadFacilities, loadFacilityReservations } from "@/lib/bomApiData";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { usePageIndex } from "@/lib/usePageIndex";
+import { loadAdminReservations, loadFacilities } from "@/lib/bomApiData";
 import { countBy } from "@/lib/bomMetrics";
 import { canReviewReservations } from "@/lib/roles";
 
 // Reservation oversight shared by Admin and BOM.
 // Backend contract:
-//   GET   /reservations/facility/:facilityId   FACILITY_MANAGER, ADMIN, BOM
+//   GET   /reservations/admin-list?facilityId&serviceType&status&reservationCode&page&limit
+//         ADMIN/BOM read across facilities; FACILITY_MANAGER/STAFF are scoped to their assignment.
 //   GET   /reservations/:id                    CUSTOMER, FACILITY_MANAGER, ADMIN, BOM
 //   PATCH /reservations/:id/approve|reject     FACILITY_MANAGER, ADMIN   (BOM is read-only)
-//   GET   /reservations/managed/:id          CUSTOMER, FACILITY_MANAGER, ADMIN, BOM
+//   GET   /reservations/managed/:id            CUSTOMER, FACILITY_MANAGER, ADMIN, BOM
 //   PATCH /reservations/managed/:id/approve|reject|activate  FACILITY_MANAGER, ADMIN
 //   POST  /reservations/managed/:id/mock-pay   CUSTOMER, ADMIN, BOM
-// The collection endpoint returns SELF_STORAGE reservations only. The backend has no Managed
-// reservation collection, so this page never fans out per-record detail requests; Managed rows
-// are listed here only after the backend exposes a list endpoint.
+// The list read covers both service models and is paged, so the screen browses one page at a
+// time instead of downloading the whole facility history. It projects no pricing amounts, so the
+// rent column states that instead of printing 0 ₫.
 const RESERVATION_STATUSES = ["RESERVED", "DEPOSIT_PAID", "CHECKIN_READY", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED"];
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
 
@@ -36,20 +40,24 @@ export default function ReservationsOversightPage() {
   const [facilityId, setFacilityId] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  // One debounced, server-side search over the reservation code (the only text filter the
+  // collection read accepts).
+  const debouncedSearch = useDebouncedValue(search);
+  const [page, setPage] = usePageIndex(`${facilityId}|${status}|${debouncedSearch}`);
 
-  // The facility collection is the only reservation list the backend exposes. One request
-  // per selected facility; no second parallel request and no per-reservation detail fan-out.
-  const list = useAsyncData(async ({ signal }) => {
-    if (!facilityId) return null;
-    return { self: await loadFacilityReservations(facilityId, { signal }) };
-  }, [facilityId]);
+  // GET /reservations/admin-list is the paged collection read for both service models.
+  const list = useAsyncData(({ signal }) => (facilityId
+    ? loadAdminReservations({
+        facilityId,
+        ...(status ? { status } : {}),
+        ...(debouncedSearch.trim() ? { reservationCode: debouncedSearch.trim() } : {}),
+      }, { signal, page })
+    : Promise.resolve(null)),
+  [facilityId, status, debouncedSearch, page]);
 
-  const rows = (list.data?.self || []).filter((row) => {
-    if (status && row.status !== status) return false;
-    const needle = search.trim().toLowerCase();
-    if (!needle) return true;
-    return row.code.toLowerCase().includes(needle) || row.customerName.toLowerCase().includes(needle);
-  });
+  const rows = list.data?.rows || [];
+  const pagination = list.data?.pagination ?? null;
+  const total = list.data?.total ?? 0;
 
   function selectFacility(id) {
     setFacilityId(id);
@@ -70,9 +78,9 @@ export default function ReservationsOversightPage() {
       <AsyncBoundary state={directory} render={(facilities) => (
         <>
           <Kpis items={[
-            ["Số đơn đã tải", list.data ? list.data.self.length : "—", "Đơn Thuê kho riêng của cơ sở đã chọn"],
-            ["Chờ duyệt", countBy(list.data?.self || [], "status", "RESERVED"), "Trạng thái Chờ xử lý"],
-            ["Đã lập hợp đồng", countBy(list.data?.self || [], "status", "CONTRACTED"), "Đã duyệt, đã tạo hợp đồng"],
+            ["Đơn trong phạm vi", total, "Theo bộ lọc hiện tại của cơ sở đã chọn"],
+            ["Trang đang xem", rows.length, "Số đơn hiển thị trên trang này"],
+            ["Chờ duyệt (trang này)", countBy(rows, "status", "RESERVED"), "Trạng thái Chờ xử lý"],
             ["Quyền xử lý", canReview ? "Duyệt / từ chối" : "Chỉ xem", canReview ? "Có thể đổi trạng thái duyệt" : "Vai trò của bạn không được duyệt"],
           ]} />
 
@@ -95,7 +103,7 @@ export default function ReservationsOversightPage() {
                   options={[["", "Tất cả trạng thái"], ...RESERVATION_STATUSES]}
                 />
               </Field>
-              <Field label="Tìm kiếm" hint="Mã đơn hoặc tên khách hàng.">
+              <Field label="Tìm kiếm" hint="Mã đơn đặt thuê.">
                 <Input
                   aria-label="Tìm đơn đặt thuê"
                   value={search}
@@ -119,7 +127,7 @@ export default function ReservationsOversightPage() {
 
           {facilityId && (
             <AsyncBoundary state={list} render={() => (
-              <Panel title="Đơn đặt thuê" subtitle={`${rows.length} / ${(list.data?.self || []).length} đơn`}>
+              <Panel title="Đơn đặt thuê" subtitle={`${total} đơn theo bộ lọc hiện tại`}>
                 <Table
                   label="Đơn đặt thuê của cơ sở"
                   rows={rows}
@@ -128,10 +136,19 @@ export default function ReservationsOversightPage() {
                     { key: "customer", label: "Customer", render: (r) => r.customerName },
                     { key: "unit", label: "Unit", render: (r) => r.unitCode || r.unitSize || "—" },
                     { key: "window", label: "Thời gian thuê", render: (r) => `${day(r.startDate)} → ${day(r.endDate)}` },
-                    { key: "rent", label: "Tiền thuê / đặt cọc", render: (r) => `${money(r.estimatedRent)} · ${money(r.depositAmount)}` },
+                    // The paged list read projects no pricing amounts; say so instead of showing 0 ₫.
+                    { key: "rent", label: "Tiền thuê / đặt cọc", render: (r) => (r.amountsKnown ? `${money(r.estimatedRent)} · ${money(r.depositAmount)}` : "—") },
                     { key: "status", label: "Status", render: (r) => <Status value={r.status} /> },
                   ]}
                   empty="Không có đơn phù hợp bộ lọc hiện tại."
+                />
+                <ListPager
+                  page={pagination?.page ?? page}
+                  totalPages={pagination?.totalPages ?? 1}
+                  total={total}
+                  loading={list.loading}
+                  onPageChange={setPage}
+                  unit="đơn"
                 />
               </Panel>
             )} />

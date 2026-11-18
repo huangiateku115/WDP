@@ -164,6 +164,18 @@ export async function loadFacilityReservationsAll(facilityId, { signal } = {}) {
   return facilityReservations(facilityId, { signal });
 }
 
+// Paged collection read (GET /reservations/admin-list). It is the only reservation list that
+// accepts page/limit, so consoles browse one page at a time instead of downloading a whole
+// facility history. Facility roles are scoped to their assignment by the backend itself.
+export async function loadAdminReservations(params = {}, { signal, page, pageSize = PAGE_SIZE } = {}) {
+  const query = { ...params };
+  if (page !== undefined) { query.page = page; query.limit = pageSize; }
+  const body = (await bomReservationApi.adminList(query, { signal }))?.data?.data;
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const pagination = body?.pagination ?? null;
+  return { rows: items.map((row) => reservationFromDto(row)), total: pagination?.total ?? items.length, pagination };
+}
+
 // A contract can only be discovered through its reservation with the current backend surface.
 // GET /contracts/:id and GET /contracts/reservation/:reservationId are the only reads; there is
 // no collection endpoint, so a contract list must never fan out one request per reservation.

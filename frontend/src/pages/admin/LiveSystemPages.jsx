@@ -9,7 +9,7 @@ import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { facilityLabel } from "@/lib/facilityLabels";
 import { useAdminUsers, loadAdminUsers, userId, userStatus } from "@/lib/adminUsers";
 import { useAsyncData } from "@/lib/useAsyncData";
-import { pageSlice } from "@/lib/pageSlice";
+import { PAGE_SIZE, pageSlice } from "@/lib/pageSlice";
 import { usePageIndex } from "@/lib/usePageIndex";
 import ListPager from "@/components/manager/ListPager";
 import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
@@ -203,24 +203,36 @@ export function LoginHistoryPage() {
 export function AuditPage() {
   const state = useAdminUsers();
   const [selected, setSelected] = useState("");
-  const logs = useAsyncData(
-    () => (selected ? auditApi.getAdminAuditLogs(selected).then(unwrap) : Promise.resolve([])),
-    [selected],
-  );
-  const records = logs.data || [];
-  const rows = records.map((row, index) => ({ id: row._id || `log-${index}`, source: row }));  const [action, setAction] = useState("");
+  // Filters and paging are applied by GET /audit/logs, which returns the light list DTO
+  // (no before/after snapshots) instead of the whole per-account history.
+  const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const actionOptions = distinct(rows, (r) => r.source.action);
-  const entityOptions = distinct(rows, (r) => r.source.entityType);
-  const visible = rows.filter((r) =>
-    (!action || r.source.action === action) &&
-    (!entityType || r.source.entityType === entityType) &&
-    inRange(r.source.createdAt, from, to));
-  // Same as login history: the per-account audit read is unpaged, so the table pages locally.
   const [page, setPage] = usePageIndex(`${selected}|${action}|${entityType}|${from}|${to}`);
-  const paged = pageSlice(visible, page);
+  const logs = useAsyncData(async ({ signal }) => {
+    if (!selected) return null;
+    const response = await auditApi.listLogs({
+      actorId: selected,
+      page,
+      limit: PAGE_SIZE,
+      ...(action ? { action } : {}),
+      ...(entityType ? { entityType } : {}),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+    }, { signal });
+    const body = response?.data?.data;
+    const items = Array.isArray(body?.items) ? body.items : [];
+    return { rows: items.map((row, index) => ({ id: row._id || `log-${index}`, source: row })), pagination: body?.pagination ?? null };
+  }, [selected, action, entityType, from, to, page]);
+  const rows = logs.data?.rows || [];
+  const pagination = logs.data?.pagination ?? null;
+  const total = pagination?.total ?? rows.length;
+  // The filter menus list the values of the current page; the API applies the filter to the whole
+  // history, and the selected value stays visible so a choice is never silently dropped.
+  const withCurrent = (values, current) => Array.from(new Set([...(current ? [current] : []), ...values]));
+  const actionOptions = withCurrent(distinct(rows, (r) => r.source.action), action);
+  const entityOptions = withCurrent(distinct(rows, (r) => r.source.entityType), entityType);
 
   return (
     <AdminScreen
@@ -239,18 +251,18 @@ export function AuditPage() {
         <>
           <Panel
             title="Sự kiện kiểm toán"
-            subtitle={`${visible.length} / ${rows.length} sự kiện`}
+            subtitle={`${total} sự kiện`}
             action={
               <Button
                 variant="outline"
-                disabled={!visible.length}
+                disabled={!rows.length}
                 onClick={() => downloadCsv(
                   `nhat-ky-kiem-toan${from ? `-${from}` : ""}${to ? `-${to}` : ""}.csv`,
                   [["action", "Hành động đã thực hiện"], ["actorRole", "Vai trò"], ["entityType", "Đối tượng"], ["entityId", "Mã đối tượng"], ["facilityId", "Cơ sở"], ["createdAt", "Thời điểm"]],
-                  visible.map((r) => ({ ...r.source, createdAt: stamp(r.source.createdAt) })),
+                  rows.map((r) => ({ ...r.source, createdAt: stamp(r.source.createdAt) })),
                 )}
               >
-                Xuất CSV
+                Xuất trang này (CSV)
               </Button>
             }
           >
@@ -272,7 +284,7 @@ export function AuditPage() {
             </div>
             <AsyncBoundary state={logs} render={() => (
               <>
-                <Table label="Nhật ký kiểm toán" rows={paged.rows} columns={[
+                <Table label="Nhật ký kiểm toán" rows={rows} columns={[
                       { key: "action", label: "Hành động", render: (r) => facilityLabel(r.source.action) || "—" },
                       { key: "role", label: "Vai trò", render: (r) => <Status value={r.source.actorRole} /> },
                       { key: "entity", label: "Đối tượng", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },
@@ -289,9 +301,9 @@ export function AuditPage() {
                       },
                     ]} empty="Không có sự kiện phù hợp bộ lọc." />
                 <ListPager
-                  page={paged.page}
-                  totalPages={paged.totalPages}
-                  total={paged.total}
+                  page={pagination?.page ?? page}
+                  totalPages={pagination?.totalPages ?? 1}
+                  total={total}
                   loading={logs.loading}
                   onPageChange={setPage}
                   unit="sự kiện"
