@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Message } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/manager/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { pageSlice } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { facilityLabel } from "@/lib/facilityLabels";
 import customerProfileApi from "@/api/customerProfileApi";
 import auditApi from "@/api/auditApi";
@@ -25,6 +28,12 @@ const when = (value) => (value ? new Date(value).toLocaleString("en-GB") : "—"
 export default function AuditLivePage() {
   const subjects = useAsyncData(({ signal }) => customerProfileApi.list({ signal }).then(unwrapList), []);
   const [subjectId, setSubjectId] = useState("");
+  // Both audit reads are per account and unpaged server-side, so each table pages locally and
+  // returns to page 1 when another account is selected.
+  const [historyPage, setHistoryPage] = usePageIndex(subjectId);
+  const [logPage, setLogPage] = usePageIndex(subjectId);
+  const historyPaged = pageSlice(records.data?.history || [], historyPage);
+  const logsPaged = pageSlice(records.data?.logs || [], logPage);
 
   const options = [
     ["", "Chọn tài khoản khách hàng"],
@@ -69,19 +78,29 @@ export default function AuditLivePage() {
             <AsyncBoundary
               state={records}
               render={(data) => (data ? (
-                <Table
-                  label="Lịch sử đăng nhập"
-                  rows={data.history.map((row) => ({ ...row, id: row._id }))}
-                  columns={[
-                    { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
-                    { key: "eventType", label: "Sự kiện", render: (r) => facilityLabel(r.eventType) || "—" },
-                    { key: "status", label: "Kết quả", render: (r) => <Status value={r.status || "—"} /> },
-                    { key: "failureReason", label: "Lý do", render: (r) => r.failureReason || "—" },
-                    { key: "ip", label: "IP", render: (r) => r.ip || "—" },
-                    { key: "device", label: "Thiết bị", render: (r) => r.device || "—" },
-                  ]}
-                  empty="Tài khoản này chưa có lần đăng nhập nào."
-                />
+                <>
+                  <Table
+                    label="Lịch sử đăng nhập"
+                    rows={data.history.map((row) => ({ ...row, id: row._id })).slice(historyPaged.start, historyPaged.end)}
+                    columns={[
+                      { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
+                      { key: "eventType", label: "Sự kiện", render: (r) => facilityLabel(r.eventType) || "—" },
+                      { key: "status", label: "Kết quả", render: (r) => <Status value={r.status || "—"} /> },
+                      { key: "failureReason", label: "Lý do", render: (r) => r.failureReason || "—" },
+                      { key: "ip", label: "IP", render: (r) => r.ip || "—" },
+                      { key: "device", label: "Thiết bị", render: (r) => r.device || "—" },
+                    ]}
+                    empty="Tài khoản này chưa có lần đăng nhập nào."
+                  />
+                  <ListPager
+                    page={historyPaged.page}
+                    totalPages={historyPaged.totalPages}
+                    total={historyPaged.total}
+                    loading={records.loading}
+                    onPageChange={setHistoryPage}
+                    unit="lần đăng nhập"
+                  />
+                </>
               ) : null)}
             />
           </Panel>
@@ -89,18 +108,28 @@ export default function AuditLivePage() {
             <AsyncBoundary
               state={records}
               render={(data) => (data ? (
-                <Table
-                  label="Hành động đã thực hiện"
-                  rows={data.logs.map((row) => ({ ...row, id: row._id }))}
-                  columns={[
-                    { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
-                    { key: "action", label: "Hành động", render: (r) => facilityLabel(r.action) || "—" },
-                    { key: "entityType", label: "Đối tượng", render: (r) => r.entityType || "—" },
-                    { key: "entityId", label: "Mã đối tượng", render: (r) => r.entityId || "—" },
-                    { key: "reason", label: "Lý do", render: (r) => r.reason || "—" },
-                  ]}
-                  empty="Tài khoản này chưa có hành động nào được ghi nhận."
-                />
+                <>
+                  <Table
+                    label="Hành động đã thực hiện"
+                    rows={data.logs.map((row) => ({ ...row, id: row._id })).slice(logsPaged.start, logsPaged.end)}
+                    columns={[
+                      { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
+                      { key: "action", label: "Hành động", render: (r) => facilityLabel(r.action) || "—" },
+                      { key: "entityType", label: "Đối tượng", render: (r) => r.entityType || "—" },
+                      { key: "entityId", label: "Mã đối tượng", render: (r) => r.entityId || "—" },
+                      { key: "reason", label: "Lý do", render: (r) => r.reason || "—" },
+                    ]}
+                    empty="Tài khoản này chưa có hành động nào được ghi nhận."
+                  />
+                  <ListPager
+                    page={logsPaged.page}
+                    totalPages={logsPaged.totalPages}
+                    total={logsPaged.total}
+                    loading={records.loading}
+                    onPageChange={setLogPage}
+                    unit="hành động"
+                  />
+                </>
               ) : null)}
             />
           </Panel>

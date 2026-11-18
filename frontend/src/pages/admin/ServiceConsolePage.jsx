@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field, Select, Input } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/manager/ListPager";
 import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { PAGE_SIZE } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { useAdminUsers, userId } from "@/lib/adminUsers";
 import { useAuthSession } from "@/lib/authSession";
 import { isAdmin } from "@/lib/roles";
@@ -19,6 +22,12 @@ const ASSIGNEE_ROLES = ["FACILITY_STAFF"];
 
 const unwrap = (response) => response?.data?.data ?? null;
 const unwrapList = (response) => (Array.isArray(response?.data?.data) ? response.data.data : []);
+// List reads keep the pagination envelope: without it the backend default (page 1, limit 20) was
+// rendered as if it were the whole collection.
+const unwrapPage = (response) => ({
+  rows: Array.isArray(response?.data?.data) ? response.data.data : [],
+  pagination: response?.data?.pagination ?? null,
+});
 const refId = (v) => (v && typeof v === "object" ? v._id : v) || "";
 const accountName = (u) => (u && typeof u === "object" ? u.displayName || u.fullName || u.email : u) || "—";
 const when = (v) => (v ? new Date(v).toLocaleString("en-GB") : "—");
@@ -64,7 +73,7 @@ const CONFIGS = {
     basePath: "/admin/support",
     title: "Yêu cầu hỗ trợ",
     label: "Tiêu đề",
-    list: (config) => supportApi.listReal(config).then(unwrapList),
+    list: (config) => supportApi.listReal(config).then(unwrapPage),
     get: (id, config) => supportApi.detailReal(id, config).then(unwrap),
     messages: (id, config) => supportApi.messagesReal(id, config).then(unwrapList),
     assigneeLabel: "Nhân viên",
@@ -78,7 +87,7 @@ const CONFIGS = {
     basePath: "/admin/maintenance",
     title: "Phiếu bảo trì",
     label: "Tiêu đề",
-    list: (config) => maintenanceApi.list(config).then(unwrapList),
+    list: (config) => maintenanceApi.list(config).then(unwrapPage),
     get: (id, config) => maintenanceApi.get(id, config).then(unwrap),
     assigneeLabel: "Người phụ trách",
     assign: (id, assignee) => maintenanceApi.assign(id, assignee),
@@ -109,7 +118,13 @@ export default function ServiceConsolePage({ kind, mode = "list", basePath = "/a
 }
 
 function ServiceList({ config }) {
-  const state = useAsyncData(({ signal }) => config.list({ signal }), [config]);
+  // Both collections are paged server-side (page defaults to 1, limit to 20), so the console asks
+  // for one explicit page and renders previous/next instead of silently showing the first page.
+  const [page, setPage] = usePageIndex(config.basePath);
+  const state = useAsyncData(
+    ({ signal }) => config.list({ signal, params: { page, limit: PAGE_SIZE } }),
+    [config, page],
+  );
   return (
     <Screen
       title={config.title}
@@ -117,9 +132,11 @@ function ServiceList({ config }) {
       action={<Button variant="outline" onClick={state.reload}>Tải lại</Button>}
     >
       <AsyncBoundary state={state} render={(records) => {
-        const rows = records.map(config.toRow);
+        if (!records) return null;
+        const rows = records.rows.map(config.toRow);
+        const pagination = records.pagination;
         return (
-          <Panel title={config.title} subtitle={`${rows.length} bản ghi`}>
+          <Panel title={config.title} subtitle={`${pagination?.total ?? rows.length} bản ghi`}>
             <Table
               label={config.title}
               rows={rows}
@@ -133,6 +150,13 @@ function ServiceList({ config }) {
                 { key: "createdAt", label: "Ngày tạo" },
               ]}
               empty="Chưa có bản ghi nào."
+            />
+            <ListPager
+              page={pagination?.page ?? page}
+              totalPages={pagination?.totalPages ?? 1}
+              total={pagination?.total ?? rows.length}
+              loading={state.loading}
+              onPageChange={setPage}
             />
           </Panel>
         );

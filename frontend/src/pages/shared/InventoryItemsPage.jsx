@@ -4,8 +4,10 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, Details, Timeline,
 } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import ListPager from "@/components/manager/ListPager";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { loadFacilities, loadInventoryItem, loadInventoryItems, loadItemMovements } from "@/lib/bomApiData";
 import customerProfileApi from "@/api/customerProfileApi";
@@ -40,10 +42,13 @@ function ItemList({ basePath }) {
   // Both text inputs reach the API, so they are debounced (quy ước 2).
   const debouncedCategory = useDebouncedValue(category);
   const debouncedSearch = useDebouncedValue(search);
+  // GET /inventory-items accepts page/limit and applies the filters in the database, so the list
+  // pages server-side instead of stopping at the first 300 rows.
+  const [page, setPage] = usePageIndex(`${facilityId}|${status}|${debouncedCategory}|${debouncedSearch}`);
 
   const items = useAsyncData(
-    ({ signal }) => loadInventoryItems(filtered({ facilityId, status, category: debouncedCategory.trim(), search: debouncedSearch.trim() }), { signal }),
-    [facilityId, status, debouncedCategory, debouncedSearch],
+    ({ signal }) => loadInventoryItems(filtered({ facilityId, status, category: debouncedCategory.trim(), search: debouncedSearch.trim() }), { signal, page }),
+    [facilityId, status, debouncedCategory, debouncedSearch, page],
   );
 
   const facilities = directory.data || [];
@@ -62,9 +67,9 @@ function ItemList({ basePath }) {
         <>
           <Kpis items={[
             ["Lô hàng", items.data?.total ?? "—", facilityId ? "Trong cơ sở đã chọn" : "Trên mọi cơ sở"],
-            ["Trong kho", rows.filter((r) => r.status === "IN_STORAGE").length, "Đã xếp vào ô"],
-            ["Chờ nhập kho", rows.filter((r) => r.status === "PENDING_INBOUND").length, "Chờ nhân viên xác nhận"],
-            ["Thể tích đang lưu", m3(sumBy(rows, "totalVolumeM3")), "Thể tích hàng đã đăng ký"],
+            ["Trong kho", rows.filter((r) => r.status === "IN_STORAGE").length, "Đã xếp vào ô · trang này"],
+            ["Chờ nhập kho", rows.filter((r) => r.status === "PENDING_INBOUND").length, "Chờ nhân viên xác nhận · trang này"],
+            ["Thể tích đang lưu", m3(sumBy(rows, "totalVolumeM3")), "Trong trang đang xem"],
           ]} />
 
           <Panel
@@ -98,7 +103,7 @@ function ItemList({ basePath }) {
           </Panel>
 
           <AsyncBoundary state={items} render={(data) => (data ? (
-            <Panel title="Lô hàng" subtitle={`${data.total} lô · ${rows.filter((r) => r.placed).length} đã xếp ô`}>
+            <Panel title="Lô hàng" subtitle={`${data.total} lô · ${rows.filter((r) => r.placed).length} đã xếp ô ở trang này`}>
               {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
               <Table
                 label="Hàng hóa lưu trữ"
@@ -117,6 +122,14 @@ function ItemList({ basePath }) {
                   { key: "createdAt", label: "Registered", render: (r) => day(r.createdAt) },
                 ]}
                 empty="Không có lô hàng phù hợp bộ lọc hiện tại."
+              />
+              <ListPager
+                page={data.pagination?.page ?? page}
+                totalPages={data.pagination?.totalPages ?? 1}
+                total={data.total}
+                loading={items.loading}
+                onPageChange={setPage}
+                unit="lô hàng"
               />
             </Panel>
           ) : null)} />

@@ -4,10 +4,12 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import ListPager from "@/components/manager/ListPager";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
   BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
@@ -45,13 +47,15 @@ function configFor(kind, basePath) {
   return configCache.get(key);
 }
 
-// Bounded server-paged fetch. Results are narrowed to the configured policy types when present.
-const loadRecords = (config, signal) =>
-  fetchPaged(config.api.list, config.listParams || {}, { signal })
-    .then((page) => ({
-      ...page,
-      rows: config.policyTypes ? page.rows.filter((row) => config.policyTypes.includes(row.type)) : page.rows,
-    }));
+// Server-side query understood by the rule list (rule.validation.ts): isActive, type and serviceType.
+// Keeping the filters in the query is what allows the table to page without lying about totals.
+const recordQuery = (kind, { status, type, service }) => {
+  const params = {};
+  if (status) params.isActive = status === "ACTIVE" ? "true" : "false";
+  if (kind === "policy" && type) params.type = type;
+  if (kind === "pricing" && service) params.serviceType = service;
+  return params;
+};
 
 export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
   const config = configFor(kind, basePath);
@@ -66,13 +70,18 @@ export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
 }
 
 function RecordList({ kind, config }) {
-  const state = useAsyncData(
-    ({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]),
-    [kind],
-  );
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [service, setService] = useState("");
+  // Filters are applied by the API, so a page only ships that page's rows.
+  const [page, setPage] = usePageIndex(`${kind}|${status}|${type}|${service}`);
+  const state = useAsyncData(
+    ({ signal }) => Promise.all([
+      fetchPaged(config.api.list, recordQuery(kind, { status, type, service }), { signal, page }),
+      loadFacilities(),
+    ]),
+    [kind, status, type, service, page],
+  );
 
   return (
     <Screen
@@ -98,14 +107,9 @@ function RecordList({ kind, config }) {
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
-        const records = recordPage.rows;
-        const rows = records.map(config.fromDto).filter((row) =>
-          (!status || row.status === status) &&
-          (kind !== "policy" || !type || row.type === type) &&
-          (kind !== "pricing" || !service || row.service === service));
+        const rows = recordPage.rows.map(config.fromDto);
         return (
-          <Panel title={config.title} subtitle={`${rows.length} / ${records.length} bản ghi`}>
-            {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
+          <Panel title={config.title} subtitle={`${recordPage.total} bản ghi`}>
             <Table
               label={config.title}
               rows={rows}
@@ -125,6 +129,13 @@ function RecordList({ kind, config }) {
                 { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
                 { key: "revision", label: "Phiên bản" },
               ]}
+            />
+            <ListPager
+              page={recordPage.pagination?.page ?? page}
+              totalPages={recordPage.pagination?.totalPages ?? 1}
+              total={recordPage.total}
+              loading={state.loading}
+              onPageChange={setPage}
             />
           </Panel>
         );

@@ -9,6 +9,9 @@ import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { facilityLabel } from "@/lib/facilityLabels";
 import { useAdminUsers, loadAdminUsers, userId, userStatus } from "@/lib/adminUsers";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { pageSlice } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
+import ListPager from "@/components/manager/ListPager";
 import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
 import auditApi from "@/api/auditApi";
 import { downloadCsv } from "@/lib/csvExport";
@@ -117,6 +120,10 @@ export function LoginHistoryPage() {
   const events = distinct(rows, (r) => r.source.eventType);
   const visible = rows.filter((r) =>
     (!eventType || r.source.eventType === eventType) && inRange(r.source.createdAt, from, to));
+  // The per-account history endpoint returns every event (no page/limit), so the page is sliced
+  // in the browser. The CSV export still receives the full filtered set.
+  const [page, setPage] = usePageIndex(`${selected}|${eventType}|${from}|${to}`);
+  const paged = pageSlice(visible, page);
 
   return (
     <AdminScreen
@@ -166,15 +173,25 @@ export function LoginHistoryPage() {
           <AsyncBoundary
             state={history}
             render={() => (
-              <Table label="Lịch sử đăng nhập" rows={visible} columns={[
-                { key: "event", label: "Sự kiện", render: (r) => facilityLabel(r.source.eventType) || "—" },
-                { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
-                { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
-                { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
-                { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
-                { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
-                { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
-              ]} empty="Không có sự kiện phù hợp bộ lọc." />
+              <>
+                <Table label="Lịch sử đăng nhập" rows={paged.rows} columns={[
+                  { key: "event", label: "Sự kiện", render: (r) => facilityLabel(r.source.eventType) || "—" },
+                  { key: "status", label: "Kết quả", render: (r) => <Status value={r.source.status} /> },
+                  { key: "reason", label: "Lý do lỗi", render: (r) => r.source.failureReason || "—" },
+                  { key: "email", label: "Email đăng nhập", render: (r) => r.source.attemptedEmail || "—" },
+                  { key: "ip", label: "IP", render: (r) => r.source.ip || "—" },
+                  { key: "device", label: "Thiết bị", render: (r) => r.source.device || "—" },
+                  { key: "at", label: "Thời điểm", render: (r) => stamp(r.source.createdAt) },
+                ]} empty="Không có sự kiện phù hợp bộ lọc." />
+                <ListPager
+                  page={paged.page}
+                  totalPages={paged.totalPages}
+                  total={paged.total}
+                  loading={history.loading}
+                  onPageChange={setPage}
+                  unit="sự kiện"
+                />
+              </>
             )}
           />
         </Panel>
@@ -201,6 +218,9 @@ export function AuditPage() {
     (!action || r.source.action === action) &&
     (!entityType || r.source.entityType === entityType) &&
     inRange(r.source.createdAt, from, to));
+  // Same as login history: the per-account audit read is unpaged, so the table pages locally.
+  const [page, setPage] = usePageIndex(`${selected}|${action}|${entityType}|${from}|${to}`);
+  const paged = pageSlice(visible, page);
 
   return (
     <AdminScreen
@@ -251,7 +271,8 @@ export function AuditPage() {
               </Field>
             </div>
             <AsyncBoundary state={logs} render={() => (
-              <Table label="Nhật ký kiểm toán" rows={visible} columns={[
+              <>
+                <Table label="Nhật ký kiểm toán" rows={paged.rows} columns={[
                       { key: "action", label: "Hành động", render: (r) => facilityLabel(r.source.action) || "—" },
                       { key: "role", label: "Vai trò", render: (r) => <Status value={r.source.actorRole} /> },
                       { key: "entity", label: "Đối tượng", render: (r) => `${r.source.entityType || "—"} · ${r.source.entityId || "—"}` },
@@ -267,6 +288,15 @@ export function AuditPage() {
                         ),
                       },
                     ]} empty="Không có sự kiện phù hợp bộ lọc." />
+                <ListPager
+                  page={paged.page}
+                  totalPages={paged.totalPages}
+                  total={paged.total}
+                  loading={logs.loading}
+                  onPageChange={setPage}
+                  unit="sự kiện"
+                />
+              </>
             )} />
           </Panel>
         </>
@@ -283,6 +313,8 @@ export function FacilitiesPage() {
   const rows = facilities.filter((f) =>
     (!status || f.status === status) &&
     (!search || `${f.code} ${f.name} ${f.address}`.toLowerCase().includes(search.toLowerCase())));
+  const [page, setPage] = usePageIndex(`${status}|${search}`);
+  const paged = pageSlice(rows, page);
 
   return (
     <AdminScreen
@@ -302,15 +334,25 @@ export function FacilitiesPage() {
       </Panel>
       <Panel title="Tổng hợp cơ sở" subtitle={`${rows.length} / ${facilities.length} cơ sở`}>
         <AsyncBoundary state={state} render={() => (
-          <Table label="Cơ sở" rows={rows} columns={[
-            { key: "name", label: "Facility" },
-            { key: "code", label: "Code" },
-            { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
-            { key: "district", label: "Khu vực" },
-            { key: "address", label: "Address" },
-            { key: "services", label: "Service models", render: (f) => f.serviceTypes.map(facilityLabel).join(", ") || "—" },
-            { key: "openingHours", label: "Opening hours" },
-          ]} />
+          <>
+            <Table label="Cơ sở" rows={paged.rows} columns={[
+              { key: "name", label: "Facility" },
+              { key: "code", label: "Code" },
+              { key: "status", label: "Business status", render: (f) => <Status value={f.status} /> },
+              { key: "district", label: "Khu vực" },
+              { key: "address", label: "Address" },
+              { key: "services", label: "Service models", render: (f) => f.serviceTypes.map(facilityLabel).join(", ") || "—" },
+              { key: "openingHours", label: "Opening hours" },
+            ]} />
+            <ListPager
+              page={paged.page}
+              totalPages={paged.totalPages}
+              total={paged.total}
+              loading={state.loading}
+              onPageChange={setPage}
+              unit="cơ sở"
+            />
+          </>
         )} />
       </Panel>
     </AdminScreen>

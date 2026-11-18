@@ -54,10 +54,13 @@ test('Customer SKU forms use Backend catalogs and do not expose free-text Catego
 });
 test('Admin and BOM share Vietnamese Category and Quantity Unit CRUD screen and routes',()=>{
  const page=readFileSync(new URL('../src/pages/bom/ManagedInventoryCatalogPage.jsx',import.meta.url),'utf8');
+ const pager=readFileSync(new URL('../src/components/manager/ListPager.jsx',import.meta.url),'utf8');
  const api=readFileSync(new URL('../src/api/bomApi.js',import.meta.url),'utf8');
  const admin=readFileSync(new URL('../src/routes/AdminRoutes.jsx',import.meta.url),'utf8');
  const bom=readFileSync(new URL('../src/routes/BomRoutes.jsx',import.meta.url),'utf8');
- assert.match(page,/Tìm theo mã hoặc tên/);assert.match(page,/Ngừng sử dụng/);assert.match(page,/Trang sau/);assert.match(page,/Chưa có dữ liệu phù hợp/);
+ // The catalog shares the pager used by every BOM/Admin table, so the labels live there.
+ assert.match(page,/Tìm theo mã hoặc tên/);assert.match(page,/Ngừng sử dụng/);assert.match(page,/ListPager/);assert.match(page,/Chưa có dữ liệu phù hợp/);
+ assert.match(pager,/Trang trước/);assert.match(pager,/Trang sau/);
  assert.match(api,/managed-inventory-catalog\/categories/);assert.match(api,/managed-inventory-catalog\/quantity-units/);
  assert.match(admin,/managed-inventory-catalog/);assert.match(bom,/managed-inventory-catalog/);
 });

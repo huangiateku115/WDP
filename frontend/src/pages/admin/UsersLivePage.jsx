@@ -4,6 +4,7 @@ import {
   Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, Message,
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState, ApiConfirmation } from "@/components/admin/AdminUI";
+import ListPager from "@/components/manager/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import {
   useAdminUsers, loadAdminUsers, userId, userStatus, isInactive, facilityIdOf,
@@ -11,6 +12,8 @@ import {
   assignAdminUserFacility, unassignAdminUserFacility,
 } from "@/lib/adminUsers";
 import { apiErrorMessage } from "@/lib/apiError";
+import { pageSlice } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { ROLE_LABELS } from "@/lib/roles";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities } from "@/lib/bomApiData";
@@ -39,6 +42,10 @@ function UserDirectory({ state }) {
       (!role || u.role === role) &&
       (!status || userStatus(u) === status))
     .map((u, index) => ({ id: userId(u) || `row-${index}`, source: u }));
+  // GET /users has no page/limit contract, so the directory is sliced in the browser and the
+  // page resets whenever a filter changes.
+  const [page, setPage] = usePageIndex(`${search}|${role}|${status}`);
+  const paged = pageSlice(rows, page);
   const columns = [
     { key: "identity", label: "Mã người dùng", render: (r) => userId(r.source) || "Không có mã" },
     ...fields.map(([key, label]) => ({
@@ -80,8 +87,20 @@ function UserDirectory({ state }) {
             )}
           </div>
           <AsyncBoundary
-            state={{ loading: state.status === "loading", error: state.status === "error" ? state.error : "", data: rows, reload: () => loadAdminUsers(true) }}
-            render={(tableRows) => <Table label="Người dùng" rows={tableRows} columns={columns} />}
+            state={{ loading: state.status === "loading", error: state.status === "error" ? state.error : "", data: paged.rows, reload: () => loadAdminUsers(true) }}
+            render={() => (
+              <>
+                <Table label="Người dùng" rows={paged.rows} columns={columns} />
+                <ListPager
+                  page={paged.page}
+                  totalPages={paged.totalPages}
+                  total={paged.total}
+                  loading={state.status === "loading"}
+                  onPageChange={setPage}
+                  unit="người dùng"
+                />
+              </>
+            )}
           />
         </Panel>
       )}
