@@ -275,7 +275,7 @@ export class ManagedInventoryV3Service {
         await assertManagedAccessSessionScope({ sessionId, customerId: actor._id, reservationId: reservation._id, facilityId: item.facilityId,
           purpose: ManagedAccessPurpose.INBOUND, cellIds, expectedRevision: input.sessionRevision, dbSession });
         const currentItem = await InventoryItemModel.findOneAndUpdate({ _id: item._id, customerId: actor._id, managedReservationId: reservation._id,
-          inventorySchemaVersion: 3, managedV3Revision: item.managedV3Revision ?? 0 }, { $inc: { managedV3Revision: 1 } }, { new: true, session: dbSession }).exec();
+          inventorySchemaVersion: 3, managedV3Revision: item.managedV3Revision ?? 0 }, { $inc: { managedV3Revision: 1 } }, { returnDocument: 'after', session: dbSession }).exec();
         if (!currentItem) fail(412, 'STALE_INVENTORY_REVISION', 'SKU đã thay đổi; tải lại trước khi xác nhận.');
         const movementId = new Types.ObjectId(), operationId = `MI-V3:${String(item._id)}:${requestKey}`;
         let kind: 'A1_PHYSICAL_UNIT' | 'A2_BATCH' = 'A2_BATCH', effectLines: any[] = [], physicalUnit: any = null, batchId: string | undefined;
@@ -350,7 +350,7 @@ export class ManagedInventoryV3Service {
         if (!Number.isFinite(usedVolume) || usedVolume < 0 || !Number.isFinite(quota) || quota <= 0 || usedVolume + calculated.totalVolume > quota + 0.000001) fail(409, 'RESERVATION_CAPACITY_EXCEEDED', 'Hàng nhập vượt dung lượng đã thuê.');
         const reservationFence = await ReservationModel.findOneAndUpdate({ _id: reservation._id, inventoryVersion: reservation.inventoryVersion ?? 0,
           usedCapacityM3: reservation.usedCapacityM3 ?? 0, allocatedCapacity: { $gte: usedVolume + calculated.totalVolume } },
-          { $inc: { inventoryVersion: 1, usedCapacityM3: calculated.totalVolume } }, { new: true, session: dbSession }).exec();
+          { $inc: { inventoryVersion: 1, usedCapacityM3: calculated.totalVolume } }, { returnDocument: 'after', session: dbSession }).exec();
         if (!reservationFence) fail(412, 'STALE_RESERVATION_REVISION', 'Reservation dung lượng vừa thay đổi; tải lại trước khi xác nhận.');
         const certIds = expectedRevisions.map(value => new Types.ObjectId(value));
         const certificate = [...certified.byCell.values()].map((value: any) => value.certification).find((value: any) => String(value._id) === expectedRevisions[0])!;

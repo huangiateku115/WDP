@@ -21,6 +21,7 @@ import inventoryItemRoutes from './inventory-item.routes';
 import inventoryInboundRequestRoutes from './inventory-inbound-request.routes';
 import paymentRoutes from './payment.routes';
 import managedInventoryCatalogRoutes from './managed-inventory-catalog.routes';
+import statisticsRoutes from './statistics.routes';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.use('/inventory-items', inventoryItemRoutes);
 router.use('/managed-inventory-catalog', managedInventoryCatalogRoutes);
 router.use('/inbound-requests', inventoryInboundRequestRoutes);
 router.use('/payments', paymentRoutes);
+router.use('/statistics', statisticsRoutes);
 
 /* GET home page. */
 router.get('/', (req: Request, res: Response, next: NextFunction) => {

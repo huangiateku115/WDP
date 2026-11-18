@@ -16,8 +16,7 @@ export default function ManagedPaperLifecyclePanel({ reservation, onRefresh }) {
 }
 function ManagedPaperContent({ reservation, onRefresh }) {
   const { user, accessToken } = useAuthSession(), facilityId = user?.assignedFacilityId, reservationId = recordId(reservation);
-  // Current Managed detail API does not grant FACILITY_STAFF read access.
-  const permitted = user?.role === 'FACILITY_MANAGER' && !!accessToken && objectId(facilityId) && objectId(reservationId) && recordId(reservation.facilityId) === facilityId;
+  const permitted = ['FACILITY_MANAGER','FACILITY_STAFF'].includes(user?.role) && !!accessToken && objectId(facilityId) && objectId(reservationId) && recordId(reservation.facilityId) === facilityId;
   const [file, setFile] = useState(null), [number, setNumber] = useState(''), [customerSignedAt, setCustomerSignedAt] = useState(''), [facilitySignedAt, setFacilitySignedAt] = useState('');
   const [identityVerified, setIdentityVerified] = useState(false), [condition, setCondition] = useState('GOOD'), [notes, setNotes] = useState('');
   const [action, setAction] = useState(null), [saving, setSaving] = useState(false), [feedback, setFeedback] = useState({}), [uncertain, setUncertain] = useState(false);

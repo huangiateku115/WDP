@@ -87,7 +87,7 @@ export class FacilityAssignmentService {
         const updated = await UserModel.findOneAndUpdate(
           filter,
           { $set: { assignedFacilityId: facilityId } },
-          { new: true, runValidators: true, session },
+          { returnDocument: 'after', runValidators: true, session },
         ).exec();
         if (!updated) {
           const current = await UserModel.findById(userId).session(session).exec();
@@ -159,7 +159,7 @@ export class FacilityAssignmentService {
         const updated = await UserModel.findOneAndUpdate(
           filter,
           { $set: { assignedFacilityId: null } },
-          { new: true, runValidators: true, session },
+          { returnDocument: 'after', runValidators: true, session },
         ).exec();
         if (!updated) {
           const current = await UserModel.findById(userId).session(session).exec();

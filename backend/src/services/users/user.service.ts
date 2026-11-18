@@ -137,7 +137,7 @@ export class UserService {
     if (![UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(newRole)) {
       update.assignedFacilityId = null;
     }
-    return UserModel.findByIdAndUpdate(userId, { $set: update }, { new: true, runValidators: true }).exec();
+    return UserModel.findByIdAndUpdate(userId, { $set: update }, { returnDocument: 'after', runValidators: true }).exec();
   }
 
   // 7. ADMIN: Soft Delete

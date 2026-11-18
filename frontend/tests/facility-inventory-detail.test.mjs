@@ -1,3 +1,4 @@
+import * as canonicalHelpers from '../src/lib/canonicalFacilityStock.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -74,6 +75,11 @@ function renderDetail(state, tab='stock', actor=user) {
       Status:props=>React.createElement('span',null,props.value), OpenLink:props=>React.createElement('a',{href:props.to},props.children),
     },
   };
+  mocks['@/lib/canonicalFacilityStock']=canonicalHelpers;
+  const canonicalCode=transformSync(readFileSync(new URL('../src/components/facility/CanonicalFacilityStock.jsx',import.meta.url),'utf8'),{loader:'jsx',format:'cjs',jsx:'automatic'}).code;
+  const canonicalModule={exports:{}};
+  new Function('require','module','exports',canonicalCode)(name=>name in mocks?{__esModule:true,...mocks[name]}:require(name),canonicalModule,canonicalModule.exports);
+  mocks['./CanonicalFacilityStock']={default:canonicalModule.exports.default};
   const code=transformSync(readFileSync(new URL('../src/components/facility/FacilityInventoryDetail.jsx',import.meta.url),'utf8'),{loader:'jsx',format:'cjs',jsx:'automatic'}).code;
   const module={exports:{}};
   new Function('require','module','exports',code)(name=>name in mocks?{__esModule:true,...mocks[name]}:require(name),module,module.exports);
@@ -89,4 +95,13 @@ test('detail does not present unreconciled totals or failed reads as zero stock'
   const f=fixture();f.item.quantityUnit='thùng';f.stock.reconciliationStatus='RECONCILIATION_REQUIRED';const data=await loadFacilityInventory(f.args);
   const html=renderDetail({data});assert.match(html,/Chưa xác minh/);assert.doesNotMatch(html,/Tồn hiện tại.*2 thùng/);
   const failed=renderDetail({data:null,error:'Không tải được tồn'});assert.match(failed,/Không tải được tồn/);assert.doesNotMatch(failed,/Tồn hiện tại/);
+});
+
+test('canonical detail renders the new stock shape and keeps unknown totals unverified',()=>{
+ const f=fixture();f.item.quantityUnit='thùng';
+ const stock={skuId:itemId,facilityId,ledgerStatus:'REPLAYED',stockVerified:true,totalQuantity:7,totalWeightKg:14,totalVolumeM3:1,byCell:[],itemSpecifications:[],byReservation:[]};
+ const data={item:f.item,stock,canonical:true,source:'self',movements:[],sessions:[]};
+ assert.match(renderDetail({data}),/Tổng số lượng.*7/);
+ const unknown=renderDetail({data:{...data,stock:{...stock,ledgerStatus:'UNKNOWN',stockVerified:false,totalQuantity:null}}});
+ assert.match(unknown,/Chưa xác minh/);assert.doesNotMatch(unknown,/Tổng số lượng.*>0</);
 });

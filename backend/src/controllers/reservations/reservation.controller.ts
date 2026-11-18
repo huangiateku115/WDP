@@ -91,7 +91,7 @@ async function confirmManagedLegacyMockBalance(reservationId: string, customerId
         $set: { status: ReservationStatus.PAID, balancePaymentId: payment._id },
         $push: { statusHistory: { status: ReservationStatus.PAID, actorId: customerId,
           reason: 'Balance paid successfully. Ready for physical handover.', createdAt: now } },
-      }, { new: true, session, runValidators: true }).exec();
+      }, { returnDocument: 'after', session, runValidators: true }).exec();
       if (!lockedReservation) throw new ReservationControllerError(409,
         'Managed reservation changed or closure is pending; reload and retry');
 
@@ -178,7 +178,7 @@ async function confirmManagedLegacyMockDeposit(reservationId: string, customerId
         $unset: { expiresAt: 1 },
         $push: { statusHistory: { status: ReservationStatus.DEPOSIT_PAID, actorId: customerId,
           reason: 'Development/test simulated Managed v1 deposit confirmed; no provider settlement occurred.', createdAt: now } },
-      }, { new: true, session, runValidators: true }).exec();
+      }, { returnDocument: 'after', session, runValidators: true }).exec();
       if (!lockedReservation) throw new ReservationControllerError(409,
         'Managed reservation changed or closure is pending; reload and retry');
 
@@ -371,16 +371,6 @@ export const getReservationsByFacility = async (
       });
     }
 
-    if (
-      service === FacilityServiceType.MANAGED_INVENTORY &&
-      role === UserRole.FACILITY_STAFF
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'Không có quyền xem Managed Inventory',
-      });
-    }
-
     const filter = {
       facilityId,
       serviceType:
@@ -443,7 +433,7 @@ export const approveReservation = async (req: Request, res: Response) => {
           }
         }
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!reservation) return res.status(409).json({ success: false, message: 'Đơn không tồn tại hoặc không ở trạng thái RESERVED.' });
     
@@ -492,7 +482,7 @@ export const rejectReservation = async (req: Request, res: Response) => {
           }
         }
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!reservation) return res.status(409).json({ success: false, message: 'Không thể từ chối đơn này.' });
     return res.json({ success: true, data: reservation });
@@ -608,7 +598,7 @@ export const cancelReservation = async (req: Request, res: Response) => {
           }
         }
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     // Giải phóng StorageUnit về AVAILABLE
@@ -671,7 +661,7 @@ export const mockPayReservation = async (req: Request, res: Response) => {
           }
         }
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!reservation) {
       const existing = await ReservationModel.findById(req.params.id);
@@ -1088,7 +1078,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           if (!facility) throw new ReservationControllerError(409, 'Self Storage Facility is not active.');
           const locked: any = StorageUnitModel;
           const lockedUnit = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
-            bookingVersion: currentVersion(unit.bookingVersion) }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+            bookingVersion: currentVersion(unit.bookingVersion) }, { $inc: { bookingVersion: 1 } }, { returnDocument: 'after', session }).exec();
           if (!lockedUnit) throw new ReservationControllerError(409, 'Storage Unit changed concurrently; reload and retry.');
           const accessPinCode = current.accessPinCode || Math.floor(100000 + Math.random() * 900000).toString();
           activated = await (ReservationModel as any).findOneAndUpdate({ _id: current._id, status: ReservationStatus.CHECKIN_READY,
@@ -1098,10 +1088,10 @@ export const handoverReservation = async (req: Request, res: Response) => {
               storageCondition: String(storageCondition), accessPinCode },
             $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
               reason: 'Authorized Facility Staff confirmed identity and physical handover; simulated access PIN provisioned', createdAt: now } },
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!activated) throw new ReservationControllerError(409, 'Reservation changed concurrently; reload and retry.');
           const occupied = await locked.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
-            bookingVersion: currentVersion(unit.bookingVersion) + 1 }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { new: true, session }).exec();
+            bookingVersion: currentVersion(unit.bookingVersion) + 1 }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { returnDocument: 'after', session }).exec();
           if (!occupied) throw new ReservationControllerError(409, 'Storage Unit changed before handover could commit.');
         }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       } catch (error: any) {
@@ -1175,7 +1165,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           deletedAt: { $exists: false },
           ...versionCas(storageUnit.bookingVersion, 'bookingVersion'),
         }, { $inc: { bookingVersion: 1 } },
-        { new: true, session }).exec();
+        { returnDocument: 'after', session }).exec();
         if (!lockedUnit) throw new ReservationControllerError(409, 'StorageUnit changed before handover.');
 
         const handoverAt = new Date();
@@ -1192,7 +1182,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           $inc: { __v: 1 },
           $push: { statusHistory: { status: ReservationStatus.ACTIVE, actorId: req.user!._id,
             reason: 'Staff confirmed physical handover. Rental is activated.', createdAt: handoverAt } },
-        }, { new: true, session }).exec();
+        }, { returnDocument: 'after', session }).exec();
         if (!activatedReservation) throw new ReservationControllerError(409, 'Reservation changed before handover; reload and retry.');
 
         const occupiedUnit = await storageUnitWriter.findOneAndUpdate({
@@ -1200,7 +1190,7 @@ export const handoverReservation = async (req: Request, res: Response) => {
           facilityId: reservation.facilityId,
           deletedAt: { $exists: false },
           bookingVersion: currentVersion(storageUnit.bookingVersion) + 1,
-        }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { new: true, session }).exec();
+        }, { $set: { status: StorageUnitStatus.OCCUPIED } }, { returnDocument: 'after', session }).exec();
         if (!occupiedUnit) throw new ReservationControllerError(409, 'StorageUnit changed before handover could be committed.');
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
     } catch (error: any) {

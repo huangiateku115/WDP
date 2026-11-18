@@ -5,6 +5,7 @@ import ContractModel from '../../models/contracts/contract.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { lockManagedDepositHolds, ManagedReservationError } from '../reservations/managed-reservation.service';
+import { ManagedCheckinService } from '../reservations/managed-checkin.service';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import ReservationModel from '../../models/reservations/reservation.model';
 import ManagedReservationAuditModel from '../../models/reservations/managed-reservation-audit.model';
@@ -649,7 +650,7 @@ export class PayosPaymentService {
           $and: [versionFilter(reservation.inventoryVersion)] }, {
           $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.PAID, balanceSettledAt: time, balanceSettledBy: customerId, balanceSettlementKey: idempotencyKey },
           $push: { statusHistory: { status: ReservationStatus.PAID, actorId: customerId, reason: 'Managed V3 has zero remaining balance after verified Deposit and current contract signatures', createdAt: time } },
-        }, { new: true, session, runValidators: true }).exec();
+        }, { returnDocument: 'after', session, runValidators: true }).exec();
         if (!updated) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed while settling zero balance');
         result = { zeroBalance: true, reservation: { _id: updated._id, serviceType: updated.serviceType,
           bookingFlowVersion: updated.bookingFlowVersion, status: updated.status, balanceSettledAt: updated.balanceSettledAt } };
@@ -966,7 +967,7 @@ export class PayosPaymentService {
           ...serviceFilter, status: reservation.status,
           ...([PaymentPurpose.DEPOSIT, PaymentPurpose.FULL_RENT].includes(purpose) ? { expiresAt: { $gt: now } } : {}),
           $and: [versionFilter(reservation.inventoryVersion)] }, { $inc: { inventoryVersion: 1 } },
-        { new: true, session }).exec();
+        { returnDocument: 'after', session }).exec();
         if (!locked) throw new PayosPaymentError(409, 'RESERVATION_CHANGED', 'Reservation changed concurrently; refresh and retry');
 
         // Revalidate after the CAS, using the same transaction snapshot.
@@ -1008,7 +1009,7 @@ export class PayosPaymentService {
     const claim = await Payments.findOneAndUpdate({ _id: payment._id, provider: PaymentProvider.PAYOS,
       status: PaymentStatus.PENDING, checkoutState: 'NOT_CREATED' }, {
       $set: { checkoutState: 'CREATING' },
-    }, { new: true }).exec();
+    }, { returnDocument: 'after' }).exec();
     if (!claim) {
       const current = await Payments.findById(payment._id).exec();
       if (current?.checkoutState === 'READY' && current.checkoutUrl) {
@@ -1170,7 +1171,7 @@ export class PayosPaymentService {
             providerCaptures: { $size: 0 }, providerOutcomeEvents: { $size: 0 } }, {
             $set: { status: PaymentStatus.CANCELLED, failedAt: this.now(), cancelVerifiedAt: this.now(), checkoutState: 'CANCELLED',
               reconciliationReason: 'PayOS authoritatively confirmed cancellation with no funds received' },
-          }, { new: true, session }).exec();
+          }, { returnDocument: 'after', session }).exec();
           if (updated) await new ManagedReservationAuditModel({ facilityId: payment.facilityId,
             reservationId: payment.reservationId, actorId: payment.customerId,
             action: ManagedReservationAction.PAYMENT_CANCELLED, fromStatus: payment.status, toStatus: PaymentStatus.CANCELLED,
@@ -1503,7 +1504,7 @@ export class PayosPaymentService {
             },
             $unset: { expiresAt: 1 },
             $push: { statusHistory: { status: ReservationStatus.PAID, reason: 'PayOS verified 100% full rent applied', createdAt: time } }
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!locked) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Reservation changed while applying verified Full Rent';
@@ -1516,7 +1517,12 @@ export class PayosPaymentService {
               throw new PayosPaymentError(503, 'WEBHOOK_CONCURRENT_RETRY', 'Managed V3 Cell holds changed during full-rent settlement; provider should retry');
             }
           }
-          if (!managed) {
+          if (managed) {
+            // Apply the verified payment and create the customer contract atomically.
+            // The contract stays DRAFT; signing and handover remain separate guards.
+            currentPayment.applicationStatus = PaymentApplicationStatus.APPLIED;
+            await ManagedCheckinService.createV3ContractForVerifiedPayment(locked, currentPayment, session);
+          } else {
             const contract = await Contracts.findOne({ reservationId: reservation._id, customerId: reservation.customerId,
               status: ContractStatus.DRAFT }).session(session).exec();
             if (!contract) throw new PayosPaymentError(409, 'CONTRACT_CHANGED_DURING_PAYMENT', 'Linked Self Storage Contract changed during payment application');
@@ -1569,7 +1575,7 @@ export class PayosPaymentService {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.DEPOSIT_PAID, depositPaymentId: currentPayment._id },
             ...(managed ? { $unset: { expiresAt: 1 } } : {}),
             $push: { statusHistory: { status: ReservationStatus.DEPOSIT_PAID, reason: 'PayOS verified advance-rent Deposit applied', createdAt: time } },
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!locked) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Reservation changed while applying verified Deposit';
@@ -1648,7 +1654,7 @@ export class PayosPaymentService {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.PAID, balancePaymentId: currentPayment._id,
               balanceSettledAt: time },
             $push: { statusHistory: { status: ReservationStatus.PAID, reason: 'PayOS verified remaining rent Balance applied', createdAt: time } },
-          }, { new: true, session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec();
           if (!locked) {
             currentPayment.applicationStatus = PaymentApplicationStatus.MANUAL_REVIEW;
             currentPayment.reconciliationReason = 'Reservation changed while applying verified Balance';

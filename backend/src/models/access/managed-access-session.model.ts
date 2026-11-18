@@ -4,7 +4,7 @@ import { IManagedAccessSession, ManagedAccessPurpose, ManagedAccessSessionStatus
 const audit = new Schema({ action: { type: String, required: true }, actorId: { type: Schema.Types.ObjectId, ref: 'User' }, actorRole: { type: String, required: true }, at: { type: Date, required: true }, details: { type: Schema.Types.Mixed } }, { _id: false });
 const schema = new Schema<IManagedAccessSession>({
   visitId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessVisit', required: true, index: true },
-  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },
+  reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true },
   scopedReservationIds: { type: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }], required: true,
     default: function (this: any) { return this.reservationId ? [this.reservationId] : undefined; },
     validate: { validator: function (this: any, ids: unknown[]) {
@@ -22,6 +22,7 @@ const schema = new Schema<IManagedAccessSession>({
   checkInRequestHash: { type: String, match: /^[a-f\d]{64}$/i },
   audit: { type: [audit], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
+schema.index({ reservationId: 1, status: 1 });
 schema.index({ reservationId: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE },
   name: 'managed_access_session_active_reservation_unique' });
 schema.index({ scopedReservationIds: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE },

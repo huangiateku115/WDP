@@ -411,7 +411,7 @@ async function seedEffectiveRule(model: any, ScopeModel: any, kind: 'pricing' | 
       await insertWithinScopeTransaction({
         withTransaction: work => session.withTransaction(work, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } }),
         nextVersion: async () => {
-          const guard = await ScopeModel.findOneAndUpdate({ _id: scopeId }, { $inc: { sequence: 1 } }, { new: true, session }).exec();
+          const guard = await ScopeModel.findOneAndUpdate({ _id: scopeId }, { $inc: { sequence: 1 } }, { returnDocument: 'after', session }).exec();
           if (!guard || !Number.isSafeInteger(guard.sequence)) throw new Error('Pricing/policy version allocation failed.');
           return guard.sequence;
         },

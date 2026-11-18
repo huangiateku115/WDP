@@ -197,6 +197,11 @@ export default function SelfStoragePayosCheckout({
   function goToHistory(paymentId, verifiedApplied = false) {
     if (completionNavigated.current) return;
     completionNavigated.current = true;
+    if (verifiedApplied && reservation?.serviceType === "MANAGED_INVENTORY" &&
+        reservation?.bookingFlowVersion === 3 && reservation?.rentalPaymentFlow === "FULL_UPFRONT_V1") {
+      navigate(`/portal/contracts/${encodeURIComponent(reservationId)}`, { replace: true });
+      return;
+    }
     const query = new URLSearchParams({ reservationId, ...(paymentId ? { paymentId } : {}), ...(verifiedApplied ? { verified: "applied" } : {}) });
     navigate(`/portal/payments?${query}`, { replace: true });
   }
