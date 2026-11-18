@@ -63,7 +63,7 @@ function RecordList({ kind, config }) {
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
         const rows = recordPage.rows.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
-          (!filter || (kind === "discount" ? row.kind === filter : row.allowedStatus === filter)));
+          (!filter || (kind === "discount" && row.kind === filter)));
         return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
           {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={recordPage.rows.length} />}
           <Table label={config.title} rows={rows} columns={kind === "discount" ? [
@@ -76,7 +76,9 @@ function RecordList({ kind, config }) {
             { key: "revision", label: "Phiên bản" },
           ] : [
             { key: "name", label: "Danh mục", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-            { key: "acceptance", label: "Chấp nhận", render: (r) => <Status value={r.allowedStatus} /> },
+            // The CATEGORY policy exposes only the allowed/blocked lists; there is no acceptance flag.
+            { key: "allowedCount", label: "Danh mục được phép", render: (r) => r.allowedCount },
+            { key: "blockedCount", label: "Danh mục bị chặn", render: (r) => r.blockedCount },
             { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
             { key: "effectiveFrom", label: "Hiệu lực từ" },
             { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
@@ -100,11 +102,13 @@ function RecordDetail({ kind, config }) {
         ["Hình thức", BOM_DISCOUNT_KIND_LABELS[record.kind] || record.kind.replaceAll("_", " ")],
         ["Loại chính sách", record.policyType],
         ["Giá trị", discountValueLabel(record)], ["Điều kiện áp dụng", record.conditions], ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
+        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ] : [
-        ["Danh mục", record.name], ["Chấp nhận", <Status value={record.allowedStatus} />], ["Mô tả", record.description],
-        ["Ghi chú xử lý", record.handlingNotes], ["Ràng buộc", record.restrictions], ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
+        // The CATEGORY policy only carries the two category lists; the DTO has no description,
+        // handling note, restriction or acceptance flag, so those rows are not rendered.
+        ["Danh mục", record.name], ["Danh mục được phép", record.allowedCount], ["Danh mục bị chặn", record.blockedCount],
+        ["Hiệu lực từ", record.effectiveFrom],
+        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ]} />
     </Panel>} />
   </Screen>;

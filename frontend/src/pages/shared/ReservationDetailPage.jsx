@@ -29,6 +29,16 @@ const unitLabel = (reservation) => {
 const timelineOf = (reservation) => (Array.isArray(reservation?.statusHistory) ? reservation.statusHistory : [])
   .map((entry) => ({ at: entry.createdAt, status: entry.status, note: entry.reason || "Đổi trạng thái" }))
   .reverse();
+// The reservation DTO has no `rejectReason`; the backend records the operator reason on the
+// CANCELLED entry of statusHistory ("FM Rejected: …" / "Managed reservation rejected: …").
+const rejectionOf = (reservation) => {
+  const cancelled = (Array.isArray(reservation?.statusHistory) ? reservation.statusHistory : [])
+    .filter((entry) => entry.status === "CANCELLED")
+    .pop();
+  return String(cancelled?.reason || "")
+    .replace(/^(FM Rejected:\s*|Managed reservation rejected:\s*)/i, "")
+    .trim();
+};
 
 export default function ReservationDetailPage({ managed = false, basePath = "/admin/reservations" }) {
   const { id } = useParams();
@@ -91,7 +101,8 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
               ["Cơ sở", facilityName(reservation)],
               ["Kho", unitLabel(reservation)],
               ...(managed ? [
-                ["Công suất được cấp", `${reservation.allocatedCapacity ?? 0} m³`],
+                // `allocatedCapacity` is not part of the reservation DTO; only the consumed
+                // capacity is reported, so the granted quota is not shown as a fake 0 m³.
                 ["Công suất đã dùng", `${reservation.usedCapacityM3 ?? 0} m³`],
               ] : []),
               ["Thời gian thuê", `${day(reservation.startDate)} → ${day(reservation.endDate)}`],
@@ -101,8 +112,7 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
               ] : [
                 ["Tổng tiền thanh toán", money(reservation.estimatedRent)],
               ]),
-              ["Hết hạn giữ chỗ", reservation.expiresAt ? new Date(reservation.expiresAt).toLocaleString("vi-VN") : "—"],
-              ["Lý do từ chối", reservation.rejectReason || "—"],
+              ["Lý do từ chối", rejectionOf(reservation) || "—"],
               ...(reservation.actualCheckoutDate || reservation.status === "CHECKED_OUT" ? [
                 ["Ngày trả kho", reservation.actualCheckoutDate ? new Date(reservation.actualCheckoutDate).toLocaleString("vi-VN") : "—"],
               ] : []),

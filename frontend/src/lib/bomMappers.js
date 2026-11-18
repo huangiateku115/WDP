@@ -312,6 +312,7 @@ export function pricingFromDto(d) {
     currency: d?.currency || BOM_CURRENCY,
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
   };
@@ -351,6 +352,23 @@ export function pricingUpdateBody(form, { effective = false } = {}) {
 }
 
 /* ------------------------------ Policies ------------------------------ */
+// The backend keeps a policy rule inside `config` (amount/currency, calculation/percentage or
+// allowedCategories/blockedCategories); it never returns a `config.rule` string, so the console
+// summarises the fields the document really carries instead of leaving the column blank.
+function policyRuleLabel(config) {
+  if (!config || typeof config !== "object") return "";
+  if (Array.isArray(config.allowedCategories) || Array.isArray(config.blockedCategories)) {
+    return `${(config.allowedCategories || []).length} danh mục được phép · ${(config.blockedCategories || []).length} danh mục bị chặn`;
+  }
+  if (config.calculation === "PERCENTAGE" && Number.isFinite(Number(config.percentage))) return `${config.percentage}%`;
+  if (Number.isFinite(Number(config.amount))) return money(Number(config.amount));
+  return "";
+}
+
+// `effectiveTo` is stored by the backend but is absent from every read DTO today, so screens must
+// tell "open-ended" apart from "the API did not return it" instead of always printing 1 giá trị.
+const hasEffectiveTo = (d) => Boolean(d) && Object.prototype.hasOwnProperty.call(d, "effectiveTo");
+
 export function policyFromDto(d) {
   const config = d?.config || {};
   return {
@@ -360,9 +378,10 @@ export function policyFromDto(d) {
     type: d?.type,
     name: BOM_POLICY_LABELS[d?.type] || d?.type || "Chính sách",
     description: config.description || "",
-    rule: config.rule || "",
+    rule: typeof config.rule === "string" && config.rule ? config.rule : policyRuleLabel(config),
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
     config,
@@ -388,6 +407,7 @@ export function discountFromDto(d) {
     conditions: config.conditions || "",
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
     config,
@@ -420,6 +440,7 @@ export function categoryFromDto(d) {
     blockedCount: blocked.length,
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
     config,

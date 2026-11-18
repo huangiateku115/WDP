@@ -38,7 +38,10 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
       if (response.data?.success !== true || !Array.isArray(response.data.data) || !response.data.pagination) {
         throw Error('Dữ liệu danh mục trả về không hợp lệ.');
       }
-      return { rows: response.data.data, pagination: response.data.pagination };
+      // The catalog DTO exposes `id` and never `_id`, so rows are normalised once here and the
+      // edit link plus the deactivate request keep pointing at a real record.
+      const rows = response.data.data.map((row) => ({ ...row, _id: row.id ?? row._id }));
+      return { rows, pagination: response.data.pagination };
     },
     [config, search, status, page],
   );

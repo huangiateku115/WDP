@@ -168,7 +168,7 @@ function RecordDetail({ kind, config }) {
                 ["Kỳ tính phí", `${record.billingMonths} tháng`],
                 ["Đơn giá", `${money(record.rate)} ${record.currency}`],
                 ["Hiệu lực từ", record.effectiveFrom],
-                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
+                ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
                 ["Trạng thái", <Status value={record.status} />],
                 ["Phiên bản", record.revision],
               ] : [
@@ -176,9 +176,9 @@ function RecordDetail({ kind, config }) {
                 ["Loại chính sách", record.type],
                 ["Dịch vụ", record.service ? serviceLabel(record.service) : "Mọi loại"],
                 ["Mô tả", record.description],
-                ["Quy tắc", record.rule],
+                ["Quy tắc", record.rule || "—"],
                 ["Hiệu lực từ", record.effectiveFrom],
-                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
+                ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
                 ["Trạng thái", <Status value={record.status} />],
                 ["Phiên bản", record.revision],
               ]} />

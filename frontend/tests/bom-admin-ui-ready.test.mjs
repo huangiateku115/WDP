@@ -483,3 +483,32 @@ test('BOM and Admin shells render no leftover English copy',()=>{
   assert.match(bomUi,/useLocation/);
   assert.match(bomUi,/pathname\.startsWith\('\/admin'\) \? '\/admin\/dashboard' : '\/bom\/dashboard'/);
 });
+
+// Regression guards for the 2026-11-18 DTO audit: no screen may render a field the API never returns.
+test('BOM/Admin screens only render fields the API actually returns',()=>{
+  // The catalog DTO exposes `id`; every row is normalised so Sửa/Ngừng dùng stop targeting undefined.
+  const catalog=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  assert.match(catalog,/response\.data\.data\.map\(\(row\) => \(\{ \.\.\.row, _id: row\.id \?\? row\._id \}\)\)/);
+
+  // GET /reservations/:id has no rejectReason/allocatedCapacity/expiresAt.
+  const reservation=read('../src/pages/shared/ReservationDetailPage.jsx');
+  assert.match(reservation,/const rejectionOf = \(reservation\) =>/);
+  assert.match(reservation,/\["Lý do từ chối", rejectionOf\(reservation\) \|\| "—"\]/);
+  assert.doesNotMatch(reservation,/reservation\.rejectReason/,'rejectReason is not part of the reservation DTO');
+  assert.doesNotMatch(reservation,/reservation\.allocatedCapacity/,'allocatedCapacity is not part of the reservation DTO');
+  assert.doesNotMatch(reservation,/reservation\.expiresAt/,'expiresAt is not part of the reservation DTO');
+
+  // Policies keep their rule in `config`; the old `config.rule` string never existed.
+  const mappers=read('../src/lib/bomMappers.js');
+  assert.match(mappers,/function policyRuleLabel\(config\)/);
+  assert.match(mappers,/rule: typeof config\.rule === "string" && config\.rule \? config\.rule : policyRuleLabel\(config\)/);
+  assert.match(mappers,/const hasEffectiveTo = \(d\) =>/);
+  assert.match(mappers,/hasEffectiveTo: hasEffectiveTo\(d\)/);
+
+  // The CATEGORY policy has no acceptance flag/description/notes.
+  const policyPage=read('../src/pages/bom/PolicyRecordsPage.jsx');
+  assert.doesNotMatch(policyPage,/allowedStatus/,'allowedStatus is not part of the policy DTO');
+  assert.doesNotMatch(policyPage,/handlingNotes|restrictions/,'those fields are not part of the policy DTO');
+  assert.match(policyPage,/label: "Danh mục được phép", render: \(r\) => r\.allowedCount/);
+  assert.match(policyPage,/record\.hasEffectiveTo \?/);
+});
