@@ -1,3 +1,5 @@
+import {managedOverview} from './managedInventoryMonitor.js';
+import {canonicalFacilityStock,movementEffect} from './canonicalFacilityStock.js';
 import {apiRecord, apiRows, objectId, recordId} from './facilityReview.js';
 import {inventoryMovements} from './inventoryMovementHistory.js';
 import {accessRows, sessionStatus} from './managedAccessFacility.js';
@@ -21,7 +23,20 @@ export async function loadFacilityInventory({itemId, user, inventoryApi, v3Api, 
     return {item, source, stock, movements: inventoryMovements(historyResponse, item), sessions: []};
   }
   const [stockResponse, historyResponse, sessionResponse] = await Promise.all([v3Api.stock(itemId), v3Api.movements(itemId), user.role === 'FACILITY_STAFF' ? accessApi.facilitySessions() : Promise.resolve(null)]);
-  const stock = apiRecord(stockResponse), movements = apiRows(historyResponse);
+  let stock = apiRecord(stockResponse); let movements = apiRows(historyResponse);
+  if ('ledgerStatus' in stock) {
+    stock=canonicalFacilityStock(stock,item,user.assignedFacilityId);
+    if(v3Api.facilityOverview){
+      const overview=managedOverview(await v3Api.facilityOverview(),user.assignedFacilityId);
+      const recent=overview.rows.find(row=>recordId(row.item)===itemId)?.recentMovements||[];
+      const merged=new Map(movements.map(row=>[recordId(row),row]));
+      for(const row of recent)merged.set(recordId(row),row);
+      movements=[...merged.values()].sort((a,b)=>Date.parse(b.performedAt)-Date.parse(a.performedAt)).slice(0,200);
+    }
+    const seen=new Set();
+    for(const row of movements){const effect=movementEffect(row);if(!objectId(recordId(row))||seen.has(recordId(row))||![3,4].includes(row.schemaVersion)||recordId(row.itemId)!==itemId||recordId(row.facilityId)!==user.assignedFacilityId||!['ADD','REMOVE','MOVE'].includes(effect?.action)||!count(row.quantity)||!Number.isFinite(Date.parse(row.performedAt)))throw Error('Lịch sử không khớp mặt hàng hoặc cơ sở.');seen.add(recordId(row));}
+    return {item,source:'self',canonical:true,stock,movements,sessions:sessionResponse?accessRows(sessionResponse,'session',user):[]};
+  }
   if (recordId(stock.skuId) !== itemId || recordId(stock.facilityId) !== user.assignedFacilityId || recordId(stock.reservationId) !== recordId(item.managedReservationId) || recordId(stock.customerId) !== recordId(item.customerId) || !['RECONCILED','RECONCILIATION_REQUIRED','UNKNOWN'].includes(stock.reconciliationStatus) || !count(stock.onHandQuantity) || !count(stock.heldQuantity) || !count(stock.availableQuantity) || stock.heldQuantity > stock.onHandQuantity || stock.availableQuantity !== stock.onHandQuantity - stock.heldQuantity || !measure(stock.totalWeightKg) || !measure(stock.totalVolumeM3) || !['byCell','byBatch','byPhysicalUnit'].every(key => Array.isArray(stock[key]))) throw Error('Không xác minh được tồn tự quản của mặt hàng.');
   if (stock.byCell.some(row => !objectId(recordId(row.cellId)) || !count(row.quantity) || !count(row.physicalUnitCount) || !measure(row.weightKg) || !measure(row.volumeM3)) || stock.byBatch.some(row => !row.batchId || !objectId(recordId(row.cellId)) || !count(row.quantity) || !count(row.heldQuantity)) || stock.byPhysicalUnit.some(row => !objectId(recordId(row.physicalUnitId)) || !Array.isArray(row.cellIds) || row.cellIds.some(id => !objectId(recordId(id))))) throw Error('Vị trí hoặc lô hàng tự quản chưa được xác minh.');
   const seen = new Set();
@@ -34,5 +49,5 @@ export async function loadFacilityInventory({itemId, user, inventoryApi, v3Api, 
 export function visibleInventoryMovements(data, user, now = Date.now()) {
   if (data.source !== 'self' || user.role !== 'FACILITY_STAFF') return data.movements;
   const ids = new Set(data.sessions.filter(row => recordId(row.reservationId) === recordId(data.item.managedReservationId) && sessionStatus(row, now) === 'ACTIVE').map(recordId));
-  return data.movements.filter(row => ids.has(recordId(row.v3Effect.accessSessionId)));
+  return data.movements.filter(row => ids.has(recordId(movementEffect(row)?.accessSessionId)));
 }

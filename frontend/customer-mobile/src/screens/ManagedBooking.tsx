@@ -6,7 +6,7 @@ import {managedInventory} from '../api/managedInventory';
 import {BookingCalendar,bookingDateLabel} from '../components/BookingCalendar';
 import {AppText,Button,Card,Chip,Icon,ui} from '../components/ui';
 import {LiveScreen,ResourceState,useResource} from '../components/liveUI';
-import {rentalEndDate,termKey,termLabels,utcToday} from '../domain/liveBooking';
+import {rentalEndDate,termKey,termLabels,todayInVietnam} from '../domain/liveBooking';
 import {useLiveSession} from '../state/useLiveSession';
 import {ManagedMapPanel} from './ManagedWarehouse';
 import {ManagedFacilityVisual} from '../components/ManagedFacilityVisual';
@@ -21,10 +21,10 @@ export function ManagedReview(){
 function ManagedBooking({facilityId,owner}:{facilityId:string;owner:string}){
   const router=useRouter();
   const [start,setStart]=useState(''),[selected,setSelected]=useState('');
-  const [open,setOpen]=useState(false),[month,setMonth]=useState(()=>utcToday().slice(0,7));
+  const [open,setOpen]=useState(false),[month,setMonth]=useState(()=>todayInVietnam().slice(0,7));
   const [revision,setRevision]=useState(0);
   const facility=useResource(facilityId,signal=>managedInventory.facility(facilityId,signal));
-  const ready=!!facility.data&&!!owner&&start>utcToday();
+  const ready=!!facility.data&&!!owner&&start>=todayInVietnam();
   const terms=useResource(owner+':'+facilityId+':'+(ready?start:''),signal=>ready?managedInventory.terms(facilityId,start,signal):Promise.resolve([]));
   const term=terms.data?.find(value=>termKey(value)===selected);
   const end=term?rentalEndDate(start,term):undefined;
@@ -49,12 +49,12 @@ function ManagedBooking({facilityId,owner}:{facilityId:string;owner:string}){
         <View style={styles.datePanel}>
           <AppText variant="label" style={styles.dateEyebrow}>NGÀY BẮT ĐẦU</AppText>
           <AppText variant="card">{start?bookingDateLabel(start):'Chọn ngày bắt đầu'}</AppText>
-          <AppText variant="caption" style={styles.dataNote}>Ngày bắt đầu thuê cần từ ngày mai trở đi.</AppText>
+   <AppText variant="caption" style={styles.dataNote}>Có thể bắt đầu từ hôm nay hoặc chọn một ngày trong tương lai.</AppText>
           <Button label={open?'Đóng lịch':start?'Thay đổi ngày bắt đầu':'Chọn ngày bắt đầu'} icon="calendar-outline"
             variant="outline" onPress={()=>setOpen(!open)}/>
         </View>
         {open&&<BookingCalendar month={month} setMonth={setMonth} selected={start} onSelect={date=>{
-          if(date<=utcToday())return;
+           if(date<todayInVietnam())return;
           setStart(date);setSelected('');setOpen(false);
         }}/>}
         {!!start&&<><ResourceState {...terms}/>

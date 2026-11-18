@@ -291,7 +291,8 @@ export function assertConfirmedRequest(config) {
         /^inbound-requests\/[a-f\d]{24}\/receiving$/i.test(path))) ||
     (method === "POST" &&
       /^inbound-requests\/[a-f\d]{24}\/(evidence-uploads|inspection|return-completed|confirm)$/i.test(path));
-  const allowed =
+  const statisticsRead = method === 'GET' && /^statistics\/(overview|revenue|facilities-ranking|customers|service-mix|unit-demand|rental-trends|utilization|storage-capacity|managed-capacity|reservations|contracts-lifecycle|managed-operations|incidents|payments-analysis|financial-analytics|product-and-operations|facilities-kpi|filters|export\/(csv|xlsx|pdf))$/.test(path);
+  const allowed = statisticsRead ||
     facilityManagedReadiness ||
     selfStorageCheckoutAndRenew ||
     managedAccess ||

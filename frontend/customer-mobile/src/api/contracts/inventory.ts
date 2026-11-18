@@ -8,11 +8,33 @@ export const itemCode=z.string().trim().min(1).max(48).transform(v=>v.toUpperCas
 const metadata={name:z.string().trim().min(1).max(160),category:z.string().trim().min(1).max(80),quantity:whole.min(1),quantityUnit:z.string().trim().min(1).max(32),unitWeightKg:positive,unitDimensionsM:dimensions};
 export const createItemBody=z.object({managedReservationId:objectId,itemCode,...metadata,description:z.string().trim().max(2000).optional(),preferredCellId:objectId.optional(),images:z.array(z.string().url().refine(v=>/^https?:\/\//.test(v))).max(10).optional()}).strict();
 export const updateItemBody=createItemBody.omit({managedReservationId:true,itemCode:true}).partial().extend({preferredCellId:objectId.nullable().optional()}).refine(v=>Object.keys(v).length>0);
-export const itemDto=z.object({_id:objectId,customerId:idRef,managedReservationId:idRef,facilityId:idRef,itemCode:z.string().min(1),...metadata,status:z.enum(['REGISTERED','PENDING_INBOUND','RECEIVED_PENDING_ACCEPTANCE','IN_STORAGE','PENDING_OUTBOUND','CHECKED_OUT']),currentCellId:idRef.nullish(),images:z.array(z.string().url()).optional()}).passthrough();
+export const managedV3SkuDto=z.object({_id:objectId,customerId:idRef,managedReservationId:idRef,facilityId:idRef,
+  inventorySchemaVersion:z.literal(3),itemCode:z.string().min(1),name:z.string().min(1),category:z.string().optional(),
+  categoryId:idRef.optional(),description:z.string().optional(),status:z.enum(['ACTIVE','INACTIVE']),revision:whole,
+  currentCellId:idRef.nullish(),images:z.array(z.string().url()).optional()}).passthrough();
+export const itemDto=z.object({_id:objectId,customerId:idRef,managedReservationId:idRef,facilityId:idRef,
+  inventorySchemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3)]).optional(),itemCode:z.string().min(1),
+  name:z.string().min(1),category:z.string().optional(),categoryId:idRef.optional(),description:z.string().optional(),
+  quantity:whole.min(1).optional(),quantityUnit:z.string().min(1).optional(),unitWeightKg:positive.optional(),
+  unitDimensionsM:dimensions.optional(),status:z.enum(['REGISTERED','PENDING_INBOUND','RECEIVED_PENDING_ACCEPTANCE','IN_STORAGE','PENDING_OUTBOUND','CHECKED_OUT','ACTIVE','INACTIVE']),
+  revision:whole.optional(),currentCellId:idRef.nullish(),images:z.array(z.string().url()).optional()}).passthrough().superRefine((item,ctx)=>{
+    if(item.inventorySchemaVersion===3){
+      if(!['ACTIVE','INACTIVE'].includes(item.status)||item.revision===undefined)ctx.addIssue({code:'custom',message:'Managed V3 SKU status/revision is invalid.'});
+    }else if(item.quantity===undefined||!item.quantityUnit||item.unitWeightKg===undefined||!item.unitDimensionsM||
+      !['REGISTERED','PENDING_INBOUND','RECEIVED_PENDING_ACCEPTANCE','IN_STORAGE','PENDING_OUTBOUND','CHECKED_OUT'].includes(item.status)){
+      ctx.addIssue({code:'custom',message:'Legacy inventory item metadata/status is incomplete.'});
+    }
+  });
 export function mapItem(response:unknown,owner:string){const item=readData(itemDto,response);assertOwner(item,owner);return item;}
 export const batchDto=z.object({batchId:z.string().min(1),quantity:whole,heldQuantity:whole,quantityUnit:z.string().min(1),actualUnitWeightKg:positive,actualUnitDimensionsM:dimensions,actualTotalWeightKg:nonnegative,actualTotalVolumeM3:nonnegative,receivedAt:instant,arithmeticPolicy:z.enum(['COMPATIBILITY','CANONICAL_V1']).optional()}).passthrough();
 export const stockDto=z.object({itemId:idRef,customerId:idRef,managedReservationId:idRef,facilityId:idRef,currentCellId:idRef.nullable(),schemaVersion:z.literal(1),source:z.enum(['LEDGER_V2','LEGACY_RECONCILED']),version:whole,onHandQuantity:whole,heldQuantity:whole,actualTotalWeightKg:nonnegative,actualTotalVolumeM3:nonnegative,batches:z.array(batchDto)}).passthrough();
+type LegacyItem=z.infer<typeof itemDto> & {quantityUnit:string;quantity:number;unitWeightKg:number;unitDimensionsM:z.infer<typeof dimensions>};
+function legacyItem(item:z.infer<typeof itemDto>):LegacyItem{
+  if(item.inventorySchemaVersion===3||!item.quantityUnit||item.quantity===undefined||item.unitWeightKg===undefined||!item.unitDimensionsM)throw Error('Managed V3 SKU cannot use the legacy stock contract.');
+  return item as LegacyItem;
+}
 export function mapStock(response:unknown,item:z.infer<typeof itemDto>,owner:string){
+  item=legacyItem(item);
   assertOwner(item,owner);const s=readData(stockDto,response);assertOwner(s,owner);
   if(refId(s.itemId)!==item._id||refId(s.managedReservationId)!==refId(item.managedReservationId)||refId(s.facilityId)!==refId(item.facilityId)||s.heldQuantity>s.onHandQuantity||s.batches.some(b=>b.quantityUnit!==item.quantityUnit||b.heldQuantity>b.quantity))throw Error('Stock projection identity/unit/hold mismatch');
   if(s.batches.reduce((n,b)=>n+b.quantity,0)!==s.onHandQuantity||s.batches.reduce((n,b)=>n+b.heldQuantity,0)!==s.heldQuantity)throw Error('Stock batches do not match projection');
@@ -33,9 +55,10 @@ export function requestHeaders(key:string,version?:number){return {'Idempotency-
 export const repeatedRequestDto=z.object({_id:objectId,itemId:idRef,reservationId:idRef,facilityId:idRef,...repeatedBody.shape,state:z.enum(['PENDING_INSPECTION','DISCREPANCY','ACCEPTED_PENDING_CONFIRMATION','RETURN_PENDING','REJECTED','CONFIRMED','CANCELLED']),custodyState:z.enum(['NOT_TAKEN','IN_CUSTODY','RETURNED']),version:whole,createdAt:instant}).passthrough();
 export const outboundRequestDto=z.object({_id:objectId,itemId:idRef,reservationId:idRef,facilityId:idRef,requestedQuantity:whole.min(1),quantityUnit:z.string().min(1),state:z.enum(['PENDING','CONFIRMED','PARTIALLY_FULFILLED','CANCELLED']),version:whole}).passthrough();
 export function mapScopedRequest(response:unknown,item:z.infer<typeof itemDto>,kind:'INBOUND'|'OUTBOUND',owner:string){
+  item=legacyItem(item);
   assertOwner(item,owner);
   const row=kind==='INBOUND'?readData(repeatedRequestDto,response):readData(outboundRequestDto,response);
   if(refId(row.itemId)!==item._id||refId(row.reservationId)!==refId(item.managedReservationId)||refId(row.facilityId)!==refId(item.facilityId)||row.quantityUnit!==item.quantityUnit)throw Error('Request parent scope mismatch');return row;
 }
 export const movementDto=z.object({_id:objectId,itemId:idRef,type:z.enum(['INBOUND','OUTBOUND','RELOCATION']),quantity:whole.min(1),quantityUnit:z.string().min(1),sourceCellId:idRef.nullish(),destinationCellId:idRef.nullish(),performedAt:instant,actualUnitWeightKg:positive,actualUnitDimensionsM:dimensions,actualTotalWeightKg:nonnegative,actualTotalVolumeM3:nonnegative,inspectionNote:z.string().optional(),schemaVersion:z.union([z.literal(1),z.literal(2)]).optional(),arithmeticPolicy:z.literal('CANONICAL_V1').nullish(),batchLines:z.array(z.object({action:z.enum(['ADD','REMOVE','MOVE']),batchId:z.string().min(1),quantity:whole.min(1),quantityUnit:z.string().min(1)}).passthrough()).optional()}).passthrough();
-export function mapMovements(response:unknown,item:z.infer<typeof itemDto>,owner:string){assertOwner(item,owner);return readData(z.array(movementDto),response).map(row=>{if(refId(row.itemId)!==item._id||row.quantityUnit!==item.quantityUnit||row.arithmeticPolicy==='CANONICAL_V1'&&row.schemaVersion!==2)throw Error('Movement identity/unit/arithmetic schema mismatch');return row;});}
+export function mapMovements(response:unknown,item:z.infer<typeof itemDto>,owner:string){item=legacyItem(item);assertOwner(item,owner);return readData(z.array(movementDto),response).map(row=>{if(refId(row.itemId)!==item._id||row.quantityUnit!==item.quantityUnit||row.arithmeticPolicy==='CANONICAL_V1'&&row.schemaVersion!==2)throw Error('Movement identity/unit/arithmetic schema mismatch');return row;});}

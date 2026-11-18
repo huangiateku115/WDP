@@ -20,6 +20,7 @@ export const facilityApiPages = {
     "notifications",
   ],
   manager: [
+    "reports",
     "managed",
     "warehouse-settings",
     "inventory/stock",

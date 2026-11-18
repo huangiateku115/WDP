@@ -1,10 +1,11 @@
 import {day,term} from '../api/contracts/booking';
 import type {z} from 'zod';
+import {vietnamDateKey} from './vietnamDate';
 
 export type RentalTerm=z.infer<typeof term>;
 export const termLabels={DAY:'Ngày',MONTH:'Tháng',YEAR:'Năm'} as const;
 export const termKey=(duration:RentalTerm)=>duration.unit+':'+duration.value;
-export const utcToday=()=>new Date().toISOString().slice(0,10);
+export const todayInVietnam=()=>vietnamDateKey();
 
 export function unitSelection(status:unknown){
   switch(status){
@@ -42,8 +43,8 @@ export function calendarDays(month:string){
   return [...Array<string|null>(offset).fill(null),...Array.from({length:first.getUTCDate()},(_,i)=>month+'-'+String(i+1).padStart(2,'0'))];
 }
 
-export function canStartOn(date:string,availability?:{availabilityState:string;intervals:{startDate:string;endDate:string}[]},today=utcToday()){
-  return day.safeParse(date).success&&date>today&&availability?.availabilityState==='VERIFIED'&&
+export function canStartOn(date:string,availability?:{availabilityState:string;intervals:{startDate:string;endDate:string}[]},today=todayInVietnam()){
+  return day.safeParse(date).success&&date>=today&&availability?.availabilityState==='VERIFIED'&&
     !availability.intervals.some(interval=>Date.parse(interval.startDate)<Date.parse(date+'T00:00:00Z')+86400000&&
       Date.parse(interval.endDate)>Date.parse(date+'T00:00:00Z'));
 }

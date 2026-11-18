@@ -35,7 +35,9 @@ import {
 import { ReservationProgressTracker } from "../components/ReservationProgressTracker";
 import { SelfStorageCheckoutRequest } from "../components/SelfStorageCheckoutRequest";
 import { FullRentCheckout } from "../components/FullRentCheckout";
+import {TermsModal,TermsReviewCard} from "../components/TermsReview";
 import { reservationProgress } from "../domain/reservationProgress";
+import {selfBookingTermsAcceptanceKey} from "../domain/bookingTermsAcceptance";
 import {
   BookingCalendar,
   bookingDateLabel,
@@ -45,7 +47,7 @@ import {
   rentalEndDate,
   termKey,
   termLabels,
-  utcToday,
+  todayInVietnam,
   type RentalTerm,
 } from "../domain/liveBooking";
 
@@ -304,7 +306,7 @@ function BookingForm({
   const owner = useLiveSession((s) => s.user?._id ?? ""),
     router = useRouter();
   const [start, setStart] = useState(""),
-    [month, setMonth] = useState(() => utcToday().slice(0, 7));
+    [month, setMonth] = useState(() => todayInVietnam().slice(0, 7));
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [durationUnit, setDurationUnit] = useState<RentalTerm["unit"]>("MONTH"),
     [selectedTerm, setSelectedTerm] = useState("");
@@ -335,7 +337,7 @@ function BookingForm({
   const term = terms.data?.find((option) => termKey(option) === selectedTerm);
   const end = term ? rentalEndDate(start, term) : undefined;
   const period =
-    start && start > utcToday() && end && term ? { start, end, ...term } : null;
+    start && start >= todayInVietnam() && end && term ? { start, end, ...term } : null;
   const scope = period
     ? JSON.stringify([facilityId, unitId, start, end, selectedTerm])
     : "";
@@ -356,8 +358,10 @@ function BookingForm({
   const facility = useResource("booking-facility:" + facilityId, signal => mobileRepo.facility(facilityId, signal));
   const supportedFacility = facility.data?.serviceTypes.includes("SELF_STORAGE") === true;
   const policy = useResource("self-storage-policy", signal => mobileRepo.bookingPolicy(signal));
-  const [acceptedVersion, setAcceptedVersion] = useState("");
+  const [acceptedKey, setAcceptedKey] = useState("");
   const [policyOpen, setPolicyOpen] = useState(false);
+  const termsVersionId=policy.data?.versionId;
+  const termsAcceptanceKey=selfBookingTermsAcceptanceKey(termsVersionId,{facilityId,unitId,start,termKey:selectedTerm,quote:review.data?.quote});
 
   async function confirm() {
     const currentReview = review.data;
@@ -393,11 +397,11 @@ function BookingForm({
         return;
       }
       if (!attempt) {
-        if (!quote || !acceptedVersion || acceptedVersion !== policy.data?.versionId)
+        if (!quote || !termsAcceptanceKey || acceptedKey !== termsAcceptanceKey || !termsVersionId)
           throw new MobileInputError("Không xác minh được lần đặt kho đã lưu.");
         const currentPolicy = await mobileRepo.bookingPolicy(controller.signal);
-        if (currentPolicy.versionId !== acceptedVersion) {
-          setAcceptedVersion("");
+        if (currentPolicy.versionId !== termsVersionId) {
+          setAcceptedKey("");
           policy.reload();
           throw new MobileInputError("Điều khoản đã thay đổi. Vui lòng đọc và xác nhận phiên bản mới.");
         }
@@ -420,7 +424,7 @@ function BookingForm({
           useLiveSession.getState().user?._id !== owner
         )
           return;
-        attempt = { ...newAttempt(), bookingBody: { ...fresh.body, termsAccepted: true, termsVersionId: acceptedVersion } };
+        attempt = { ...newAttempt(), bookingBody: { ...fresh.body, termsAccepted: true, termsVersionId } };
         if (!(await store.claim(attempt)))
           throw new MobileInputError(
             "Đã có lần đặt kho. Vui lòng kiểm tra lại.",
@@ -512,6 +516,7 @@ function BookingForm({
               resource={monthly}
               onSelect={(date) => {
                 if (!pending && canStartOn(date, monthly.data ?? undefined)) {
+                  monthly.reload();
                   setStart(date);
                   setSelectedTerm("");
                   setCalendarOpen(false);
@@ -582,23 +587,22 @@ function BookingForm({
               <AppText>Kho còn trống trong kỳ thuê đã chọn theo kiểm tra của máy chủ.</AppText>
             </TintedPanel>
           )}
-          {quote && <TintedPanel>
-            <AppText variant="label">Điều khoản thuê kho tự quản</AppText>
-            <ResourceState {...policy} />
-            {policy.data && <>
-              <Button variant="outline" label={policyOpen ? "Ẩn điều khoản" : `Đọc điều khoản v${policy.data.version}`}
-                onPress={() => setPolicyOpen(open => !open)} disabled={pending} />
-              {policyOpen && policy.data.groups.filter(group => group.appliesTo.includes("SELF_STORAGE")).map(group =>
-                <View key={group.id}>
+          {quote&&<>
+            <ResourceState {...policy}/>
+            {policy.data&&<>
+              <TermsReviewCard title="Điều khoản thuê kho tự quản" version={policy.data.version}
+                accepted={acceptedKey===termsAcceptanceKey&&!!termsAcceptanceKey} onOpen={()=>setPolicyOpen(true)}/>
+              <TermsModal visible={policyOpen} title="Điều khoản thuê kho tự quản" version={policy.data.version}
+                disabled={pending} onClose={()=>setPolicyOpen(false)} onAccept={()=>{
+                  if(policy.data?.versionId===termsVersionId&&termsAcceptanceKey){setAcceptedKey(termsAcceptanceKey);setPolicyOpen(false);}
+                }}>
+                {policy.data.groups.filter(group=>group.appliesTo.includes("SELF_STORAGE")).map(group=><View key={group.id} style={{gap:8}}>
                   <AppText variant="label">{group.title}</AppText>
-                  {group.sections.SELF_STORAGE?.map((line, index) => <AppText key={index}>{line}</AppText>)}
-                </View>
-              )}
-              <Button variant="outline" disabled={!policyOpen || pending}
-                label={acceptedVersion === policy.data.versionId ? "Đã đồng ý · Bỏ chọn" : "Tôi đồng ý với điều khoản"}
-                onPress={() => setAcceptedVersion(value => value === policy.data?.versionId ? "" : policy.data?.versionId ?? "")} />
+                  {group.sections.SELF_STORAGE?.map((line,index)=><AppText key={index}>{line}</AppText>)}
+                </View>)}
+              </TermsModal>
             </>}
-          </TintedPanel>}
+          </>}
           <Button
             label={
               review.data?.attempt
@@ -607,7 +611,7 @@ function BookingForm({
             }
             loading={pending}
             disabled={
-              !review.data || (!review.data.attempt && (!review.data.quote || !acceptedVersion || acceptedVersion !== policy.data?.versionId))
+              !review.data || (!review.data.attempt && (!review.data.quote || !termsAcceptanceKey || acceptedKey !== termsAcceptanceKey || !termsVersionId))
             }
             onPress={() => void confirm()}
           />
