@@ -4,7 +4,7 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, Details, Timeline,
 } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { usePageIndex } from "@/lib/usePageIndex";

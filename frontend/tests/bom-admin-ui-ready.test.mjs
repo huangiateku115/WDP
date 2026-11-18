@@ -525,3 +525,22 @@ test('Contract pricing panel never shows a half-empty billing period',()=>{
   assert.doesNotMatch(page,/day\(pricing\.startDate\)/,'a missing snapshot startDate must not render an em dash');
   assert.match(page,/pricingRows\(pricing, reservation\)/);
 });
+
+// The catalogue screen is shared by BOM and Admin and pages with the BOM/Admin pager, so its
+// guard lives here instead of inside the Customer SKU suite.
+test('Catalog screen keeps its Vietnamese labels, pager and shared routes',()=>{
+  const page=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  const pager=read('../src/components/bom/ListPager.jsx');
+  const api=read('../src/api/bomApi.js');
+  for(const routes of [read('../src/routes/AdminRoutes.jsx'),read('../src/routes/BomRoutes.jsx')]){
+    assert.match(routes,/managed-inventory-catalog/);
+  }
+  assert.match(page,/Tìm theo mã hoặc tên/);
+  assert.match(page,/Ngừng sử dụng/);
+  assert.match(page,/ListPager/);
+  assert.match(page,/Chưa có dữ liệu phù hợp/);
+  assert.match(pager,/Trang trước/);
+  assert.match(pager,/Trang sau/);
+  assert.match(api,/managed-inventory-catalog\/categories/);
+  assert.match(api,/managed-inventory-catalog\/quantity-units/);
+});

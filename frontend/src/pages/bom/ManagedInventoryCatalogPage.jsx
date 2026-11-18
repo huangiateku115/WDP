@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { bomManagedInventoryCatalogApi as api } from '@/api/bomApi';
 import { Button, Input, Panel, Screen, Status, Table, Field, Select, Message } from '@/components/manager/ManagerUI';
-import ListPager from '@/components/manager/ListPager';
+import ListPager from '@/components/bom/ListPager';
 import { AsyncBoundary, ConfirmDialog } from '@/components/bom/LiveBomUI';
 import { useAsyncData } from '@/lib/useAsyncData';
 import { usePageIndex } from '@/lib/usePageIndex';

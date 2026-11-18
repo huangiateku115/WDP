@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Screen, Panel, Table, Field, Input, Select, Button, Message } from "@/components/manager/ManagerUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";

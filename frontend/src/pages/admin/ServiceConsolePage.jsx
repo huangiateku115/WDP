@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, OpenLink, Details, Button, Message, Field, Select, Input } from "@/components/manager/ManagerUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { PAGE_SIZE } from "@/lib/pageSlice";

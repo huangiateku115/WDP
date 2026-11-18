@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Screen, Panel, Table, Status, Field, Select, Input, Message } from "@/components/manager/ManagerUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";

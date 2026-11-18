@@ -11,7 +11,7 @@ import { useAdminUsers, loadAdminUsers, userId, userStatus } from "@/lib/adminUs
 import { useAsyncData } from "@/lib/useAsyncData";
 import { PAGE_SIZE, pageSlice } from "@/lib/pageSlice";
 import { usePageIndex } from "@/lib/usePageIndex";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { loadFacilities, invalidateFacilities } from "@/lib/bomApiData";
 import auditApi from "@/api/auditApi";
 import { downloadCsv } from "@/lib/csvExport";

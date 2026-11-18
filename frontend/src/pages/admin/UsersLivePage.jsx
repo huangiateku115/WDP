@@ -4,7 +4,7 @@ import {
   Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, Message,
 } from "@/components/manager/ManagerUI";
 import { AdminScreen, UserApiState, ApiConfirmation } from "@/components/admin/AdminUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import {
   useAdminUsers, loadAdminUsers, userId, userStatus, isInactive, facilityIdOf,

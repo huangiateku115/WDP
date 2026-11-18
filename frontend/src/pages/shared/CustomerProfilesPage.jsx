@@ -7,7 +7,7 @@ import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { pageSlice } from "@/lib/pageSlice";
 import { usePageIndex } from "@/lib/usePageIndex";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { apiErrorMessage } from "@/lib/apiError";
 import customerProfileApi from "@/api/customerProfileApi";
 

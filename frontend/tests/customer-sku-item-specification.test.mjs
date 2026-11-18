@@ -52,18 +52,6 @@ test('Customer SKU forms use Backend catalogs and do not expose free-text Catego
  assert.match(skuForm,/select id="sku-category"/);assert.doesNotMatch(skuForm,/value=\{form\.category\}/);
  assert.match(specs,/quantityUnitId/);assert.match(specs,/Chưa có đơn vị tính/);
 });
-test('Admin and BOM share Vietnamese Category and Quantity Unit CRUD screen and routes',()=>{
- const page=readFileSync(new URL('../src/pages/bom/ManagedInventoryCatalogPage.jsx',import.meta.url),'utf8');
- const pager=readFileSync(new URL('../src/components/manager/ListPager.jsx',import.meta.url),'utf8');
- const api=readFileSync(new URL('../src/api/bomApi.js',import.meta.url),'utf8');
- const admin=readFileSync(new URL('../src/routes/AdminRoutes.jsx',import.meta.url),'utf8');
- const bom=readFileSync(new URL('../src/routes/BomRoutes.jsx',import.meta.url),'utf8');
- // The catalog shares the pager used by every BOM/Admin table, so the labels live there.
- assert.match(page,/Tìm theo mã hoặc tên/);assert.match(page,/Ngừng sử dụng/);assert.match(page,/ListPager/);assert.match(page,/Chưa có dữ liệu phù hợp/);
- assert.match(pager,/Trang trước/);assert.match(pager,/Trang sau/);
- assert.match(api,/managed-inventory-catalog\/categories/);assert.match(api,/managed-inventory-catalog\/quantity-units/);
- assert.match(admin,/managed-inventory-catalog/);assert.match(bom,/managed-inventory-catalog/);
-});
 test('confirmed API allowlist contains only catalog and SKU specification methods and paths',()=>{
  for(const [method,url] of [['GET','/managed-inventory-catalog/categories/active'],['GET','/managed-inventory-catalog/quantity-units/active'],['GET','/managed-inventory-catalog/categories'],['POST','/managed-inventory-catalog/categories'],['PATCH',`/managed-inventory-catalog/quantity-units/${id}`],['DELETE',`/managed-inventory-catalog/categories/${id}`],['GET',`/inventory-items/${id}/specifications`],['POST',`/inventory-items/${id}/specifications`],['PATCH',`/inventory-items/${id}/specifications/${id}`],['DELETE',`/inventory-items/${id}/specifications/${id}`]])assert.doesNotThrow(()=>assertConfirmedRequest({method,url}));
  for(const [method,url] of [['POST',`/managed-inventory-catalog/categories/${id}`],['PUT',`/managed-inventory-catalog/categories/${id}`],['POST',`/inventory-items/${id}/specifications/${id}/delete`]])assert.throws(()=>assertConfirmedRequest({method,url}));

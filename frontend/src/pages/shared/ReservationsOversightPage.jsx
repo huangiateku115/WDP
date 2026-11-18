@@ -4,7 +4,7 @@ import { useAuthSession } from "@/lib/authSession";
 import {
   Screen, Panel, Table, Status, OpenLink, Field, Select, Input, Button, money,
 } from "@/components/manager/ManagerUI";
-import ListPager from "@/components/manager/ListPager";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
