@@ -64,7 +64,7 @@ export default function MovementHistoryPage() {
 
   const cell = value => inventoryId(value) || 'Outside / no Cell';
   const rows = result?.movements.filter(movement => !type || movement.type === type) || [];
-  return <Screen title="Lịch sử biến động mặt hàng" notice="Biến động hàng đã hoàn tất trên máy chủ trong cơ sở được phân công.">
+  return <Screen title="Lịch sử biến động mặt hàng" notice="Tra cứu các lần nhập, xuất và di chuyển hàng tại cơ sở.">
     <OpenLink to={`/${workspace}/managed`}>Về Hàng hóa và tồn kho</OpenLink>
     <Panel title="Tìm mặt hàng">
       <form onSubmit={find} className="flex flex-wrap gap-3">
