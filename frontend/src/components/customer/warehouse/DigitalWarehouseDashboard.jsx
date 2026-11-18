@@ -97,6 +97,7 @@ function RackInformation({ data, facilityId, itemId }) {
     contextQuery = new URLSearchParams(params);
   if (itemId) contextQuery.set("inventoryItem", itemId);
   const { rack, capacity } = data,
+    capacityRedacted = capacity?.disclosure === "REDACTED",
     fields = [
       ["Zone", rack.zoneCode],
       ["Aisle", rack.aisleCode],
@@ -104,18 +105,18 @@ function RackInformation({ data, facilityId, itemId }) {
       ["Depth", measurementText(rack.dimensions?.depthM)],
       ["Nominal height", measurementText(rack.dimensions?.heightM)],
       ["Orientation", rack.orientation == null ? null : `${rack.orientation}°`],
-      ["Rated capacity", weightText(capacity.ratedCapacityKg)],
-      ["Allocatable capacity", weightText(capacity.allocatableCapacityKg)],
+      ["Rated capacity", capacityRedacted ? null : weightText(capacity.ratedCapacityKg)],
+      ["Allocatable capacity", capacityRedacted ? null : weightText(capacity.allocatableCapacityKg)],
       ["Returned levels", data.levels.length],
       ["Returned cells", data.levels.reduce((n, l) => n + l.cells.length, 0)],
       [
         "Physical used weight",
-        capacity.usedWeightKg == null
+        capacityRedacted || capacity.usedWeightKg == null
           ? null
           : weightText(capacity.usedWeightKg),
       ],
-      ["Weight utilization", capacity.utilizationStatus],
-      ["Source", capacity.source],
+      ["Weight utilization", capacityRedacted ? null : capacity.utilizationStatus],
+      ["Source", capacityRedacted ? null : capacity.source],
     ];
   return (
     <>
@@ -134,8 +135,9 @@ function RackInformation({ data, facilityId, itemId }) {
           ))}
       </dl>
       <p className="wm-baseline-note">
-        Nominal rack height is not measured usable cell clearance. Usage is
-        returned from warehouse counters; rental allocation is separate.
+        {capacityRedacted
+          ? "Thông tin tải trọng dùng chung chỉ dành cho nhân viên cơ sở."
+          : "Nominal rack height is not measured usable cell clearance. Usage is returned from warehouse counters; rental allocation is separate."}
       </p>
       <Link
         className="wm-inline-link"

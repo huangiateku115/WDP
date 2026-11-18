@@ -4,7 +4,6 @@ import WarehouseCellModel from '../../models/warehouse-map/warehouse-cell.model'
 import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model';
 import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
-import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
 import ItemMovementModel from '../../models/inventory-items/item-movement.model';
 import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
@@ -230,13 +229,10 @@ async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { 
       if (cellId) movementHistoryCells.add(String(cellId));
     }
   }
-  const myInventoryCells = new Set<string>();
-  if (actor?.role === UserRole.CUSTOMER) {
-    const customerId = actor._id as Types.ObjectId;
-    const items = await InventoryItemModel.find({ customerId, currentCellId: { $in: ids }, status: 'IN_STORAGE', deletedAt: { $exists: false } } as any).select('currentCellId').lean().exec();
-    for (const item of items) if (item.currentCellId) myInventoryCells.add(String(item.currentCellId));
-  }
-  return { rows, myInventoryCells, movementHistoryCells };
+  // V4 ownership/highlighting is intentionally added in Phase 6.4 from
+  // ManagedCellStock/ManagedItemInstance. Never infer Customer ownership from
+  // the legacy InventoryItem.currentCellId field here.
+  return { rows, myInventoryCells: new Set<string>(), movementHistoryCells };
 }
 
 function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true, hasMovementHistory = false) {
@@ -247,7 +243,13 @@ function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory
   const occupied = allocations.some(allocation => allocation.status === CellAllocationStatus.OCCUPIED);
   const activeNow = allocations.find(allocation => allocation.status === CellAllocationStatus.RESERVED && allocation.startDate <= now && allocation.endDate > now || allocation.status === CellAllocationStatus.HOLD && allocation.holdExpiresAt > now && allocation.startDate <= now && allocation.endDate > now);
   const activePeriod = allocations.find(allocation => allocation.status === CellAllocationStatus.RESERVED && allocation.startDate < (range?.endDate ?? now) && allocation.endDate > (range?.startDate ?? now) || allocation.status === CellAllocationStatus.HOLD && allocation.holdExpiresAt > now && allocation.startDate < (range?.endDate ?? now) && allocation.endDate > (range?.startDate ?? now));
-  const isMine = Boolean(actor?.role === UserRole.CUSTOMER && allocations.some(allocation => String(allocation.customerId) === actor._id.toString()));
+  const myAllocations = actor?.role === UserRole.CUSTOMER
+    ? allocations.filter(allocation => String(allocation.customerId) === actor._id.toString())
+    : [];
+  const isMine = myAllocations.length > 0;
+  const myAllocationStatus = myAllocations.some(allocation => allocation.status === CellAllocationStatus.OCCUPIED)
+    ? 'OCCUPIED'
+    : isMine ? 'RESERVED' : 'UNKNOWN';
   const physicallyOccupied = !Number.isFinite(usedWeightKg) || !Number.isFinite(usedVolumeM3) || usedWeightKg !== 0 || usedVolumeM3 !== 0 || occupied;
   const bookingStatus = physicallyOccupied ? 'OCCUPIED' : activeNow ? 'RESERVED' : 'AVAILABLE';
   const periodStatus = physicallyOccupied ? 'OCCUPIED' : activePeriod ? 'RESERVED' : 'AVAILABLE';
@@ -275,6 +277,24 @@ function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory
                 : stockHistoryUnreconciled ? 'STOCK_RECONCILIATION_REQUIRED'
                   : physicallyOccupied ? 'CELL_PHYSICALLY_OCCUPIED'
                     : activePeriod ? 'CELL_RESERVED_FOR_PERIOD' : null;
+  if (actor?.role === UserRole.CUSTOMER) {
+    // The booking decision is computed server-side, but physical usage and
+    // technical reasons for another tenant's Cell are private. Keep only the
+    // minimum selectable/unavailable state required by the booking UI.
+    const customerStatus = isMine
+      ? cell.operationalStatus === WarehouseOperationalStatus.MAINTENANCE ? 'MAINTENANCE'
+        : cell.operationalStatus === WarehouseOperationalStatus.BLOCKED ? 'BLOCKED' : myAllocationStatus
+      : isBookable ? 'AVAILABLE' : 'UNKNOWN';
+    return {
+      bookingStatus: customerStatus,
+      displayStatus: customerStatus,
+      periodStatus: customerStatus,
+      isBookable,
+      bookingReasonCode: isBookable ? null : 'CELL_UNAVAILABLE',
+      isMine,
+      capacityDisclosure: 'REDACTED',
+    };
+  }
   return { bookingStatus, displayStatus, periodStatus, isBookable, bookingReasonCode, physicalUsageKnown, isMine, hasMyInventory, usedWeightKg, maxWeightKg: validWeightCapacity ? cell.maxWeightKg : null,
     remainingWeightKg: validWeightCapacity && physicalUsageKnown ? validRemaining(cell.maxWeightKg, usedWeightKg) : null, usedVolumeM3, maxVolumeM3,
     remainingVolumeM3: validVolumeCapacity && physicalUsageKnown ? validRemaining(maxVolumeM3!, usedVolumeM3) : null };
@@ -720,6 +740,7 @@ export class WarehouseMapService {
             const allocatableCapacityKg = rackCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
             const usage = await usageForRack(rack as IWarehouseRack, rackCells);
             const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())));
+            const customer = actor?.role === UserRole.CUSTOMER;
             return {
               _id: rack._id,
               rackCode: rack.rackCode,
@@ -729,25 +750,29 @@ export class WarehouseMapService {
               dimensions: rack.dimensions,
               operationalStatus: rack.operationalStatus,
               utilization: {
-                usedWeightKg: usage.usedWeightKg,
-                usedVolumeM3: usage.usedVolumeM3,
-                physicalUsageKnown: usage.physicalUsageKnown,
-                source: usage.source,
-                // Keep maxWeightKg as the legacy rated capacity field.
-                maxWeightKg: ratedCapacityKg,
-                ratedCapacityKg,
-                allocatableCapacityKg,
-                remainingWeightKg: validRemaining(ratedCapacityKg, usage.usedWeightKg),
-                ratio: ratedCapacityKg > 0 ? usage.usedWeightKg / ratedCapacityKg : 0,
-                status: utilizationStatus(usage.usedWeightKg, ratedCapacityKg),
+                ...(customer ? {} : {
+                  usedWeightKg: usage.usedWeightKg,
+                  usedVolumeM3: usage.usedVolumeM3,
+                  physicalUsageKnown: usage.physicalUsageKnown,
+                  source: usage.source,
+                  maxWeightKg: ratedCapacityKg,
+                  ratedCapacityKg,
+                  allocatableCapacityKg,
+                  remainingWeightKg: validRemaining(ratedCapacityKg, usage.usedWeightKg),
+                  ratio: ratedCapacityKg > 0 ? usage.usedWeightKg / ratedCapacityKg : 0,
+                  status: utilizationStatus(usage.usedWeightKg, ratedCapacityKg),
+                }),
+                ...(customer ? { disclosure: 'REDACTED', status: 'UNKNOWN' } : {}),
               },
               cellCount: rackCells.length,
               availableCellCount: statuses.filter(cell => cell.isBookable).length,
               availableForPeriodCellCount: statuses.filter(cell => cell.isBookable).length,
-              reservedCellCount: statuses.filter(cell => cell.displayStatus === 'RESERVED').length,
-              occupiedCellCount: statuses.filter(cell => cell.displayStatus === 'OCCUPIED').length,
-              blockedCellCount: statuses.filter(cell => cell.displayStatus === 'BLOCKED').length,
-              maintenanceCellCount: statuses.filter(cell => cell.displayStatus === 'MAINTENANCE').length,
+              ...(!customer ? {
+                reservedCellCount: statuses.filter(cell => cell.displayStatus === 'RESERVED').length,
+                occupiedCellCount: statuses.filter(cell => cell.displayStatus === 'OCCUPIED').length,
+                blockedCellCount: statuses.filter(cell => cell.displayStatus === 'BLOCKED').length,
+                maintenanceCellCount: statuses.filter(cell => cell.displayStatus === 'MAINTENANCE').length,
+              } : {}),
               myCellCount: statuses.filter(cell => cell.isMine || cell.hasMyInventory).length,
             };
           })),
@@ -769,6 +794,7 @@ export class WarehouseMapService {
       const cells = await WarehouseCellModel.find({ rackId: rack._id, ...live }).sort({ levelNumber: -1, cellNumber: 1 }).lean().exec();
       const bookingData = await cellBookingData(cells as IWarehouseCell[], actor, range);
       const usage = await usageForRack(rack, cells as IWarehouseCell[]);
+      const customer = actor?.role === UserRole.CUSTOMER;
       const levels = [];
       for (let levelNumber = rack.levelCount; levelNumber >= 1; levelNumber -= 1) {
         const levelCells = cells.filter(cell => cell.levelNumber === levelNumber);
@@ -780,21 +806,23 @@ export class WarehouseMapService {
             typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0);
         levels.push({
           levelNumber,
-          maxWeightKg,
-          ratedCapacityKg: maxWeightKg,
-          allocatableCapacityKg,
-          usedWeightKg,
-          usedVolumeM3,
+          ...(customer ? { capacityDisclosure: 'REDACTED', utilizationStatus: 'UNKNOWN' } : {
+            maxWeightKg,
+            ratedCapacityKg: maxWeightKg,
+            allocatableCapacityKg,
+            usedWeightKg,
+            usedVolumeM3,
             physicalUsageKnown,
             remainingWeightKg: physicalUsageKnown ? validRemaining(maxWeightKg, usedWeightKg) : null,
-          utilizationStatus: utilizationStatus(usedWeightKg, maxWeightKg),
+            utilizationStatus: utilizationStatus(usedWeightKg, maxWeightKg),
+          }),
           cells: levelCells.map(cell => ({
             _id: cell._id,
             code: cell.code,
             cellNumber: cell.cellNumber,
             dimensions: cell.dimensions,
             operationalStatus: cell.operationalStatus,
-            utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg),
+            ...(customer ? {} : { utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg) }),
             ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())),
           })),
         });
@@ -818,7 +846,7 @@ export class WarehouseMapService {
           orientation: rack.orientation,
           operationalStatus: rack.operationalStatus,
         },
-        capacity: {
+        capacity: customer ? { disclosure: 'REDACTED', utilizationStatus: 'UNKNOWN' } : {
           maxWeightKg: capacityKg,
           ratedCapacityKg: capacityKg,
           allocatableCapacityKg,

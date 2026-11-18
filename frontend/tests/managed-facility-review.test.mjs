@@ -112,3 +112,18 @@ test('topology configuration rejects staff and renders manager loading and error
   assert.match(html, /Đang tải cấu trúc kho/);
   assert.doesNotMatch(html, />Tạo kệ<|>Tạo khu vực</);
 });
+
+test('capacity settings are manager-scoped, show diagnostics and edit rated limits only', () => {
+  const pageSource = readFileSync(new URL('../src/pages/manager/WarehouseSettingsPage.jsx', import.meta.url), 'utf8');
+  const apiSource = readFileSync(new URL('../src/api/facilityManagedApi.js', import.meta.url), 'utf8');
+  assert.match(pageSource, /user\?\.role === 'FACILITY_MANAGER'/);
+  assert.match(pageSource, /capacityDiagnostics/);
+  assert.match(pageSource, /Tải trọng và đối soát theo ô/);
+  assert.match(pageSource, /Định mức:/);
+  assert.match(pageSource, /Đang dùng:/);
+  assert.match(pageSource, /Chưa xác minh/);
+  assert.match(pageSource, /Sửa định mức \/ kích thước/);
+  assert.match(pageSource, /counter được quản lý từ sổ tồn, không thể sửa tại đây/);
+  assert.match(apiSource, /\/inventory-items\/managed-v3\/facility\/capacity-diagnostics/);
+  assert.doesNotMatch(pageSource, /usedWeightKg:\s*positiveNumber|usedVolumeM3:\s*positiveNumber/);
+});

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Types } = require('mongoose');
-const { normalizeDirectOutbound, buildDirectOutboundPlan, ManagedInventoryV3OutboundService, ManagedV3OutboundError } = require('../dist/services/inventory-items/managed-inventory-v3-outbound.service');
+const { normalizeDirectOutbound, normalizeOutboundObjectId, buildDirectOutboundPlan, ManagedInventoryV3OutboundService, ManagedV3OutboundError, isOutboundPresenceVisitPurpose } = require('../dist/services/inventory-items/managed-inventory-v3-outbound.service');
 
 const oid = n => new Types.ObjectId(String(n).padStart(24, '0'));
 const sku = { _id: oid(1), customerId: oid(2), managedV3Revision: 4 };
@@ -23,6 +23,21 @@ test('normalizer accepts valid direct outbound and rejects duplicate lines, unsa
   ] }), e => e.code === 'DUPLICATE_OUTBOUND_LINE');
   assert.throws(() => candidate({ quantity: Number.MAX_SAFE_INTEGER + 1 }), e => e.code === 'INVALID_OUTBOUND_LINE');
   assert.throws(() => candidate({ quantity: 2, cellAllocations: [{ cellId: oid(4).toHexString(), quantity: 1 }] }), e => e.code === 'INVALID_CELL_ALLOCATION');
+});
+
+test('outbound service accepts a route-validated SKU ObjectId when rechecking Customer ownership', () => {
+  const parsed = normalizeOutboundObjectId(sku._id.toHexString(), 'skuId');
+  const revalidated = normalizeOutboundObjectId(parsed, 'skuId');
+  assert.equal(revalidated, parsed);
+  assert.equal(revalidated.toHexString(), sku._id.toHexString());
+  assert.throws(() => normalizeOutboundObjectId('SKU-TL-002', 'skuId'), error => error.code === 'INVALID_INPUT');
+});
+
+test('generic warehouse visit authorizes presence while outbound capability remains a session check', () => {
+  assert.equal(isOutboundPresenceVisitPurpose('WAREHOUSE_VISIT'), true);
+  assert.equal(isOutboundPresenceVisitPurpose('OUTBOUND'), true); // pre-unification Visit compatibility
+  assert.equal(isOutboundPresenceVisitPurpose('INBOUND'), false);
+  assert.equal(isOutboundPresenceVisitPurpose('RELOCATION'), false);
 });
 
 test('A2 partial removal allocates FIFO across receipt Cells and conserves quantity, weight and volume', () => {

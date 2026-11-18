@@ -75,6 +75,19 @@ test('booking eligibility capacity reasons are explained to Customers without ex
   assert.doesNotMatch(history, /STOCK_RECONCILIATION_REQUIRED|UNKNOWN|MISMATCH|RECONCILED/);
 });
 
+test('redacted public-map capacity does not look unconfigured or expose physical counters', () => {
+  const redactedCell = cell({ capacityDisclosure: 'REDACTED', bookingStatus: 'UNKNOWN', displayStatus: 'UNKNOWN', periodStatus: 'UNKNOWN',
+    isBookable: false, bookingReasonCode: 'CELL_UNAVAILABLE', maxWeightKg: undefined, usedWeightKg: undefined, remainingWeightKg: undefined,
+    maxVolumeM3: undefined, usedVolumeM3: undefined, remainingVolumeM3: undefined });
+  const html = renderInformation(redactedCell);
+  assert.match(html, /chỉ dành cho nhân viên cơ sở/);
+  assert.doesNotMatch(html, /100 kg|30 kg|70 kg|0\.5 m³|0\.108 m³|0\.392 m³|Chưa cấu hình|MISMATCH|RECONCILED|CELL_UNAVAILABLE/);
+  assert.doesNotMatch(html, /undefined|NaN|Infinity/);
+  const cellCard = renderCells(detail([redactedCell]));
+  assert.match(cellCard, /Thông số tải trọng được ẩn trên bản đồ khách hàng/);
+  assert.doesNotMatch(cellCard, /Chưa cấu hình tải trọng|undefined|NaN|Infinity/);
+});
+
 test('WarehouseCells renders multiple racks and nested Cell rows with different booking states', () => {
   const first = renderCells(detail([cell()]));
   const second = renderCells(detail([cell({ _id: 'd'.repeat(24), cellNumber: 2, code: 'R02-L1-C2', periodStatus: 'RESERVED', isBookable: false })], { rack: { rackCode: 'R-02' } }));

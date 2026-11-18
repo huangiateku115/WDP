@@ -69,6 +69,41 @@ export function normalizeUnifiedInbound(input: unknown) {
 function instanceAllocationsDuplicate(rows: any[], idText: string, index: number) { return rows.slice(0, index).some(row => String(row?.cellId) === idText); }
 
 const refId = (value: any) => String(value?._id ?? value ?? '');
+
+/**
+ * Selects a complete revision history for every SKU touched by an operation.
+ * A SKU ledger remains replayable even after all of its stock projections are
+ * depleted, and Cell/Reservation scope must not truncate that SKU's history.
+ */
+export function selectManagedSkuReplayScope(input: {
+  canonicalMovements: any[]; stockRows: any[]; instances: any[];
+  reservationId: unknown; reservationIds?: unknown[]; cellIds: unknown[]; skuId?: unknown;
+}) {
+  const reservationIds = new Set([input.reservationId, ...(input.reservationIds ?? [])].map(refId));
+  const cellIds = new Set((input.cellIds ?? []).map(refId));
+  const relevantCanonicalMovements = input.canonicalMovements.filter((movement: any) =>
+    reservationIds.has(refId(movement.managedReservationId ?? movement.reservationId)) ||
+    [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? [])]
+      .some((line: any) => cellIds.has(refId(line.cellId)) || reservationIds.has(refId(line.reservationId))));
+  const relevantSkuIds = new Set([
+    ...relevantCanonicalMovements.map((movement: any) => refId(movement.itemId)),
+    ...(input.skuId ? [refId(input.skuId)] : []),
+  ].filter(Boolean));
+  const stocks = input.stockRows.filter((row: any) => reservationIds.has(refId(row.reservationId)) ||
+    cellIds.has(refId(row.cellId)) || relevantSkuIds.has(refId(row.skuId)));
+  const instances = input.instances.filter((row: any) => reservationIds.has(refId(row.reservationId)) ||
+    (row.allocations ?? []).some((allocation: any) => cellIds.has(refId(allocation.cellId))) || relevantSkuIds.has(refId(row.skuId)));
+  // Include relevant event SKUs and the explicitly operated SKU even when no
+  // current projection exists (for example, after a full outbound).
+  const replaySkuIds = new Set([
+    ...relevantSkuIds,
+    ...stocks.map((row: any) => refId(row.skuId)),
+    ...instances.map((row: any) => refId(row.skuId)),
+  ].filter(Boolean));
+  const replayMovements = input.canonicalMovements.filter((movement: any) => replaySkuIds.has(refId(movement.itemId)));
+  return { stocks, instances, replayMovements };
+}
+
 const legacyMovementCellIds = (movement: any) => [...new Set([
   movement.sourceCellId, movement.destinationCellId,
   ...(movement.batchLines ?? []).map((line: any) => line.cellId),

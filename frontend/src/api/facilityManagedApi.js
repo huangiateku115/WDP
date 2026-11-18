@@ -20,6 +20,7 @@ export default {
   }),
   detail: (kind, recordId, config) => client.get(`/${resource(kind)}/${id(recordId)}`, config),
   cellStock: (cellId, config = {}) => client.get(`/rack-cells/${id(cellId)}/stock`, config),
+  capacityDiagnostics: (config = {}) => client.get('/inventory-items/managed-v3/facility/capacity-diagnostics', config),
   create: (kind, body) => client.post(`/${resource(kind)}`, body),
   update: (kind, recordId, body) => client.patch(`/${resource(kind)}/${id(recordId)}`, body),
 };

@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IManagedAccessVisit, ManagedAccessPurpose, ManagedAccessVisitStatus } from '../../types/managed-access.type';
+import { IManagedAccessVisit, ManagedAccessPurpose, ManagedAccessVisitPurpose, ManagedAccessVisitStatus } from '../../types/managed-access.type';
 
 const audit = new Schema({ action: { type: String, required: true }, actorId: { type: Schema.Types.ObjectId, ref: 'User' }, actorRole: { type: String, required: true }, at: { type: Date, required: true }, details: { type: Schema.Types.Mixed } }, { _id: false });
 const schema = new Schema<IManagedAccessVisit>({
@@ -7,7 +7,8 @@ const schema = new Schema<IManagedAccessVisit>({
   scopedReservationIds: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }],
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
-  purpose: { type: String, enum: Object.values(ManagedAccessPurpose), required: true },
+  // Keep legacy operation-specific values readable while new bookings use WAREHOUSE_VISIT.
+  purpose: { type: String, enum: [...Object.values(ManagedAccessPurpose), ...Object.values(ManagedAccessVisitPurpose)], required: true },
   startsAt: { type: Date, required: true }, endsAt: { type: Date, required: true }, note: { type: String, maxlength: 500 },
   status: { type: String, enum: Object.values(ManagedAccessVisitStatus), required: true, default: ManagedAccessVisitStatus.SCHEDULED },
   assignedStaffId: { type: Schema.Types.ObjectId, ref: 'User' },

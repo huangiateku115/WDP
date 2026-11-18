@@ -1040,8 +1040,11 @@ export const handoverReservation = async (req: Request, res: Response) => {
       if (storageCondition === 'UNSAFE') return res.status(409).json({ success: false, code: 'HANDOVER_UNSAFE', message: 'Không thể kích hoạt thuê khi điều kiện kho không an toàn.' });
       if (candidate.status === ReservationStatus.ACTIVE && candidate.handoverAt &&
           req.user!.assignedFacilityId && String(req.user!.assignedFacilityId) === String(candidate.facilityId)) {
-        return res.json({ success: true, message: 'Bàn giao đã được ghi nhận trước đó. Quyền truy cập số chưa được cấp.',
-          data: { reservation: candidate, accessProvisioning: { status: 'UNAVAILABLE' }, replayed: true } });
+        const pinProvisioned = typeof candidate.accessPinCode === 'string' && /^\d{6}$/.test(candidate.accessPinCode);
+        return res.json({ success: true,
+          message: pinProvisioned ? 'Bàn giao đã được ghi nhận trước đó. PIN mô phỏng đã được cấp.' : 'Bàn giao đã được ghi nhận trước đó. Chưa xác minh được PIN mô phỏng.',
+          data: { reservation: candidate, ...(pinProvisioned ? { pinCode: candidate.accessPinCode } : {}),
+            accessProvisioning: pinProvisioned ? { status: 'SIMULATED', mode: 'PIN_CODE' } : { status: 'UNAVAILABLE' }, replayed: true } });
       }
       const session = await mongoose.startSession();
       let activated: any = null;

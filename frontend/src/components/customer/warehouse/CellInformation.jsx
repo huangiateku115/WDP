@@ -57,6 +57,7 @@ function CellPeriodStatus({ cell }) {
 
 export function CellInformation({ cell, level = {}, rack = {} }) {
   if (!cell || typeof cell !== "object") return <p role="status">Thông tin ô lưu trữ hiện chưa có.</p>;
+  const capacityRedacted = cell.capacityDisclosure === "REDACTED";
   const configuredWeight = isCapacityValue(cell.maxWeightKg) && cell.maxWeightKg > 0;
   const configuredVolume = isCapacityValue(cell.maxVolumeM3) && cell.maxVolumeM3 > 0;
   const usageKnown = cell.physicalUsageKnown === true;
@@ -74,17 +75,17 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
     ["Cell", cell.cellNumber],
 
-    ["Tải trọng tối đa", configuredWeight ? weightText(cell.maxWeightKg) : "Chưa cấu hình"],
+    ["Tải trọng tối đa", capacityRedacted ? null : configuredWeight ? weightText(cell.maxWeightKg) : "Chưa cấu hình"],
 
-    ["Tải trọng đang sử dụng", measuredValue(cell.usedWeightKg, weightText)],
+    ["Tải trọng đang sử dụng", capacityRedacted ? null : measuredValue(cell.usedWeightKg, weightText)],
 
-    ["Tải trọng còn lại", !configuredWeight ? "Chưa cấu hình" : measuredValue(cell.remainingWeightKg, weightText)],
+    ["Tải trọng còn lại", capacityRedacted ? null : !configuredWeight ? "Chưa cấu hình" : measuredValue(cell.remainingWeightKg, weightText)],
 
-    ["Thể tích tối đa", configuredVolume ? volumeText(cell.maxVolumeM3) : "Chưa cấu hình"],
+    ["Thể tích tối đa", capacityRedacted ? null : configuredVolume ? volumeText(cell.maxVolumeM3) : "Chưa cấu hình"],
 
-    ["Thể tích đang sử dụng", measuredValue(cell.usedVolumeM3, volumeText)],
+    ["Thể tích đang sử dụng", capacityRedacted ? null : measuredValue(cell.usedVolumeM3, volumeText)],
 
-    ["Thể tích còn lại", !configuredVolume ? "Chưa cấu hình" : measuredValue(cell.remainingVolumeM3, volumeText)],
+    ["Thể tích còn lại", capacityRedacted ? null : !configuredVolume ? "Chưa cấu hình" : measuredValue(cell.remainingVolumeM3, volumeText)],
 
     [
 
@@ -160,17 +161,19 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
       </dl>
 
-      <p className="wm-baseline-note">{!usageKnown
-        ? "Thông tin dung lượng hiện chưa được xác minh. Vui lòng liên hệ cơ sở nếu bạn cần biết thêm."
-        : cell.isBookable === false
-          ? ({
-            CELL_WEIGHT_CAPACITY_NOT_CONFIGURED: "Ô này chưa được cơ sở cấu hình tải trọng tối đa nên hiện chưa thể đặt.",
-            CELL_VOLUME_CAPACITY_INVALID: "Kích thước sử dụng của ô này chưa hợp lệ nên hiện chưa thể đặt.",
-            CELL_DIMENSIONS_NOT_CONFIGURED: "Kích thước sử dụng của ô này chưa được cấu hình nên hiện chưa thể đặt.",
-            CAPACITY_COUNTER_EXCEEDS_LIMIT: "Số liệu sức chứa của ô cần được cơ sở kiểm tra trước khi đặt.",
-            STOCK_RECONCILIATION_REQUIRED: "Cơ sở cần kiểm tra lại lịch sử sử dụng ô này trước khi cho đặt.",
-          }[cell.bookingReasonCode] || "Ô này hiện chưa thể đặt trong thời hạn đã chọn. Vui lòng thử ô khác hoặc liên hệ cơ sở.")
-          : "Trạng thái khả dụng được xác nhận theo thời hạn thuê bạn đã chọn."}</p>
+      <p className="wm-baseline-note">{capacityRedacted
+        ? "Trạng thái đặt thuê do hệ thống xác định; thông số sử dụng chung chỉ dành cho nhân viên cơ sở."
+        : !usageKnown
+          ? "Thông tin dung lượng hiện chưa được xác minh. Vui lòng liên hệ cơ sở nếu bạn cần biết thêm."
+          : cell.isBookable === false
+            ? ({
+              CELL_WEIGHT_CAPACITY_NOT_CONFIGURED: "Ô này chưa được cơ sở cấu hình tải trọng tối đa nên hiện chưa thể đặt.",
+              CELL_VOLUME_CAPACITY_INVALID: "Kích thước sử dụng của ô này chưa hợp lệ nên hiện chưa thể đặt.",
+              CELL_DIMENSIONS_NOT_CONFIGURED: "Kích thước sử dụng của ô này chưa được cấu hình nên hiện chưa thể đặt.",
+              CAPACITY_COUNTER_EXCEEDS_LIMIT: "Số liệu sức chứa của ô cần được cơ sở kiểm tra trước khi đặt.",
+              STOCK_RECONCILIATION_REQUIRED: "Cơ sở cần kiểm tra lại lịch sử sử dụng ô này trước khi cho đặt.",
+            }[cell.bookingReasonCode] || "Ô này hiện chưa thể đặt trong thời hạn đã chọn. Vui lòng thử ô khác hoặc liên hệ cơ sở.")
+            : "Trạng thái khả dụng được xác nhận theo thời hạn thuê bạn đã chọn."}</p>
 
     </>
 
@@ -457,11 +460,6 @@ export default function WarehouseCells({
 
                       {picked && <span>Trong giỏ thuê</span>}
 
-                      <small>
-                        {isCapacityValue(cell.maxWeightKg) && cell.maxWeightKg > 0
-                          ? weightText(cell.maxWeightKg)
-                          : "Chưa cấu hình tải trọng"}
-                      </small>
 
                     </button>
 
