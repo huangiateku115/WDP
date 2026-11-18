@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { managedAccessApi } from '@/api/managedAccessApi';
+import { managedAccessApi, notifyManagedAccessSessionUpdated } from '@/api/managedAccessApi';
 import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
 import { managedInventoryV3RelocationApi } from '@/api/managedInventoryV3RelocationApi';
 import warehouseMapApi from '@/api/warehouseMapApi';
@@ -16,11 +16,10 @@ const availableStockKinds = spec => [
 ];
 const preferredStockKind = spec => availableStockKinds(spec)[0] || '';
 
-export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
+export default function ManagedSelfRelocationV3({ item, rental, onRefresh, initialSessionId = '' }) {
   const skuId = ref(item);
   const [context, setContext] = useState(null), [sessions, setSessions] = useState([]), [sessionId, setSessionId] = useState('');
   const [lines, setLines] = useState([lineTemplate()]), [notes, setNotes] = useState(''), [attested, setAttested] = useState(false);
-  const [visitTargetReservationId, setVisitTargetReservationId] = useState('');
   const [preview, setPreview] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [pending, setPending] = useState(() => managedInventoryV3RelocationApi.pending(skuId));
   const reload = useCallback(async () => {
@@ -38,14 +37,16 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
     } catch (failure) { setError(message(failure)); }
   }, [skuId]);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { const refreshSession = () => { void managedAccessApi.mySessions().then(response => setSessions(response.data?.data || [])).catch(() => {}); }; window.addEventListener('managed-access-session-updated', refreshSession); return () => window.removeEventListener('managed-access-session-updated', refreshSession); }, []);
 
   const specs = context?.itemSpecifications || [], cells = context?.cells || [];
   const sessionsForScope = sessions.filter(session => session.status === 'ACTIVE' && session.allowedPurposes?.includes('RELOCATION') &&
     Number.isFinite(Date.parse(session.expiresAt)) && Date.parse(session.expiresAt) > Date.now());
+  useEffect(() => { if (!sessionId && initialSessionId && sessionsForScope.some(session => ref(session) === initialSessionId)) setSessionId(initialSessionId); }, [initialSessionId, sessionId, sessionsForScope]);
   const chosenSession = sessionsForScope.find(session => ref(session) === sessionId);
   const reservationsForScope = context?.reservations || [];
   const sourceReservationForVisit = ref(rental || item?.reservationId || item?.managedReservationId);
-  const visitBookingUrl = `/portal/managed-access?purpose=RELOCATION&reservationId=${encodeURIComponent(sourceReservationForVisit)}${visitTargetReservationId && visitTargetReservationId !== sourceReservationForVisit ? `&additionalReservationId=${encodeURIComponent(visitTargetReservationId)}` : ''}`;
+  const visitBookingUrl = `/portal/managed-access?reservationId=${encodeURIComponent(sourceReservationForVisit)}`;
   const neededCellIds = [...new Set(lines.flatMap(line => {
     const selectedSpec = specs.find(row => ref(row.itemSpecId) === line.itemSpecId);
     const selectedInstance = line.stockKind === 'INSTANCE' && selectedSpec?.instances?.find(row => row.itemInstanceId === line.itemInstanceId);
@@ -76,7 +77,7 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
   const fetchPreview = async () => {
     if (!canUseRental || !payload || !allLinesValid) { setError(chosenSession && !chosenSessionCoversSelectedCells
       ? 'Phiên RELOCATION đã chọn chưa bao phủ tất cả ô nguồn và ô đích. Hãy chọn phiên có đúng phạm vi hoặc đặt lại lịch.'
-      : 'Chọn Reservation đang hoạt động, phiên RELOCATION và hoàn tất các dòng chuyển.'); return; }
+      : 'Chọn Reservation đang hoạt động, phiên đến kho còn quyền di chuyển hàng và hoàn tất các dòng chuyển.'); return; }
     setBusy(true); setError(''); setNotice(''); setPreview(null);
     try { const response = await managedInventoryV3RelocationApi.preview(skuId, payload); setPreview({ payload, result: response.data?.data }); }
     catch (failure) { setError(message(failure)); }
@@ -87,6 +88,7 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
     setBusy(true); setError(''); setNotice('');
     try {
       const response = await managedInventoryV3RelocationApi.confirm(skuId, candidate), result = response.data?.data;
+      notifyManagedAccessSessionUpdated(candidate.accessSessionId);
       if (result?.status !== 'COMMITTED' || result?.movement?.type !== 'RELOCATION' || result?.movement?.stockEffect?.action !== 'MOVE') throw new Error('Backend chưa xác nhận đã ghi phiếu chuyển.');
       managedInventoryV3RelocationApi.clearPending(skuId); setPending(null); setPreview(null); setNotes(''); setAttested(false);
       setNotice(`Đã chuyển hàng thành công. Mã phiếu ${result.movementCode || result.movementId || 'đã được ghi nhận'}.`);
@@ -109,6 +111,7 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
     if (!pending || busy) return;
     setBusy(true); setError('');
     try { const response = await managedInventoryV3RelocationApi.operation(skuId, pending.key), result = response.data?.data;
+      notifyManagedAccessSessionUpdated(pending.payload?.accessSessionId);
       managedInventoryV3RelocationApi.clearPending(skuId); setPending(null); setNotice(`Đã đối soát phiếu chuyển ${result?.movementCode || ref(result?.movement) || 'đã được ghi nhận'}.`); await reload(); onRefresh?.();
     } catch (failure) { setError(failure?.response?.status === 404 ? 'Chưa tìm thấy kết quả đã commit. Có thể gửi lại đúng phiếu đang lưu bằng cùng mã đối soát.' : message(failure)); }
     finally { setBusy(false); }
@@ -117,14 +120,14 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
 
   return <section className="mt-6 space-y-4 rounded-2xl border border-blue-200 bg-white p-5 shadow-sm" aria-labelledby="managed-relocation-title">
     <header><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Kho hàng Managed</p><h2 id="managed-relocation-title" className="mt-1 text-xl font-bold text-slate-900">Chuyển vị trí hàng hóa</h2>
-      <p className="mt-1 text-sm text-slate-600">Chuyển một phần hàng theo lô hoặc chuyển trọn một món nguyên vẹn giữa các ô đã cấp. Phiếu được ghi một lần vào lịch sử khi Backend xác nhận.</p></header>
+      <p className="mt-1 text-sm text-slate-600">Chuyển một phần hàng theo lô hoặc chuyển trọn một món nguyên vẹn giữa các ô đã cấp của các Reservation Managed V3 đang hoạt động thuộc bạn tại cùng cơ sở. Lượt đến kho tự bao phủ các Reservation đủ điều kiện tại thời điểm đặt lịch.</p>
+      <p className="mt-1 text-sm text-amber-800">Reservation đích phải còn ít nhất {context?.minimumDestinationRemainingDays || 7} ngày thuê tại lúc xác nhận. Có thể chuyển hàng ra khỏi Reservation sắp hết hạn.</p></header>
     <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><div><span className="text-slate-500">Đơn thuê</span><p className="font-semibold">{rental?.reservationCode || ref(rental) || 'Chưa xác định'}</p></div>
       <div><span className="text-slate-500">Trạng thái</span><p className="font-semibold">{canUseRental ? 'Đang thuê' : 'Chưa đủ điều kiện chuyển'}</p></div>
-      {reservationsForScope.length > 1 && <label>Đơn thuê đích cho lịch RELOCATION<select className="mt-1 w-full rounded-lg border bg-white p-2" value={visitTargetReservationId} onChange={event => setVisitTargetReservationId(event.target.value)}><option value="">Chọn đơn thuê đích</option>{reservationsForScope.filter(row => ref(row.id) !== sourceReservationForVisit).map(row => <option key={ref(row.id)} value={ref(row.id)}>{row.reservationCode}</option>)}</select></label>}
-      <label>Phiên đến kho RELOCATION<select className="mt-1 w-full rounded-lg border bg-white p-2" value={sessionId} onChange={event => { setSessionId(event.target.value); setPreview(null); }}><option value="">Chọn phiên đang hoạt động</option>
+      <label>Phiên đến kho<select className="mt-1 w-full rounded-lg border bg-white p-2" value={sessionId} onChange={event => { setSessionId(event.target.value); setPreview(null); }}><option value="">Chọn phiên đang hoạt động có quyền di chuyển hàng</option>
         {sessionsForScope.map(session => <option key={ref(session)} value={ref(session)}>{formatInventoryDateTime(session.startedAt)} · hết hạn {formatInventoryDateTime(session.expiresAt)}</option>)}</select></label></div>
-    {!sessionsForScope.length && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Cần đặt lịch đến kho với mục đích chuyển vị trí và được Staff check-in trước khi xác nhận.</p>}
-    {reservationsForScope.length > 1 && <Link className="inline-flex rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-900" to={visitBookingUrl}>Đặt lịch RELOCATION giữa hai đơn thuê cùng cơ sở</Link>}
+    {!sessionsForScope.length && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Cần đặt lượt đến kho và được Staff check-in. Session sẽ bao phủ các Reservation Managed V3 đang hoạt động, đã bàn giao tại cùng cơ sở.</p>}
+    {reservationsForScope.length > 1 && <Link className="inline-flex rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-900" to={visitBookingUrl}>Đặt lượt đến kho để chuyển giữa các đơn thuê cùng cơ sở</Link>}
     {pending && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><strong>Phiếu chuyển cần đối soát</strong><p className="mt-1">Không tạo phiếu mới; hãy kiểm tra kết quả hoặc gửi lại chính yêu cầu đã lưu.</p><div className="mt-2 flex gap-2"><button type="button" className="rounded border bg-white px-3 py-2" disabled={busy} onClick={recover}>Đối soát kết quả</button><button type="button" className="rounded border bg-white px-3 py-2" disabled={busy || !pending.payload} onClick={retry}>Gửi lại đúng yêu cầu đang chờ</button></div></div>}
     {context && <div className="space-y-4">{lines.map((line, index) => {
       const spec = specs.find(row => ref(row.itemSpecId) === line.itemSpecId), stockKinds = availableStockKinds(spec), instanceMode = line.stockKind === 'INSTANCE';
@@ -140,14 +143,14 @@ export default function ManagedSelfRelocationV3({ item, rental, onRefresh }) {
             <option value="">Chọn món cần chuyển</option>{spec.instances.map(row => <option key={row.itemInstanceId} value={row.itemInstanceId}>Món {row.itemInstanceId.slice(-8)} · {row.weightKg} kg · {row.volumeM3} m³ · đang ở {(row.allocations || []).map(a => a.cellCode || ref(a.cellId)).join(', ')}</option>)}</select></label>
             : <label className="text-sm">Ô nguồn<select className="mt-1 w-full rounded-lg border p-2" value={line.sourceReservationId && line.sourceCellId ? `${line.sourceReservationId}:${line.sourceCellId}` : ''} onChange={event => { const [sourceReservationId, sourceCellId] = event.target.value.split(':'); patchLine(line.lineId, { sourceReservationId: sourceReservationId || '', sourceCellId: sourceCellId || '', destinationCellId: '', destinationReservationId: '', quantity: 1 }); }}><option value="">Chọn ô đang có hàng</option>{sources.map(row => <option key={`${ref(row.reservationId)}:${ref(row.cellId)}`} value={`${ref(row.reservationId)}:${ref(row.cellId)}`}>{row.reservationCode || 'Đơn thuê'} · {row.cellCode || ref(row.cellId)} · khả dụng {row.quantityAvailable}</option>)}</select></label>}
         </div>
-        {instanceMode ? line.itemInstanceId && <div className="rounded-lg bg-blue-50 p-3 text-sm"><p>Món nguyên vẹn luôn chuyển với số lượng 1; không thể chia nhỏ.</p><p className="mt-1">Phân bổ tải tại các ô đích phải giữ đúng tổng {spec.instances.find(row => row.itemInstanceId === line.itemInstanceId)?.weightKg} kg và {spec.instances.find(row => row.itemInstanceId === line.itemInstanceId)?.volumeM3} m³.</p>
-          {line.destinationAllocations.map((allocation, allocationIndex) => <div key={`${line.lineId}-${allocationIndex}`} className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"><label>Ô đích<select className="mt-1 w-full rounded border p-2" value={allocation.reservationId && allocation.cellId ? `${allocation.reservationId}:${allocation.cellId}` : ''} onChange={event => { const [targetReservationId, targetCellId] = event.target.value.split(':'); patchLine(line.lineId, { destinationReservationId: targetReservationId || '', destinationAllocations: line.destinationAllocations.map((row, i) => i === allocationIndex ? { ...row, reservationId: targetReservationId || '', cellId: targetCellId || '' } : row) }); }}><option value="">Chọn ô đích</option>{cells.filter(cell => !line.destinationAllocations.some((row, i) => i !== allocationIndex && row.cellId === ref(cell.id))).map(cell => <option key={`${ref(cell.reservationId)}:${ref(cell.id)}`} value={`${ref(cell.reservationId)}:${ref(cell.id)}`}>{cell.reservationCode} · {cell.code} · còn {Math.max(0, cell.maxWeightKg - cell.usedWeightKg)} kg / {Math.max(0, cell.maxVolumeM3 - cell.usedVolumeM3)} m³</option>)}</select></label>
+          {instanceMode ? line.itemInstanceId && <div className="rounded-lg bg-blue-50 p-3 text-sm"><p>Món nguyên vẹn luôn chuyển với số lượng 1; không thể chia nhỏ.</p><p className="mt-1">Phân bổ tải tại các ô đích phải giữ đúng tổng {spec.instances.find(row => row.itemInstanceId === line.itemInstanceId)?.weightKg} kg và {spec.instances.find(row => row.itemInstanceId === line.itemInstanceId)?.volumeM3} m³.</p>
+          {line.destinationAllocations.map((allocation, allocationIndex) => <div key={`${line.lineId}-${allocationIndex}`} className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"><label>Ô đích<select className="mt-1 w-full rounded border p-2" value={allocation.reservationId && allocation.cellId ? `${allocation.reservationId}:${allocation.cellId}` : ''} onChange={event => { const [targetReservationId, targetCellId] = event.target.value.split(':'); patchLine(line.lineId, { destinationReservationId: targetReservationId || '', destinationAllocations: line.destinationAllocations.map((row, i) => i === allocationIndex ? { ...row, reservationId: targetReservationId || '', cellId: targetCellId || '' } : row) }); }}><option value="">Chọn ô đích</option>{cells.filter(cell => !line.destinationAllocations.some((row, i) => i !== allocationIndex && row.cellId === ref(cell.id))).map(cell => <option key={`${ref(cell.reservationId)}:${ref(cell.id)}`} disabled={!cell.canReceiveRelocation} value={`${ref(cell.reservationId)}:${ref(cell.id)}`}>{cell.reservationCode} · {cell.code} · {cell.canReceiveRelocation ? `còn ${Math.max(0, cell.maxWeightKg - cell.usedWeightKg)} kg / ${Math.max(0, cell.maxVolumeM3 - cell.usedVolumeM3)} m³` : 'không đủ 7 ngày thuê để nhận hàng'}</option>)}</select></label>
             <label>Tải trọng kg<input type="number" min="0.001" step="0.001" className="mt-1 w-full rounded border p-2" value={allocation.weightKg} onChange={event => patchLine(line.lineId, { destinationAllocations: line.destinationAllocations.map((row, i) => i === allocationIndex ? { ...row, weightKg: Number(event.target.value) } : row) })}/></label>
             <label>Thể tích m³<input type="number" min="0.000001" step="0.000001" className="mt-1 w-full rounded border p-2" value={allocation.volumeM3} onChange={event => patchLine(line.lineId, { destinationAllocations: line.destinationAllocations.map((row, i) => i === allocationIndex ? { ...row, volumeM3: Number(event.target.value) } : row) })}/></label>
             {line.destinationAllocations.length > 1 && <button type="button" className="self-end rounded border px-3 py-2" onClick={() => patchLine(line.lineId, { destinationAllocations: line.destinationAllocations.filter((_, i) => i !== allocationIndex) })}>Gỡ</button>}</div>)}
           <button type="button" className="mt-2 rounded border bg-white px-3 py-2" onClick={() => patchLine(line.lineId, { destinationAllocations: [...line.destinationAllocations, { cellId: '', weightKg: 0, volumeM3: 0 }] })}>Thêm ô đích</button></div>
           : <div className="grid gap-3 md:grid-cols-3"><label className="text-sm">Số lượng chuyển<input type="number" min="1" step="1" max={available} className="mt-1 w-full rounded-lg border p-2" value={line.quantity} onChange={event => patchLine(line.lineId, { quantity: Number(event.target.value) })}/><small className="text-slate-500">Khả dụng tại nguồn: {available} {spec?.quantityUnit}</small></label>
-            <label className="text-sm">Ô đích<select className="mt-1 w-full rounded-lg border p-2" value={line.destinationReservationId && line.destinationCellId ? `${line.destinationReservationId}:${line.destinationCellId}` : ''} onChange={event => { const [destinationReservationId, destinationCellId] = event.target.value.split(':'); patchLine(line.lineId, { destinationReservationId: destinationReservationId || '', destinationCellId: destinationCellId || '' }); }}><option value="">Chọn ô đã cấp</option>{cells.filter(cell => ref(cell.id) !== line.sourceCellId).map(cell => <option key={`${ref(cell.reservationId)}:${ref(cell.id)}`} value={`${ref(cell.reservationId)}:${ref(cell.id)}`}>{cell.reservationCode} · {cell.code} · tải {cell.usedWeightKg}/{cell.maxWeightKg} kg · thể tích {cell.usedVolumeM3}/{cell.maxVolumeM3} m³</option>)}</select></label>
+            <label className="text-sm">Ô đích<select className="mt-1 w-full rounded-lg border p-2" value={line.destinationReservationId && line.destinationCellId ? `${line.destinationReservationId}:${line.destinationCellId}` : ''} onChange={event => { const [destinationReservationId, destinationCellId] = event.target.value.split(':'); patchLine(line.lineId, { destinationReservationId: destinationReservationId || '', destinationCellId: destinationCellId || '' }); }}><option value="">Chọn ô đã cấp</option>{cells.filter(cell => ref(cell.id) !== line.sourceCellId).map(cell => <option key={`${ref(cell.reservationId)}:${ref(cell.id)}`} disabled={!cell.canReceiveRelocation} value={`${ref(cell.reservationId)}:${ref(cell.id)}`}>{cell.reservationCode} · {cell.code} · {cell.canReceiveRelocation ? `tải ${cell.usedWeightKg}/${cell.maxWeightKg} kg · thể tích ${cell.usedVolumeM3}/${cell.maxVolumeM3} m³` : 'không đủ 7 ngày thuê để nhận hàng'}</option>)}</select></label>
             <p className="self-center text-sm text-slate-600">Khối lượng và thể tích lấy từ từng receipt, không tính lại theo thông số hiện tại.</p></div>}
       </article>;
     })}

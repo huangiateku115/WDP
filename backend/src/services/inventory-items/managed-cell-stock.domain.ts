@@ -107,7 +107,7 @@ export function placementsHaveCellAllocations(placements: any[], allocations: an
     allocation.status === 'OCCUPIED'));
 }
 
-const movementFail = (code: string, message: string): never => { throw Object.assign(new Error(message), { code }); };
+const movementFail = (code: string, message: string, details?: Record<string, unknown>): never => { throw Object.assign(new Error(message), { code, details }); };
 const movementLineKey = (line: any, movement?: any) => `${safeId(line.reservationId ?? movement?.managedReservationId)}:${safeId(line.itemSpecId)}:${line.receiptId}:${safeId(line.cellId)}`;
 function sameSnapshot(left: any, right: any) {
   return left.unitWeightKgSnapshot === right.unitWeightKgSnapshot && left.unitVolumeM3Snapshot === right.unitVolumeM3Snapshot &&
@@ -137,12 +137,22 @@ function sameAllocationSet(current: any[], requested: any[]) {
 /** Deterministic, read-only replay for additive ItemMovement schema v4 events. */
 export function replayManagedStockMovements(movements: any[]) {
   if (!Array.isArray(movements)) movementFail('STOCK_LEDGER_UNKNOWN', 'Movement history is not an array');
-  const events = [...movements].sort((a, b) => new Date(a.performedAt).getTime() - new Date(b.performedAt).getTime() || safeId(a._id).localeCompare(safeId(b._id)));
+  // ledgerRevision is the authoritative per-SKU commit order. performedAt is
+  // audit metadata and can tie or drift across processes/retries, so it must
+  // not decide whether an otherwise valid immutable ledger can be replayed.
+  const events = [...movements].sort((a, b) => Number(a?.stockEffect?.ledgerRevision) - Number(b?.stockEffect?.ledgerRevision) ||
+    safeId(a?._id).localeCompare(safeId(b?._id)));
   const lots = new Map<string, any>(), instances = new Map<string, any>(), usedOperations = new Set<string>();
   let ledgerRevision = 0;
   for (const movement of events) {
     const effect = movement?.stockEffect;
-    if (movement?.schemaVersion !== 4 || !effect || !Number.isSafeInteger(effect.ledgerRevision) || effect.ledgerRevision !== ledgerRevision + 1 || !effect.operationId || usedOperations.has(effect.operationId)) movementFail('STOCK_LEDGER_UNKNOWN', 'Movement version, operation identity, or ledger revision is inconsistent');
+    if (movement?.schemaVersion !== 4) movementFail('STOCK_LEDGER_VERSION_INVALID', 'Movement schema version is unsupported');
+    if (!effect) movementFail('STOCK_LEDGER_EFFECT_MISSING', 'Movement stock effect is missing');
+    if (!Number.isSafeInteger(effect.ledgerRevision)) movementFail('STOCK_LEDGER_REVISION_INVALID', 'Movement ledger revision is missing or invalid');
+    if (effect.ledgerRevision !== ledgerRevision + 1) movementFail('STOCK_LEDGER_REVISION_GAP', 'Movement ledger revisions are not sequential',
+      { expectedRevision: ledgerRevision + 1, actualRevision: effect.ledgerRevision });
+    if (typeof effect.operationId !== 'string' || !effect.operationId.trim()) movementFail('STOCK_LEDGER_OPERATION_ID_MISSING', 'Movement operation identity is missing');
+    if (usedOperations.has(effect.operationId)) movementFail('STOCK_LEDGER_OPERATION_ID_DUPLICATE', 'Movement operation identity is duplicated');
     usedOperations.add(effect.operationId);
     const action = effect.action, source = effect.source ?? [], destination = effect.destination ?? [];
     const eventLines = action === 'ADD' ? destination : source;
@@ -225,9 +235,29 @@ export function replayManagedStockMovementsBySku(movements: any[]) {
   const bySku = new Map<string, any[]>();
   for (const movement of movements) {
     const skuId = safeId(movement?.itemId);
-    if (!skuId) movementFail('STOCK_LEDGER_UNKNOWN', 'Movement SKU scope is missing');
+    if (!skuId) movementFail('STOCK_LEDGER_SKU_SCOPE_MISSING', 'Movement SKU scope is missing');
     bySku.set(skuId, [...(bySku.get(skuId) ?? []), movement]);
   }
   const replays = [...bySku.values()].map(replayManagedStockMovements);
   return { lots: replays.flatMap(row => row.lots), instances: replays.flatMap(row => row.instances) };
+}
+
+/** Returns the next contiguous revision for one SKU; never silently restarts after a gap. */
+export function nextManagedStockLedgerRevision(movements: any[], skuId: unknown) {
+  if (!Array.isArray(movements)) movementFail('STOCK_LEDGER_UNKNOWN', 'Movement history is not an array');
+  const targetSkuId = safeId(skuId);
+  if (!targetSkuId) movementFail('STOCK_LEDGER_SKU_SCOPE_MISSING', 'Movement SKU scope is missing');
+  const skuMovements = movements.filter(movement => safeId(movement?.itemId) === targetSkuId)
+    .sort((left, right) => Number(left?.stockEffect?.ledgerRevision) - Number(right?.stockEffect?.ledgerRevision) ||
+      safeId(left?._id).localeCompare(safeId(right?._id)));
+  let expectedRevision = 1;
+  for (const movement of skuMovements) {
+    const effect = movement?.stockEffect;
+    if (movement?.schemaVersion !== 4 || !effect) movementFail('STOCK_LEDGER_VERSION_INVALID', 'Movement is not a canonical schema-v4 event');
+    if (!Number.isSafeInteger(effect.ledgerRevision)) movementFail('STOCK_LEDGER_REVISION_INVALID', 'Movement ledger revision is missing or invalid');
+    if (effect.ledgerRevision !== expectedRevision) movementFail('STOCK_LEDGER_REVISION_GAP', 'Movement ledger revisions are not sequential',
+      { expectedRevision, actualRevision: effect.ledgerRevision });
+    expectedRevision += 1;
+  }
+  return expectedRevision;
 }

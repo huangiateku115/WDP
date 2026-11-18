@@ -17,11 +17,15 @@ import { serviceLabel } from "@/lib/bomMappers";
 const RESERVATION_STATUSES = ["RESERVED", "DEPOSIT_PAID", "CHECKIN_READY", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED"];
 const unwrap = (response) => response?.data?.data ?? null;
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
-const labelize = (key) => key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (char) => char.toUpperCase());
 const addressText = (address) => {
   if (!address) return "—";
   if (typeof address === "string") return address;
   return [address.line1, address.ward, address.district, address.city, address.country].filter(Boolean).join(", ") || "—";
+};
+// A 24-hex ObjectId is not readable on screen, so it is shortened to its last 6 characters.
+const shortRef = (value) => {
+  const text = String(value);
+  return /^[0-9a-f]{24}$/i.test(text) ? `#${text.slice(-6)}` : text;
 };
 const customerRows = (customer = {}) => [
   ["Full name", customer.fullName || customer.displayName || "—"],
@@ -43,7 +47,7 @@ const pricingRows = (pricing = {}) => {
   if (term?.value) rows.push(["Rental term", `${term.value} ${String(term.unit || "").toLowerCase()}`]);
   if (pricing.startDate || pricing.endDate) rows.push(["Rental window", `${day(pricing.startDate)} → ${day(pricing.endDate)}`]);
   if (rule) rows.push(["Rate", `${money(rule.ratePerM3)} / m³${rule.version ? ` · v${rule.version}` : ""}`]);
-  if (depositPolicy) rows.push(["Deposit policy", `${depositPolicy.percentage ?? "—"}% of rent${depositPolicy.version ? ` · v${depositPolicy.version}` : ""}`]);
+  if (depositPolicy) rows.push(["Deposit policy", `${depositPolicy.percentage ?? "—"}% giá trị tiền thuê${depositPolicy.version ? ` · v${depositPolicy.version}` : ""}`]);
   const amounts = [
     ["estimatedRent", "Estimated rent"],
     ["depositAmount", "Deposit"],
@@ -58,17 +62,14 @@ const pricingRows = (pricing = {}) => {
   });
   if (Array.isArray(pricing.selectedCells) && pricing.selectedCells.length) {
     const volume = pricing.selectedCells.reduce((sum, cell) => sum + Number(cell.volumeM3 || 0), 0);
-    rows.push(["Selected cells", `${pricing.selectedCells.length} cell(s) · ${volume.toFixed(3)} m³`]);
+    rows.push(["Selected cells", `${pricing.selectedCells.length} ô · ${volume.toFixed(3)} m³`]);
   }
-  const known = new Set([
-    "quotaM3", "term", "startDate", "endDate", "pricingRule", "depositPolicy", "amountBreakdown", "selectedCells",
-    "capacityBookingVersion", ...amounts.map(([key]) => key),
-  ]);
-  Object.entries(pricing).forEach(([key, value]) => {
-    if (known.has(key) || value === null || value === undefined || typeof value === "object") return;
-    rows.push([key === "pricingPolicyId" ? "Pricing policy" : labelize(key), String(value)]);
-  });
-  return rows.length ? rows : [["Pricing", "No pricing values were captured."]];
+  // The pricing policy is a reference, not a value: an ObjectId means nothing to the reader, so
+  // only a short handle is printed. Unknown snapshot fields are dropped instead of being turned
+  // into English labels by splitting the camelCase key.
+  if (pricing.pricingPolicyId) rows.push(["Pricing policy", shortRef(pricing.pricingPolicyId)]);
+  if (pricing.capacityBookingVersion) rows.push(["Version", `v${pricing.capacityBookingVersion}`]);
+  return rows.length ? rows : [["Pricing", "Hợp đồng chưa chốt giá trị giá nào."]];
 };
 
 export default function ContractLookupPage({ basePath = "/admin/contracts" }) {
@@ -121,7 +122,7 @@ function ContractList({ basePath }) {
     setFeedback({});
     try {
       const contract = await loadContractForReservation(reservationId);
-      if (!contract.id) throw new Error("The contract could not be opened.");
+      if (!contract.id) throw new Error("Không mở được hợp đồng.");
       nav(`${basePath}/${contract.id}`);
     } catch (error) {
       setFeedback({ error: apiErrorMessage(error, "No contract is available for this reservation yet.") });
@@ -234,7 +235,7 @@ function ContractRecord({ contract }) {
     <>
       <Panel
         title="Hồ sơ hợp đồng"
-        subtitle={contract.contractCode || "Contract"}
+        subtitle={contract.contractCode || "Hợp đồng"}
         action={<Status value={contract.status} />}
       >
         <Details values={[

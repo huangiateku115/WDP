@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Dialog, Button, Field, Input, Select, Message } from "@/components/manager/ManagerUI";
+import { AdvancedFields } from "@/components/bom/BomUI";
 import { bomWarehouseApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 
@@ -13,7 +14,9 @@ import { apiErrorMessage } from "@/lib/apiError";
 // cell afterwards instead of offering a cell create route (the backend has none).
 
 export const OPERATIONAL_STATUSES = [["AVAILABLE", "Sẵn sàng"], ["BLOCKED", "Bị chặn"], ["MAINTENANCE", "Bảo trì"]];
-export const ORIENTATIONS = [["0", "0° Bắc"], ["90", "90° Đông"], ["180", "180° Nam"], ["270", "270° Tây"]];
+// Wording shared with the Manager warehouse form (manager/WarehouseSettingsPage.jsx: "Mã dãy",
+// "Tọa độ ngang/dọc") so one physical concept keeps one name in every role.
+export const ORIENTATIONS = [["0", "Bắc (0°)"], ["90", "Đông (90°)"], ["180", "Nam (180°)"], ["270", "Tây (270°)"]];
 const ACTIVE_OPTIONS = [["true", "Đang hoạt động"], ["false", "Ngừng hoạt động"]];
 const CODE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
 
@@ -39,6 +42,16 @@ function Form({ pending, error, onClose, onSubmit, children, submitLabel }) {
 
 /* ------------------------------- Zone ------------------------------- */
 export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
+  return (
+    <Dialog title={zone ? `Sửa khu vực ${zone.code}` : "Tạo khu vực kho"} onClose={onClose}>
+      <ZoneForm facilityId={facilityId} zone={zone} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+// The form body, so the console can host create/edit on its own route
+// (`warehouse/:facilityId/zones/new`, `…/zones/:zoneId/edit`) instead of a dialog in the list.
+export function ZoneForm({ facilityId, zone, onClose, onSaved }) {
   const editing = Boolean(zone);
   const [form, setForm] = useState({
     code: zone?.code || "",
@@ -102,37 +115,45 @@ export function ZoneDialog({ facilityId, zone, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Sửa khu vực ${zone.code}` : "Tạo khu vực kho"} onClose={onClose}>
-      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu khu vực" : "Tạo khu vực"}>
+    <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu khu vực" : "Tạo khu vực"}>
         <div className="manager-filters">
           {!editing && (
-            <Field label="Mã khu vực" hint="Duy nhất trong cơ sở.">
+            <Field label="Mã khu vực" hint="Tên viết tắt của khu vực, duy nhất trong cơ sở. Ví dụ: KV1.">
               <Input aria-label="Mã khu vực" required value={form.code} onChange={(e) => change("code", e.target.value)} />
             </Field>
           )}
-          <Field label="Tên khu vực">
+          <Field label="Tên khu vực" hint="Tên hiển thị cho nhân viên và khách, ví dụ: Khu vực hàng lạnh.">
             <Input aria-label="Tên khu vực" required value={form.name} onChange={(e) => change("name", e.target.value)} />
           </Field>
-          <Field label="Thứ tự hiển thị" hint="Khu vực được xếp theo thứ tự rồi đến mã.">
+          <Field label="Thứ tự hiển thị" hint="Số nhỏ hiện trước; dùng để sắp xếp khu vực trong danh sách và trên bản đồ kho.">
             <Input aria-label="Thứ tự hiển thị" inputMode="numeric" value={form.sortOrder} onChange={(e) => change("sortOrder", e.target.value)} />
           </Field>
-          <Field label="Màu" hint="Không bắt buộc, mã hex sáu ký tự.">
-            <Input aria-label="Màu khu vực" placeholder="#2F855A" value={form.color} onChange={(e) => change("color", e.target.value)} />
-          </Field>
-          <Field label="Trạng thái khu vực" hint="Phải ngừng mọi kệ trước khi ngừng khu vực.">
+          <Field label="Trạng thái khu vực" hint="Phải tắt mọi kệ trước khi ngừng khu vực.">
             <Select label="Trạng thái khu vực" value={form.isActive} onChange={(value) => change("isActive", value)} options={ACTIVE_OPTIONS} />
           </Field>
         </div>
         <Field label="Mô tả" hint="Không bắt buộc, tối đa 1000 ký tự.">
           <Input aria-label="Mô tả khu vực" value={form.description} onChange={(e) => change("description", e.target.value)} />
         </Field>
-      </Form>
-    </Dialog>
+        <AdvancedFields description="Chỉ dùng khi bạn muốn khu vực này có màu riêng trên bản đồ kho.">
+          <Field label="Màu trên bản đồ" hint="Màu tô khu vực trên bản đồ kho, dạng mã màu 6 ký tự như #2F855A. Để trống là màu mặc định.">
+            <Input aria-label="Màu khu vực trên bản đồ" placeholder="#2F855A" value={form.color} onChange={(e) => change("color", e.target.value)} />
+          </Field>
+        </AdvancedFields>
+    </Form>
   );
 }
 
 /* ------------------------------- Rack ------------------------------- */
 export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
+  return (
+    <Dialog title={rack ? `Sửa kệ ${rack.rackCode}` : "Tạo kệ"} onClose={onClose}>
+      <RackForm facilityId={facilityId} zones={zones} rack={rack} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+export function RackForm({ facilityId, zones, rack, onClose, onSaved }) {
   const editing = Boolean(rack);
   const [form, setForm] = useState({
     zoneId: rack?.zoneId || zones[0]?.id || "",
@@ -159,7 +180,7 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
     setError("");
     const code = (value) => value.trim().toUpperCase();
     if (!filled(form.aisleCode) || !CODE_PATTERN.test(code(form.aisleCode))) {
-      setError("Mã lối đi phải bắt đầu bằng chữ hoặc số và chỉ dùng chữ, số, dấu gạch dưới hoặc gạch ngang.");
+      setError("Mã dãy phải bắt đầu bằng chữ hoặc số và chỉ dùng chữ, số, dấu gạch dưới hoặc gạch ngang.");
       return;
     }
     if (!editing && (!filled(form.rackCode) || !CODE_PATTERN.test(code(form.rackCode)))) {
@@ -170,7 +191,7 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
       if (!isPositive(value)) return setError(`Kích thước ${label} của kệ phải là số dương (mét).`);
     }
     if (!isInteger(form.mapX, 0, 100000) || !isInteger(form.mapY, 0, 100000)) {
-      setError("Tọa độ X và Y phải là số nguyên từ 0 đến 100000.");
+      setError("Tọa độ ngang và tọa độ dọc phải là số nguyên từ 0 đến 100000.");
       return;
     }
     if (!isPositive(form.maxWeightKgPerLevel, 1000000)) {
@@ -235,12 +256,11 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
   }
 
   return (
-    <Dialog title={editing ? `Sửa kệ ${rack.rackCode}` : "Tạo kệ"} onClose={onClose}>
-      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu kệ" : "Tạo kệ"}>
+    <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel={editing ? "Lưu kệ" : "Tạo kệ"}>
         <div className="manager-filters">
           {!editing && (
             <>
-              <Field label="Khu vực">
+              <Field label="Khu vực" hint="Kệ phải nằm trong một khu vực đang hoạt động.">
                 <Select
                   label="Khu vực của kệ"
                   value={form.zoneId}
@@ -248,56 +268,57 @@ export function RackDialog({ facilityId, zones, rack, onClose, onSaved }) {
                   options={zones.map((z) => [z.id, `${z.code} · ${z.name}`])}
                 />
               </Field>
-              <Field label="Mã kệ" hint="Duy nhất trong cơ sở.">
+              <Field label="Mã kệ" hint="Tên gọi của kệ, duy nhất trong cơ sở. Ví dụ: K01.">
                 <Input aria-label="Mã kệ" required value={form.rackCode} onChange={(e) => change("rackCode", e.target.value)} />
               </Field>
             </>
           )}
-          <Field label="Mã lối đi">
-            <Input aria-label="Mã lối đi" required value={form.aisleCode} onChange={(e) => change("aisleCode", e.target.value)} />
+          <Field label="Mã dãy" hint="Các kệ đứng cạnh nhau trong cùng một lối đi dùng chung mã này. Ví dụ: A1.">
+            <Input aria-label="Mã dãy" required value={form.aisleCode} onChange={(e) => change("aisleCode", e.target.value)} />
           </Field>
-          <Field label="Trạng thái vận hành">
-            <Select label="Trạng thái kệ" value={form.operationalStatus} onChange={(value) => change("operationalStatus", value)} options={OPERATIONAL_STATUSES} />
+          <Field label="Trạng thái vận hành" hint="Sẵn sàng, Bị chặn hoặc Bảo trì. Chặn / bảo trì để ngừng xếp hàng vào kệ này.">
+            <Select label="Trạng thái vận hành của kệ" value={form.operationalStatus} onChange={(value) => change("operationalStatus", value)} options={OPERATIONAL_STATUSES} />
           </Field>
-          <Field label="Hướng xoay">
-            <Select label="Hướng xoay của kệ" value={form.orientation} onChange={(value) => change("orientation", value)} options={ORIENTATIONS} />
-          </Field>
-          <Field label="Chiều rộng (m)">
+          <Field label="Chiều rộng (m)" hint="Chiều dài mặt trước kệ, nơi chia ra các ô.">
             <Input aria-label="Chiều rộng kệ (mét)" inputMode="decimal" required value={form.widthM} onChange={(e) => change("widthM", e.target.value)} />
           </Field>
-          <Field label="Chiều sâu (m)">
+          <Field label="Chiều sâu (m)" hint="Khoảng cách từ mặt trước ra mặt sau kệ.">
             <Input aria-label="Chiều sâu kệ (mét)" inputMode="decimal" required value={form.depthM} onChange={(e) => change("depthM", e.target.value)} />
           </Field>
-          <Field label="Chiều cao (m)">
+          <Field label="Chiều cao (m)" hint="Tính từ sàn đến tầng trên cùng.">
             <Input aria-label="Chiều cao kệ (mét)" inputMode="decimal" required value={form.heightM} onChange={(e) => change("heightM", e.target.value)} />
           </Field>
-          <Field label="Tải trọng mỗi tầng (kg)" hint="Tải trọng định mức cho từng tầng.">
+          <Field label="Tải trọng mỗi tầng (kg)" hint="Khối lượng tối đa một tầng chịu được; chia đều cho các ô của tầng đó.">
             <Input aria-label="Tải trọng mỗi tầng" inputMode="decimal" required value={form.maxWeightKgPerLevel} onChange={(e) => change("maxWeightKgPerLevel", e.target.value)} />
           </Field>
           {!editing && (
             <>
-              <Field label="Số tầng">
+              <Field label="Số tầng" hint="Số tầng kệ theo chiều cao, từ 1 đến 20.">
                 <Input aria-label="Số tầng" inputMode="numeric" required value={form.levelCount} onChange={(e) => change("levelCount", e.target.value)} />
               </Field>
-              <Field label="Số ô mỗi tầng" hint="Ô được tạo tự động cho mỗi tầng.">
+              <Field label="Số ô mỗi tầng" hint="Số ô lưu trữ chia theo chiều rộng, từ 1 đến 20. Ô được tạo tự động.">
                 <Input aria-label="Số ô mỗi tầng" inputMode="numeric" required value={form.cellsPerLevel} onChange={(e) => change("cellsPerLevel", e.target.value)} />
               </Field>
             </>
           )}
-          <Field label="Tọa độ X">
-            <Input aria-label="Tọa độ X trên bản đồ" inputMode="numeric" required value={form.mapX} onChange={(e) => change("mapX", e.target.value)} />
-          </Field>
-          <Field label="Tọa độ Y">
-            <Input aria-label="Tọa độ Y trên bản đồ" inputMode="numeric" required value={form.mapY} onChange={(e) => change("mapY", e.target.value)} />
-          </Field>
         </div>
+        <AdvancedFields description="Ba giá trị dưới đây chỉ dùng để vẽ kệ lên bản đồ kho. Không ảnh hưởng sức chứa, tải trọng hay giá thuê, nên để mặc định cũng được.">
+          <Field label="Hướng kệ trên bản đồ" hint="Hướng mặt trước của kệ khi hiển thị trên bản đồ kho: Bắc, Đông, Nam hoặc Tây.">
+            <Select label="Hướng kệ trên bản đồ" value={form.orientation} onChange={(value) => change("orientation", value)} options={ORIENTATIONS} />
+          </Field>
+          <Field label="Tọa độ ngang" hint="Kệ nằm ở cột thứ mấy trên lưới bản đồ, tính từ trái sang phải.">
+            <Input aria-label="Tọa độ ngang của kệ trên bản đồ" inputMode="numeric" required value={form.mapX} onChange={(e) => change("mapX", e.target.value)} />
+          </Field>
+          <Field label="Tọa độ dọc" hint="Kệ nằm ở hàng thứ mấy trên lưới bản đồ, tính từ trên xuống dưới.">
+            <Input aria-label="Tọa độ dọc của kệ trên bản đồ" inputMode="numeric" required value={form.mapY} onChange={(e) => change("mapY", e.target.value)} />
+          </Field>
+        </AdvancedFields>
         <p className="bom-warning">
           {editing
             ? "Không đổi được kích thước, tải trọng hay trạng thái khi ô đang chứa hàng, đang được phân bổ hoặc đã có đơn giữ chỗ."
-            : "Tạo kệ sẽ tạo luôn các ô chứa; tải trọng mỗi tầng được chia đều cho các ô."}
+            : "Tạo kệ sẽ tạo luôn các ô lưu trữ; tải trọng mỗi tầng được chia đều cho các ô."}
         </p>
-      </Form>
-    </Dialog>
+    </Form>
   );
 }
 
@@ -342,16 +363,16 @@ export function CellDialog({ cell, onClose, onSaved }) {
 
   return (
     <Dialog title={`Sửa ô ${cell.code}`} onClose={onClose}>
-      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel="Lưu ô chứa">
+      <Form pending={pending} error={error} onClose={onClose} onSubmit={submit} submitLabel="Lưu ô lưu trữ">
         <div className="manager-filters">
-          <Field label="Tải trọng tối đa (kg)" hint="Không được thấp hơn khối lượng đang chứa.">
+          <Field label="Tải trọng tối đa (kg)" hint="Khối lượng hàng tối đa ô này chịu được; không được thấp hơn khối lượng đang chứa.">
             <Input aria-label="Tải trọng tối đa của ô" inputMode="decimal" required value={form.maxWeightKg} onChange={(e) => change("maxWeightKg", e.target.value)} />
           </Field>
-          <Field label="Chiều cao sử dụng (m)" hint="Không bắt buộc; dùng để tính thể tích ô.">
+          <Field label="Chiều cao sử dụng (m)" hint="Chiều cao thực dùng để xếp hàng trong ô; dùng để tính thể tích chứa được.">
             <Input aria-label="Chiều cao sử dụng của ô" inputMode="decimal" value={form.usableHeightM} onChange={(e) => change("usableHeightM", e.target.value)} />
           </Field>
-          <Field label="Trạng thái vận hành" hint="Hãy chặn hoặc bảo trì ô trước khi xóa kệ.">
-            <Select label="Trạng thái ô" value={form.operationalStatus} onChange={(value) => change("operationalStatus", value)} options={OPERATIONAL_STATUSES} />
+          <Field label="Trạng thái vận hành" hint="Sẵn sàng, Bị chặn hoặc Bảo trì. Chặn / bảo trì ô trước khi xóa kệ.">
+            <Select label="Trạng thái vận hành của ô" value={form.operationalStatus} onChange={(value) => change("operationalStatus", value)} options={OPERATIONAL_STATUSES} />
           </Field>
         </div>
         <p className="bom-warning">

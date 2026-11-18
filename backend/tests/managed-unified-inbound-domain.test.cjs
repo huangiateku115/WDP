@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Types } = require('mongoose');
-const { assertUnifiedInboundCapacity, classifyLegacyStockImpact, ManagedUnifiedInboundDomainError, normalizeUnifiedInbound, measurementSnapshot } = require('../dist/services/inventory-items/managed-unified-inbound.domain');
+const { assertUnifiedInboundCapacity, classifyLegacyStockImpact, ManagedUnifiedInboundDomainError, normalizeUnifiedInbound, measurementSnapshot, selectManagedSkuReplayScope } = require('../dist/services/inventory-items/managed-unified-inbound.domain');
 const { ManagedUnifiedInboundService } = require('../dist/services/inventory-items/managed-unified-inbound.service');
 const inboundController = require('../dist/controllers/inventory-items/managed-inventory-v3.controller');
 const ItemMovement = require('../dist/models/inventory-items/item-movement.model').default;
@@ -15,6 +15,25 @@ const line = (lineId, itemSpecId, quantity, cellId, weight, dimensions, quantity
   unitVolumeM3Snapshot: Math.round(dimensions.widthM * dimensions.depthM * dimensions.heightM * 1e6) / 1e6,
   unitDimensionsSnapshot: dimensions, allocatedWeightKg: weight * quantity,
   allocatedVolumeM3: Math.round(dimensions.widthM * dimensions.depthM * dimensions.heightM * quantity * 1e6) / 1e6, cellId, receiptId: `receipt-${lineId}`,
+});
+
+test('replay selection retains complete SKU history across Reservations and after projections are depleted', () => {
+  const priorReservation = oid(40), otherSku = oid(41);
+  const canonicalMovements = [
+    { _id: oid(42), itemId: id.sku, managedReservationId: id.reservation, schemaVersion: 4,
+      stockEffect: { ledgerRevision: 1, source: [], destination: [{ cellId: id.c1 }] } },
+    { _id: oid(43), itemId: id.sku, managedReservationId: priorReservation, schemaVersion: 4,
+      stockEffect: { ledgerRevision: 2, source: [{ cellId: id.c2, reservationId: priorReservation }], destination: [{ cellId: id.c3, reservationId: id.reservation }] } },
+    { _id: oid(44), itemId: otherSku, managedReservationId: id.reservation, schemaVersion: 4,
+      stockEffect: { ledgerRevision: 1, source: [], destination: [{ cellId: id.c1 }] } },
+  ];
+  const selected = selectManagedSkuReplayScope({ canonicalMovements, stockRows: [], instances: [],
+    reservationId: id.reservation, cellIds: [id.c1], skuId: id.sku });
+  assert.deepEqual(selected.replayMovements.map(row => `${row.itemId}:${row.stockEffect.ledgerRevision}`), [
+    `${id.sku}:1`, `${id.sku}:2`, `${otherSku}:1`,
+  ]);
+  assert.equal(selected.stocks.length, 0);
+  assert.equal(selected.instances.length, 0);
 });
 
 test('legacy stock isolation is scoped to Reservation and physical Rack/Level capacity', () => {

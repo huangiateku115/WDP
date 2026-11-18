@@ -12,12 +12,14 @@ import ManagedCellStockModelRaw from '../../models/inventory-items/managed-cell-
 import ManagedItemInstanceModelRaw from '../../models/inventory-items/managed-item-instance.model';
 import ContractModelRaw from '../../models/contracts/contract.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
+import { accessSessionCoversReservations } from '../access/managed-access-policy';
+import { nextManagedStockLedgerRevision } from './managed-cell-stock.domain';
 import { readManagedFacilityStockState } from './managed-unified-inbound.service';
 import { FacilityServiceType } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { ItemMovementType } from '../../types/item-movement.type';
 import { UserRole } from '../../types/user.type';
-import { ManagedAccessPurpose, ManagedAccessSessionStatus } from '../../types/managed-access.type';
+import { ManagedAccessPurpose, ManagedAccessSessionStatus, ManagedAccessVisitPurpose } from '../../types/managed-access.type';
 import { ItemSpecificationStatus } from '../../types/item-specification.type';
 
 const Item: any = InventoryItemModelRaw, Movement: any = ItemMovementModelRaw;
@@ -28,6 +30,11 @@ type Actor = { _id: Types.ObjectId; role: UserRole; assignedFacilityId?: Types.O
 export type Plain = Record<string, any>;
 export class ManagedV3OutboundError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
 function fail(status: number, code: string, message: string): never { throw new ManagedV3OutboundError(status, code, message); }
+export function isOutboundPresenceVisitPurpose(purpose: unknown): boolean {
+  // New visits represent a general warehouse appointment. Keep legacy purpose
+  // values readable for visits booked before the unified appointment flow.
+  return purpose === ManagedAccessVisitPurpose.WAREHOUSE_VISIT || purpose === ManagedAccessPurpose.OUTBOUND;
+}
 const same = (a: any, b: any) => String(a?._id ?? a) === String(b?._id ?? b);
 const id = (value: any) => String(value?._id ?? value);
 const stockLotKey = (line: any) => `${id(line.itemSpecId)}:${line.receiptId}:${id(line.cellId)}`;
@@ -37,7 +44,15 @@ function physicalTotals(unitWeightKg: number, unitVolumeM3: number, quantity: nu
   return { totalWeightKg, totalVolumeM3 };
 }
 const live = { deletedAt: { $exists: false } };
-const oid = (value: unknown, name: string) => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(value as string); };
+export const normalizeOutboundObjectId = (value: unknown, name: string) => {
+  // Internal callers may pass the ObjectId parsed from the route. Keep the
+  // boundary strict for external values while accepting that already-validated
+  // representation inside the service.
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`);
+  return new Types.ObjectId(value);
+};
+const oid = normalizeOutboundObjectId;
 const key = (value: unknown) => { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value; };
 const version = (value: unknown) => { const match = typeof value === 'string' ? value.trim().match(/^(?:W\/)?"(0|[1-9]\d*)"$/) : null; const n = match ? Number(match[1]) : NaN; if (!Number.isSafeInteger(n)) fail(typeof value === 'undefined' ? 428 : 400, 'IF_MATCH_REQUIRED', 'Cần If-Match là revision hiện tại.'); return n; };
 const canonical = (value: any): any => value?.toHexString ? value.toHexString() : value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).filter(k => !['_id', '__v', 'createdAt', 'updatedAt'].includes(k) && value[k] !== undefined).sort().map(k => [k, canonical(value[k])])) : value;
@@ -273,13 +288,20 @@ async function loadDirectCandidateState(skuId: unknown, body: unknown, actor: Ac
 }
 
 async function readOnlySessionScope(candidate: DirectOutboundCandidate, reservation: Plain, actor: Actor, cellIds: string[]) {
-  const currentSession: any = await AccessSession.findOne({ _id: candidate.accessSessionId, customerId: actor._id, reservationId: reservation._id,
+  const currentSession: any = await AccessSession.findOne({ _id: candidate.accessSessionId, customerId: actor._id,
+    $or: [{ reservationId: reservation._id }, { scopedReservationIds: reservation._id }],
     facilityId: reservation.facilityId, status: ManagedAccessSessionStatus.ACTIVE, allowedPurposes: ManagedAccessPurpose.OUTBOUND,
     revision: candidate.sessionRevision, startedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() } }).lean().exec();
   if (!currentSession) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần Access Session OUTBOUND đang hoạt động và còn hạn.');
-  const visit: any = await Visit.findOne({ _id: currentSession.visitId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId,
-    purpose: ManagedAccessPurpose.OUTBOUND, status: 'CHECKED_IN' }).select('_id visitId status purpose reservationId customerId facilityId').lean().exec();
-  return validateDirectOutboundAccessScope(currentSession, visit, reservation, actor, candidate, cellIds);
+  const allowed = new Set((currentSession.allowedCellIds ?? []).map(id));
+  if (!cellIds.length || cellIds.some(cellId => !allowed.has(cellId))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Session không bao phủ toàn bộ Cell nguồn.');
+  const visit: any = await Visit.findOne({ _id: currentSession.visitId, customerId: actor._id, facilityId: reservation.facilityId,
+    purpose: { $in: [ManagedAccessVisitPurpose.WAREHOUSE_VISIT, ManagedAccessPurpose.OUTBOUND] }, status: 'CHECKED_IN' }).select('_id status purpose reservationId scopedReservationIds').lean().exec();
+  if (!visit || !isOutboundPresenceVisitPurpose(visit.purpose) || !accessSessionCoversReservations({ reservationId: currentSession.reservationId,
+    scopedReservationIds: currentSession.scopedReservationIds, requestedReservationIds: [reservation._id] }) ||
+    !accessSessionCoversReservations({ reservationId: visit.reservationId, scopedReservationIds: visit.scopedReservationIds,
+      requestedReservationIds: [reservation._id, currentSession.reservationId] })) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần lịch đến kho đã CHECK_IN, bao phủ đơn thuê và phiên còn quyền OUTBOUND cho các ô nguồn.');
+  return currentSession;
 }
 
 function directStockResponse(sku: Plain, reservation: Plain, state: Plain, specifications: Plain[]) {
@@ -304,7 +326,7 @@ function directStockResponse(sku: Plain, reservation: Plain, state: Plain, speci
           weightKg: allocation.weightKg, volumeM3: allocation.volumeM3 })) })) };
   });
   return { skuId: sku._id, reservationId: reservation._id, facilityId: sku.facilityId, skuRevision: sku.managedV3Revision ?? 0,
-    ledgerRevision: Math.max(0, ...state.movements.filter((movement: Plain) => same(movement.itemId, sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+    ledgerRevision: nextManagedStockLedgerRevision(state.movements, sku._id) - 1,
     reconciliationStatus: 'RECONCILED', itemSpecifications };
 }
 
@@ -408,7 +430,7 @@ export class ManagedInventoryV3OutboundService {
           weightRemovedKg: source.allocatedWeightKg, volumeRemovedM3: source.allocatedVolumeM3, unitWeightKgSnapshot: source.unitWeightKgSnapshot,
           unitVolumeM3Snapshot: source.unitVolumeM3Snapshot, unitDimensionsSnapshot: source.unitDimensionsSnapshot })) })),
       capacity: scope.plan.capacity, totalQuantity: scope.plan.quantity, totalWeightKg: scope.plan.totalWeightKg, totalVolumeM3: scope.plan.totalVolumeM3,
-      ledgerRevision: Math.max(0, ...scope.state.movements.filter((movement: Plain) => same(movement.itemId, scope.sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+      ledgerRevision: nextManagedStockLedgerRevision(scope.state.movements, scope.sku._id) - 1,
       skuRevision: scope.sku.managedV3Revision ?? 0,
       warnings: ['Preview không ghi tồn kho. Customer sẽ ghi nhận đã thực hiện xuất hàng trong phiên OUTBOUND có Staff giám sát.'] };
   }
@@ -460,7 +482,7 @@ export class ManagedInventoryV3OutboundService {
         { $set: { usedCapacityM3: Math.max(0, nextUsed) }, $inc: { inventoryVersion: 1 } }, { session }).exec();
         if (reservationUpdated.matchedCount !== 1) fail(412, 'STALE_RESERVATION_CAPACITY', 'Reservation capacity vừa thay đổi.');
         const movements = (scope.state.movements as Plain[]).filter((movement: Plain) => same(movement.itemId, scope.sku._id));
-        const ledgerRevision = Math.max(0, ...movements.map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))) + 1;
+        const ledgerRevision = nextManagedStockLedgerRevision(movements, scope.sku._id);
         const movementId = new Types.ObjectId(), operationId = 'MI-OUT:' + String(scope.sku._id) + ':' + createHash('sha256').update(requestKey).digest('hex');
         const quantityUnit = new Set(scope.plan.effectLines.map((line: Plain) => line.quantityUnitSnapshot)).size === 1
           ? scope.plan.effectLines[0]!.quantityUnitSnapshot : 'MIXED';

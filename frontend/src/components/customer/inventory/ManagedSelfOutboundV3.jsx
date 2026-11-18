@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { managedAccessApi } from '@/api/managedAccessApi';
+import { managedAccessApi, notifyManagedAccessSessionUpdated } from '@/api/managedAccessApi';
 import { managedInventoryV3OutboundApi } from '@/api/managedInventoryV3OutboundApi';
 import { managedInventoryV3Api } from '@/api/managedInventoryV3Api';
+import { accessSessionCoversReservation } from '@/lib/managedAccessFacility';
 import { formatInventoryDateTime } from './inventoryUiFormat';
 
-const refId = value => String(value?.skuId?._id ?? value?.skuId ?? value?._id ?? value?.id ?? value ?? '');
+const refId = value => String(value?._id ?? value?.id ?? value?.itemSpecId?._id ?? value?.itemSpecId ?? value?.skuId?._id ?? value?.skuId ?? value ?? '');
 const makeLine = spec => ({ lineId: globalThis.crypto?.randomUUID?.() || `out-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  itemSpecId: refId(spec), itemSpecRevision: spec?.revision ?? 0, quantity: 1, cellAllocations: [], itemInstanceIds: [] });
+  itemSpecId: refId(spec?.itemSpecId ?? spec), itemSpecRevision: spec?.revision ?? 0, quantity: 1, cellAllocations: [], itemInstanceIds: [] });
 const errorMessage = error => {
   const code = error?.response?.data?.code;
   const messages = {
-    ACCESS_SESSION_SCOPE_INVALID: 'Cần phiên OUTBOUND đang hoạt động, đã check-in và được phép vào các ô nguồn.',
+    ACCESS_SESSION_SCOPE_INVALID: 'Cần phiên đến kho đang hoạt động, đã check-in, còn quyền xuất hàng và bao phủ các ô nguồn.',
     OUTBOUND_QUANTITY_UNAVAILABLE: 'Số lượng khả dụng không đủ tại nguồn hàng đã chọn.',
     SOURCE_STOCK_CHANGED: 'Tồn kho vừa thay đổi. Hãy tải lại tồn kho và xem trước lại.',
     CELL_COUNTER_RECONCILIATION_UNKNOWN: 'Sức chứa ô kệ chưa khớp với sổ tồn. Facility cần đối soát trước khi xuất.',
@@ -30,7 +31,7 @@ const errorMessage = error => {
 
 function makePayload(context, session, lines) {
   const errors = {};
-  if (!session) errors.accessSessionId = 'Chọn phiên OUTBOUND đang hoạt động.';
+  if (!session) errors.accessSessionId = 'Chọn phiên đến kho đang hoạt động có quyền xuất hàng.';
   if (!lines.length) errors.lines = 'Thêm ít nhất một loại hàng có tồn.';
   const normalized = lines.map((line, index) => {
     if (!line.itemSpecId) errors[`lines.${index}.itemSpecId`] = 'Chọn loại hàng.';
@@ -52,8 +53,8 @@ function makePayload(context, session, lines) {
   return { payload, errors };
 }
 
-export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, onRefresh }) {
-  const skuId = refId(item), reservationId = refId(rental || item?.reservationId || item?.managedReservationId);
+export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, onRefresh, initialSessionId = '' }) {
+  const skuId = refId(item);
   const [context, setContext] = useState(null), [sessions, setSessions] = useState([]), [history, setHistory] = useState([]);
   const [sessionId, setSessionId] = useState(''), [lines, setLines] = useState([]), [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [attested, setAttested] = useState(false);
@@ -71,9 +72,12 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
     } catch (e) { setError(errorMessage(e)); }
   }, [skuId]);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { const refreshSession = () => { void managedAccessApi.mySessions().then(response => setSessions(response.data?.data || [])).catch(() => {}); }; window.addEventListener('managed-access-session-updated', refreshSession); return () => window.removeEventListener('managed-access-session-updated', refreshSession); }, []);
   const now = Date.now();
-  const usableSessions = useMemo(() => sessions.filter(row => refId(row.reservationId) === reservationId && row.status === 'ACTIVE' &&
-    (row.allowedPurposes || []).includes('OUTBOUND') && Date.parse(row.startedAt) <= now && Date.parse(row.expiresAt) > now), [sessions, reservationId, now]);
+  const sessionReservationId = refId(context?.reservation?.id || rental || item?.reservationId || item?.managedReservationId);
+  const usableSessions = useMemo(() => sessions.filter(row => accessSessionCoversReservation(row, sessionReservationId) && row.status === 'ACTIVE' &&
+    (row.allowedPurposes || []).includes('OUTBOUND') && Date.parse(row.startedAt) <= now && Date.parse(row.expiresAt) > now), [sessions, sessionReservationId, now]);
+  useEffect(() => { if (!sessionId && initialSessionId && usableSessions.some(row => refId(row) === initialSessionId)) setSessionId(initialSessionId); }, [initialSessionId, sessionId, usableSessions]);
   const selectedSession = usableSessions.find(row => refId(row) === sessionId);
   const stockSpecs = context?.stock?.itemSpecifications || [];
   const currentPayload = makePayload(context, selectedSession, lines);
@@ -98,6 +102,7 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
     setBusy(true); setError(''); setNotice('');
     try {
       const response = await managedInventoryV3OutboundApi.confirm(skuId, payload);
+      notifyManagedAccessSessionUpdated(payload.accessSessionId);
       const result = response.data?.data;
       setPending(null); setPreview(null); setAttested(false);
       setNotice(`Đã xuất kho thành công · ${result?.movement?.movementCode || result?.movement?.id || ''}`);
@@ -114,12 +119,13 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
     setBusy(true); setError('');
     try {
       const found = await managedInventoryV3OutboundApi.operation(skuId, pending.key);
+      notifyManagedAccessSessionUpdated(pending.payload?.accessSessionId);
       managedInventoryV3OutboundApi.clearPending(skuId); setPending(null);
       setNotice(`Đã xác minh phiếu xuất ${found.data?.data?.movement?.movementCode || 'đã được ghi nhận'}.`);
       await reload(); await onRefresh?.();
     } catch (e) {
       if (e?.response?.status === 404 && pending.payload) {
-        try { await managedInventoryV3OutboundApi.confirm(skuId, pending.payload); managedInventoryV3OutboundApi.clearPending(skuId); setPending(null); setNotice('Đã gửi lại đúng thao tác đang chờ bằng cùng Idempotency-Key.'); await reload(); await onRefresh?.(); }
+        try { await managedInventoryV3OutboundApi.confirm(skuId, pending.payload); notifyManagedAccessSessionUpdated(pending.payload?.accessSessionId); managedInventoryV3OutboundApi.clearPending(skuId); setPending(null); setNotice('Đã gửi lại đúng thao tác đang chờ bằng cùng Idempotency-Key.'); await reload(); await onRefresh?.(); }
         catch (retryError) {
           if (retryError?.code === 'OUTBOUND_REJECTED_NO_WRITE') { setPending(null); setPreview(null); setAttested(false); }
           setError(errorMessage(retryError));
@@ -133,7 +139,7 @@ export default function ManagedSelfOutboundV3({ item, rental, cellLabels = {}, o
     <header className="rounded-2xl bg-gradient-to-r from-orange-50 via-white to-emerald-50 p-5"><p className="text-xs font-bold uppercase tracking-widest text-orange-800">Kho hàng quản lý</p><h2 className="mt-1 text-xl font-bold text-emerald-950">Xuất hàng khỏi kho</h2><p className="mt-2 text-sm text-slate-600">Chọn loại hàng và số lượng. Hệ thống lấy số đo từ receipt đã nhập, chọn nguồn theo FIFO và chỉ cập nhật tồn sau khi Backend xác nhận.</p></header>
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}{notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
     {!context?.stock ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Tồn kho chưa thể đối soát an toàn. Không thể xuất khi dữ liệu đang UNKNOWN.</p> : <>
-      <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm md:grid-cols-3"><div><span className="text-slate-500">Đơn thuê</span><p className="font-semibold">{context.reservation?.reservationCode || rental?.reservationCode || 'Đơn thuê Managed'}</p></div><div><span className="text-slate-500">Đối soát tồn</span><p className="font-semibold">{context.stock.reconciliationStatus === 'RECONCILED' ? 'Đã đối soát' : 'Chưa đối soát'}</p></div><label>Phiên đến kho OUTBOUND<select className="mt-1 w-full rounded-lg border bg-white p-2" value={sessionId} onChange={event => { setSessionId(event.target.value); setPreview(null); setAttested(false); }}><option value="">Chọn phiên đang hoạt động</option>{usableSessions.map(session => <option key={refId(session)} value={refId(session)}>{formatInventoryDateTime(session.startedAt)} · hết hạn {formatInventoryDateTime(session.expiresAt)}</option>)}</select></label></div>
+      <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm md:grid-cols-3"><div><span className="text-slate-500">Đơn thuê</span><p className="font-semibold">{context.reservation?.reservationCode || rental?.reservationCode || 'Đơn thuê Managed'}</p></div><div><span className="text-slate-500">Đối soát tồn</span><p className="font-semibold">{context.stock.reconciliationStatus === 'VERIFIED' || context.stock.reconciliationStatus === 'RECONCILED' ? 'Đã đối soát' : context.stock.reconciliationStatus === 'NO_ACTIVITY' || context.stock.reconciliationStatus === 'NOT_REQUIRED' ? 'Chưa có phát sinh' : 'Cơ sở đang kiểm tra số liệu'}</p></div><label>Phiên đến kho<select className="mt-1 w-full rounded-lg border bg-white p-2" value={sessionId} onChange={event => { setSessionId(event.target.value); setPreview(null); setAttested(false); }}><option value="">Chọn phiên đang hoạt động có quyền xuất hàng</option>{usableSessions.map(session => <option key={refId(session)} value={refId(session)}>{formatInventoryDateTime(session.startedAt)} · hết hạn {formatInventoryDateTime(session.expiresAt)}</option>)}</select></label></div>
       {!eligible && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Đơn thuê chưa đủ điều kiện xuất kho hoặc đã hết hạn.</p>}
       {stockSpecs.length === 0 && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">Chưa có Item Specification được đăng ký.</p>}
       <div className="space-y-4">{lines.map((line, index) => { const spec = stockSpecs.find(row => refId(row.itemSpecId) === line.itemSpecId); const instances = spec?.instances || []; const cells = [...new Map((spec?.receipts || []).map(receipt => [refId(receipt.cellId), { id: refId(receipt.cellId), code: receipt.cellCode }])).values()]; return <article key={line.lineId} className="space-y-3 rounded-xl border p-4">

@@ -18,8 +18,8 @@ import Reservation from '../../models/reservations/reservation.model';
 import Contract from '../../models/contracts/contract.model';
 import AccessSession from '../../models/access/managed-access-session.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
-import { aggregateCellStock, placementsHaveCellAllocations, replayManagedStockMovementsBySku } from './managed-cell-stock.domain';
-import { assertUnifiedInboundCapacity, classifyLegacyStockImpact, measurementSnapshot, normalizeUnifiedInbound } from './managed-unified-inbound.domain';
+import { aggregateCellStock, nextManagedStockLedgerRevision, placementsHaveCellAllocations, replayManagedStockMovementsBySku } from './managed-cell-stock.domain';
+import { assertUnifiedInboundCapacity, classifyLegacyStockImpact, measurementSnapshot, normalizeUnifiedInbound, selectManagedSkuReplayScope } from './managed-unified-inbound.domain';
 import { FacilityServiceType } from '../../types/facility.type';
 import { ManagedAccessPurpose, ManagedAccessSessionStatus } from '../../types/managed-access.type';
 import { ReservationStatus } from '../../types/reservation.type';
@@ -113,15 +113,24 @@ export async function readManagedFacilityStockState(facilityId: Types.ObjectId, 
     legacyImpact.status === 'CONFLICT' ? 'Reservation hoặc Rack/Level đang dùng còn tồn kho lịch sử chưa đối soát.' : 'Không xác định được phạm vi của tồn kho lịch sử; cần đối soát Facility.', legacyImpact);
   const cells = capacityCells;
   const canonicalMovements = movements.filter((movement: any) => movement.schemaVersion === 4 && movement.stockEffect);
-  const relevantCanonicalMovements = canonicalMovements.filter((movement: any) => scopedReservationIds.includes(String(movement.managedReservationId ?? movement.reservationId)) ||
-    [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? [])].some((line: any) => scopedCellIds.has(String(line.cellId)) || scopedReservationIds.includes(String(line.reservationId))));
-  const relevantSkuIds = new Set(relevantCanonicalMovements.map((movement: any) => String(movement.itemId)));
-  const stocks = allStocks.filter((row: any) => eq(row.reservationId, operationScope.reservationId) || scopedCellIds.has(String(row.cellId)) || relevantSkuIds.has(String(row.skuId)));
-  const instances = allInstances.filter((row: any) => eq(row.reservationId, operationScope.reservationId) || (row.allocations ?? []).some((allocation: any) => scopedCellIds.has(String(allocation.cellId))) || relevantSkuIds.has(String(row.skuId)));
-  const relevantSkuForReplay = new Set([...stocks.map((row: any) => String(row.skuId)), ...instances.map((row: any) => String(row.skuId))]);
-  const replayMovements = canonicalMovements.filter((movement: any) => relevantSkuForReplay.has(String(movement.itemId)));
+  // Revisions are SKU-scoped. Select complete histories even when a SKU has
+  // moved across Reservations/Cells or currently has no projection rows.
+  const { stocks, instances, replayMovements } = selectManagedSkuReplayScope({ canonicalMovements,
+    stockRows: allStocks, instances: allInstances, reservationId: operationScope.reservationId,
+    reservationIds: scopedReservationIds, cellIds: [...scopedCellIds], skuId: operationScope.skuId });
   let replay: any = { lots: [], instances: [] };
-  try { if (replayMovements.length) replay = replayManagedStockMovementsBySku(replayMovements); } catch { fail(503, 'LEDGER_REPLAY_UNKNOWN', 'Không thể phát lại sổ tồn kho hiện hành.'); }
+  try { if (replayMovements.length) replay = replayManagedStockMovementsBySku(replayMovements); }
+  catch (error: any) {
+    // Keep the Customer response generic, but retain a sanitized diagnostic for
+    // Facility support. Never log Movement payloads, measurements, or identities.
+    const reasonCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : 'UNCLASSIFIED';
+    const expectedRevision = Number.isSafeInteger(error?.details?.expectedRevision) ? error.details.expectedRevision : undefined;
+    const actualRevision = Number.isSafeInteger(error?.details?.actualRevision) ? error.details.actualRevision : undefined;
+    console.error('MANAGED_LEDGER_REPLAY_FAILED', { reasonCode, movementCount: replayMovements.length,
+      skuCount: new Set(replayMovements.map((movement: any) => String(movement.itemId))).size,
+      ...(expectedRevision === undefined ? {} : { expectedRevision }), ...(actualRevision === undefined ? {} : { actualRevision }) });
+    fail(503, 'LEDGER_REPLAY_UNKNOWN', 'Không thể phát lại sổ tồn kho hiện hành.');
+  }
   if (!matchShape(replay.lots, stocks, ['skuId','itemSpecId','reservationId','facilityId','customerId','cellId','receiptId','quantityOnHand','quantityHeld','quantityAvailable','unitWeightKgSnapshot','unitVolumeM3Snapshot','totalWeightKg','totalVolumeM3','ledgerRevision']) ||
       !matchShape(replay.instances.map((row: any) => ({ ...row, allocations: [...(row.allocations ?? [])].sort((a: any,b: any) => String(a.cellId).localeCompare(String(b.cellId))) })),
         instances.map((row: any) => ({ ...row, allocations: [...(row.allocations ?? [])].sort((a: any,b: any) => String(a.cellId).localeCompare(String(b.cellId))) })),
@@ -274,7 +283,7 @@ export class ManagedUnifiedInboundService {
           purpose: ManagedAccessPurpose.INBOUND, cellIds: prepared.scopedCellIds, expectedRevision: candidate.sessionRevision, dbSession });
         const sessionFence = guard.revision;
         const operationId = `MI-UNIFIED-IN:${String(sku._id)}:${createHash('sha256').update(requestKey).digest('hex')}`;
-        const ledgerRevision = (prepared.state.movements.filter((movement: any) => eq(movement.itemId, sku._id)).reduce((max: number, movement: any) => movement.stockEffect?.ledgerRevision > max ? movement.stockEffect.ledgerRevision : max, 0) || 0) + 1;
+        const ledgerRevision = nextManagedStockLedgerRevision(prepared.state.movements, sku._id);
         const cellById = new Map<string, any>(prepared.state.cells.map((cell: any) => [String(cell._id), cell]));
         for (const cellId of unitIds.sort((a,b) => a.toString().localeCompare(b.toString()))) {
           const cell: any = cellById.get(String(cellId)), addition = prepared.byCellAdd.get(String(cellId)); if (!cell || !addition) continue;

@@ -48,6 +48,21 @@ function assertSkuAccess(sku: any, actor: any) {
   if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(actor.role) && String(sku.facilityId) !== String(actor.assignedFacilityId ?? '')) fail(404, 'SKU not found', 'SKU_NOT_FOUND');
   if (![UserRole.CUSTOMER, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.ADMIN, UserRole.BOM].includes(actor.role)) fail(403, 'Forbidden', 'FORBIDDEN');
 }
+function customerSafeStockStatus(status: string) {
+  if (status === 'NOT_REQUIRED') return 'NO_ACTIVITY';
+  if (status === 'RECONCILED') return 'VERIFIED';
+  return 'CHECKING';
+}
+function facilityCellStatus(reconciliation: { status: string; reasonCode: string | null }, hasLegacySource: boolean) {
+  if (hasLegacySource) return { status: 'LEGACY_BLOCKED', reasonCode: 'LEGACY_STOCK_REQUIRES_RECONCILIATION' };
+  if (reconciliation.status === 'NOT_REQUIRED') return { status: 'EMPTY_VERIFIED', reasonCode: reconciliation.reasonCode };
+  return reconciliation;
+}
+export function customerSafeStockDto<T extends Record<string, any>>(stock: T) {
+  const { reasonCode: _reasonCode, ledgerStatus: _ledgerStatus, ...safe } = stock;
+  const reconciliationStatus = customerSafeStockStatus(String(stock.reconciliationStatus ?? 'UNKNOWN'));
+  return { ...safe, reconciliationStatus, verificationMessage: reconciliationStatus === 'CHECKING' ? 'Cơ sở đang kiểm tra số liệu tồn kho.' : null };
+}
 function physicalSummary(rows: any[], instances: any[]) {
   const byCell = aggregateCellStock(rows, instances);
   const specs = new Map<string, any>();
@@ -119,7 +134,7 @@ export class ManagedCellStockReadService {
       totalWeightKg: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0),
       totalVolumeM3: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0),
     })) : [];
-    return { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
+    const result = { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
       ledgerStatus, reconciliationStatus: initialized ? 'NOT_REQUIRED' : ledgerStatus === 'MISMATCH' ? 'MISMATCH' : 'UNKNOWN', reasonCode: initialized ? 'NO_STOCK_HISTORY' : !canonicalScopeMatches ? 'STOCK_SCOPE_MISMATCH' : replayError || (legacyMovement ? 'LEGACY_MOVEMENT_NOT_REPLAYED' : historyBounded ? 'CANONICAL_LEDGER_OR_PROJECTION_UNVERIFIED' : 'MOVEMENT_HISTORY_LIMIT_EXCEEDED'),
       totalQuantity: initialized ? 0 : replayMatchesProjection ? summary.byCell.size === 0 ? 0 : [...summary.byCell.values()].reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) : null,
       totalWeightKg: initialized ? 0 : replayMatchesProjection ? canonicalRows.reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED').reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0) : null,
@@ -130,22 +145,24 @@ export class ManagedCellStockReadService {
         byCell: initialized ? [] : replayMatchesProjection && value ? [...value.byCell.values()] : [], byReceipt: initialized ? [] : replayMatchesProjection ? value?.byReceipt ?? [] : [] }; }),
       byCell: initialized ? [] : replayMatchesProjection ? [...summary.byCell.entries()].map(([cellId, value]) => ({ cellId, ...value })) : [],
     };
+    return result;
   }
 
   static async itemSpecificationStock(skuIdInput: unknown, specIdInput: unknown, actor: any) {
     const skuId = oid(skuIdInput, 'skuId'), specId = oid(specIdInput, 'itemSpecId'), stock = await this.skuStock(skuId.toString(), actor);
-    const result = stock.itemSpecifications.find((row: any) => idText(row.itemSpecId) === specId.toString());
-    if (!result) return fail(404, 'Item Specification not found', 'ITEM_SPECIFICATION_NOT_FOUND');
-    return { skuId, itemSpecId: specId, ledgerStatus: stock.ledgerStatus, reconciliationStatus: stock.reconciliationStatus, reasonCode: stock.reasonCode,
-      quantityOnHand: result.quantityOnHand, quantityHeld: result.quantityHeld, quantityAvailable: result.quantityAvailable,
-      totalWeightKg: result.totalWeightKg, totalVolumeM3: result.totalVolumeM3, byCell: result.byCell, byReceipt: result.byReceipt };
+    const specification = stock.itemSpecifications.find((row: any) => idText(row.itemSpecId) === specId.toString());
+    if (!specification) return fail(404, 'Item Specification not found', 'ITEM_SPECIFICATION_NOT_FOUND');
+    const result = { skuId, itemSpecId: specId, ledgerStatus: stock.ledgerStatus, reconciliationStatus: stock.reconciliationStatus, reasonCode: stock.reasonCode,
+      quantityOnHand: specification.quantityOnHand, quantityHeld: specification.quantityHeld, quantityAvailable: specification.quantityAvailable,
+      totalWeightKg: specification.totalWeightKg, totalVolumeM3: specification.totalVolumeM3, byCell: specification.byCell, byReceipt: specification.byReceipt };
+    return result;
   }
 
   static async cellStock(cellIdInput: unknown, actor: any) {
     const cellId = oid(cellIdInput, 'cellId'), cell: any = await WarehouseCellModel.findOne({ _id: cellId, deletedAt: { $exists: false } }).lean().exec();
     if (!cell) fail(404, 'Cell not found', 'CELL_NOT_FOUND');
-    if (![UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF, UserRole.ADMIN, UserRole.BOM].includes(actor?.role)) fail(403, 'Facility stock reader role required', 'FORBIDDEN');
-    if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(actor.role) && String(actor.assignedFacilityId ?? '') !== String(cell.facilityId)) fail(404, 'Cell not found', 'CELL_NOT_FOUND');
+    if (![UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM].includes(actor?.role)) fail(403, 'Facility stock diagnostics role required', 'FORBIDDEN');
+    if (actor.role === UserRole.FACILITY_MANAGER && String(actor.assignedFacilityId ?? '') !== String(cell.facilityId)) fail(404, 'Cell not found', 'CELL_NOT_FOUND');
     const [stocks, instances, movements, allocations, legacyItems] = await Promise.all([
       ManagedCellStockModel.find({ facilityId: cell.facilityId, cellId }).sort({ itemSpecId: 1, receiptId: 1 }).limit(10001).lean().exec(),
       ManagedItemInstanceModel.find({ facilityId: cell.facilityId, 'allocations.cellId': cellId, status: 'PLACED' }).sort({ itemInstanceId: 1 }).limit(10001).lean().exec(),
@@ -220,18 +237,41 @@ export class ManagedCellStockReadService {
     }
     const levelWeight = new Map<string, number>();
     for (const cell of cells) { const key = `${cell.rackId}:${cell.levelNumber}`; levelWeight.set(key, (levelWeight.get(key) ?? 0) + (Number.isFinite(cell.usedWeightKg) ? Number(cell.usedWeightKg) : 0)); }
+    const movementRowsByCell = new Map<string, any[]>();
+    for (const movement of movements) {
+      const cellIds = new Set<string>([movement.sourceCellId, movement.destinationCellId,
+        ...(movement.v3Effect?.source ?? []).map((line: any) => line.cellId), ...(movement.v3Effect?.destination ?? []).map((line: any) => line.cellId),
+        ...(movement.stockEffect?.source ?? []).map((line: any) => line.cellId), ...(movement.stockEffect?.destination ?? []).map((line: any) => line.cellId)]
+        .filter(Boolean).map((value: any) => String(value)));
+      for (const cellId of cellIds) movementRowsByCell.set(cellId, [...(movementRowsByCell.get(cellId) ?? []), movement]);
+    }
     const cellReconciliation = new Map<string, any>();
+    // Calculate every Cell status before level summaries read sibling Cells.
+    // Otherwise the first Cell in a level is evaluated while later statuses
+    // are still absent and is incorrectly reported UNKNOWN.
+    for (const cell of cells) {
+      const entries = movementRowsByCell.get(String(cell._id)) ?? [];
+      const stock = byCell.get(String(cell._id)) ?? { quantity: 0, weightKg: 0, volumeM3: 0 };
+      const stockLines = projectionsMatch ? expectedLots.filter((row: any) => String(row.cellId) === String(cell._id)) : [];
+      const instanceLines = projectionsMatch ? expectedInstances.flatMap((row: any) => row.status === 'PLACED' ? row.allocations.filter((allocation: any) => String(allocation.cellId) === String(cell._id)).map((allocation: any) => ({ ...allocation, reservationId: row.reservationId })) : []) : [];
+      const allocationsMatch = placementsHaveCellAllocations([...stockLines, ...instanceLines], allocations);
+      const noLegacyStock = !legacyItems.some((row: any) => String(row.currentCellId) === String(cell._id));
+      const sourceComplete = historyBounded && projectionsBounded && projectionsMatch && !legacyMovement && legacyItems.length <= 1000 && allocations.length <= 10000 && noLegacyStock && allocationsMatch;
+      const facilityEvidenceIncomplete = !historyBounded || !projectionsBounded || legacyMovement || legacyItems.length > 1000;
+      const reconciliation = reconcileCell({ hasMovementHistory: entries.length > 0 || !noLegacyStock || facilityEvidenceIncomplete, stockQuantity: stock.quantity,
+        projectedWeightKg: stock.weightKg, projectedVolumeM3: stock.volumeM3, counterWeightKg: cell.usedWeightKg, counterVolumeM3: cell.usedVolumeM3, sourceComplete });
+      const hasCellLegacySource = entries.some((row: any) => row.schemaVersion !== 4) || legacyItems.some((row: any) => String(row.currentCellId) === String(cell._id));
+      cellReconciliation.set(String(cell._id), facilityCellStatus(reconciliation, hasCellLegacySource));
+    }
     const diagnosticCells = cells.map(cell => {
-      const entries = movements.filter((row: any) => String(row.sourceCellId) === String(cell._id) || String(row.destinationCellId) === String(cell._id) || [...(row.v3Effect?.source ?? []), ...(row.v3Effect?.destination ?? []), ...(row.stockEffect?.source ?? []), ...(row.stockEffect?.destination ?? [])].some((line: any) => String(line.cellId) === String(cell._id)));
+      const entries = movementRowsByCell.get(String(cell._id)) ?? [];
       const stock = byCell.get(String(cell._id)) ?? { quantity: 0, quantityOnHand: 0, quantityHeld: 0, quantityAvailable: 0, weightKg: 0, volumeM3: 0, itemSpecifications: new Map() };
       const stockLines = projectionsMatch ? expectedLots.filter((row: any) => String(row.cellId) === String(cell._id)) : [];
       const instanceLines = projectionsMatch ? expectedInstances.flatMap((row: any) => row.status === 'PLACED' ? row.allocations.filter((allocation: any) => String(allocation.cellId) === String(cell._id)).map((allocation: any) => ({ ...allocation, reservationId: row.reservationId })) : []) : [];
       const allocationsMatch = placementsHaveCellAllocations([...stockLines, ...instanceLines], allocations);
       const noLegacyStock = !legacyItems.some((row: any) => String(row.currentCellId) === String(cell._id));
-      const sourceComplete = projectionsMatch && !legacyMovement && legacyItems.length <= 1000 && allocations.length <= 10000 && noLegacyStock && allocationsMatch;
-      const reconciliation = reconcileCell({ hasMovementHistory: entries.length > 0 || !noLegacyStock, stockQuantity: stock.quantity, projectedWeightKg: stock.weightKg, projectedVolumeM3: stock.volumeM3,
-        counterWeightKg: cell.usedWeightKg, counterVolumeM3: cell.usedVolumeM3, sourceComplete });
-      cellReconciliation.set(String(cell._id), reconciliation);
+      const sourceComplete = historyBounded && projectionsBounded && projectionsMatch && !legacyMovement && legacyItems.length <= 1000 && allocations.length <= 10000 && noLegacyStock && allocationsMatch;
+      const reconciliation = cellReconciliation.get(String(cell._id));
       const maxVolumeM3 = Number(cell.dimensions?.widthM) * Number(cell.dimensions?.depthM) * Number(cell.dimensions?.usableHeightM);
       let capacity: any = null, capacityError = 'CELL_CAPACITY_INVALID'; try { capacity = calculateCapacity({ maxWeightKg: cell.maxWeightKg, maxVolumeM3, usedWeightKg: cell.usedWeightKg, usedVolumeM3: cell.usedVolumeM3 }); } catch (error: any) { capacityError = error?.code === 'CAPACITY_MISMATCH' ? 'CELL_CAPACITY_EXCEEDED' : 'CELL_CAPACITY_INVALID'; }
       const rack: any = rackMap.get(String(cell.rackId)), allocationRows = allocations.filter((row: any) => String(row.cellId) === String(cell._id));
@@ -240,18 +280,25 @@ export class ManagedCellStockReadService {
         maxWeightKg: cell.maxWeightKg ?? null, maxVolumeM3: Number.isFinite(maxVolumeM3) && maxVolumeM3 > 0 ? maxVolumeM3 : null,
         usedWeightKg: cell.usedWeightKg ?? null, usedVolumeM3: cell.usedVolumeM3 ?? null,
         remainingWeightKg: capacity?.remainingWeightKg ?? null, remainingVolumeM3: capacity?.remainingVolumeM3 ?? null,
-        stockQuantity: sourceComplete || reconciliation.status === 'NOT_REQUIRED' ? stock.quantity : null, stockStatus: reconciliation.status === 'NOT_REQUIRED' ? 'EMPTY' : reconciliation.status === 'RECONCILED' && stock.quantity > 0 ? 'HAS_STOCK' : reconciliation.status === 'RECONCILED' ? 'EMPTY' : 'UNKNOWN', reconciliationStatus: capacity ? reconciliation.status : capacityError === 'CELL_CAPACITY_EXCEEDED' ? 'MISMATCH' : 'NOT_CONFIGURED',
+        stockQuantity: sourceComplete || reconciliation.status === 'EMPTY_VERIFIED' ? stock.quantity : null, stockStatus: reconciliation.status === 'EMPTY_VERIFIED' ? 'EMPTY' : reconciliation.status === 'RECONCILED' && stock.quantity > 0 ? 'HAS_STOCK' : reconciliation.status === 'RECONCILED' ? 'EMPTY' : 'UNKNOWN', reconciliationStatus: capacity ? reconciliation.status : capacityError === 'CELL_CAPACITY_EXCEEDED' ? 'MISMATCH' : 'UNKNOWN',
         reasonCode: capacity ? reconciliation.reasonCode ?? (legacyMovement ? 'LEGACY_MOVEMENT_NOT_REPLAYED' : projectionsMatch ? allocationsMatch ? null : 'RESERVATION_CELL_ALLOCATION_UNVERIFIED' : 'LEDGER_PROJECTION_NOT_RECONCILED') : capacityError, lastMovement: lastMovement ? { movementId: lastMovement._id, performedAt: lastMovement.performedAt } : null,
         activeAllocationCount: allocationRows.length, allocatedReservationIds: allocationRows.map((row: any) => row.reservationId),
         levelUsedWeightKg: levelWeight.get(`${cell.rackId}:${cell.levelNumber}`) ?? null, levelMaxWeightKg: rack?.maxWeightKgPerLevel ?? null,
-        levelCapacityStatus: rack && Number.isFinite(Number(rack.maxWeightKgPerLevel)) && Number(rack.maxWeightKgPerLevel) > 0 && cells.filter((row: any) => String(row.rackId) === String(cell.rackId) && row.levelNumber === cell.levelNumber).every((row: any) => Number.isFinite(row.usedWeightKg) && row.usedWeightKg >= 0) ? (levelWeight.get(`${cell.rackId}:${cell.levelNumber}`) ?? 0) <= Number(rack.maxWeightKgPerLevel) ? 'WITHIN_LIMIT' : 'MISMATCH' : 'NOT_CONFIGURED',
+        levelCapacityStatus: (() => {
+          const levelCells = cells.filter((row: any) => String(row.rackId) === String(cell.rackId) && row.levelNumber === cell.levelNumber);
+          const max = Number(rack?.maxWeightKgPerLevel), used = levelWeight.get(`${cell.rackId}:${cell.levelNumber}`);
+          if (!rack || !Number.isFinite(max) || max <= 0 || used === undefined || !Number.isFinite(used) || levelCells.some((row: any) => !Number.isFinite(row.usedWeightKg) || row.usedWeightKg < 0)) return 'NOT_CONFIGURED';
+          if (used > max + 0.001) return 'MISMATCH';
+          if (!levelCells.every((row: any) => ['RECONCILED', 'EMPTY_VERIFIED'].includes(cellReconciliation.get(String(row._id))?.status))) return 'UNKNOWN';
+          return 'WITHIN_LIMIT';
+        })(),
       };
     });
     return { facilityId, generatedAt: new Date().toISOString(), cells: diagnosticCells, reservationSummary: reservations.map((row: any) => {
       const expected = projectionsMatch ? expectedReservationVolume.get(String(row._id)) ?? 0 : undefined;
       const validCounter = typeof row.usedCapacityM3 === 'number' && Number.isFinite(row.usedCapacityM3) && row.usedCapacityM3 >= 0;
       const reservationCellIds = reservationCells.get(String(row._id)) ?? new Set<string>();
-      const cellsReconciled = [...reservationCellIds].every(cellId => cellReconciliation.get(cellId)?.status === 'RECONCILED' || cellReconciliation.get(cellId)?.status === 'NOT_REQUIRED');
+      const cellsReconciled = [...reservationCellIds].every(cellId => cellReconciliation.get(cellId)?.status === 'RECONCILED' || cellReconciliation.get(cellId)?.status === 'EMPTY_VERIFIED');
       const legacyReservationStock = legacyItems.length > 1000 || legacyItems.some((item: any) => idText(item.reservationId ?? item.managedReservationId) === String(row._id));
       const allocated = typeof row.allocatedCapacity === 'number' && Number.isFinite(row.allocatedCapacity) && row.allocatedCapacity > 0;
       const withinReservationQuota = allocated && typeof expected === 'number' && expected <= row.allocatedCapacity + 0.000001;

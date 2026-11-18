@@ -33,9 +33,9 @@ export const isCustomer = (role) => role === ROLES.CUSTOMER;
 export const isFacilityStaff = (role) => role === ROLES.FACILITY_STAFF;
 export const isFacilityManager = (role) => role === ROLES.FACILITY_MANAGER;
 
-// Roles allowed to review reservations / mock-pay, matching the backend route table
-// (backend/src/routes/reservation.routes.ts).
+// Roles allowed to review self-storage reservations, matching the backend route table
+// (backend/src/routes/reservation.routes.ts). Managed reservations are approved through the
+// contract + handover flow at the facility, so no console review action exists for them.
 export const canReviewReservations = (role) => isAdmin(role);
-export const canMockPayReservations = (role) => isAdmin(role) || isBom(role);
 
 export const knownRole = (role) => Object.values(ROLES).includes(role);

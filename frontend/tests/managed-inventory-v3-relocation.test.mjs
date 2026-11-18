@@ -41,7 +41,9 @@ test('Customer UI requires an active checked-in RELOCATION scope, preview, attes
   assert.match(component, /sourceReservationId/);
   assert.match(component, /destinationReservationId/);
   assert.match(component, /reservationCode/);
-  assert.match(component, /additionalReservationId/);
+  assert.match(component, /Reservation Managed V3 đang hoạt động thuộc bạn tại cùng cơ sở/);
+  assert.match(component, /minimumDestinationRemainingDays/);
+  assert.match(component, /disabled=\{!cell\.canReceiveRelocation\}/);
   assert.match(component, /managedInventoryV3RelocationApi\.preview/);
   assert.match(component, /managedInventoryV3RelocationApi\.confirm/);
   assert.match(component, /customerAttestation: attested \? 'CONFIRMED'/);
@@ -54,6 +56,20 @@ test('Customer UI requires an active checked-in RELOCATION scope, preview, attes
   assert.match(component, /Theo số lượng trong lô/);
   assert.match(component, /Món nguyên vẹn/);
   assert.doesNotMatch(component, /spec\?\.instances\?\.length \? 'INSTANCE' : 'LOT'/);
-  assert.match(component, /đặt lịch đến kho với mục đích chuyển vị trí/);
+  assert.match(component, /Lượt đến kho tự bao phủ các Reservation đủ điều kiện tại thời điểm đặt lịch/);
   assert.match(integration, /ManagedSelfRelocationV3 item=\{item\} rental=\{rental\}/);
+});
+
+test('all three stock operations select the checked-in warehouse session by operation capability', async () => {
+  const [inbound, outbound, relocation] = await Promise.all([
+    readFile(new URL('../src/components/customer/inventory/ManagedUnifiedSelfInbound.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/customer/inventory/ManagedSelfOutboundV3.jsx', import.meta.url), 'utf8'),
+    readFile(componentPath, 'utf8'),
+  ]);
+  assert.match(inbound, /allowedPurposes\?\.includes\('INBOUND'\)/);
+  assert.match(outbound, /allowedPurposes \|\| \[\]\)\.includes\('OUTBOUND'\)/);
+  assert.match(relocation, /allowedPurposes\?\.includes\('RELOCATION'\)/);
+  for (const component of [inbound, outbound, relocation]) assert.match(component, /Phiên đến kho/);
+  assert.doesNotMatch(outbound, /Phiên đến kho OUTBOUND/);
+  assert.doesNotMatch(relocation, /Phiên đến kho RELOCATION/);
 });

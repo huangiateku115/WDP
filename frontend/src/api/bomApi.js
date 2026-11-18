@@ -33,10 +33,12 @@ export const bomPolicyApi = {
 
 export const bomManagedInventoryCatalogApi = {
   listCategories: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/categories', { ...config, params }),
+  getCategory: (id, config = {}) => axiosClient.get(`/managed-inventory-catalog/categories/${encode(id)}`, config),
   createCategory: body => axiosClient.post('/managed-inventory-catalog/categories', body),
   updateCategory: (id, body) => axiosClient.patch(`/managed-inventory-catalog/categories/${encode(id)}`, body),
   removeCategory: id => axiosClient.delete(`/managed-inventory-catalog/categories/${encode(id)}`),
   listQuantityUnits: (params = {}, config = {}) => axiosClient.get('/managed-inventory-catalog/quantity-units', { ...config, params }),
+  getQuantityUnit: (id, config = {}) => axiosClient.get(`/managed-inventory-catalog/quantity-units/${encode(id)}`, config),
   createQuantityUnit: body => axiosClient.post('/managed-inventory-catalog/quantity-units', body),
   updateQuantityUnit: (id, body) => axiosClient.patch(`/managed-inventory-catalog/quantity-units/${encode(id)}`, body),
   removeQuantityUnit: id => axiosClient.delete(`/managed-inventory-catalog/quantity-units/${encode(id)}`),
@@ -79,10 +81,6 @@ export const bomReservationWriteApi = {
   approve: (id) => axiosClient.patch(`/reservations/${encode(id)}/approve`),
   reject: (id, reason) => axiosClient.patch(`/reservations/${encode(id)}/reject`, { reason }),
   managedGet: (id, config) => axiosClient.get(`/reservations/managed/${encode(id)}`, config),
-  managedApprove: (id) => axiosClient.patch(`/reservations/managed/${encode(id)}/approve`),
-  managedReject: (id, reason) => axiosClient.patch(`/reservations/managed/${encode(id)}/reject`, { reason }),
-  managedActivate: (id) => axiosClient.patch(`/reservations/managed/${encode(id)}/activate`),
-  managedMockPay: (id) => axiosClient.post(`/reservations/managed/${encode(id)}/mock-pay`),
 };
 
 export const bomContractApi = {

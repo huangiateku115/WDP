@@ -1,4 +1,25 @@
 export const MANAGED_VISIT_TIME_ZONE = 'Asia/Ho_Chi_Minh' as const;
+export const MANAGED_VISIT_MAX_DAYS_AHEAD = 30;
+const VN_OFFSET_MS = 7 * 60 * 60_000;
+
+function vnDateKey(date: Date) { return new Date(date.getTime() + VN_OFFSET_MS).toISOString().slice(0, 10); }
+function addCalendarDays(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function managedVisitDateBounds(now: Date) {
+  const minDate = vnDateKey(now);
+  return { minDate, maxDate: addCalendarDays(minDate, MANAGED_VISIT_MAX_DAYS_AHEAD) };
+}
+
+export function isManagedVisitDateBookable(dateInput: unknown, now: Date) {
+  const day = managedVisitDateRange(dateInput);
+  if (!day) return false;
+  const bounds = managedVisitDateBounds(now);
+  return day.dateInput >= bounds.minDate && day.dateInput <= bounds.maxDate;
+}
 
 export interface ManagedVisitScheduleInput {
   timeZone: typeof MANAGED_VISIT_TIME_ZONE;
@@ -26,6 +47,7 @@ export function managedVisitSlots(input: {
 }) {
   const day = managedVisitDateRange(input.date);
   if (!day) throw new Error('VISIT_DATE_INVALID');
+  if (!isManagedVisitDateBookable(input.date, input.now)) throw new Error('VISIT_DATE_OUT_OF_RANGE');
   const duration = input.schedule?.slotDurationMinutes;
   if (input.schedule?.timeZone !== MANAGED_VISIT_TIME_ZONE || !Number.isSafeInteger(duration) || duration < 30 || duration > 480) throw new Error('VISIT_SCHEDULE_INVALID');
   const hours = input.schedule.weeklyHours.find(row => row.weekday === day.weekday);

@@ -16,7 +16,7 @@ const oid = n => new mongoose.Types.ObjectId(String(n).padStart(24, '0'));
 class Query { constructor(value){this.value=value;} select(){return this;} session(){return this;} lean(){return this;} sort(){return this;} limit(){return this;} populate(){return this;} async exec(){return this.value;} }
 function customer(){return {_id:oid(1),role:'CUSTOMER',assignedFacilityId:null};}
 function reservation(){const start=new Date(Date.now()+86400000),end=new Date(Date.now()+20*86400000);return {_id:oid(2),customerId:oid(1),facilityId:oid(3),serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'CHECKIN_READY',startDate:start,endDate:end,allocatedCellIds:[oid(4)],};}
-function payload(r=reservation()){const day=new Date(Date.now()+2*86400000+7*3600000).toISOString().slice(0,10);const startsAt=new Date(`${day}T10:00:00+07:00`);return {reservationId:String(r._id),purpose:'INBOUND',startsAt:startsAt.toISOString(),endsAt:new Date(startsAt.getTime()+3600000).toISOString(),note:'Giao hàng'};}
+function payload(r=reservation()){const day=new Date(Date.now()+2*86400000+7*3600000).toISOString().slice(0,10);const startsAt=new Date(`${day}T10:00:00+07:00`);return {reservationId:String(r._id),startsAt:startsAt.toISOString(),endsAt:new Date(startsAt.getTime()+3600000).toISOString(),note:'Giao hàng'};}
 function visitFacility(){return {_id:oid(3),managedVisitSchedule:{timeZone:'Asia/Ho_Chi_Minh',slotDurationMinutes:60,weeklyHours:Array.from({length:7},(_,weekday)=>({weekday,opensAt:'10:00',closesAt:'11:00'}))}};}
 function transactionSession(){return {withTransaction:async work=>work(),endSession:async()=>{}};}
 function mockVisitCapacity(t,facility=visitFacility(),capacity=1,overlaps=[]){
@@ -25,23 +25,42 @@ function mockVisitCapacity(t,facility=visitFacility(),capacity=1,overlaps=[]){
  t.mock.method(User,'countDocuments',()=>new Query(capacity));
  t.mock.method(Visit,'find',()=>new Query(overlaps));
 }
+function mockActiveReservations(t,rows=[]){t.mock.method(Reservation,'find',()=>new Query(rows));}
 
 test('Customer can create a CHECKIN_READY visit idempotently using owned V3 reservation and reserved Cells',async t=>{
  const r=reservation(), actor=customer(), created=[];
  const previousNodeEnv=process.env.NODE_ENV;process.env.NODE_ENV='production';
  t.mock.method(Visit,'findOne',()=>new Query(created[0]||null));
  t.mock.method(Reservation,'findOne',()=>new Query(r));
+ mockActiveReservations(t);
  mockVisitCapacity(t,visitFacility());
  t.mock.method(Allocation,'find',()=>new Query([{cellId:oid(4)}]));
  t.mock.method(Visit,'create',async ([input])=>{const row={_id:oid(5),status:'SCHEDULED',...input};created.push(row);return [row];});
  try{const body=payload(r),first=await ManagedAccessService.createVisit(body,actor,'customer-visit-key-001');
  const replay=await ManagedAccessService.createVisit(body,actor,'customer-visit-key-001');
- assert.equal(first._id,replay._id);assert.equal(created.length,1);assert.equal(first.status,'SCHEDULED');}finally{if(previousNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousNodeEnv;}
+ assert.equal(first._id,replay._id);assert.equal(created.length,1);assert.equal(first.status,'SCHEDULED');assert.equal(first.purpose,'WAREHOUSE_VISIT');}finally{if(previousNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previousNodeEnv;}
+});
+
+test('New Visit snapshots every active handed-over Reservation at the same Facility',async t=>{
+ const primary=reservation(),actor=customer(),body=payload(primary),secondary={...reservation(),_id:oid(22),status:'ACTIVE',handoverAt:new Date(),handoverByStaffId:oid(23),allocatedCellIds:[oid(24)]};
+ secondary.startDate=new Date(Date.now()-86400000);secondary.endDate=new Date(Date.now()+20*86400000);
+ const content={reservationId:String(secondary._id)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+ const contract={currentContentVersion:1,contentVersions:[{version:1,content,contentHash}],signatures:[{version:1,contentHash,signerRole:'CUSTOMER'},{version:1,contentHash,signerRole:'FACILITY_STAFF'}]};
+ let saved,allocationReservationIds=[];
+ t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(primary));
+ t.mock.method(Reservation,'find',()=>new Query([primary,secondary]));mockVisitCapacity(t,visitFacility());
+ t.mock.method(Contract,'findOne',()=>new Query(contract));
+ t.mock.method(Allocation,'find',filter=>{allocationReservationIds.push(String(filter.reservationId));const owner=String(filter.reservationId)===String(secondary._id)?secondary:primary;return new Query(owner.allocatedCellIds.map(cellId=>({cellId})));});
+ t.mock.method(Visit,'create',async([input])=>{saved=input;return [{_id:oid(25),...input,status:'SCHEDULED'}];});
+ const result=await ManagedAccessService.createVisit(body,actor,'all-active-scope-key-01');
+ assert.deepEqual(result.scopedReservationIds.map(String).sort(),[String(primary._id),String(secondary._id)].sort());
+ assert.ok(allocationReservationIds.includes(String(secondary._id)));
+ assert.deepEqual(saved.audit[0].details.scopedReservationIds.sort(),[String(primary._id),String(secondary._id)].sort());
 });
 
 test('Cell allocations remain eligible after transition to OCCUPIED and released allocations are excluded',async t=>{
  const r=reservation(),actor=customer();let allocationFilter;
- t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockVisitCapacity(t,visitFacility());
+ t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockActiveReservations(t);mockVisitCapacity(t,visitFacility());
  t.mock.method(Allocation,'find',filter=>{allocationFilter=filter;return new Query([{cellId:oid(4)}]);});
  t.mock.method(Visit,'create',async ([input])=>[{_id:oid(40),status:'SCHEDULED',...input}]);
  await ManagedAccessService.createVisit(payload(r),actor,'customer-visit-key-occupied');
@@ -50,7 +69,7 @@ test('Cell allocations remain eligible after transition to OCCUPIED and released
 
 test('A future CHECKIN_READY reservation can book only when every allocation covers the complete Visit window',async t=>{
  const r=reservation(),actor=customer(),body=payload(r);let filter;
- t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockVisitCapacity(t,visitFacility());
+ t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockActiveReservations(t);mockVisitCapacity(t,visitFacility());
  const allocation={reservationId:r._id,customerId:r.customerId,facilityId:r.facilityId,cellId:r.allocatedCellIds[0],status:'RESERVED',startDate:new Date(body.startsAt),endDate:new Date(body.endsAt)};
  t.mock.method(Allocation,'find',query=>{filter=query;const matches=(allocation.startDate<=query.startDate.$lte&&allocation.endDate>=query.endDate.$gte);return new Query(matches?[{cellId:allocation.cellId}]:[]);});
  t.mock.method(Visit,'create',async([input])=>[{_id:oid(52),...input,status:'SCHEDULED'}]);
@@ -60,7 +79,7 @@ test('A future CHECKIN_READY reservation can book only when every allocation cov
 
 test('Visit allocation ending mid-window is rejected by Mongo-style range predicates',async t=>{
  const r=reservation(),actor=customer(),body=payload(r);let writes=0;
- t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockVisitCapacity(t,visitFacility());
+ t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockActiveReservations(t);mockVisitCapacity(t,visitFacility());
  const allocation={reservationId:r._id,customerId:r.customerId,facilityId:r.facilityId,cellId:r.allocatedCellIds[0],status:'RESERVED',startDate:new Date(body.startsAt),endDate:new Date(Date.parse(body.endsAt)-1)};
  t.mock.method(Allocation,'find',query=>new Query(allocation.startDate<=query.startDate.$lte&&allocation.endDate>=query.endDate.$gte?[{cellId:allocation.cellId}]:[]));
  t.mock.method(Visit,'create',async()=>{writes++;return [];});
@@ -69,7 +88,7 @@ test('Visit allocation ending mid-window is rejected by Mongo-style range predic
 
 test('Visit amendment rechecks availability and allocation inside a Facility-fenced transaction, then replays idempotently',async t=>{
  const r=reservation(),actor=customer(),base=payload(r),visit={_id:oid(53),reservationId:r._id,customerId:r.customerId,facilityId:r.facilityId,purpose:'INBOUND',startsAt:new Date(Date.parse(base.startsAt)+86400000),endsAt:new Date(Date.parse(base.endsAt)+86400000),status:'SCHEDULED',assignedStaffId:oid(54),revision:3,audit:[],assignmentHistory:[],set(key,value){this[key]=value;},save:async function(){return this;}};
- const input={purpose:'OUTBOUND',startsAt:base.startsAt,endsAt:base.endsAt,note:'Updated'};let facilityFence=0,saveCount=0,allocationQuery;
+ const input={startsAt:base.startsAt,endsAt:base.endsAt,note:'Updated'};let facilityFence=0,saveCount=0,allocationQuery;
  visit.save=async function(){saveCount++;return this;};
  t.mock.method(Visit,'findOne',()=>new Query(visit));
  t.mock.method(Facility,'findOneAndUpdate',()=>{facilityFence++;return new Query(visitFacility());});
@@ -78,7 +97,7 @@ test('Visit amendment rechecks availability and allocation inside a Facility-fen
  t.mock.method(Allocation,'find',query=>{allocationQuery=query;return new Query([{cellId:r.allocatedCellIds[0]}]);});
  t.mock.method(mongoose,'startSession',async()=>transactionSession());
  const result=await ManagedAccessService.amendVisit(String(visit._id),input,actor,3,'visit-amend-key-001');
- assert.equal(result.revision,4);assert.equal(result.purpose,'OUTBOUND');assert.equal(result.assignedStaffId,undefined);assert.equal(facilityFence,1);assert.equal(saveCount,1);
+ assert.equal(result.revision,4);assert.equal(result.purpose,'INBOUND');assert.equal(result.assignedStaffId,undefined);assert.equal(facilityFence,1);assert.equal(saveCount,1);
  assert.equal(allocationQuery.startDate.$lte.getTime(),Date.parse(input.startsAt));assert.equal(allocationQuery.endDate.$gte.getTime(),Date.parse(input.endsAt));
  const replay=await ManagedAccessService.amendVisit(String(visit._id),input,actor,3,'visit-amend-key-001');assert.equal(replay.revision,4);assert.equal(saveCount,1);
 });
@@ -93,7 +112,7 @@ test('Visit amendment rejects stale revisions and checked-in visits without savi
 
 test('Visit amendment reconciles an unknown transaction commit from the persisted audit receipt',async t=>{
  const r=reservation(),actor=customer(),base=payload(r),visit={_id:oid(56),reservationId:r._id,customerId:r.customerId,facilityId:r.facilityId,purpose:'INBOUND',startsAt:new Date(base.startsAt),endsAt:new Date(base.endsAt),status:'SCHEDULED',revision:2,audit:[],assignmentHistory:[],save:async function(){return this;}};
- const input={purpose:'INSPECTION',startsAt:base.startsAt,endsAt:base.endsAt},key='unknown-amend-key-01';
+ const input={startsAt:base.startsAt,endsAt:base.endsAt},key='unknown-amend-key-01';
  t.mock.method(Visit,'findOne',()=>new Query(visit));t.mock.method(Facility,'findOneAndUpdate',()=>new Query(visitFacility()));
  t.mock.method(Reservation,'findOne',()=>new Query(r));t.mock.method(User,'countDocuments',()=>new Query(1));t.mock.method(Visit,'find',()=>new Query([]));
  t.mock.method(Allocation,'find',()=>new Query([{cellId:r.allocatedCellIds[0]}]));
@@ -125,6 +144,7 @@ test('Only Customers can create visits and managers cannot inspect another Facil
 test('CHECKIN_READY visit creation is preparatory and does not create an Access Session',async t=>{
  const r=reservation(),actor=customer(),created=[];
  t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Reservation,'findOne',()=>new Query(r));mockVisitCapacity(t,visitFacility());t.mock.method(Allocation,'find',()=>new Query([{cellId:oid(4)}]));
+ mockActiveReservations(t);
  t.mock.method(Visit,'create',async ([input])=>{const row={_id:oid(6),...input,status:'SCHEDULED'};created.push(row);return [row];});
  const result=await ManagedAccessService.createVisit(payload(r),actor,'customer-visit-key-004');
  assert.equal(result.status,'SCHEDULED');assert.equal(Object.hasOwn(result,'startedAt'),false);assert.equal(Object.hasOwn(result,'accessSession'),false);
@@ -139,6 +159,52 @@ test('Customer availability returns only configured local-time slots within Rent
  const available=await ManagedAccessService.visitAvailability(String(r._id),date,customer());
  assert.equal(available.timeZone,'Asia/Ho_Chi_Minh');assert.equal(available.slotDurationMinutes,60);
  assert.equal(available.slots.length,1);assert.equal(available.slots[0].startsAt,body.startsAt);
+});
+
+test('Date-only availability returns deduplicated slots and the matching facility for eligible same-customer Managed reservations',async t=>{
+ const r=reservation(),actor=customer(),body=payload(r),date=new Date(Date.parse(body.startsAt)+7*3600000).toISOString().slice(0,10),queryCalls=[];
+ const second={...r,_id:oid(29),status:'ACTIVE',startDate:new Date(Date.now()-86400000),endDate:new Date(Date.now()+40*86400000)};
+ t.mock.method(Reservation,'find',filter=>{queryCalls.push(filter);return new Query([r,second]);});
+ t.mock.method(Facility,'findOne',()=>new Query({...visitFacility(),name:'Facility A'}));
+ t.mock.method(User,'countDocuments',()=>new Query(1));t.mock.method(Visit,'find',()=>new Query([]));
+ const result=await ManagedAccessService.visitAvailability(undefined,date,actor);
+ assert.equal(result.reservationScopeAvailable,true);assert.equal(result.slots.length,1);
+ assert.equal(result.slots[0].facilityId,String(r.facilityId));assert.equal(result.slots[0].facilityName,'Facility A');
+ assert.match(result.reservationScopePolicy,/MORE_THAN_7_DAYS/);
+ assert.ok(queryCalls[0].endDate.$gt instanceof Date);assert.ok(queryCalls[0].startDate.$lte instanceof Date);
+ assert.equal(queryCalls[0].customerId,actor._id);
+});
+
+test('Date-only Visit creation chooses a server-side Reservation anchor and snapshots all same-facility reservations beyond the seven-day threshold',async t=>{
+ const primary={...reservation(),status:'ACTIVE',startDate:new Date(Date.now()-86400000),endDate:new Date(Date.now()+40*86400000),handoverAt:new Date(),handoverByStaffId:oid(33)},actor=customer(),body=payload(primary),secondary={...primary,_id:oid(30),allocatedCellIds:[oid(31)]};
+ const content={reservationId:String(secondary._id)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+ const contract={currentContentVersion:1,contentVersions:[{version:1,content,contentHash}],signatures:[{version:1,contentHash,signerRole:'CUSTOMER'},{version:1,contentHash,signerRole:'FACILITY_STAFF'}]};
+ let saved,activeQuery,allocationIds=[];
+ t.mock.method(Visit,'findOne',()=>new Query(null));
+ t.mock.method(Reservation,'findOne',filter=>new Query(primary));
+ t.mock.method(Reservation,'find',filter=>{activeQuery=filter;return new Query([primary,secondary]);});
+ mockVisitCapacity(t,visitFacility());
+ t.mock.method(Contract,'findOne',()=>new Query(contract));
+ t.mock.method(Allocation,'find',filter=>{allocationIds.push(String(filter.reservationId));const owner=String(filter.reservationId)===String(secondary._id)?secondary:primary;return new Query(owner.allocatedCellIds.map(cellId=>({cellId})));});
+ t.mock.method(Visit,'create',async([input])=>{saved=input;return [{_id:oid(32),...input,status:'SCHEDULED'}];});
+ const result=await ManagedAccessService.createVisit({facilityId:String(primary.facilityId),startsAt:body.startsAt,endsAt:body.endsAt},actor,'date-only-visit-key-01');
+ assert.equal(String(result.reservationId),String(primary._id));
+ assert.deepEqual(result.scopedReservationIds.map(String).sort(),[String(primary._id),String(secondary._id)].sort());
+ assert.ok(activeQuery.endDate.$gt.getTime()>=Date.parse(body.endsAt)+7*86400000);
+ assert.ok(allocationIds.includes(String(secondary._id)));
+ assert.deepEqual(saved.audit[0].details.scopedReservationIds.sort(),[String(primary._id),String(secondary._id)].sort());
+});
+
+test('Visit availability rejects dates beyond the 30-day booking horizon',async t=>{
+ const r=reservation(),actor=customer(),farDate=new Date(Date.now()+31*86400000+7*3600000).toISOString().slice(0,10);
+ t.mock.method(Reservation,'findOne',()=>new Query(r));
+ await assert.rejects(ManagedAccessService.visitAvailability(String(r._id),farDate,actor),error=>error.status===400&&error.code==='VISIT_DATE_OUT_OF_RANGE');
+});
+
+test('Create Visit rejects a start date beyond the 30-day horizon before loading or writing records',async t=>{
+ const r=reservation(),actor=customer(),farDate=new Date(Date.now()+31*86400000+7*3600000).toISOString().slice(0,10);
+ const startsAt=new Date(`${farDate}T10:00:00+07:00`),body={reservationId:String(r._id),startsAt:startsAt.toISOString(),endsAt:new Date(startsAt.getTime()+3600000).toISOString()};
+ await assert.rejects(ManagedAccessService.createVisit(body,actor,'visit-over-30-days-key'),error=>error.status===400&&error.code==='VISIT_DATE_OUT_OF_RANGE');
 });
 
 test('Visit creation fails closed when the configured slot is already full or stale',async t=>{
@@ -199,30 +265,31 @@ test('Manager assignment is facility-scoped and rejects an overlapping assigned 
  t.mock.method(Visit,'find',()=>new Query([]));
  t.mock.method(mongoose,'startSession',async()=>({withTransaction:async fn=>fn(),endSession:async()=>{}}));
  t.mock.method(User,'findOneAndUpdate',(filter,update,options)=>{fenceArgs={filter,update,options};return new Query({_id:staffId});});
- t.mock.method(Visit,'findOne',()=>new Query(null));
+ t.mock.method(Visit,'findOne',()=>new Query(null));t.mock.method(Visit,'find',()=>new Query([]));
  t.mock.method(Visit,'findOneAndUpdate',(filter,update,options)=>{assignmentArgs={filter,update,options};return new Query({...visit,assignedStaffId:staffId,revision:2});});
  const result=await ManagedAccessService.assignStaff(String(visit._id),{staffId:String(staffId),reason:'Escort shift'},actor,1);
  assert.equal(String(fenceArgs.filter.assignedFacilityId),String(facilityId));assert.equal(result.revision,2);assert.equal(String(assignmentArgs.filter.facilityId),String(facilityId));
 });
 
-test('Staff check-in creates one server-timed Session bounded by Rental and Visit inside transaction',async t=>{
- const now=Date.now(),facilityId=oid(3),staffId=oid(15),customerId=oid(1),reservationId=oid(2),cellId=oid(4),visitId=oid(16),key='staff-checkin-key-001';
- const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'INBOUND',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
- const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(17),allocatedCellIds:[cellId]};
+test('Staff check-in creates one server-timed Session and includes newly eligible same-Facility Reservations',async t=>{
+ const now=Date.now(),facilityId=oid(3),staffId=oid(15),customerId=oid(1),reservationId=oid(2),cellId=oid(4),visitId=oid(16),key='staff-checkin-key-001',secondaryCellId=oid(35);
+ const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'WAREHOUSE_VISIT',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
+ const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+20*86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(17),allocatedCellIds:[cellId]};
+ const secondary={...reservation,_id:oid(34),allocatedCellIds:[secondaryCellId],fullPaymentId:oid(36)};
  const content={reservationId:String(reservationId)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
  const contract={signedProofPublicId:'proof',verifiedAt:new Date(now-60000),currentContentVersion:1,contentVersions:[{version:1,content,contentHash}],signatures:[{version:1,contentHash,signerRole:'CUSTOMER'},{version:1,contentHash,signerRole:'FACILITY_STAFF'}]};let createdSession;
  t.mock.method(Visit,'findById',()=>new Query(visit));t.mock.method(Visit,'findOne',()=>new Query(visit));
- t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
- t.mock.method(Payment,'findOne',()=>new Query({_id:reservation.fullPaymentId}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
+ t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'find',()=>new Query([reservation,secondary]));t.mock.method(Reservation,'findOneAndUpdate',filter=>new Query(String(filter._id)===String(secondary._id)?secondary:reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
+ t.mock.method(Payment,'findOne',()=>new Query({_id:reservation.fullPaymentId}));t.mock.method(Payment,'findOneAndUpdate',filter=>new Query({_id:filter._id}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Contract,'findOne',()=>new Query(contract));t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(User,'findOneAndUpdate',()=>new Query({_id:staffId}));
- t.mock.method(Allocation,'find',()=>new Query([{cellId}]));t.mock.method(Allocation,'updateMany',()=>new Query({matchedCount:1}));
+ t.mock.method(Allocation,'find',filter=>new Query([{cellId:String(filter.reservationId)===String(secondary._id)?secondaryCellId:cellId}]));t.mock.method(Allocation,'updateMany',filter=>new Query({matchedCount:filter.cellId.$in.length}));
  t.mock.method(Session,'find',()=>new Query([]));t.mock.method(Session,'findOne',()=>new Query(null));t.mock.method(Session,'updateMany',()=>new Query({modifiedCount:0}));
  t.mock.method(mongoose,'startSession',async()=>({withTransaction:async fn=>fn(),endSession:async()=>{}}));
  t.mock.method(Session,'create',async([input])=>{createdSession={_id:oid(18),...input};return [createdSession];});
  const actor={_id:staffId,role:'FACILITY_STAFF',assignedFacilityId:facilityId};
  const result=await ManagedAccessService.checkIn(String(visitId),{identityVerified:true,customerPresent:true,safetyReviewed:true,safetyNotes:'ID and safety checked'},actor,key);
- assert.ok(result.session.expiresAt.getTime()-result.session.startedAt.getTime()<=60*60*1000);assert.ok(result.session.expiresAt<=visit.endsAt);assert.ok(result.session.expiresAt<=reservation.endDate);assert.deepEqual(result.session.allowedCellIds,[cellId]);assert.equal(result.visit.status,'CHECKED_IN');assert.equal(createdSession.audit[0].action,'SESSION_ACTIVATED');
+ assert.ok(result.session.expiresAt.getTime()-result.session.startedAt.getTime()<=60*60*1000);assert.ok(result.session.expiresAt<=visit.endsAt);assert.ok(result.session.expiresAt<=reservation.endDate);assert.deepEqual(result.session.scopedReservationIds.map(String).sort(),[String(reservationId),String(secondary._id)].sort());assert.deepEqual(result.session.allowedCellIds.map(String).sort(),[String(cellId),String(secondaryCellId)].sort());assert.deepEqual(result.session.allowedPurposes,['INBOUND','OUTBOUND','RELOCATION']);assert.equal(result.visit.status,'CHECKED_IN');assert.deepEqual(result.visit.scopedReservationIds.map(String).sort(),[String(reservationId),String(secondary._id)].sort());assert.equal(createdSession.audit[0].action,'SESSION_ACTIVATED');
 });
 
 test('Staff check-in rejects a primary Reservation already covered as another ACTIVE Session secondary scope',async t=>{
@@ -281,12 +348,12 @@ test('Expired Sessions reconcile Visit state and audit atomically using the Sess
 
 test('Concurrent duplicate Staff check-ins create at most one Session',async t=>{
  const now=Date.now(),facilityId=oid(3),staffId=oid(25),customerId=oid(1),reservationId=oid(2),cellId=oid(4),visitId=oid(26),rows=[];
- const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'INBOUND',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
- const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(27),allocatedCellIds:[cellId]};
+ const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'WAREHOUSE_VISIT',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
+  const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+20*86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(27),allocatedCellIds:[cellId]};
  const contract={signedProofPublicId:'proof',verifiedAt:new Date(now-60000),currentContentVersion:1,signatures:[{version:1,signerRole:'CUSTOMER'},{version:1,signerRole:'FACILITY_STAFF'}]};let tail=Promise.resolve();
  t.mock.method(Visit,'findById',()=>new Query(visit));t.mock.method(Visit,'findOne',filter=>new Query(visit.status==='SCHEDULED'&&String(visit.assignedStaffId)===String(filter.assignedStaffId)?visit:null));
  const content={reservationId:String(reservationId)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');contract.contentVersions=[{version:1,content,contentHash}];contract.signatures.forEach(signature=>signature.contentHash=contentHash);
- t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
+  t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'find',()=>new Query([reservation]));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
  t.mock.method(Payment,'findOne',()=>new Query({_id:reservation.fullPaymentId}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Contract,'findOne',()=>new Query(contract));t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(User,'findOneAndUpdate',()=>new Query({_id:staffId}));
  t.mock.method(Allocation,'find',()=>new Query([{cellId}]));t.mock.method(Allocation,'updateMany',()=>new Query({matchedCount:1}));
@@ -312,7 +379,7 @@ test('Concurrent Session revocations are fenced by expected revision',async t=>{
 test('D3/D4 session guard fences the complete multi-Cell scope and revalidates lifecycle and allocations in transaction',async t=>{
  const customerId=oid(41),reservationId=oid(42),facilityId=oid(43),visitId=oid(44),sessionId=oid(45),cells=[oid(46),oid(47)],staffId=oid(48),now=new Date();
  const session={_id:sessionId,visitId,reservationId,customerId,facilityId,status:'ACTIVE',startedAt:new Date(now-60000),expiresAt:new Date(now.getTime()+60000),revision:8,
-  allowedPurposes:['RELOCATION'],allowedCellIds:cells};
+  allowedPurposes:['INBOUND','OUTBOUND','RELOCATION'],allowedCellIds:cells};
  const r={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now.getTime()+86400000),
   handoverAt:new Date(now-3600000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(49),allocatedCellIds:cells};
  const content={contract:'signed'},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
@@ -321,13 +388,14 @@ test('D3/D4 session guard fences the complete multi-Cell scope and revalidates l
  let sessionFilter,allocationFilter;
  t.mock.method(Session,'findOneAndUpdate',(filter,update)=>{sessionFilter=filter;return new Query({...session,revision:9});});
  t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(r));t.mock.method(Reservation,'findById',()=>new Query(r));
- t.mock.method(Visit,'findOne',()=>new Query({reservationId,purpose:'RELOCATION',status:'CHECKED_IN'}));
+ t.mock.method(Visit,'findOne',()=>new Query({reservationId,purpose:'WAREHOUSE_VISIT',status:'CHECKED_IN'}));
  t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(Contract,'findOne',()=>new Query(contract));
  t.mock.method(Allocation,'updateMany',(filter)=>{allocationFilter=filter;return new Query({matchedCount:2});});
  t.mock.method(Allocation,'find',()=>new Query(cells.map(cellId=>({cellId}))));
- const result=await assertManagedAccessSessionScope({sessionId,customerId,reservationId,facilityId,purpose:'RELOCATION',cellIds:cells,expectedRevision:8,now,dbSession:{}});
- assert.equal(result.revision,9);assert.equal(sessionFilter.allowedCellIds.$all.length,2);assert.deepEqual(allocationFilter.status.$in,['RESERVED','OCCUPIED']);
- assert.equal(allocationFilter.cellId.$in.length,2);
+ for (const purpose of ['INBOUND','OUTBOUND','RELOCATION']) {
+  const result=await assertManagedAccessSessionScope({sessionId,customerId,reservationId,facilityId,purpose,cellIds:cells,expectedRevision:8,now,dbSession:{}});
+  assert.equal(result.revision,9);assert.deepEqual(sessionFilter.allowedPurposes,purpose);assert.equal(sessionFilter.allowedCellIds.$all.length,2);assert.deepEqual(allocationFilter.status.$in,['RESERVED','OCCUPIED']);assert.equal(allocationFilter.cellId.$in.length,2);
+ }
  await assert.rejects(assertManagedAccessSessionScope({sessionId,customerId,reservationId,facilityId,purpose:'RELOCATION',cellIds:cells,expectedRevision:8,now}),error=>error.code==='TRANSACTION_REQUIRED');
 });

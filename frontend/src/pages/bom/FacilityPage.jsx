@@ -8,6 +8,7 @@ import { TimeRangePicker } from "@/components/ui/time-range-picker";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { ResourceGallery, ResourceThumb } from "@/components/bom/ResourceImages";
+import { ImageEditor } from "@/components/bom/ImageEditor";
 import { bomFacilityApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
@@ -201,7 +202,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 ["Country", facility.country],
                 ["City / Province", facility.city],
                 ["Ward / Commune", facility.ward],
-                ["Street / area", facility.district],
+                ["Street / Area", facility.district],
                 ["Address", facility.address],
                 ["Opening hours", facility.openingHours],
                 ["Service models", facility.serviceTypes.join(", ") || "—"],
@@ -220,17 +221,17 @@ function FacilityDetail({ basePath, oversightRoot }) {
             <Panel title="Hình ảnh cơ sở">
               <ResourceGallery images={facility.images} alt={`${facility.name} photo`} />
             </Panel>
-            <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
-              const cells = sumBy(racks, "cellCount");
-              const availableCells = sumBy(racks, "availableCellCount");
-              return (
-                <Panel title="Cấu trúc kho" subtitle="Khu vực → lối đi → kệ → ô chứa.">
-                  {!available && (
-                    <p className="bom-note mb-5">
-                      Cơ sở này không thuộc bản đồ kho: {reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
-                      Kho riêng là mô hình lưu trữ áp dụng cho cơ sở này.
-                    </p>
-                  )}
+            {facility.serviceTypes.includes("MANAGED_INVENTORY") && (
+              <AsyncBoundary state={warehouse} render={({ zones, racks, available, reason }) => {
+                const cells = sumBy(racks, "cellCount");
+                const availableCells = sumBy(racks, "availableCellCount");
+                return (
+                  <Panel title="Thông tin kho">
+                    {!available && (
+                      <p className="bom-note mb-5">
+                        Cơ sở này không thuộc bản đồ kho: {reason || "cơ sở không cung cấp dịch vụ lưu trữ hàng hóa"}.
+                      </p>
+                    )}
                   <Details values={[
                     ["Zones", zones.length],
                     ["Racks", racks.length],
@@ -249,12 +250,14 @@ function FacilityDetail({ basePath, oversightRoot }) {
                         { key: "cells", label: "Cells", render: (r) => `${r.availableCellCount} / ${r.cellCount} ô trống` },
                         { key: "ratedCapacityKg", label: "Rated / allocatable", render: (r) => `${kg(r.ratedCapacityKg)} / ${kg(r.allocatableCapacityKg)}` },
                       ]}
-                      empty="Chưa cấu hình khu vực, kệ hoặc ô chứa cho cơ sở này."
+                      empty="Chưa cấu hình khu vực, kệ hoặc ô lưu trữ cho cơ sở này."
                     />
                   </div>
                 </Panel>
               );
             }} />
+            )}
+            {facility.serviceTypes.includes("SELF_STORAGE") && (
             <AsyncBoundary state={units} render={({ rows, total, truncated }) => (
               <Panel title="Kho riêng" subtitle={`${rows.length} / ${total} kho`}>
                 {truncated && <TruncatedNotice total={total} shown={rows.length} />}
@@ -279,6 +282,7 @@ function FacilityDetail({ basePath, oversightRoot }) {
                 </div>
               </Panel>
             )} />
+            )}
             {confirmOpen && (
               <ConfirmDialog
                 title="Xác nhận trạng thái cơ sở"
@@ -354,13 +358,6 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
       ? f.serviceTypes.filter((s) => s !== service)
       : [...f.serviceTypes, service],
   }));
-  const images = form.images || [];
-  const setImage = (index, value) => setForm((f) => ({
-    ...f,
-    images: (f.images || []).map((url, i) => (i === index ? value : url)),
-  }));
-  const addImage = () => setForm((f) => ({ ...f, images: [...(f.images || []), ""].slice(0, 10) }));
-  const removeImage = (index) => setForm((f) => ({ ...f, images: (f.images || []).filter((_, i) => i !== index) }));
 
   async function submit(event) {
     event.preventDefault();
@@ -535,28 +532,12 @@ function FacilityForm({ mode, basePath, oversightRoot }) {
                   ))}
                 </div>
               </Field>
-              <div className="manager-field">
-                <span>Hình ảnh cơ sở</span>
-                <div className="space-y-2">
-                  {images.map((url, index) => (
-                    <div key={index} className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-[240px] flex-1">
-                        <Input
-                          aria-label={`URL ảnh cơ sở ${index + 1}`}
-                          placeholder="https://res.cloudinary.com/..."
-                          value={url}
-                          onChange={(event) => setImage(index, event.target.value)}
-                        />
-                      </div>
-                      <Button type="button" variant="outline" onClick={() => removeImage(index)}>Gỡ</Button>
-                    </div>
-                  ))}
-                  {images.length < 10 && (
-                    <Button type="button" variant="outline" onClick={addImage}>Thêm URL ảnh</Button>
-                  )}
-                </div>
-                <small>Không bắt buộc. Tối đa 10 URL ảnh; ảnh đầu tiên là ảnh bìa.</small>
-              </div>
+              <ImageEditor
+                label="Hình ảnh cơ sở"
+                target="facility"
+                images={form.images}
+                onChange={(next) => setForm((f) => ({ ...f, images: next }))}
+              />
               <div className="bom-wide">
                 <Field label="Mô tả">
                   <Textarea aria-label="Mô tả" value={form.description} onChange={(e) => change("description", e.target.value)} />

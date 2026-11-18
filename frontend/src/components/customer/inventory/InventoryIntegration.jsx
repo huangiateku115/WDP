@@ -79,7 +79,10 @@ function InventoryImages({ item }) {
 const notice =
   "Thông tin đăng ký mặt hàng · Ô kệ ưu tiên chỉ là đề xuất. Đăng ký hoặc xem trước không xếp hàng vào kho, không nhận hàng và không làm thay đổi sức chứa.";
 export function InventoryListIntegration() {
-  const [page, setPage] = useState(1),
+  const location = useLocation(), params = new URLSearchParams(location.search),
+    operation = params.get('operation'), accessSessionId = params.get('accessSessionId'), reservationFilter = params.get('reservationId'),
+    operationLabel = ({ INBOUND: 'nhập kho', OUTBOUND: 'xuất kho', RELOCATION: 'chuyển vị trí' })[operation],
+    [page, setPage] = useState(1),
     resource = useInventoryBackend(
       (config) =>
         inventoryApi
@@ -98,11 +101,12 @@ export function InventoryListIntegration() {
         </Button>
       }
     >
+      {accessSessionId && operationLabel && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Bạn đang chọn thao tác {operationLabel} trong Access Session đã cấp. Hãy mở mặt hàng thuộc đúng Reservation để tiếp tục; Backend sẽ kiểm tra lại quyền và Cell khi xem trước/xác nhận.</p>}
       <LoadState resource={resource} />
-      {resource.data?.items.length === 0 && (
+      {(resource.data?.items || []).filter(item => !reservationFilter || inventoryId(item.managedReservationId) === reservationFilter).length === 0 && (
         <Card>
           <CardContent>
-            <h2 className="text-xl font-bold">Chưa có mặt hàng nào được đăng ký</h2>
+            <h2 className="text-xl font-bold">{reservationFilter ? 'Không có mặt hàng thuộc Reservation này' : 'Chưa có mặt hàng nào được đăng ký'}</h2>
             <p className="mt-3">
               Đăng ký hàng trong một đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng ký vẫn được lưu khi đơn thuê kết thúc.
             </p>
@@ -110,7 +114,7 @@ export function InventoryListIntegration() {
         </Card>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
-        {resource.data?.items.map((item) => (
+        {(resource.data?.items || []).filter(item => !reservationFilter || inventoryId(item.managedReservationId) === reservationFilter).map((item) => (
           <Card key={inventoryId(item)}>
             <CardContent>
               <h2 className="text-xl font-bold">{item.name}</h2>
@@ -140,7 +144,7 @@ export function InventoryListIntegration() {
                 />
               </div>
               <Button asChild variant="outline" className="mt-5">
-                <Link to={`/portal/inventory/${inventoryId(item)}`}>
+                <Link to={`/portal/inventory/${inventoryId(item)}${accessSessionId ? `?accessSessionId=${encodeURIComponent(accessSessionId)}&operation=${encodeURIComponent(operation || '')}` : ''}`}>
                   Xem mặt hàng
                 </Link>
               </Button>
@@ -226,6 +230,7 @@ function Detail({ id }) {
     [!!resource.data, resource.data?.updatedAt],
   );
   const item = resource.data,
+    query = new URLSearchParams(location.search), initialSessionId = query.get('accessSessionId') || '',
     rental = rentals.data?.find(
       (r) => inventoryId(r) === inventoryId(item?.managedReservationId),
     ),
@@ -337,9 +342,9 @@ function Detail({ id }) {
             />
           )}
           {item.inventorySchemaVersion===3&&<ItemSpecifications sku={item} readOnly={!editable} onChanged={refresh}/>}
-          {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
-          {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh}/>}
-          {item.inventorySchemaVersion===3&&<ManagedSelfRelocationV3 item={item} rental={rental} onRefresh={refresh}/>}
+          {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
+          {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
+          {item.inventorySchemaVersion===3&&<ManagedSelfRelocationV3 item={item} rental={rental} onRefresh={refresh} initialSessionId={initialSessionId}/>}
           {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Thao tác tồn kho cho dữ liệu lịch sử được giữ ở chế độ tra cứu trong khi SKU V3 dùng luồng nhập kho hợp nhất.</p>}
         </>
       )}

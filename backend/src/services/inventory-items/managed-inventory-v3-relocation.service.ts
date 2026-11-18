@@ -13,12 +13,13 @@ import CellAllocationRaw from '../../models/warehouse-map/cell-allocation.model'
 import AccessSessionRaw from '../../models/access/managed-access-session.model';
 import AccessVisitRaw from '../../models/access/managed-access-visit.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
+import { nextManagedStockLedgerRevision } from './managed-cell-stock.domain';
 import { readManagedFacilityStockState } from './managed-unified-inbound.service';
 import { buildRelocationPlan, ManagedRelocationDomainError, normalizeRelocation, RelocationCandidate, relocationRequestHash, relocationReservationVolumeDeltas, validateRelocationLevels } from './managed-inventory-v3-relocation.domain';
 import { FacilityServiceType } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { ItemMovementType } from '../../types/item-movement.type';
-import { ManagedAccessPurpose, ManagedAccessSessionStatus } from '../../types/managed-access.type';
+import { ManagedAccessPurpose, ManagedAccessSessionStatus, ManagedAccessVisitPurpose } from '../../types/managed-access.type';
 import { UserRole } from '../../types/user.type';
 
 type Actor = { _id: Types.ObjectId; role: UserRole };
@@ -33,8 +34,20 @@ const Reservation: any = ReservationRaw, Contract: any = ContractRaw, InventoryI
 const ItemMovement: any = ItemMovementRaw, ManagedCellStock: any = ManagedCellStockRaw, ManagedItemInstance: any = ManagedItemInstanceRaw;
 const WarehouseCell: any = WarehouseCellRaw, WarehouseRack: any = WarehouseRackRaw, CellAllocation: any = CellAllocationRaw;
 const AccessSession: any = AccessSessionRaw, AccessVisit: any = AccessVisitRaw;
-const oid = (value: unknown, name: string): Types.ObjectId => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(value as string); };
+const oid = (value: unknown, name: string): Types.ObjectId => {
+  // The HTTP boundary supplies a 24-character string, while confirm() passes
+  // this already-validated ObjectId into the transactional scope recheck.
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`);
+  return new Types.ObjectId(value as string);
+};
 const requestKey = (value: unknown): string => { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value as string; };
+export const RELOCATION_DESTINATION_MIN_REMAINING_DAYS = 7;
+const RELOCATION_DESTINATION_MIN_REMAINING_MS = RELOCATION_DESTINATION_MIN_REMAINING_DAYS * 24 * 60 * 60 * 1000;
+export function relocationDestinationHasRunway(endDate: unknown, now = new Date()) {
+  const timestamp = endDate instanceof Date ? endDate.getTime() : Date.parse(String(endDate ?? ''));
+  return Number.isFinite(timestamp) && timestamp - now.getTime() >= RELOCATION_DESTINATION_MIN_REMAINING_MS;
+}
 const ifMatch = (value: unknown) => { const found = typeof value === 'string' ? value.trim().match(/^(?:W\/)?"(0|[1-9]\d*)"$/) : null; const number = found ? Number(found[1]) : NaN; if (!Number.isSafeInteger(number)) fail(typeof value === 'undefined' ? 428 : 400, 'IF_MATCH_REQUIRED', 'Cần If-Match là revision hiện tại.'); return number; };
 const canonical = (value: any): any => value?.toHexString ? value.toHexString() : value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).filter(key => !['_id', '__v', 'createdAt', 'updatedAt'].includes(key) && value[key] !== undefined).sort().map(key => [key, canonical(value[key])])) : value;
 const stableHash = (value: any) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
@@ -74,7 +87,7 @@ async function ownedSkuForHistory(skuId: unknown, actor: Actor) {
 }
 async function eligibleReservations(sku: Plain, actor: Actor, requestedIds: string[], session?: ClientSession) {
   const ids = [...new Set(requestedIds.length ? requestedIds : [id(sku.reservationId ?? sku.managedReservationId)])];
-  if (!ids.length || ids.length > 20) fail(422, 'INVALID_RESERVATION_SCOPE', 'Số Reservation trong thao tác không hợp lệ.');
+  if (!ids.length || ids.length > 100) fail(422, 'INVALID_RESERVATION_SCOPE', 'Số Reservation trong thao tác không hợp lệ.');
   let query: any = Reservation.find({ _id: { $in: ids.map(value => new Types.ObjectId(value)) }, customerId: actor._id,
     facilityId: sku.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
     status: ReservationStatus.ACTIVE, startDate: { $lte: new Date() }, endDate: { $gt: new Date() },
@@ -94,8 +107,8 @@ async function allEligibleReservations(sku: Plain, actor: Actor): Promise<Plain[
   const rows: Plain[] = await Reservation.find({ customerId: actor._id, facilityId: sku.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY,
     bookingFlowVersion: 3, status: ReservationStatus.ACTIVE, startDate: { $lte: new Date() }, endDate: { $gt: new Date() },
     handoverAt: { $exists: true, $ne: null }, handoverByStaffId: { $exists: true, $ne: null },
-    $or: [{ activeClosureRequestId: null }, { activeClosureRequestId: { $exists: false } }] }).sort({ startDate: 1, _id: 1 }).limit(21).lean().exec();
-  if (rows.length > 20) fail(503, 'RESERVATION_SCOPE_UNKNOWN', 'Có quá nhiều Reservation đang hoạt động để hiển thị phạm vi chuyển.');
+    $or: [{ activeClosureRequestId: null }, { activeClosureRequestId: { $exists: false } }] }).sort({ startDate: 1, _id: 1 }).limit(101).lean().exec();
+  if (rows.length > 100) fail(503, 'RESERVATION_SCOPE_UNKNOWN', 'Có quá nhiều Reservation đang hoạt động để hiển thị phạm vi chuyển.');
   return rows.length ? eligibleReservations(sku, actor, rows.map(row => id(row._id))) : [];
 }
 async function stateFor(sku: Plain, reservation: Plain, session?: ClientSession, candidate?: RelocationCandidate, reservations: Plain[] = [reservation]): Promise<Plain> {
@@ -152,7 +165,7 @@ async function readSession(candidate: RelocationCandidate, sku: Plain, reservati
   const sessionReservations = new Set((access?.scopedReservationIds ?? [access?.reservationId]).map(id));
   if (!access || reservations.some((row: any) => !sessionReservations.has(id(row._id))) || !cellIds.length || cellIds.some(value => !allowed.has(value))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần phiên RELOCATION còn hiệu lực và bao phủ các Reservation cùng ô nguồn/đích.');
   const visit: any = await AccessVisit.findOne({ _id: access.visitId, reservationId: reservation._id, customerId: actor._id, facilityId: sku.facilityId,
-    purpose: ManagedAccessPurpose.RELOCATION, status: 'CHECKED_IN' }).select('_id scopedReservationIds').lean().exec();
+    purpose: { $in: [ManagedAccessVisitPurpose.WAREHOUSE_VISIT, ManagedAccessPurpose.RELOCATION] }, status: 'CHECKED_IN' }).select('_id scopedReservationIds').lean().exec();
   const visitReservations = new Set((visit?.scopedReservationIds ?? [reservation._id]).map(id));
   if (!visit || reservations.some((row: any) => !visitReservations.has(id(row._id)))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Lịch RELOCATION đã check-in không bao phủ đủ Reservation nguồn và đích.');
   return access;
@@ -160,6 +173,18 @@ async function readSession(candidate: RelocationCandidate, sku: Plain, reservati
 function candidateReservationIds(candidate: RelocationCandidate, primaryId: string) {
   return [...new Set([primaryId, ...candidate.lines.flatMap((line: any) => [line.sourceReservationId, line.destinationReservationId,
     ...(line.destinationAllocations ?? []).map((row: any) => row.reservationId)].filter(Boolean))])];
+}
+export function validateRelocationDestinationRunway(candidate: RelocationCandidate, primaryId: string, reservations: Plain[], now = new Date()) {
+  const byId = new Map(reservations.map(row => [id(row._id), row]));
+  const destinations = [...new Set(candidate.lines.flatMap((line: any) => line.itemInstanceId
+    ? (line.destinationAllocations ?? []).map((allocation: any) => id(allocation.reservationId ?? line.destinationReservationId ?? primaryId))
+    : [id(line.destinationReservationId ?? primaryId)]))];
+  for (const destinationId of destinations) {
+    const destination = byId.get(destinationId);
+    if (!destination || !relocationDestinationHasRunway(destination.endDate, now)) {
+      fail(409, 'DESTINATION_RESERVATION_EXPIRING', `Reservation đích phải còn ít nhất ${RELOCATION_DESTINATION_MIN_REMAINING_DAYS} ngày thuê tại thời điểm chuyển.`);
+    }
+  }
 }
 async function lockedScope(skuId: unknown, candidate: RelocationCandidate, actor: Actor, session: ClientSession) {
   const { sku, reservation } = await ownedScope(skuId, actor, session);
@@ -175,6 +200,7 @@ async function lockedScope(skuId: unknown, candidate: RelocationCandidate, actor
 }
 function contextDto(scope: Plain) {
   const { sku, reservation, state, specifications, reservations = [reservation] } = scope, cellsById = new Map<string, any>(state.cells.map((cell: any) => [id(cell._id), cell]));
+  const now = new Date(), destinationCutoff = now.getTime() + RELOCATION_DESTINATION_MIN_REMAINING_MS;
   const specs = specifications.map((spec: any) => {
     const lots = state.replay.lots.filter((row: any) => same(row.itemSpecId, spec._id));
     const instances = state.replay.instances.filter((row: any) => same(row.itemSpecId, spec._id) && row.status === 'PLACED');
@@ -190,12 +216,15 @@ function contextDto(scope: Plain) {
   const cells = reservations.flatMap((row: any) => (row.allocatedCellIds ?? []).map((cellId: any) => ({ reservation: row, cellId: id(cellId) })));
   return { sku: { id: sku._id, itemCode: sku.itemCode, name: sku.name, revision: sku.managedV3Revision ?? 0 },
     reservation: { id: reservation._id, reservationCode: reservation.reservationCode, facilityId: reservation.facilityId, status: reservation.status },
-    reservations: reservations.map((row: any) => ({ id: row._id, reservationCode: row.reservationCode, status: row.status })),
-    cells: cells.map(({ reservation: owner, cellId }: any) => { const cell: any = cellsById.get(cellId); return cell && { id: cell._id, code: cell.code, reservationId: owner._id, reservationCode: owner.reservationCode, rackId: cell.rackId,
+    minimumDestinationRemainingDays: RELOCATION_DESTINATION_MIN_REMAINING_DAYS,
+    reservations: reservations.map((row: any) => ({ id: row._id, reservationCode: row.reservationCode, status: row.status, endDate: row.endDate,
+      canReceiveRelocation: relocationDestinationHasRunway(row.endDate, now) })),
+    cells: cells.map(({ reservation: owner, cellId }: any) => { const cell: any = cellsById.get(cellId); return cell && { id: cell._id, code: cell.code, reservationId: owner._id, reservationCode: owner.reservationCode,
+      reservationEndDate: owner.endDate, canReceiveRelocation: relocationDestinationHasRunway(owner.endDate, now), destinationBlockedReason: owner.endDate && new Date(owner.endDate).getTime() < destinationCutoff ? 'RESERVATION_LESS_THAN_7_DAYS' : null, rackId: cell.rackId,
       levelNumber: cell.levelNumber, operationalStatus: cell.operationalStatus, maxWeightKg: cell.maxWeightKg, usedWeightKg: cell.usedWeightKg,
       maxVolumeM3: round(cell.dimensions.widthM * cell.dimensions.depthM * cell.dimensions.usableHeightM, 6), usedVolumeM3: cell.usedVolumeM3,
       managedInventoryRevision: cell.managedInventoryRevision }; }).filter(Boolean), itemSpecifications: specs,
-    ledgerRevision: Math.max(0, ...state.movements.filter((movement: any) => same(movement.itemId, sku._id)).map((movement: any) => Number(movement.stockEffect?.ledgerRevision ?? 0))) };
+    ledgerRevision: nextManagedStockLedgerRevision(state.movements, sku._id) - 1 };
 }
 function previewDto(scope: Plain, access: Plain) {
   const { sku, reservation, plan, state, candidate } = scope, cells = new Map<string, any>(state.cells.map((cell: any) => [id(cell._id), cell]));
@@ -209,7 +238,7 @@ function previewDto(scope: Plain, access: Plain) {
     lines: plan.lines.map((line: Plain) => ({ ...line, source: plan.source.filter((row: any) => row.lineId === line.lineId).map((row: any) => ({ ...row, cellCode: cells.get(id(row.cellId))?.code ?? null })),
       destination: plan.destination.filter((row: any) => row.lineId === line.lineId).map((row: any) => ({ ...row, cellCode: cells.get(id(row.cellId))?.code ?? null })) })),
     totalQuantity: plan.quantity, totalWeightKg: plan.totalWeightKg, totalVolumeM3: plan.totalVolumeM3, capacity: affected,
-    levelCapacity: scope.levelCapacity, skuRevision: sku.managedV3Revision ?? 0, ledgerRevision: Math.max(0, ...state.movements.map((row: any) => Number(row.stockEffect?.ledgerRevision ?? 0))),
+    levelCapacity: scope.levelCapacity, skuRevision: sku.managedV3Revision ?? 0, ledgerRevision: nextManagedStockLedgerRevision(state.movements, sku._id) - 1,
     warnings: ['Bản xem trước chỉ đọc. Customer xác nhận hàng đã được chuyển thực tế trong phiên RELOCATION có Staff giám sát; hệ thống kiểm tra sức chứa số học, không thay thế kiểm tra bố trí và an toàn tại chỗ.'] };
 }
 async function findReplay(skuId: Types.ObjectId, actor: Actor, key: string, hash?: string) {
@@ -288,6 +317,7 @@ export class ManagedInventoryV3RelocationService {
   static async preview(skuId: unknown, input: unknown, actor: Actor) {
     const candidate = normalizeRelocation(input), { sku, reservation } = await ownedScope(skuId, actor);
     const reservations = await eligibleReservations(sku, actor, candidateReservationIds(candidate, id(reservation._id)));
+    validateRelocationDestinationRunway(candidate, id(reservation._id), reservations);
     const state = await stateFor(sku, reservation, undefined, candidate, reservations), specifications = await specificationsFor(sku, reservation, candidate);
     const plan = planFor(sku, reservation, candidate, state, specifications); await validateAllocations(plan, sku, reservation, reservations);
     const rackIds = [...new Set([...plan.sourceCellIds, ...plan.destinationCellIds].map(cellId => id(state.cells.find((cell: any) => id(cell._id) === cellId)?.rackId)))];
@@ -305,6 +335,7 @@ export class ManagedInventoryV3RelocationService {
     try {
       return await withTransaction(async session => {
         const scope = await lockedScope(skuIdObject, candidate, actor, session), allCellIds = [...new Set([...scope.plan.sourceCellIds, ...scope.plan.destinationCellIds])].map(value => new Types.ObjectId(value));
+        validateRelocationDestinationRunway(candidate, id(scope.reservation._id), scope.reservations);
         try { await assertManagedAccessSessionScope({ sessionId: candidate.accessSessionId, customerId: actor._id, reservationId: scope.reservation._id,
           reservationIds: scope.reservations.map((row: any) => row._id), facilityId: scope.sku.facilityId, purpose: ManagedAccessPurpose.RELOCATION, cellIds: allCellIds, expectedRevision: candidate.sessionRevision, dbSession: session }); }
         catch (error: any) { if (error instanceof ManagedAccessError) fail(error.status, error.code, error.message); throw error; }
@@ -351,7 +382,7 @@ export class ManagedInventoryV3RelocationService {
             inventoryVersion: owner.inventoryVersion ?? 0, usedCapacityM3: owner.usedCapacityM3 }, { $set: { usedCapacityM3: Math.max(0, nextUsed) }, $inc: { inventoryVersion: 1 } }, { session }).exec();
           if (reservationFence.matchedCount !== 1) fail(412, 'STALE_RESERVATION_CAPACITY', 'Reservation hoặc dung lượng vừa thay đổi.');
         }
-        const revision = Math.max(0, ...scope.state.movements.filter((row: any) => same(row.itemId, scope.sku._id)).map((row: any) => Number(row.stockEffect?.ledgerRevision ?? 0))) + 1;
+        const revision = nextManagedStockLedgerRevision(scope.state.movements, scope.sku._id);
         const operationId = `MI-MOVE:${scope.sku._id}:${createHash('sha256').update(key).digest('hex')}`;
         const movementId = new Types.ObjectId(), first = scope.plan.source[0], unitTypes = new Set(scope.plan.source.map((row: any) => row.quantityUnitSnapshot));
         const movement = new ItemMovement({ _id: movementId, movementCode: `MI-${movementId.toString()}`, referenceCode: operationId, operationId,

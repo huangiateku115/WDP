@@ -59,60 +59,34 @@ export async function loadFacilitiesIncludingDeleted({ signal } = {}) {
   return rows.map(facilityFromDto).filter((facility) => facility.deleted);
 }
 
-// Cross-facility reservations. The backend only exposes reservations per facility and
-// defaults `GET /reservations/facility/:id` to SELF_STORAGE (reservation.controller.ts), so
-// Managed reservations must be requested explicitly or they never appear in BOM reports.
-const MAX_FACILITY_FETCHES = 12;
+// Reservation rows are read for ONE facility at a time. The backend exposes reservations per
+// facility only and defaults `GET /reservations/facility/:id` to SELF_STORAGE
+// (reservation.controller.ts), so both scopes are requested explicitly — sequentially, never as a
+// cross-facility fan-out. Cross-facility counts come from `/statistics/reservations` instead.
 const RESERVATION_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 const RESERVATION_SCOPE_LABELS = { SELF_STORAGE: "private storage", MANAGED_INVENTORY: "Managed Inventory" };
 const isCanceled = (error) => error?.code === "ERR_CANCELED" || error?.name === "CanceledError" || error?.name === "AbortError";
 
-// Both service scopes are read in parallel; a failing scope is reported to the caller
-// instead of being swallowed (a silent zero understates every reservation KPI).
+// A failing scope is reported to the caller instead of being swallowed (a silent zero understates
+// every reservation KPI). The two reads run one after another so the console never opens two
+// parallel request streams for the same facility.
 async function facilityReservations(facilityId, { signal } = {}) {
-  const settled = await Promise.allSettled(
-    RESERVATION_SERVICE_TYPES.map((serviceType) =>
-      bomReservationApi
-        .listByFacility(facilityId, { signal, params: { serviceType } })
-        .then((response) => responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId }))),
-    ),
-  );
   const rows = [];
   const failedServiceTypes = [];
-  for (let index = 0; index < settled.length; index += 1) {
-    const result = settled[index];
-    if (result.status === "fulfilled") rows.push(...result.value);
-    else if (isCanceled(result.reason)) throw result.reason;
-    else failedServiceTypes.push(RESERVATION_SERVICE_TYPES[index]);
+  for (const serviceType of RESERVATION_SERVICE_TYPES) {
+    try {
+      const response = await bomReservationApi.listByFacility(facilityId, { signal, params: { serviceType } });
+      rows.push(...responseList(response).rows.map((row) => ({ ...reservationFromDto(row), facilityId })));
+    } catch (error) {
+      if (isCanceled(error)) throw error;
+      failedServiceTypes.push(serviceType);
+    }
   }
   return { rows, failedServiceTypes };
 }
 
 export const reservationScopeLabel = (failedServiceTypes = []) =>
   failedServiceTypes.map((serviceType) => RESERVATION_SCOPE_LABELS[serviceType] || serviceType).join(" and ");
-
-export async function loadReservations(facilities, { signal } = {}) {
-  const targets = facilities.slice(0, MAX_FACILITY_FETCHES);
-  const results = await Promise.all(
-    targets.map(async (facility) => {
-      try {
-        return { facility, ...(await facilityReservations(facility.id, { signal })) };
-      } catch (error) {
-        if (isCanceled(error)) throw error;
-        return { facility, rows: [], failedServiceTypes: [...RESERVATION_SERVICE_TYPES] };
-      }
-    }),
-  );
-  const rows = [];
-  const failedFacilities = [];
-  for (const result of results) {
-    rows.push(...result.rows);
-    if (result.failedServiceTypes.length) {
-      failedFacilities.push(result.facility.name || result.facility.code || result.facility.id);
-    }
-  }
-  return { rows, truncated: facilities.length > targets.length, failedFacilities };
-}
 
 /* ---------------------- Facility-scoped oversight reads ---------------------- */
 // The backend exposes no cross-facility aggregate endpoint, so oversight loads one

@@ -6,8 +6,10 @@ import {
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { loadFacilities, loadInventoryItem, loadInventoryItems, loadItemMovements } from "@/lib/bomApiData";
 import customerProfileApi from "@/api/customerProfileApi";
+import { facilityLabel } from "@/lib/facilityLabels";
 import { formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
 // Managed Inventory console shared by BOM and Admin.
@@ -35,14 +37,17 @@ function ItemList({ basePath }) {
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
+  // Both text inputs reach the API, so they are debounced (quy ước 2).
+  const debouncedCategory = useDebouncedValue(category);
+  const debouncedSearch = useDebouncedValue(search);
 
   const items = useAsyncData(
-    ({ signal }) => loadInventoryItems(filtered({ facilityId, status, category: category.trim(), search: search.trim() }), { signal }),
-    [facilityId, status, category, search],
+    ({ signal }) => loadInventoryItems(filtered({ facilityId, status, category: debouncedCategory.trim(), search: debouncedSearch.trim() }), { signal }),
+    [facilityId, status, debouncedCategory, debouncedSearch],
   );
 
   const facilities = directory.data || [];
-  const nameOfFacility = (id) => facilities.find((f) => f.id === id)?.name || "Unknown facility";
+  const nameOfFacility = (id) => facilities.find((f) => f.id === id)?.name || (id ? `${String(id).slice(0, 8)}…` : "—");
   const customers = new Map((profiles.data || []).map((p) => [String(p.userId?._id || p.userId || ""), p.userId?.email || p.userId?.fullName || p._id]));
   const owner = (customerId) => customers.get(String(customerId)) || (customerId ? `${String(customerId).slice(0, 8)}…` : "—");
   const rows = items.data?.rows || [];
@@ -101,7 +106,7 @@ function ItemList({ basePath }) {
                 columns={[
                   { key: "code", label: "Item", render: (r) => <OpenLink to={`${basePath}/${r.id}`}>{r.code || r.name}</OpenLink> },
                   { key: "name", label: "Name" },
-                  { key: "category", label: "Category", render: (r) => r.category || "—" },
+                  { key: "category", label: "Category", render: (r) => facilityLabel(r.category) || "—" },
                   { key: "owner", label: "Customer", render: (r) => owner(r.customerId) },
                   { key: "facility", label: "Facility", render: (r) => nameOfFacility(r.facilityId) },
                   { key: "quantity", label: "Quantity", render: (r) => `${r.quantity} ${r.quantityUnit || ""}`.trim() },
@@ -150,7 +155,7 @@ function ItemDetail({ id, basePath }) {
               ["Total volume", m3(row.totalVolumeM3)],
               ["Total weight", kg(row.totalWeightKg)],
               ["Managed reservation", row.reservationId || "—"],
-              ["Placement", row.currentCellId ? `Stored on cell ${row.currentCellId}` : row.preferredCellId ? "Preferred cell set, not received yet" : "Not assigned"],
+              ["Placement", row.currentCellId ? `Đang xếp ở ô ${row.currentCellId}` : row.preferredCellId ? "Đã chọn ô ưu tiên, chưa nhận hàng" : "Chưa phân bổ"],
               ["Inbound requested", stamp(row.inboundRequestedAt)],
               ["Inbound confirmed", stamp(row.inboundConfirmedAt)],
               ["Rejection reason", row.rejectionReason || "—"],

@@ -33,9 +33,19 @@ const clearKey = slot => { try { globalThis.sessionStorage?.removeItem(slot); } 
 const createSlot = 'managed-access:create-visit:pending';
 const checkInSlot = (visitId, actorId) => actorId ? `managed-access:check-in:${actorId}:${visitId}:pending` : `managed-access:check-in:${visitId}:pending`;
 const amendSlot = visitId => `managed-access:amend-visit:${visitId}:pending`;
+export const notifyManagedAccessSessionUpdated = sessionId => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('managed-access-session-updated', { detail: { sessionId } }));
+};
 export const managedAccessApi = {
   createVisit: async payload => { const response = await client.post('/access/managed-v3/visits', payload, { headers: { 'Idempotency-Key': keyFor(createSlot, payload) } }); clearKey(createSlot); return response; },
-  visitAvailability: (reservationId, date, config = {}) => client.get('/access/managed-v3/visits/availability', { ...config, params: { reservationId, date } }),
+  visitAvailability: (reservationIdOrDate, dateOrConfig, legacyConfig = {}) => {
+    const legacyCall = typeof dateOrConfig === 'string';
+    const date = legacyCall ? dateOrConfig : reservationIdOrDate;
+    const config = legacyCall ? legacyConfig : (dateOrConfig || {});
+    const reservationId = legacyCall ? reservationIdOrDate : undefined;
+    const { facilityId, ...requestConfig } = config;
+    return client.get('/access/managed-v3/visits/availability', { ...requestConfig, params: { ...(reservationId ? { reservationId } : {}), ...(facilityId ? { facilityId } : {}), date } });
+  },
   pendingCreateKey: () => readPending(createSlot)?.key ?? null,
   pendingCreate: () => readPending(createSlot),
   pendingCreateMatches: payload => readPending(createSlot)?.fingerprint === fingerprint(payload),

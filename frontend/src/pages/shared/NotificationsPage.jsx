@@ -1,51 +1,46 @@
 import { useEffect, useState } from "react";
-import { Screen, Panel, Table, Field, Select, Button, Message } from "@/components/manager/ManagerUI";
+import { Screen, Panel, Table, Field, Input, Select, Button, Message } from "@/components/manager/ManagerUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { apiErrorMessage } from "@/lib/apiError";
 import { notificationApi } from "@/api/notificationApi";
+import { filterNotifications } from "@/lib/facilityNotifications";
+import { facilityLabel } from "@/lib/facilityLabels";
+import { downloadCsv } from "@/lib/csvExport";
 
 // Shared notification inbox for BOM and Admin. The endpoint returns the notifications of the
 // signed-in account only, so this page shows the operator's own operational alerts; the
 // backend still has no "send notification" or "notification list for another user" API.
 const unwrapList = (response) => (Array.isArray(response?.data?.data) ? response.data.data : []);
 
-function toRow(notification) {
-  const sentVia = Array.isArray(notification?.sentVia) ? notification.sentVia : [];
-  return {
-    id: notification?._id,
-    title: notification?.title || "Thông báo",
-    type: notification?.type || "",
-    content: notification?.content || "",
-    channel: sentVia.length ? sentVia.join(", ") : "—",
-    isRead: Boolean(notification?.isRead),
-    at: notification?.createdAt ? new Date(notification.createdAt).toLocaleString("vi-VN") : "—",
-    atRaw: notification?.createdAt || "",
-  };
-}
-
 export default function NotificationsPage() {
-  const state = useAsyncData(({ signal }) => notificationApi.list({ signal }).then(unwrapList).then((rows) => rows.map(toRow)), []);
+  const state = useAsyncData(({ signal }) => notificationApi.list({ signal }).then(unwrapList), []);
   const [rows, setRows] = useState([]);
   const [scope, setScope] = useState("");
+  const [type, setType] = useState("");
+  const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   useEffect(() => { setRows(state.data || []); }, [state.data]);
 
-  const visible = rows.filter((row) => (scope === "UNREAD" ? !row.isRead : scope === "READ" ? row.isRead : true));
+  const types = [...new Set(rows.map((row) => row.type).filter(Boolean))].sort();
+  const visible = filterNotifications(rows, { status: scope, search, from, to })
+    .filter((row) => !type || row.type === type);
   const unread = rows.filter((row) => !row.isRead).length;
 
   async function markRead(row) {
     if (busy) return;
-    setBusy(row.id);
+    setBusy(row._id);
     setError("");
     setNotice("");
     try {
-      await notificationApi.markRead(row.id);
-      setRows((previous) => previous.map((item) => (item.id === row.id ? { ...item, isRead: true } : item)));
+      await notificationApi.markRead(row._id);
+      setRows((previous) => previous.map((item) => (item._id === row._id ? { ...item, isRead: true } : item)));
       setNotice(`“${row.title}” đã được đánh dấu là đã đọc.`);
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -66,10 +61,32 @@ export default function NotificationsPage() {
             ["Thông báo", rows.length, "Gửi tới tài khoản này"],
             ["Chưa đọc", unread, "Chưa mở"],
             ["Đã đọc", rows.length - unread, "Đã xác nhận"],
-            ["Cũ nhất", rows.length ? rows[rows.length - 1].at.slice(0, 10) : "—", "Thông báo cũ nhất trong hộp thư"],
+            ["Loại thông báo", types.length || "—", "Số loại đang có"],
           ]} />
 
-          <Panel title="Hộp thư" subtitle="Thông báo mới nhất ở trên cùng.">
+          <Panel
+            title="Hộp thư"
+            subtitle={`${visible.length} / ${rows.length} thông báo · mới nhất ở trên cùng.`}
+            action={
+              <Button
+                variant="outline"
+                disabled={!visible.length}
+                onClick={() => downloadCsv(
+                  `thong-bao${from ? `-${from}` : ""}${to ? `-${to}` : ""}.csv`,
+                  [["title", "Tiêu đề"], ["type", "Loại"], ["content", "Nội dung"], ["channel", "Kênh"], ["isRead", "Đã đọc"], ["createdAt", "Thời điểm nhận"]],
+                  visible.map((row) => ({
+                    ...row,
+                    type: facilityLabel(row.type || ""),
+                    channel: Array.isArray(row.sentVia) && row.sentVia.length ? row.sentVia.map(facilityLabel).join(", ") : "",
+                    isRead: row.isRead ? "Đã đọc" : "Chưa đọc",
+                    createdAt: row.createdAt ? new Date(row.createdAt).toLocaleString("vi-VN") : "",
+                  })),
+                )}
+              >
+                Xuất CSV
+              </Button>
+            }
+          >
             <div className="manager-filters">
               <Field label="Trạng thái đọc">
                 <Select
@@ -79,6 +96,23 @@ export default function NotificationsPage() {
                   options={[["", "Tất cả thông báo"], ["UNREAD", "Chưa đọc"], ["READ", "Đã đọc"]]}
                 />
               </Field>
+              <Field label="Loại">
+                <Select
+                  label="Lọc theo loại thông báo"
+                  value={type}
+                  onChange={setType}
+                  options={[["", "Tất cả loại"], ...types.map((value) => [value, facilityLabel(value)])]}
+                />
+              </Field>
+              <Field label="Tìm kiếm">
+                <Input aria-label="Tìm thông báo" value={search} onChange={(event) => setSearch(event.target.value)} />
+              </Field>
+              <Field label="Từ ngày">
+                <Input aria-label="Từ ngày" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+              </Field>
+              <Field label="Đến ngày">
+                <Input aria-label="Đến ngày" type="date" min={from || undefined} value={to} onChange={(event) => setTo(event.target.value)} />
+              </Field>
             </div>
             <Message error={error} success={notice} />
             <div className="mt-5">
@@ -86,12 +120,12 @@ export default function NotificationsPage() {
                 label="Thông báo"
                 rows={visible}
                 columns={[
-                  { key: "title", label: "Tiêu đề" },
-                  { key: "type", label: "Loại" },
-                  { key: "content", label: "Nội dung" },
-                  { key: "channel", label: "Kênh" },
+                  { key: "title", label: "Tiêu đề", render: (r) => r.title || "Thông báo" },
+                  { key: "type", label: "Loại", render: (r) => facilityLabel(r.type || "—") },
+                  { key: "content", label: "Nội dung", render: (r) => r.content || "—" },
+                  { key: "channel", label: "Kênh", render: (r) => (Array.isArray(r.sentVia) && r.sentVia.length ? r.sentVia.map(facilityLabel).join(", ") : "—") },
                   { key: "state", label: "Trạng thái", render: (r) => (r.isRead ? "Đã đọc" : "Chưa đọc") },
-                  { key: "at", label: "Thời điểm nhận" },
+                  { key: "at", label: "Thời điểm nhận", render: (r) => (r.createdAt ? new Date(r.createdAt).toLocaleString("vi-VN") : "—") },
                   {
                     key: "action",
                     label: "Thao tác",
@@ -99,7 +133,7 @@ export default function NotificationsPage() {
                       ? "—"
                       : (
                         <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => markRead(r)}>
-                          {busy === r.id ? "Đang lưu…" : "Đánh dấu đã đọc"}
+                          {busy === r._id ? "Đang lưu…" : "Đánh dấu đã đọc"}
                         </Button>
                       )),
                   },

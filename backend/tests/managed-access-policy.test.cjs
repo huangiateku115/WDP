@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { sessionExpiry, sessionIsCurrent, isAccessSessionAllowed } = require('../dist/services/access/managed-access-policy');
+const { sessionExpiry, sessionIsCurrent, isAccessSessionAllowed, accessSessionCoversReservations } = require('../dist/services/access/managed-access-policy');
 const base = { status:'ACTIVE', startedAt:new Date('2026-11-12T10:00:00.000Z'), expiresAt:new Date('2026-11-12T11:00:00.000Z'), revision:4,
   customerId:'customer-1', reservationId:'reservation-1', facilityId:'facility-1', allowedPurposes:['INBOUND','INSPECTION'], allowedCellIds:['cell-1','cell-2'],
   expected:{now:new Date('2026-11-12T10:30:00.000Z'),revision:4,customerId:'customer-1',reservationId:'reservation-1',facilityId:'facility-1',purpose:'INBOUND',cellId:'cell-2'} };
@@ -34,4 +34,12 @@ test('access scope accepts only active, unexpired session with matching customer
   {...base,expected:{...base.expected,cellId:'cell-3'}},
   {...base,expected:{...base.expected,revision:3}},
  ]) assert.equal(isAccessSessionAllowed(changed),false);
+});
+test('one checked-in Visit session covers only explicitly scoped active Reservations',()=>{
+ const session={reservationId:'reservation-1',scopedReservationIds:['reservation-1','reservation-2']};
+ assert.equal(accessSessionCoversReservations({...session,requestedReservationIds:['reservation-2']}),true);
+ assert.equal(accessSessionCoversReservations({...session,requestedReservationIds:['reservation-2','reservation-3']}),false);
+ assert.equal(accessSessionCoversReservations({...session,scopedReservationIds:['reservation-2'],requestedReservationIds:['reservation-2']}),false);
+ assert.equal(accessSessionCoversReservations({reservationId:'reservation-1',requestedReservationIds:['reservation-1']}),true);
+ assert.equal(accessSessionCoversReservations({reservationId:'reservation-1',requestedReservationIds:['reservation-2']}),false);
 });

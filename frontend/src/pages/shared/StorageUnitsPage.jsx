@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { ResourceThumb } from "@/components/bom/ResourceImages";
-import { UnitDialog, UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
+import { UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { loadFacilities, loadFacilityUnits } from "@/lib/bomApiData";
 import { bomUnitApi } from "@/api/bomApi";
 import { BOM_UNIT_SIZES } from "@/lib/bomMappers";
@@ -16,21 +18,24 @@ import { countBy, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 const SELF_STORAGE = "SELF_STORAGE";
 const wc = (conditions) => Object.fromEntries(Object.entries(conditions).filter(([, value]) => value));
 
-export default function StorageUnitsPage() {
+export default function StorageUnitsPage({ basePath = "/bom/units" }) {
   const directory = useAsyncData(loadFacilities, []);
-  const [facilityId, setFacilityId] = useState("");
+  // The selected facility lives in the URL so the create/edit routes can link back here.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [facilityId, setFacilityId] = useState(searchParams.get("facility") || "");
   const [status, setStatus] = useState("");
   const [size, setSize] = useState("");
   const [search, setSearch] = useState("");
-  const [unitDialog, setUnitDialog] = useState(null);
+  // Free-text search hits the API, so it is debounced (quy ước 2).
+  const debouncedSearch = useDebouncedValue(search);
   const [statusDialog, setStatusDialog] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
   const units = useAsyncData(
     ({ signal }) => (facilityId
-      ? loadFacilityUnits(facilityId, { signal, ...wc({ status, size, search: search.trim() }) })
+      ? loadFacilityUnits(facilityId, { signal, ...wc({ status, size, search: debouncedSearch.trim() }) })
       : Promise.resolve(null)),
-    [facilityId, status, size, search],
+    [facilityId, status, size, debouncedSearch],
   );
 
   function selectFacility(id) {
@@ -38,6 +43,7 @@ export default function StorageUnitsPage() {
     setStatus("");
     setSize("");
     setSearch("");
+    setSearchParams(id ? { facility: id } : {}, { replace: true });
   }
 
   function removeUnit(unit) {
@@ -56,12 +62,16 @@ export default function StorageUnitsPage() {
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const facility = facilities.find((f) => f.id === facilityId);
+        // Private units only exist for the Self Storage model, so the selector mirrors the
+        // warehouse console and hides every facility that does not sell that model.
+        const selectable = facilities.filter((f) => f.serviceTypes.includes(SELF_STORAGE));
+        const excluded = facilities.length - selectable.length;
         const canWrite = Boolean(facility && facility.status === "ACTIVE" && facility.serviceTypes.includes(SELF_STORAGE));
         const rows = units.data?.rows || [];
         return (
           <>
             <Kpis items={[
-              ["Cơ sở", facilities.length, "Trên toàn hệ thống"],
+              ["Cơ sở", selectable.length, "Cơ sở có dịch vụ Thuê kho riêng"],
               ["Số kho đã tải", units.data?.total ?? "—", "Theo bộ lọc hiện tại"],
               ["Sẵn sàng", countBy(rows, "status", "AVAILABLE"), "Có thể cho thuê"],
               ["Tổng thể tích đã đăng ký", m3(sumBy(rows, "volumeM3")), "Tính từ kích thước kho"],
@@ -77,7 +87,7 @@ export default function StorageUnitsPage() {
                     label="Cơ sở của kho"
                     value={facilityId}
                     onChange={selectFacility}
-                    options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                    options={[["", "Chọn cơ sở"], ...selectable.map((f) => [f.id, `${f.name} (${f.code})`])]}
                   />
                 </Field>
                 <Field label="Trạng thái">
@@ -100,6 +110,11 @@ export default function StorageUnitsPage() {
                   <Input aria-label="Tìm kho riêng" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </Field>
               </div>
+              {excluded > 0 && (
+                <p className="bom-note mt-5">
+                  Ẩn {excluded} cơ sở khác vì cơ sở không cung cấp dịch vụ Thuê kho riêng.
+                </p>
+              )}
               {facility && !canWrite && (
                 <p className="bom-warning mt-5">
                   {facility.name} đang ở trạng thái {facility.status} và không cung cấp dịch vụ Thuê kho riêng, nên không thể tạo kho.
@@ -118,7 +133,9 @@ export default function StorageUnitsPage() {
                 <Panel
                   title="Danh sách kho"
                   subtitle={`${data.total} kho · ${countBy(data.rows, "status", "AVAILABLE")} đang sẵn sàng`}
-                  action={<Button onClick={() => setUnitDialog("new")} disabled={!canWrite}>Tạo kho</Button>}
+                  action={canWrite
+                    ? <Button asChild><Link to={`${basePath}/new/${encodeURIComponent(facilityId)}`}>Tạo kho</Link></Button>
+                    : <Button disabled>Tạo kho</Button>}
                 >
                   {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                   <div className="mt-5">
@@ -147,7 +164,9 @@ export default function StorageUnitsPage() {
                             const locked = r.status === "HELD" || r.status === "OCCUPIED";
                             return (
                               <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="outline" disabled={locked} onClick={() => setUnitDialog(r)}>Sửa</Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <Link to={`${basePath}/${encodeURIComponent(r.id)}/edit`}>Sửa</Link>
+                                </Button>
                                 <Button size="sm" variant="outline" disabled={locked} onClick={() => setStatusDialog(r)}>Trạng thái</Button>
                                 <Button size="sm" variant="outline" disabled={locked} onClick={() => removeUnit(r)}>Xóa</Button>
                               </div>
@@ -165,14 +184,6 @@ export default function StorageUnitsPage() {
         );
       }} />
 
-      {unitDialog && (
-        <UnitDialog
-          facilityId={facilityId}
-          unit={unitDialog === "new" ? null : unitDialog}
-          onClose={() => setUnitDialog(null)}
-          onSaved={() => units.reload()}
-        />
-      )}
       {statusDialog && (
         <UnitStatusDialog unit={statusDialog} onClose={() => setStatusDialog(null)} onSaved={() => units.reload()} />
       )}
