@@ -14,10 +14,11 @@ import { useAsyncData } from "@/lib/useAsyncData";
 import { usePageIndex } from "@/lib/usePageIndex";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
+  BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES, BOM_POLICY_FORM_TYPES,
+  POLICY_DESCRIPTION_TYPES,
   bomFutureDate, isEffectiveRecord, responseData, serviceLabel,
   pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
-  policyFromDto,
+  policyFromDto, policyBlank, policyBody, policyCloseBody,
 } from "@/lib/bomMappers";
 
 const blankPricing = () => ({
@@ -33,7 +34,7 @@ const CONFIGS = {
   policy: {
     api: bomPolicyApi, root: "/bom/policies", title: "Chính sách kinh doanh", code: "P052",
     policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
-    fromDto: policyFromDto,
+    fromDto: policyFromDto, blank: policyBlank, body: policyBody, hasService: true,
   },
 };
 
@@ -62,9 +63,10 @@ const recordQuery = (kind, { status, type, service }) => {
 export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
   const config = configFor(kind, basePath);
   if (!config) return <BomUnavailable />;
-  // Business policies are system-controlled: even if a route exposes new/edit later, the page
-  // refuses to render a write form, so the console can never POST a policy.
-  if (kind === "policy" && ["new", "edit"].includes(mode)) return <BomUnavailable />;
+  // A business policy never rewrites its config: `edit` is refused for good, and `new` stays
+  // refused until the backend accepts POST /policies (lib/bomCapabilities.policyWrite).
+  if (kind === "policy" && mode === "edit") return <BomUnavailable />;
+  if (kind === "policy" && mode === "new" && !bomCapability("policyWrite")) return <BomUnavailable />;
   if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
   if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;
   if (mode === "detail") return <RecordDetail kind={kind} config={config} />;
@@ -160,6 +162,8 @@ function RecordDetail({ kind, config }) {
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [capacity, setCapacity] = useState("10");
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeDate, setCloseDate] = useState(bomFutureDate(1));
 
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error)) return <BomUnavailable />;
 
@@ -214,12 +218,12 @@ function RecordDetail({ kind, config }) {
                   Quy tắc đã có hiệu lực nên không thể ngừng áp dụng. Hãy hẹn mức giá mới bằng nút Sửa.
                 </p>
               )}
-              {kind === "policy" && !bomCapability("policyWrite") && (
-                // Closing a policy needs PATCH /policies/:id with an effectiveTo; until the backend
-                // accepts it the control keeps its final shape and stays inert.
-                <div className="mt-5">
-                  <PendingAction label="Đóng từ ngày…" reason={POLICY_WRITE_REASON} />
-                </div>
+              {kind === "policy" && (
+                bomCapability("policyWrite")
+                  ? <div className="mt-5"><Button variant="orange" onClick={() => setCloseOpen(true)}>Đóng từ ngày…</Button></div>
+                  // Closing a policy needs PATCH /policies/:id/close with an effectiveTo; until the
+                  // backend accepts it the control keeps its final shape and stays inert.
+                  : <div className="mt-5"><PendingAction label="Đóng từ ngày…" reason={POLICY_WRITE_REASON} /></div>
               )}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
@@ -247,6 +251,24 @@ function RecordDetail({ kind, config }) {
               >
                 <p className="text-sm text-slate-500">
                   Quy tắc sẽ được chuyển sang trạng thái <b>{nextStatus}</b>.
+                </p>
+              </ConfirmDialog>
+            )}
+            {kind === "policy" && closeOpen && (
+              <ConfirmDialog
+                title="Đóng chính sách"
+                confirmLabel="Đóng chính sách"
+                onClose={() => setCloseOpen(false)}
+                onConfirm={async () => {
+                  await bomPolicyApi.close(id, policyCloseBody({ effectiveTo: closeDate }));
+                  state.reload();
+                }}
+              >
+                <Field label="Đóng từ ngày" hint="Phải sau hôm nay và sau ngày bắt đầu hiệu lực.">
+                  <Input aria-label="Đóng từ ngày" type="date" min={bomFutureDate(1)} value={closeDate} onChange={(e) => setCloseDate(e.target.value)} />
+                </Field>
+                <p className="mt-3 text-sm text-slate-500">
+                  Chính sách sẽ ngừng áp dụng từ ngày này. Nội dung chính sách không thay đổi.
                 </p>
               </ConfirmDialog>
             )}
@@ -349,6 +371,50 @@ function RecordForm({ kind, config, mode }) {
                   </Field>
                 </>
               )}
+              {!isEdit && kind === "policy" && (
+                <Field label="Loại chính sách">
+                  <Select
+                    label="Loại chính sách"
+                    value={form.type}
+                    onChange={(v) => {
+                      change("type", v);
+                      // The category policy only exists for Managed Inventory.
+                      if (v === "CATEGORY") change("service", "MANAGED_INVENTORY");
+                    }}
+                    options={BOM_POLICY_FORM_TYPES.map(({ key, label }) => [key, label])}
+                  />
+                </Field>
+              )}
+              {kind === "policy" && form.type === "DEPOSIT" && form.service === "SELF_STORAGE" && (
+                <>
+                  <Field label="Số tiền đặt cọc (VND)">
+                    <Input aria-label="Số tiền đặt cọc (VND)" type="number" min="0" step="any" value={form.amount} onChange={(e) => change("amount", e.target.value)} />
+                  </Field>
+                  <Field label="Tiền tệ">
+                    <Input aria-label="Tiền tệ đặt cọc" maxLength={3} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
+                  </Field>
+                </>
+              )}
+              {kind === "policy" && form.type === "DEPOSIT" && form.service === "MANAGED_INVENTORY" && (
+                <Field label="Tỷ lệ đặt cọc (% tiền thuê)">
+                  <Input aria-label="Tỷ lệ đặt cọc (% tiền thuê)" type="number" min="0" step="any" value={form.percentage} onChange={(e) => change("percentage", e.target.value)} />
+                </Field>
+              )}
+              {kind === "policy" && form.type === "CATEGORY" && (
+                <>
+                  <Field label="Danh mục được phép" hint="Cách nhau bằng dấu phẩy, ít nhất một danh mục.">
+                    <Input aria-label="Danh mục được phép" value={form.allowedCategories} onChange={(e) => change("allowedCategories", e.target.value)} />
+                  </Field>
+                  <Field label="Danh mục bị chặn" hint="Có thể để trống.">
+                    <Input aria-label="Danh mục bị chặn" value={form.blockedCategories} onChange={(e) => change("blockedCategories", e.target.value)} />
+                  </Field>
+                </>
+              )}
+              {kind === "policy" && POLICY_DESCRIPTION_TYPES.includes(form.type) && (
+                <Field label="Nội dung chính sách" hint="Loại chính sách này hiện dùng để ghi nhận nội dung.">
+                  <Input aria-label="Nội dung chính sách" value={form.description} onChange={(e) => change("description", e.target.value)} />
+                </Field>
+              )}
               <Field label="Hiệu lực từ" hint={locked ? "Bắt buộc chọn ngày trong tương lai — đây là ngày bắt đầu của mức giá mới." : `Chọn từ ${minDate} trở đi.`}>
                 <Input aria-label="Hiệu lực từ" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>
@@ -361,7 +427,7 @@ function RecordForm({ kind, config, mode }) {
               <div className="bom-wide">
                 {error && <p role="alert" className="bom-error">{error}</p>}
                 <div className="mt-5 flex flex-wrap gap-3">
-                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : isEdit ? "Lưu giá mới" : "Tạo quy tắc"}</Button>
+                  <Button type="submit" variant="orange" disabled={pending}>{pending ? "Đang lưu…" : isEdit ? "Lưu giá mới" : kind === "pricing" ? "Tạo quy tắc" : "Tạo chính sách"}</Button>
                   <Button type="button" variant="outline" onClick={() => nav(config.root)}>Hủy</Button>
                 </div>
               </div>

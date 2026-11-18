@@ -29,6 +29,11 @@ export const bomPolicyApi = {
   list: (params, config) => axiosClient.get("/policies", { ...config, params }),
   get: (id) => axiosClient.get(`/policies/${encode(id)}`),
   resolve: (params) => axiosClient.get("/policies/resolve", { params }),
+  // Writes below are gated by lib/bomCapabilities.policyWrite: the backend still answers 403
+  // "Business policies are system-controlled and read-only", so no screen calls them yet.
+  create: (body) => axiosClient.post("/policies", body),
+  close: (id, body) => axiosClient.patch(`/policies/${encode(id)}/close`, body),
+  setActive: (id, isActive) => axiosClient.patch(`/policies/${encode(id)}/status`, { isActive }),
 };
 
 export const bomManagedInventoryCatalogApi = {

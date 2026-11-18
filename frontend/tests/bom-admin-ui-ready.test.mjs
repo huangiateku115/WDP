@@ -139,10 +139,12 @@ test('Managed reservations expose no unsupported console actions',()=>{
 
 test('Policy and discount write mappers stay deleted while read mappers remain',()=>{
   const mappers=read('../src/lib/bomMappers.js');
-  for(const dead of ['policyBody','policyUpdateBody','discountBody','discountUpdateBody','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','BOM_DISCOUNT_VALUE_TYPES','contractFromDto']){
+  // A policy is created once and only then closed: its config is never rewritten through a
+  // partial update mapper, and discounts/categories have no write mapper at all.
+  for(const dead of ['policyUpdateBody','discountBody','discountUpdateBody','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','BOM_DISCOUNT_VALUE_TYPES','contractFromDto']){
     assert.doesNotMatch(mappers,new RegExp(`${dead}\\b`));
   }
-  for(const alive of ['policyFromDto','discountFromDto','discountValueLabel','categoryFromDto','pricingBody','pricingUpdateBody']){
+  for(const alive of ['policyFromDto','discountFromDto','discountValueLabel','categoryFromDto','pricingBody','pricingUpdateBody','policyBody']){
     assert.match(mappers,new RegExp(`${alive}\\b`));
   }
   const reportSources=read('../src/lib/reportSources.js');

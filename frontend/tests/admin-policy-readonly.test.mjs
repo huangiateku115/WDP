@@ -42,7 +42,10 @@ test('Admin and BOM Policy pages expose read-only routes and omit mutation contr
     assert.match(routes,/path="policies\/:id"/);
     assert.match(routes,/path="policies\/discounts"/);
     assert.match(routes,/path="policies\/item-categories"/);
-    assert.doesNotMatch(routes,/path="policies(?:\/discounts|\/item-categories)?\/new"/);
+    // The create route exists, but RecordPage refuses to render it until the backend accepts
+    // POST /policies (lib/bomCapabilities.policyWrite). Config is never editable.
+    assert.match(routes,/path="policies\/new"/);
+    assert.doesNotMatch(routes,/path="policies\/(discounts|item-categories)\/new"/);
     assert.doesNotMatch(routes,/path="policies(?:\/discounts|\/item-categories)?\/:id\/edit"/);
     assert.match(routes,/path="pricing\/new"/);
     assert.match(routes,/path="pricing\/:id\/edit"/);
@@ -52,7 +55,11 @@ test('Admin and BOM Policy pages expose read-only routes and omit mutation contr
   assert.match(generic,/Quy tắc giá đã lên lịch/);
   assert.match(generic,/new Date\(record\.effectiveFrom\) > new Date\(\)/);
   assert.match(generic,/Bắt đầu áp dụng từ \{record\.effectiveFrom\}/);
-  assert.match(generic,/kind === "policy" && \["new", "edit"\]/);
+  // Writes stay behind the capability flag: editing is refused for good (config is immutable)
+  // and the create form renders only when lib/bomCapabilities.policyWrite is on.
+  assert.match(generic,/kind === "policy" && mode === "edit"/);
+  assert.match(generic,/mode === "new" && !bomCapability\("policyWrite"\)/);
+  assert.match(generic,/bomCapability\("policyWrite"\)/);
   assert.match(generic,/kind === "pricing" \? <Button/);
   // An effective rule cannot be toggled: the status button is only rendered for future rules.
   assert.match(generic,/kind === "pricing" && !effectiveRule/);

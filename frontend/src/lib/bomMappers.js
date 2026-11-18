@@ -2,6 +2,10 @@
 // and the BOM view models used by the live Facility / Pricing / Policy pages.
 import { money } from "@/components/manager/ManagerUI";
 import { facilityLabel } from "@/lib/facilityLabels";
+import { bomFutureDate, fromInstant, toInstant } from "./bomDates";
+
+export { bomFutureDate };
+export { BOM_POLICY_FORM_TYPES, POLICY_DESCRIPTION_TYPES, policyBlank, policyBody, policyCloseBody, policyConfig } from "./bomPolicyForm";
 
 export const BOM_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 export const BOM_UNIT_SIZES = ["SMALL", "MEDIUM", "LARGE"];
@@ -37,21 +41,10 @@ export function responseList(response) {
   return { rows, pagination: body?.pagination ?? null };
 }
 
-export function bomFutureDate(days = 1) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
 // A rule/policy whose effectiveFrom already passed is immutable except for a prospective
 // effectiveTo, so the edit form must not send the scope, price or config fields.
 export function isEffectiveRecord(record) {
   return Boolean(record?.effectiveFrom) && record.effectiveFrom <= new Date().toISOString().slice(0, 10);
-}
-export function toInstant(dateStr) {
-  return dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : undefined;
-}
-export function fromInstant(value) {
-  return value ? String(value).slice(0, 10) : "";
 }
 
 /* ------------------- Warehouse map, units, managed inventory ------------------- */
@@ -388,10 +381,12 @@ export function policyFromDto(d) {
   };
 }
 
+/* --------------------------- Policy create form -------------------------- */
+// Implemented in ./bomPolicyForm.js (dependency-free) and re-exported at the top of this module.
+
 /* --------------------- Discounts / waivers (Policy) -------------------- */
 export const BOM_DISCOUNT_TYPES = ["DISCOUNT", "WAIVER"];
 export const BOM_DISCOUNT_KINDS = ["PROMOTIONAL", "LOYALTY", "FEE_WAIVER"];
-
 export function discountFromDto(d) {
   const config = d?.config || {};
   const kind = config.kind || (d?.type === "WAIVER" ? "FEE_WAIVER" : "PROMOTIONAL");
