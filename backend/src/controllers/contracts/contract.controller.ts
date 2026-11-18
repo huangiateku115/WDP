@@ -11,6 +11,7 @@ import ManagedReservationAuditModel from '../../models/reservations/managed-rese
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { ManagedCheckinError, ManagedCheckinService } from '../../services/reservations/managed-checkin.service';
 import { CloudinaryService } from '../../services/upload/cloudinary.service';
+import { contractRentalPeriodDto } from '../../services/contracts/contract-rental-period.dto';
 import ReservationPaymentModel from '../../models/payments/reservation-payment.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
@@ -19,6 +20,8 @@ import { UserRole } from '../../types/user.type';
 import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { logOperationalFailure } from '../../services/operations/operational-error.logger';
 
 class ContractControllerError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -28,6 +31,15 @@ function transactionVersionFilter(versionInput: unknown) {
   const version = Number(versionInput ?? 0);
   return version === 0 ? { $or: [{ inventoryVersion: 0 }, { inventoryVersion: { $exists: false } }] }
     : { inventoryVersion: version };
+}
+
+async function persistContractUploadMetadata<T>(operation: string, correlationId: string, contractId: unknown, persist: () => Promise<T>): Promise<T> {
+  try { return await persist(); }
+  catch (error) {
+    logOperationalFailure({ operation, stage: 'metadata_persistence', provider: 'mongodb', error,
+      correlationId, retryable: true, entityType: 'Contract', entityId: String(contractId ?? '') });
+    throw error;
+  }
 }
 
 function assertManagedProofFacilityScope(actor: any, facilityId: any) {
@@ -40,10 +52,10 @@ function assertManagedProofFacilityScope(actor: any, facilityId: any) {
 export const getMyContracts = async (req: Request, res: Response) => {
   try {
     const contracts = await ContractModel.find({ customerId: req.user!._id })
-      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status')
+      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status renewals extendContract')
       .populate('verifiedByStaff', 'fullName displayName')
       .sort({ createdAt: -1 });
-    return res.json({ success: true, data: contracts });
+    return res.json({ success: true, data: contracts.map(contractRentalPeriodDto) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -52,7 +64,7 @@ export const getMyContracts = async (req: Request, res: Response) => {
 export const getContractById = async (req: Request, res: Response) => {
   try {
     const contract = await ContractModel.findById(req.params.id)
-      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType')
+      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType renewals extendContract')
       .populate('verifiedByStaff', 'fullName displayName');
     if (!contract) return res.status(404).json({ success: false, message: 'Contract not found' });
     
@@ -69,7 +81,7 @@ export const getContractById = async (req: Request, res: Response) => {
       }
     }
     
-    return res.json({ success: true, data: contract });
+    return res.json({ success: true, data: contractRentalPeriodDto(contract) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -79,7 +91,7 @@ export const getContractByReservationId = async (req: Request, res: Response) =>
   try {
     const reservationId = req.params.reservationId;
     const contract: any = await (ContractModel as any).findOne({ reservationId })
-      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType')
+      .populate('reservationId', 'reservationCode facilityId storageUnitId startDate endDate status serviceType renewals extendContract')
       .populate('customerId', 'fullName email phone')
       .populate('verifiedByStaff', 'fullName displayName');
     if (!contract) return res.status(404).json({ success: false, message: 'Contract not found for this reservation.' });
@@ -92,7 +104,7 @@ export const getContractByReservationId = async (req: Request, res: Response) =>
         (!req.user!.assignedFacilityId || String(contract.reservationId?.facilityId?._id ?? contract.reservationId?.facilityId) !== String(req.user!.assignedFacilityId))) {
       return res.status(404).json({ success: false, message: 'Contract not found' });
     }
-    return res.json({ success: true, data: contract });
+    return res.json({ success: true, data: contractRentalPeriodDto(contract) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -212,7 +224,8 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
       if (reservation.signingDeadline && now >= reservation.signingDeadline) {
         throw new ContractControllerError(409, 'SIGNING_DEADLINE_EXCEEDED: cần xử lý thủ công; không hủy hoặc hoàn tiền tự động.');
       }
-      const uploaded = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts');
+      const uploadCorrelationId = randomUUID();
+      const uploaded = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts', uploadCorrelationId);
       const session = await mongoose.startSession();
       let committed: { contract: any; reservation: any } | undefined;
       try {
@@ -244,13 +257,13 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
               facilityId: current.facilityId, cellId: { $in: ids }, status: CellAllocationStatus.RESERVED }).session(session).exec();
             if (!ids.length || count !== ids.length) throw new ContractControllerError(409, 'Managed Cell allocation is no longer valid.');
           }
-          const updated = await ReservationModel.findOneAndUpdate({ _id: current._id, status: ReservationStatus.PAID,
+          const updated = await persistContractUploadMetadata('contract.verify_signed_paper', uploadCorrelationId, currentContract._id, () => ReservationModel.findOneAndUpdate({ _id: current._id, status: ReservationStatus.PAID,
             rentalPaymentFlow: 'FULL_UPFRONT_V1', inventoryVersion: current.inventoryVersion ?? 0 }, {
             $inc: { inventoryVersion: 1 }, $set: { status: ReservationStatus.CHECKIN_READY,
               paperContractProofUrl: uploaded.secureUrl, paperContractVerifiedBy: req.user!._id, paperContractVerifiedAt: now },
             $push: { statusHistory: { status: ReservationStatus.CHECKIN_READY, actorId: req.user!._id,
               reason: 'Authorized Facility representative verified actual two-party signed contract evidence', createdAt: now } },
-          }, { returnDocument: 'after', session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec());
           if (!updated) throw new ContractControllerError(409, 'Reservation changed concurrently; reload and retry.');
           currentContract.signatures = [
             ...(currentContract.signatures ?? []).filter(signature => !(signature.version === currentVersion.version && signature.contentHash === currentVersion.contentHash)),
@@ -270,20 +283,20 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
           const paperNumber = String(req.body.paperContractNumber ?? '').trim();
           if (paperNumber) currentContract.paperContractNumber = paperNumber;
           currentContract.status = ContractStatus.SIGNED;
-          await currentContract.save({ session });
+          await persistContractUploadMetadata('contract.verify_signed_paper', uploadCorrelationId, currentContract._id, () => currentContract.save({ session }));
           if (current.serviceType === FacilityServiceType.MANAGED_INVENTORY) {
-            await new ManagedReservationAuditModel({ facilityId: current.facilityId, reservationId: current._id,
+            await persistContractUploadMetadata('contract.verify_signed_paper', uploadCorrelationId, currentContract._id, () => new ManagedReservationAuditModel({ facilityId: current.facilityId, reservationId: current._id,
               actorId: req.user!._id, action: ManagedReservationAction.CONTRACT_SIGNED,
               fromStatus: current.status, toStatus: ContractStatus.SIGNED,
               details: { contractId: currentContract._id, version: currentVersion.version, contentHash: currentVersion.contentHash,
-                paperEvidenceVerified: true, customerSignerId: current.customerId, facilitySignerId: req.user!._id } }).save({ session });
+                paperEvidenceVerified: true, customerSignerId: current.customerId, facilitySignerId: req.user!._id } }).save({ session }));
           }
           committed = { contract: currentContract, reservation: updated };
         }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       } catch (error: any) {
         const unknownCommit = error?.hasErrorLabel?.('UnknownTransactionCommitResult') || error?.errorLabels?.includes?.('UnknownTransactionCommitResult');
         if (unknownCommit) throw new ContractControllerError(503, 'Contract verification outcome is uncertain; reload before retry.');
-        try { await CloudinaryService.deleteAsset(uploaded.publicId); } catch { /* best effort for confirmed abort */ }
+        try { await CloudinaryService.deleteAsset(uploaded.publicId, uploadCorrelationId); } catch { /* best effort for confirmed abort; provider adapter records cleanup failure */ }
         if (error instanceof ContractControllerError) throw error;
         if (error?.code === 112 || error?.codeName === 'WriteConflict' || error?.name === 'VersionError') throw new ContractControllerError(409, 'Reservation or Contract changed concurrently; reload and retry.');
         throw error;
@@ -316,7 +329,8 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
 
       // The external upload precedes MongoDB commit. If the transaction definitely aborts,
       // delete only this newly uploaded, unattached asset. Unknown commit outcomes are not deleted.
-      const uploadResult = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts');
+      const uploadCorrelationId = randomUUID();
+      const uploadResult = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts', uploadCorrelationId);
       let transactionResult: { contract: any; reservation: any; replayed: boolean } | undefined;
       const session = await mongoose.startSession();
       try {
@@ -349,7 +363,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
           }
 
           const now = new Date();
-          const updatedReservation = await ReservationModel.findOneAndUpdate({
+          const updatedReservation = await persistContractUploadMetadata('contract.confirm_signed_paper', uploadCorrelationId, currentContract._id, () => ReservationModel.findOneAndUpdate({
             _id: current._id,
             serviceType: FacilityServiceType.MANAGED_INVENTORY,
             bookingFlowVersion: { $nin: [2, 3] },
@@ -361,7 +375,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
             $set: { status: ReservationStatus.CHECKIN_READY },
             $push: { statusHistory: { status: ReservationStatus.CHECKIN_READY, actorId: req.user!._id,
               reason: 'Staff confirmed signed paper contract with proof image', createdAt: now } },
-          }, { returnDocument: 'after', session, runValidators: true }).exec();
+          }, { returnDocument: 'after', session, runValidators: true }).exec());
           if (!updatedReservation) throw new ContractControllerError(409,
             'Managed reservation changed or closure is pending; reload and retry.');
 
@@ -372,13 +386,13 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
           currentContract.verifiedAt = now;
           if (req.body.paperContractNumber) currentContract.paperContractNumber = req.body.paperContractNumber;
           currentContract.status = ContractStatus.SIGNED;
-          await currentContract.save({ session });
-          await new ManagedReservationAuditModel({ facilityId: updatedReservation.facilityId,
+          await persistContractUploadMetadata('contract.confirm_signed_paper', uploadCorrelationId, currentContract._id, () => currentContract.save({ session }));
+          await persistContractUploadMetadata('contract.confirm_signed_paper', uploadCorrelationId, currentContract._id, () => new ManagedReservationAuditModel({ facilityId: updatedReservation.facilityId,
             reservationId: updatedReservation._id, actorId: req.user!._id,
             action: ManagedReservationAction.CONTRACT_SIGNED,
             fromStatus: current.status, toStatus: ContractStatus.SIGNED,
             details: { contractId: currentContract._id, paperProofVerified: true,
-              paperContractNumber: currentContract.paperContractNumber } }).save({ session });
+              paperContractNumber: currentContract.paperContractNumber } }).save({ session }));
           transactionResult = { contract: currentContract, reservation: updatedReservation, replayed: false };
         }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       } catch (error: any) {
@@ -396,7 +410,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
           }
           throw new ContractControllerError(503, 'Contract confirmation outcome is uncertain; retry safely.');
         }
-        try { await CloudinaryService.deleteAsset(uploadResult.publicId); } catch { /* best-effort cleanup of this unattached upload */ }
+        try { await CloudinaryService.deleteAsset(uploadResult.publicId, uploadCorrelationId); } catch { /* best-effort cleanup of this unattached upload; provider adapter records cleanup failure */ }
         if (error instanceof ContractControllerError) throw error;
         if (error?.code === 11000 || error?.code === 112 || error?.codeName === 'WriteConflict' ||
             error?.name === 'VersionError' || error?.hasErrorLabel?.('TransientTransactionError')) {
@@ -409,7 +423,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
 
       if (!transactionResult) throw new ContractControllerError(503, 'Contract confirmation outcome is uncertain; retry safely.');
       if (transactionResult.replayed) {
-        try { await CloudinaryService.deleteAsset(uploadResult.publicId); } catch { /* best-effort cleanup of duplicate upload */ }
+        try { await CloudinaryService.deleteAsset(uploadResult.publicId, uploadCorrelationId); } catch { /* best-effort cleanup of duplicate upload; provider adapter records cleanup failure */ }
       }
       return res.json({ success: true,
         message: 'Xác nhận hợp đồng giấy và tải ảnh bằng chứng lên Cloudinary thành công.',
@@ -421,7 +435,8 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
     }
 
     // Upload file ảnh lên Cloudinary folder wdp/signed-contracts
-    const uploadResult = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts');
+    const uploadCorrelationId = randomUUID();
+    const uploadResult = await CloudinaryService.uploadBuffer(req.file.buffer, 'wdp/signed-contracts', uploadCorrelationId);
 
     const now = new Date();
     contract.signedProofUrl = uploadResult.secureUrl;
@@ -433,7 +448,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
       contract.paperContractNumber = req.body.paperContractNumber;
     }
     contract.status = ContractStatus.SIGNED;
-    await contract.save();
+    await persistContractUploadMetadata('contract.confirm_signed_paper', uploadCorrelationId, contract._id, () => contract.save());
 
     // Đồng bộ bằng chứng hợp đồng giấy vào Reservation
     reservation.paperContractProofUrl = uploadResult.secureUrl;
@@ -458,7 +473,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
         createdAt: now,
       });
     }
-    await reservation.save();
+    await persistContractUploadMetadata('contract.confirm_signed_paper', uploadCorrelationId, contract._id, () => reservation.save());
 
     return res.json({
       success: true,
@@ -485,7 +500,7 @@ export const getContractPrintData = async (req: Request, res: Response) => {
       if (!['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(req.user!.role) || !req.user!.assignedFacilityId ||
           String(reservation?.facilityId) !== String(req.user!.assignedFacilityId)) return res.status(404).json({ success: false, message: 'Contract not found' });
     }
-    return res.json({ success: true, data: contract });
+    return res.json({ success: true, data: contractRentalPeriodDto(contract) });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }

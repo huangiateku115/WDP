@@ -12,6 +12,9 @@ import { intervalsOverlap, pricingRevisionAt, pricingRevisionsFor, projectPricin
 
 type Actor = Pick<IUser, 'role' | '_id'> | undefined;
 type Rule = PricingRule | Policy;
+function readDto<T extends Record<string, any>>(record: T): T & { effectiveTo: Date | null } {
+  return { ...record, effectiveTo: record.effectiveTo ?? null };
+}
 function authorize(actor: Actor, write = false) {
   if (!actor) throw new RuleError(401, 'Authentication required');
   if (!Object.values(UserRole).includes(actor.role) ||
@@ -113,7 +116,7 @@ export class RuleService {
     return safe(async () => {
       const record = await this.model.findById(_id).exec();
       if (!record) throw new RuleError(404, 'Rule not found');
-      return record;
+      return readDto(record.toObject() as unknown as Record<string, any>);
     });
   }
   async list(input: unknown, actor: Actor) {
@@ -124,7 +127,7 @@ export class RuleService {
         this.model.find(filter).sort({ effectiveFrom: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(),
         this.model.countDocuments(filter).exec(),
       ]);
-      return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+      return { data: data.map(row => readDto(row as Record<string, any>)), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
     });
   }
   async resolve(input: unknown, actor: Actor) {

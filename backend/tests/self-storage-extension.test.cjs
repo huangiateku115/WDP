@@ -52,7 +52,6 @@ test('Contract Extension: Chặn tạo yêu cầu gia hạn nếu đơn không �
     exec: async () => null,
     then: (resolve) => resolve(null),
   });
-
   t.after(() => {
     ReservationModel.findById = origFindById;
   });
@@ -336,6 +335,7 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
         durationMonths: 2,
         amount: 2400000,
         status: 'PAID',
+        paymentId: new mongoose.Types.ObjectId(),
         newEndDate: targetNewEndDate,
       }
     ],
@@ -344,6 +344,7 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
 
   const origFindById = ReservationModel.findById;
   const origFindOne = ReservationModel.findOne;
+  const origFindOneAndUpdate = ReservationModel.findOneAndUpdate;
   ReservationModel.findById = () => ({
     exec: async () => fakeReservation,
     then: (resolve) => resolve(fakeReservation),
@@ -352,14 +353,35 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
     exec: async () => null,
     then: (resolve) => resolve(null),
   });
+  ReservationModel.findOneAndUpdate = (_filter, update) => ({ exec: async () => {
+    fakeReservation.endDate = update.$set.endDate;
+    Object.assign(fakeReservation.extendContract[0], {
+      status: update.$set['extendContract.$.status'],
+      paperProofUrl: update.$set['extendContract.$.paperProofUrl'],
+      verifiedBy: update.$set['extendContract.$.verifiedBy'],
+      verifiedAt: update.$set['extendContract.$.verifiedAt'],
+    });
+    fakeReservation.statusHistory.push(update.$push.statusHistory);
+    return fakeReservation;
+  } });
 
+  let contractUpdateCalls = 0;
   const origContractUpdate = ContractModel.findOneAndUpdate;
-  ContractModel.findOneAndUpdate = () => ({
-    exec: async () => ({ success: true })
-  });
+  ContractModel.findOneAndUpdate = () => { contractUpdateCalls++; return { exec: async () => ({ success: true }) }; };
+  t.mock.method(ReservationPaymentModel, 'findOne', filter => ({ exec: async () => {
+    assert.equal(String(filter._id), String(fakeReservation.extendContract[0].paymentId));
+    assert.equal(filter.status, 'SUCCEEDED');
+    assert.equal(filter.providerSettlementStatus, 'VERIFIED');
+    assert.equal(filter.applicationStatus, 'APPLIED');
+    return ({
+    amount: 2400000, purpose: 'RENEWAL', status: 'SUCCEEDED', provider: 'PAYOS',
+    providerSettlementStatus: 'VERIFIED', applicationStatus: 'APPLIED',
+    });
+  } }));
 
   t.after(() => {
     ReservationModel.findById = origFindById;
+    ReservationModel.findOneAndUpdate = origFindOneAndUpdate;
     ContractModel.findOneAndUpdate = origContractUpdate;
   });
 
@@ -378,8 +400,34 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
   assert.equal(ext.status, 'ACTIVE');
   assert.equal(ext.paperProofUrl, 'https://res.cloudinary.com/test/image/upload/v1/extension_proof.jpg');
   assert.equal(ext.verifiedBy.toString(), staffId.toString());
+  assert.equal(contractUpdateCalls, 0, 'Renewal confirmation must not mutate the original Contract snapshot');
   // Ngày kết thúc của đơn chính CHÍNH THỨC được cộng dồn sang ngày mới
   assert.equal(fakeReservation.endDate.toISOString(), targetNewEndDate.toISOString());
+  const replay = mockResponse();
+  await ReservationController.confirmExtension(req, replay);
+  assert.equal(replay.statusCode, 400, 'A sequential replay cannot activate or append the same renewal twice');
+  assert.equal(fakeReservation.statusHistory.length, 1);
+});
+
+test('Contract Extension: paid status without applied verified payment cannot activate a rental period', async (t) => {
+  const reservationId = new mongoose.Types.ObjectId(), extensionId = new mongoose.Types.ObjectId();
+  const originalEnd = new Date('2026-12-01T00:00:00Z');
+  const fakeReservation = { _id: reservationId, customerId: new mongoose.Types.ObjectId(), facilityId: new mongoose.Types.ObjectId(),
+    serviceType: FacilityServiceType.SELF_STORAGE, status: ReservationStatus.ACTIVE, endDate: originalEnd, statusHistory: [],
+    extendContract: [{ _id: extensionId, extensionCode: 'EXT-UNVERIFIED', status: 'PAID', paymentId: new mongoose.Types.ObjectId(),
+      amount: 100, newEndDate: new Date('2027-01-01T00:00:00Z') }], async save() { return this; } };
+  const originalFindById = ReservationModel.findById;
+  ReservationModel.findById = () => ({ exec: async () => fakeReservation, then: resolve => resolve(fakeReservation) });
+  t.mock.method(ReservationPaymentModel, 'findOne', () => ({ exec: async () => null }));
+  t.after(() => { ReservationModel.findById = originalFindById; });
+  const res = mockResponse();
+  await ReservationController.confirmExtension({ params: { id: String(reservationId), extensionId: String(extensionId) },
+    body: { paperProofUrl: 'https://example.invalid/proof.jpg' }, user: { _id: new mongoose.Types.ObjectId(), role: 'FACILITY_STAFF' } }, res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'RENEWAL_PAYMENT_NOT_VERIFIED');
+  assert.equal(fakeReservation.extendContract[0].status, 'PAID');
+  assert.equal(fakeReservation.endDate, originalEnd);
+  assert.equal(fakeReservation.statusHistory.length, 0);
 });
 
 test('Contract Extension: Staff từ chối gia hạn hợp đồng (REJECTED, giữ nguyên endDate cũ)', async (t) => {

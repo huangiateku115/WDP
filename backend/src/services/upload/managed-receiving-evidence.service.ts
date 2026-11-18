@@ -9,6 +9,7 @@ import { UserRole } from '../../types/user.type';
 import { InventoryItemError } from '../inventory-items/inventory-item.validation';
 import { validateInventoryImage, INVENTORY_IMAGE_MAX_BYTES } from './inventory-image-validation.service';
 import { CloudinaryService } from './cloudinary.service';
+import { logOperationalFailure } from '../operations/operational-error.logger';
 
 const EvidenceUploads: any = ReceivingInspectionUploadModel;
 
@@ -70,15 +71,19 @@ export class ManagedReceivingEvidenceService {
       }
       if (!upload) fail(429, 'Too many unattached evidence uploads for this Item');
     }
+    const correlationId = randomUUID();
+    let providerResponseValidated = false;
     try {
-      const asset = await CloudinaryService.uploadInventoryImage(uploadedFile.buffer, upload.folder, upload.generatedPublicId);
+      const asset = await CloudinaryService.uploadInventoryImage(uploadedFile.buffer, upload.folder, upload.generatedPublicId, correlationId);
       if (!asset.secureUrl.startsWith('https://') || asset.width !== image.width || asset.height !== image.height || asset.format.toLowerCase() !== image.format) fail(502, 'Cloudinary metadata did not match the validated image');
+      providerResponseValidated = true;
       const finalized = await (ReceivingInspectionUploadModel as any).findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', uploadLeaseToken: leaseToken }, {
         $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, nextDeleteAt: new Date() }, $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 },
       }, { returnDocument: 'after' }).exec();
       if (!finalized) fail(409, 'Evidence upload changed while finalizing; retry with the same key');
       return this.dto(finalized);
     } catch (error) {
+      if (providerResponseValidated) logOperationalFailure({ operation: 'upload.receiving_evidence', stage: 'metadata_persistence', provider: 'mongodb', error, correlationId, retryable: true, entityType: 'InventoryItem', entityId: String(item._id) });
       if (error instanceof InventoryItemError) throw error;
       throw new InventoryItemError(502, 'Evidence upload could not be finalized; retry with the same Idempotency-Key');
     } finally {
@@ -123,12 +128,15 @@ export class ManagedReceivingEvidenceService {
 
   private static async deleteClaimed(upload: any) {
     const filter = { _id: upload._id, status: 'DELETE_PENDING', cleanupLeaseToken: upload.cleanupLeaseToken };
+    let cloudinaryDeleted = false;
     try {
       const result = await CloudinaryService.deleteAsset(upload.publicId);
       if (result?.result === 'error') throw new Error('Cloudinary rejected evidence deletion');
+      cloudinaryDeleted = true;
       const saved = await (ReceivingInspectionUploadModel as any).updateOne(filter, { $set: { status: 'DELETED' }, $unset: { quotaSlot: 1, nextDeleteAt: 1, cleanupLeaseToken: 1, cleanupLeaseUntil: 1 } }).exec();
       return saved.modifiedCount === 1;
-    } catch {
+    } catch (error) {
+      if (cloudinaryDeleted) logOperationalFailure({ operation: 'upload.receiving_evidence_cleanup', stage: 'metadata_persistence', provider: 'mongodb', error, retryable: true, entityType: 'InventoryItem', entityId: String(upload.itemId) });
       const attempts = (upload.deleteAttempts || 0) + 1;
       await (ReceivingInspectionUploadModel as any).updateOne(filter, { $set: { deleteAttempts: attempts, nextDeleteAt: new Date(Date.now() + Math.min(RETRY_MS * 2 ** Math.min(attempts - 1, 6), 86400000)) }, $unset: { cleanupLeaseToken: 1, cleanupLeaseUntil: 1 } }).exec().catch(() => undefined);
       return false;

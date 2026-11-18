@@ -7,11 +7,18 @@ import {
   adminGetAuditLogs,
   bomGetLoginHistory,
   bomGetAuditLogs,
+  getGlobalAuditLogs,
+  getAuditSubjects,
 } from '../controllers/audit/audit.controller';
 
 const router = Router();
 
 router.use(requireAuth);
+
+// Global read-only Audit APIs preserve the existing Admin/BOM role split.
+router.get('/logs', requireRole([UserRole.ADMIN, UserRole.BOM]), getGlobalAuditLogs);
+router.get('/admin/subjects', requireRole([UserRole.ADMIN]), getAuditSubjects);
+router.get('/bom/subjects', requireRole([UserRole.BOM]), getAuditSubjects);
 
 // Admin Routes
 router.get('/admin/login-history/:userId', requireRole([UserRole.ADMIN]), adminGetLoginHistory);
