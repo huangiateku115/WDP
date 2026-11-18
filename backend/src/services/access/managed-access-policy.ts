@@ -14,6 +14,16 @@ export function sessionIsCurrent(input: { status: ManagedAccessSessionStatus; st
     input.startedAt <= input.now && input.expiresAt > input.now;
 }
 
+export function accessSessionCoversReservations(input: { reservationId: unknown; scopedReservationIds?: unknown; requestedReservationIds: unknown[] }): boolean {
+  const textId = (value: any) => String(value?._id ?? value ?? '');
+  const primary = textId(input.reservationId);
+  const scope = Array.isArray(input.scopedReservationIds) && input.scopedReservationIds.length
+    ? input.scopedReservationIds.map(textId)
+    : [primary];
+  return !!primary && scope.includes(primary) && input.requestedReservationIds.length > 0 &&
+    input.requestedReservationIds.every(value => scope.includes(textId(value)));
+}
+
 export function isAccessSessionAllowed(input: {
   status: ManagedAccessSessionStatus; startedAt: Date; expiresAt: Date; revision: number;
   customerId: string; reservationId: string; facilityId: string; allowedPurposes: ManagedAccessPurpose[]; allowedCellIds: string[];

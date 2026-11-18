@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { ManagedInventoryV3Error, ManagedInventoryV3Service } from '../../services/inventory-items/managed-inventory-v3.service';
 import { ManagedUnifiedInboundError, ManagedUnifiedInboundService } from '../../services/inventory-items/managed-unified-inbound.service';
 import { ManagedUnifiedInboundDomainError } from '../../services/inventory-items/managed-unified-inbound.domain';
-import { ManagedCellStockReadService } from '../../services/inventory-items/managed-cell-stock-read.service';
+import { customerSafeStockDto, ManagedCellStockReadService } from '../../services/inventory-items/managed-cell-stock-read.service';
 import ItemMovementModel from '../../models/inventory-items/item-movement.model';
 import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
 import { Types } from 'mongoose';
@@ -26,7 +26,10 @@ export const listPhysicalUnits = (req: Request, res: Response) => reply(res, () 
 export const inboundContext = (req: Request, res: Response) => reply(res, () => ManagedUnifiedInboundService.context(req.params.id, actor(req)));
 export const previewInbound = (req: Request, res: Response) => reply(res, () => ManagedUnifiedInboundService.preview(req.params.id, req.body, actor(req)), 200, 'unified-inbound-preview');
 export const confirmInbound = (req: Request, res: Response) => reply(res, () => ManagedUnifiedInboundService.confirm(req.params.id, req.body, actor(req), req.header('Idempotency-Key')), 201, 'unified-inbound-confirm');
-export const stock = (req: Request, res: Response) => reply(res, () => ManagedCellStockReadService.skuStock(req.params.id, actor(req)));
+export const stock = (req: Request, res: Response) => reply(res, async () => {
+  const result = await ManagedCellStockReadService.skuStock(req.params.id, actor(req));
+  return actor(req).role === 'CUSTOMER' ? customerSafeStockDto(result) : result;
+});
 export const movements = (req: Request, res: Response) => reply(res, async () => {
   const user = actor(req), skuId = req.params.id;
   if (user.role !== 'CUSTOMER' || !/^[a-f\d]{24}$/i.test(String(skuId))) return ManagedInventoryV3Service.movements(skuId, user);

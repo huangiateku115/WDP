@@ -28,7 +28,9 @@ router.delete('/racks/:id', requireAuth, requireRole(managers), controller.delet
 router.post('/racks/:id/restore', requireAuth, requireRole(managers), controller.restoreRack);
 
 router.get('/rack-cells', requireAuth, requireRole(readers), controller.listCells);
-router.get('/rack-cells/:id/stock', requireAuth, requireRole(readers), stockController.cellStock);
+// Facility-wide physical stock diagnostics contain cross-customer occupancy;
+// keep this route restricted to scoped management roles.
+router.get('/rack-cells/:id/stock', requireAuth, requireRole(managers), stockController.cellStock);
 router.get('/rack-cells/:id', requireAuth, requireRole(readers), controller.getCell);
 router.patch('/rack-cells/:id', requireAuth, requireRole(managers), controller.updateCell);
 

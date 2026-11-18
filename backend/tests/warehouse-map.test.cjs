@@ -204,7 +204,7 @@ test('partial cell creation failures abort the rack-and-cells transaction', asyn
   assert.equal(tx.ended, 1);
 });
 
-test('a new customer can browse the sanitized managed map without a reservation', async t => {
+test('a new customer can browse the public map without physical usage or shared capacity details', async t => {
   const own = actor('CUSTOMER');
   t.mock.method(Facility, 'findOne', () => new Query(facility()));
   t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
@@ -216,17 +216,22 @@ test('a new customer can browse the sanitized managed map without a reservation'
   t.mock.method(InventoryItem, 'find', () => new Query([]));
   const result = await service.warehouseMap(facilityId, own);
   assert.equal(result.zones[0].aisles[0].racks[0].cellCount, 16);
-  assert.equal(result.zones[0].aisles[0].racks[0].utilization.usedWeightKg, 0);
-  assert.equal(result.zones[0].aisles[0].racks[0].utilization.ratedCapacityKg, 2000);
-  assert.equal(result.zones[0].aisles[0].racks[0].utilization.allocatableCapacityKg, 1975);
+  const rackSummary = result.zones[0].aisles[0].racks[0];
+  assert.equal(rackSummary.utilization.status, 'UNKNOWN');
+  assert.equal(rackSummary.utilization.disclosure, 'REDACTED');
+  assert.equal(Object.hasOwn(rackSummary.utilization, 'usedWeightKg'), false);
+  assert.equal(Object.hasOwn(rackSummary.utilization, 'ratedCapacityKg'), false);
+  assert.equal(Object.hasOwn(rackSummary, 'occupiedCellCount'), false);
   const serialized = JSON.stringify(result);
   for (const forbidden of ['deletedAt', 'deletedBy', 'layoutVersion', '__v', 'createdBy', 'ownerId']) assert.equal(serialized.includes(forbidden), false);
   const detail = await service.rackDetailMap(rackId, own);
-  assert.equal(detail.capacity.usedWeightKg, 0);
+  assert.equal(detail.capacity.disclosure, 'REDACTED');
+  assert.equal(Object.hasOwn(detail.capacity, 'usedWeightKg'), false);
+  assert.equal(Object.hasOwn(detail.levels[0], 'usedWeightKg'), false);
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
 });
 
-test('map separates operational/display state from booking state and returns only owner booleans', async t => {
+test('customer map preserves own allocation boolean but redacts Cell stock and legacy currentCellId membership', async t => {
   const own = actor('CUSTOMER'), cells = [cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 40, usedVolumeM3: .03 }).toObject()];
   t.mock.method(Facility, 'findOne', () => new Query(facility()));
   t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
@@ -235,24 +240,25 @@ test('map separates operational/display state from booking state and returns onl
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
   t.mock.method(Cell, 'find', () => new Query(cells));
   t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: cells[0]._id, customerId: userId, status: 'OCCUPIED' }]));
-  t.mock.method(InventoryItem, 'find', () => new Query([{ currentCellId: cells[0]._id }]));
+  t.mock.method(InventoryItem, 'find', () => { assert.fail('Customer map must not infer V4 inventory membership from legacy currentCellId'); });
   const range = { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' };
   const detail = await service.rackDetailMap(rackId, own, range);
   const result = detail.levels[3].cells[0];
-  assert.equal(result.bookingStatus, 'OCCUPIED');
-  assert.equal(result.displayStatus, 'OCCUPIED');
+  assert.equal(result.bookingStatus, 'UNKNOWN');
+  assert.equal(result.displayStatus, 'UNKNOWN');
   assert.equal(result.isMine, true);
-  assert.equal(result.hasMyInventory, true);
-  assert.equal(result.usedWeightKg, 40);
-  assert.equal(result.maxWeightKg, 125);
-  assert.equal(result.remainingWeightKg, 85);
-  assert.equal(result.usedVolumeM3, .03);
-  assert.equal(result.maxVolumeM3, .12);
+  assert.equal(Object.hasOwn(result, 'hasMyInventory'), false);
+  assert.equal(Object.hasOwn(result, 'usedWeightKg'), false);
+  assert.equal(Object.hasOwn(result, 'maxWeightKg'), false);
+  assert.equal(Object.hasOwn(result, 'remainingWeightKg'), false);
+  assert.equal(Object.hasOwn(result, 'usedVolumeM3'), false);
+  assert.equal(Object.hasOwn(result, 'maxVolumeM3'), false);
+  assert.equal(result.bookingReasonCode, 'CELL_UNAVAILABLE');
   assert.equal(JSON.stringify(detail).includes(String(userId)), false);
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
 });
 
-test('legacy Cell with missing physical counters is shown as unknown and cannot be booked', async t => {
+test('legacy Cell with missing physical counters stays unavailable and does not expose shared values', async t => {
   const legacyCell = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 } }).toObject();
   delete legacyCell.usedWeightKg;
   delete legacyCell.usedVolumeM3;
@@ -266,14 +272,12 @@ test('legacy Cell with missing physical counters is shown as unknown and cannot 
     startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z',
   });
   const mapped = result.levels[3].cells[0];
-  assert.equal(mapped.bookingStatus, 'AVAILABLE', 'allocation state remains unchanged');
-  assert.equal(mapped.usedWeightKg, 0, 'legacy response keeps normalized numeric fields for compatibility');
-  assert.equal(mapped.usedVolumeM3, 0);
-  assert.equal(mapped.physicalUsageKnown, false);
+  assert.equal(mapped.bookingStatus, 'UNKNOWN');
+  assert.equal(mapped.capacityDisclosure, 'REDACTED');
   assert.equal(mapped.isBookable, false, 'unknown emptiness fails closed');
-  assert.equal(mapped.remainingWeightKg, null);
-  assert.equal(mapped.remainingVolumeM3, null);
-  assert.equal(result.capacity.physicalUsageKnown, false);
+  assert.equal(Object.hasOwn(mapped, 'usedWeightKg'), false);
+  assert.equal(Object.hasOwn(mapped, 'remainingWeightKg'), false);
+  assert.equal(result.capacity.disclosure, 'REDACTED');
 });
 
 test('booking map separates current state from half-open requested-period availability', async t => {
@@ -297,7 +301,7 @@ test('booking map separates current state from half-open requested-period availa
   t.mock.method(Cell, 'find', () => Object.assign(new Query(cells), { sort() { return this; } }));
   t.mock.method(CellAllocation, 'find', () => new Query(allocations));
   t.mock.method(InventoryItem, 'find', () => new Query([]));
-  const result = await service.rackDetailMap(rackId, actor('CUSTOMER'), { startDate: startDate.toISOString(), endDate: endDate.toISOString() });
+  const result = await service.rackDetailMap(rackId, actor('FACILITY_MANAGER'), { startDate: startDate.toISOString(), endDate: endDate.toISOString() });
   const byCell = new Map(result.levels[3].cells.map(row => [row.cellNumber, row]));
   assert.equal(result.requestedInterval.startDate.toISOString(), startDate.toISOString());
   assert.equal(byCell.get(1).bookingStatus, 'AVAILABLE', 'future reservation does not alter current booking state');
@@ -347,12 +351,12 @@ test('Cell is not bookable under unavailable Rack, without usable height, or wit
   rackDoc = rack({ operationalStatus: 'AVAILABLE' });
   cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6 } }).toObject();
   result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
-  assert.equal(result.levels[3].cells[0].maxVolumeM3, null);
+  assert.equal(result.levels[3].cells[0].maxVolumeM3, undefined, 'Customer map omits physical capacity details');
   assert.equal(result.levels[3].cells[0].isBookable, false, 'missing usableHeightM cannot be booked');
 
   cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedVolumeM3: 0.01 }).toObject();
   result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
-  assert.equal(result.levels[3].cells[0].periodStatus, 'OCCUPIED');
+  assert.equal(result.levels[3].cells[0].periodStatus, 'UNKNOWN', 'Customer does not receive private occupancy details');
   assert.equal(result.levels[3].cells[0].isBookable, false, 'nonzero physical occupancy blocks booking');
 });
 
@@ -369,20 +373,20 @@ test('Cell with missing weight capacity or non-finite volume capacity fails book
   let result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
   let mapped = result.levels[3].cells[0];
   assert.equal(mapped.isBookable, false);
-  assert.equal(mapped.bookingReasonCode, 'CELL_WEIGHT_CAPACITY_NOT_CONFIGURED');
-  assert.equal(mapped.maxWeightKg, null);
-  assert.equal(mapped.remainingWeightKg, null);
+  assert.equal(mapped.bookingReasonCode, 'CELL_UNAVAILABLE');
+  assert.equal(mapped.maxWeightKg, undefined);
+  assert.equal(mapped.remainingWeightKg, undefined);
 
   cellDoc = cell(1, 1, { dimensions: { widthM: 1e308, depthM: 1e308, usableHeightM: 1 } }).toObject();
   result = await service.rackDetailMap(rackId, actor('CUSTOMER'), period);
   mapped = result.levels[3].cells[0];
   assert.equal(mapped.isBookable, false);
-  assert.equal(mapped.bookingReasonCode, 'CELL_VOLUME_CAPACITY_INVALID');
-  assert.equal(mapped.maxVolumeM3, null);
-  assert.equal(mapped.remainingVolumeM3, null);
+  assert.equal(mapped.bookingReasonCode, 'CELL_UNAVAILABLE');
+  assert.equal(mapped.maxVolumeM3, undefined);
+  assert.equal(mapped.remainingVolumeM3, undefined);
 });
 
-test('Customer booking fails closed when movement history exists but Cell counters show empty', async t => {
+test('Customer booking fails closed with a generic unavailable state when reconciliation is needed', async t => {
   const cellDoc = cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 0, usedVolumeM3: 0 }).toObject();
   movementRows = [{ stockEffect: { destination: [{ cellId: cellDoc._id }] } }];
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
@@ -393,9 +397,10 @@ test('Customer booking fails closed when movement history exists but Cell counte
   t.mock.method(InventoryItem, 'find', () => new Query([]));
   const result = await service.rackDetailMap(rackId, actor('CUSTOMER'), { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' });
   const mapped = result.levels[3].cells[0];
-  assert.equal(mapped.bookingStatus, 'AVAILABLE');
+  assert.equal(mapped.bookingStatus, 'UNKNOWN');
   assert.equal(mapped.isBookable, false);
-  assert.equal(mapped.bookingReasonCode, 'STOCK_RECONCILIATION_REQUIRED');
+  assert.equal(mapped.bookingReasonCode, 'CELL_UNAVAILABLE');
+  assert.equal(Object.hasOwn(mapped, 'usedWeightKg'), false);
 });
 
 test('customer maps reject inactive, deleted, and non-managed facilities; customer cannot change structure', async t => {
