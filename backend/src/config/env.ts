@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { resolveMi06BRepeatedInboundGate } from './mi06b-feature-gate';
 import { resolveMi06CanonicalOutboundConfirmationGate, resolveMi06CanonicalOutboundGate } from './mi06-canonical-outbound-gate';
+import { resolveAuthMockMode, resolvePayosLiveTestMode, resolvePayosMockMode } from './payos-mock-mode';
 dotenv.config({ quiet: true });
 
 export class ConfigurationError extends Error {}
@@ -43,8 +44,19 @@ function loadEnvironment() {
   }
   const realm = process.env.KEYCLOAK_REALM?.trim() || 'wdp-realm';
   const issuer = httpUrl('KEYCLOAK_ISSUER', process.env.KEYCLOAK_ISSUER || `${baseUrl}/realms/${realm}`);
+  let authMockMode: boolean;
+  let payosMockMode: boolean;
+  let payosLiveTestMode: boolean;
+  try {
+    payosMockMode = resolvePayosMockMode(process.env);
+    payosLiveTestMode = resolvePayosLiveTestMode(process.env) !== null;
+    authMockMode = resolveAuthMockMode(process.env);
+  } catch (error) {
+    if (error instanceof Error) throw new ConfigurationError(error.message);
+    throw new ConfigurationError('Payment mock configuration is invalid');
+  }
   return {
-    port, mongoUrl, nodeEnv, corsOrigins,
+    port, mongoUrl, nodeEnv, corsOrigins, authMockMode, payosMockMode, payosLiveTestMode,
     // MI-06 ledger writes remain explicitly opt-in and are never enabled in production in this phase.
     mi06StockLedgerWritesEnabled: nodeEnv !== 'production' && process.env.MI06_STOCK_LEDGER_WRITES_ENABLED?.trim().toLowerCase() === 'true',
     // MI-06B repeated inbound is an independent, non-operational foundation gate.

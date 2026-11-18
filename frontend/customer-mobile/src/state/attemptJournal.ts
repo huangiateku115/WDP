@@ -12,7 +12,7 @@ const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$
 type Attempt=z.infer<typeof attemptSchema>;
 const claiming=new Set<string>();
 
-export async function journal(scope:'managed-v3-inbound'|'managed-v3-full-rent'|'managed-v3-booking'|'managed-v3-visit-create'|'managed-v3-visit-amend'|'managed-v3-price-consent'|'booking'|'deposit'|'balance'|'full-rent',owner:string,identity:string) {
+export async function journal(scope:'managed-v3-inbound'|'managed-v3-full-rent'|'managed-v3-booking'|'managed-v3-visit-create'|'managed-v3-visit-amend'|'managed-v3-price-consent'|'booking'|'deposit'|'balance'|'full-rent'|'renewal-request'|'renewal-payment',owner:string,identity:string) {
   const hash=await digestStringAsync(CryptoDigestAlgorithm.SHA256,JSON.stringify([apiBase,objectId.parse(owner),scope,identity]));
   const key='wdp.mobile.attempt.'+hash;
   const store={

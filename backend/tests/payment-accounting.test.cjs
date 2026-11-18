@@ -24,6 +24,17 @@ test('payment purpose includes DEPOSIT, BALANCE, FULL_RENT and RENEWAL and schem
   const indexes = Payment.schema.indexes();
   assert.ok(indexes.some(([keys, options]) => keys.idempotencyKey === 1 && options.unique));
   assert.ok(indexes.some(([keys, options]) => keys.reservationId === 1 && keys.purpose === 1 && options.unique && options.partialFilterExpression?.status === 'SUCCEEDED'));
+  const renewal = indexes.find(([keys, options]) => options.name === 'renewal_extension_single_success');
+  assert.ok(renewal, 'each Extension must have its own successful Renewal uniqueness fence');
+  assert.deepEqual(renewal[0], { reservationId: 1, extensionId: 1, purpose: 1 });
+  assert.equal(renewal[1].unique, true);
+  assert.deepEqual(renewal[1].partialFilterExpression, {
+    purpose: PaymentPurpose.RENEWAL,
+    status: PaymentStatus.SUCCEEDED,
+    extensionId: { $type: 'objectId' },
+  });
+  assert.ok(!indexes.some(([keys, options]) => !keys.extensionId && options.unique && keys.reservationId === 1 && keys.purpose === 1 &&
+    options.partialFilterExpression?.purpose === PaymentPurpose.RENEWAL), 'legacy purpose-wide index must not prevent later Extensions');
 });
 
 test('same payment idempotency request can replay but key reuse with changed amount/purpose conflicts', () => {

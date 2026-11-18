@@ -8,6 +8,7 @@ import { requireManagedInventoryReservationForRegistration } from '../reservatio
 import { InventoryItemError } from '../inventory-items/inventory-item.validation';
 import { CloudinaryService } from './cloudinary.service';
 import { INVENTORY_IMAGE_MAX_BYTES, INVENTORY_IMAGE_MAX_COUNT, validateInventoryImage } from './inventory-image-validation.service';
+import { logOperationalFailure } from '../operations/operational-error.logger';
 
 const UNATTACHED_LIMIT = 20;
 const UPLOAD_LEASE_MS = 2 * 60 * 60 * 1000;
@@ -54,8 +55,10 @@ export class ManagedInventoryImageService {
       if (upload.status === 'UNATTACHED') return this.dto(upload);
     }
 
+    const correlationId = randomUUID();
+    let providerResponseValidated = false;
     try {
-      const asset = await CloudinaryService.uploadInventoryImage(file.buffer, upload.folder, upload.generatedPublicId);
+      const asset = await CloudinaryService.uploadInventoryImage(file.buffer, upload.folder, upload.generatedPublicId, correlationId);
       if (!asset.secureUrl.startsWith('https://') || asset.width !== image.width || asset.height !== image.height || asset.format.toLowerCase() !== image.format) {
         await InventoryImageUploadModel.updateOne({ _id: upload._id, status: 'UPLOADING', uploadLeaseToken }, {
           $set: { status: 'DELETE_PENDING', nextDeleteAt: upload.expiresAt, lastDeleteError: 'Cloudinary metadata did not match validated image' },
@@ -63,6 +66,7 @@ export class ManagedInventoryImageService {
         }).exec();
         throw new InventoryItemError(502, 'Cloudinary returned image metadata inconsistent with the validated upload');
       }
+      providerResponseValidated = true;
       const finalized = await InventoryImageUploadModel.findOneAndUpdate({ _id: upload._id, status: 'UPLOADING', uploadLeaseToken }, {
         $set: { status: 'UNATTACHED', secureUrl: asset.secureUrl, publicId: asset.publicId, width: image.width, height: image.height, format: image.format, nextDeleteAt: new Date() },
         $unset: { uploadLeaseToken: 1, uploadLeaseUntil: 1 },
@@ -70,6 +74,7 @@ export class ManagedInventoryImageService {
       if (!finalized) throw new InventoryItemError(409, 'Upload changed while finalizing; retry with the same Idempotency-Key');
       return this.dto(finalized);
     } catch (error) {
+      if (providerResponseValidated) logOperationalFailure({ operation: 'upload.managed_inventory_image', stage: 'metadata_persistence', provider: 'mongodb', error, correlationId, retryable: true, entityType: 'ManagedReservation', entityId: String(reservation._id) });
       if (error instanceof InventoryItemError) throw error;
       // The UPLOADING record was persisted before contacting Cloudinary. A retry reuses its server-assigned public ID.
       throw new InventoryItemError(502, 'Cloudinary image upload could not be finalized; retry with the same Idempotency-Key');
@@ -267,7 +272,10 @@ export class ManagedInventoryImageService {
         $unset: { nextDeleteAt: 1, cleanupLeaseToken: 1, cleanupLeaseUntil: 1, quotaSlot: 1, lastDeleteError: 1 },
       }).exec();
       return saved.modifiedCount === 1;
-    } catch { return false; }
+    } catch (error) {
+      logOperationalFailure({ operation: 'upload.managed_inventory_image_cleanup', stage: 'metadata_persistence', provider: 'mongodb', error, retryable: true, entityType: 'ManagedInventoryImageUpload', entityId: String(upload._id) });
+      return false;
+    }
   }
 
   private static dto(upload: any) {

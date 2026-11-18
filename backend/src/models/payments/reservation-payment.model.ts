@@ -8,6 +8,7 @@ const reservationPaymentSchema = new Schema<IReservationPayment>({
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, immutable: true },
   serviceType: { type: String, enum: Object.values(FacilityServiceType), required: true, immutable: true },
   purpose: { type: String, enum: Object.values(PaymentPurpose), required: true, immutable: true },
+  extensionId: { type: Schema.Types.ObjectId, immutable: true },
   amount: { type: Number, required: true, min: Number.MIN_VALUE, immutable: true },
   currency: { type: String, required: true, match: /^[A-Z]{3}$/, immutable: true },
   idempotencyKey: { type: String, required: true, minlength: 1, maxlength: 160, immutable: true },
@@ -74,6 +75,12 @@ reservationPaymentSchema.index({ reservationId: 1, purpose: 1 }, {
 reservationPaymentSchema.index({ provider: 1, providerReference: 1 }, {
   unique: true,
   partialFilterExpression: { providerReference: { $type: 'string' } },
+});
+reservationPaymentSchema.index({ reservationId: 1, extensionId: 1, purpose: 1 }, {
+  unique: true,
+  partialFilterExpression: { purpose: PaymentPurpose.RENEWAL, status: PaymentStatus.SUCCEEDED,
+    extensionId: { $type: 'objectId' } },
+  name: 'renewal_extension_single_success',
 });
 reservationPaymentSchema.index({ customerId: 1, createdAt: -1 });
 

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { managedVisitSlots } = require('../dist/services/access/managed-visit-schedule');
+const { managedVisitSlots, managedVisitDateBounds, isManagedVisitDateBookable, MANAGED_VISIT_MAX_DAYS_AHEAD } = require('../dist/services/access/managed-visit-schedule');
 
 const schedule={timeZone:'Asia/Ho_Chi_Minh',slotDurationMinutes:60,weeklyHours:[{weekday:3,opensAt:'08:00',closesAt:'11:00'}]};
 const start=new Date('2026-11-11T00:00:00+07:00');
@@ -20,6 +20,16 @@ test('visit slots are bounded by reservation dates and available escort capacity
 });
 
 test('invalid dates fail closed and days without opening hours return no slots',()=>{
- assert.throws(()=>make(new Date(),0).concat(managedVisitSlots({date:'2026-02-30',schedule,now:new Date(),reservationStartDate:reservationStart,reservationEndDate:reservationEnd,staffCapacity:1,overlappingVisitCount:()=>0})),/VISIT_DATE_INVALID/);
+ assert.throws(()=>managedVisitSlots({date:'2026-02-30',schedule,now:new Date(),reservationStartDate:reservationStart,reservationEndDate:reservationEnd,staffCapacity:1,overlappingVisitCount:()=>0}),/VISIT_DATE_INVALID/);
  assert.deepEqual(managedVisitSlots({date:'2026-11-12',schedule,now:start,reservationStartDate:reservationStart,reservationEndDate:reservationEnd,staffCapacity:1,overlappingVisitCount:()=>0}),[]);
+});
+
+test('booking horizon includes today through the thirtieth Vietnam calendar day and rejects dates beyond it',()=>{
+ const now=new Date('2026-11-17T12:00:00.000Z'),bounds=managedVisitDateBounds(now);
+ assert.equal(MANAGED_VISIT_MAX_DAYS_AHEAD,30);
+ assert.deepEqual(bounds,{minDate:'2026-11-17',maxDate:'2026-12-17'});
+ assert.equal(isManagedVisitDateBookable(bounds.minDate,now),true);
+ assert.equal(isManagedVisitDateBookable(bounds.maxDate,now),true);
+ assert.equal(isManagedVisitDateBookable('2026-12-18',now),false);
+ assert.equal(isManagedVisitDateBookable('2026-11-16',now),false);
 });

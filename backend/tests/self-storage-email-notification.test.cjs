@@ -223,12 +223,14 @@ test('Cron Jobs: checkSigningSla gửi email phạt 10% hoàn 90% khi quá hạn
   });
 
   const origFind = ReservationModel.find;
+  const origSignedContractFind = ContractModel.find;
   let callIndex = 0;
   ReservationModel.find = () => {
     const idx = callIndex++;
     const rows = idx === 0 ? [expiredNew] : [expiredExt];
     return { exec: async () => rows };
   };
+  ContractModel.find = () => ({ select() { return this; }, lean() { return this; }, exec: async () => [] });
 
   const origUnitUpdate = StorageUnitModel.findByIdAndUpdate;
   StorageUnitModel.findByIdAndUpdate = async () => ({});
@@ -238,6 +240,7 @@ test('Cron Jobs: checkSigningSla gửi email phạt 10% hoàn 90% khi quá hạn
   t.after(() => {
     EmailService.getTransporter = origGetTransporter;
     ReservationModel.find = origFind;
+    ContractModel.find = origSignedContractFind;
     StorageUnitModel.findByIdAndUpdate = origUnitUpdate;
     ContractModel.findOneAndUpdate = origContractUpdate;
   });

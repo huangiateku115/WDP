@@ -788,24 +788,6 @@ export function ReservationDetailIntegration() {
     }
   };
 
-  const handleMockPay = async (extId) => {
-    if (actionPending) return;
-    setActionPending(true);
-    setActionFeedback(null);
-    try {
-      const res = await reservationApi.mockPayExtension(id, extId);
-      setActiveExtension(res.data?.data?.extension);
-      setRenewStep('DONE');
-      resource.retry();
-    } catch (err) {
-      setActionFeedback({
-        error: err.response?.data?.message || err.message || "Lỗi khi giả lập thanh toán.",
-      });
-    } finally {
-      setActionPending(false);
-    }
-  };
-
   const handleCancelExtension = async (extId) => {
     if (actionPending) return;
     setActionPending(true);
@@ -1352,22 +1334,6 @@ export function ReservationDetailIntegration() {
                   ) : (
                     <p className="text-xs text-slate-500 text-center">Đang tải thông tin thanh toán PayOS...</p>
                   )}
-
-                  {/* Nút Bypass PayOS phục vụ test theo yêu cầu */}
-                  <div className="pt-2 border-t border-slate-200">
-                    <p className="text-xs text-amber-700 font-medium mb-1.5 flex items-center gap-1">
-                      <Zap size={14} /> Chế độ kiểm thử (Local Dev Mock):
-                    </p>
-                    <Button
-                      type="button"
-                      variant="orange"
-                      className="w-full font-bold flex items-center justify-center gap-2 shadow-sm"
-                      onClick={() => handleMockPay(activeExtension?._id)}
-                      disabled={actionPending}
-                    >
-                      <Zap size={16} /> {actionPending ? "Đang xử lý…" : "⚡ Giả lập thanh toán 100% (Dev Mock)"}
-                    </Button>
-                  </div>
 
                   <div className="flex justify-between items-center pt-2">
                     <Button

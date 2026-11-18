@@ -21,6 +21,19 @@ export const createSelfStorageCheckout = async (req: Request, res: Response) => 
   } catch (error) { return sendError(error, res); }
 };
 
+export const createSelfStorageRenewalCheckout = async (req: Request, res: Response) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) ||
+        Object.keys(req.body).some(key => key !== 'extensionId')) {
+      return res.status(400).json({ success: false, code: 'INVALID_RENEWAL_PAYMENT_REQUEST', message: 'Only extensionId is accepted in the request body' });
+    }
+    const result = await payosPaymentService.createRenewalCheckout(req.params.id, req.body.extensionId,
+      req.get('Idempotency-Key'), req.user!._id, req.get('X-WDP-Payment-Client') ?? 'WEB');
+    const { httpStatus, outcome, ...data } = result;
+    return res.status(httpStatus).json({ success: true, outcome, data });
+  } catch (error) { return sendError(error, res); }
+};
+
 export const getSelfStoragePaymentStatus = async (req: Request, res: Response) => {
   try {
     const data = await payosPaymentService.getCustomerStatus(req.params.paymentId, req.params.id, req.user!._id);

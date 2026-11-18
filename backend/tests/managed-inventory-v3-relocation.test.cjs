@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const { normalizeRelocation, buildRelocationPlan, relocationReservationVolumeDeltas, validateRelocationLevels } = require('../dist/services/inventory-items/managed-inventory-v3-relocation.domain');
 const { replayManagedStockMovements } = require('../dist/services/inventory-items/managed-cell-stock.domain');
+const { relocationDestinationHasRunway, validateRelocationDestinationRunway, RELOCATION_DESTINATION_MIN_REMAINING_DAYS, ManagedV3RelocationError } = require('../dist/services/inventory-items/managed-inventory-v3-relocation.service');
 const Movement = require('../dist/models/inventory-items/item-movement.model').default;
 
 const oid = value => new mongoose.Types.ObjectId(value);
@@ -25,6 +26,25 @@ const lot = (receiptId, cellId, quantityOnHand, overrides = {}) => ({ skuId: oid
   unitDimensionsSnapshot: { widthM: .2, depthM: .2, heightM: .1 }, quantityUnitSnapshot: 'thùng', ...overrides });
 const plan = ({ candidate = baseCandidate(), lots = [lot('receipt-a', ids.source, 10)], cells = [cell(ids.source, 50, .04), cell(ids.destination, 0, 0)], movements = [], instances = [] } = {}) =>
   buildRelocationPlan({ candidate, sku, reservation, state: { cells, movements, replay: { lots, instances } }, specifications: [spec] });
+
+test('Relocation destination needs at least seven full days; a near-expiry reservation can still be a source', () => {
+  const now = new Date('2026-11-17T12:00:00.000Z');
+  assert.equal(RELOCATION_DESTINATION_MIN_REMAINING_DAYS, 7);
+  assert.equal(relocationDestinationHasRunway(new Date(now.getTime() + 7 * 86400000), now), true);
+  assert.equal(relocationDestinationHasRunway(new Date(now.getTime() + 6 * 86400000 + 86399999), now), false);
+  assert.equal(relocationDestinationHasRunway('invalid-date', now), false);
+  const sourceId = ids.reservation, targetId = '507f1f77bcf86cd799439012';
+  const candidate = baseCandidate({ lines: [{ lineId: 'move-runway', itemSpecId: ids.spec, itemSpecRevision: 4,
+    sourceCellId: ids.source, destinationCellId: ids.destination2, sourceReservationId: sourceId, destinationReservationId: targetId, quantity: 1 }] });
+  assert.doesNotThrow(() => validateRelocationDestinationRunway(candidate, sourceId, [
+    { _id: oid(sourceId), endDate: new Date(now.getTime() + 2 * 86400000) },
+    { _id: oid(targetId), endDate: new Date(now.getTime() + 7 * 86400000) },
+  ], now));
+  assert.throws(() => validateRelocationDestinationRunway(candidate, sourceId, [
+    { _id: oid(sourceId), endDate: new Date(now.getTime() + 2 * 86400000) },
+    { _id: oid(targetId), endDate: new Date(now.getTime() + 6 * 86400000) },
+  ], now), error => error instanceof ManagedV3RelocationError && error.code === 'DESTINATION_RESERVATION_EXPIRING');
+});
 
 test('A2 relocation moves only requested quantity and preserves exact receipt lineage and counters', () => {
   const result = plan();

@@ -1,0 +1,392 @@
+<!-- VaultSpace — Trung tâm hỗ trợ -->
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100%;min-height:100%;margin:0;padding:0;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"surface":"#ecfef2","primary-fixed-dim":"#80d9a5","surface-container":"#e1f2e7","error-container":"#ffdad6","surface-dim":"#cdded3","on-tertiary":"#ffffff","inverse-surface":"#25342c","on-primary-fixed":"#002111","on-error":"#ffffff","on-tertiary-fixed-variant":"#653e00","on-secondary-container":"#406b56","secondary":"#3c6752","secondary-fixed-dim":"#a3d1b8","surface-bright":"#ecfef2","surface-variant":"#d6e7dc","on-surface-variant":"#3f4942","surface-container-lowest":"#ffffff","on-primary":"#ffffff","on-primary-fixed-variant":"#005231","tertiary-container":"#955e00","outline":"#6f7a71","inverse-primary":"#80d9a5","secondary-container":"#bbead0","outline-variant":"#bec9bf","tertiary-fixed":"#ffddb8","secondary-fixed":"#beedd3","on-tertiary-container":"#ffe7d0","on-primary-container":"#a4fec9","primary":"#005f3a","on-secondary-fixed":"#002114","on-error-container":"#93000a","error":"#ba1a1a","primary-fixed":"#9bf5c0","background":"#ecfef2","inverse-on-surface":"#e4f5ea","surface-container-low":"#e7f8ed","on-tertiary-fixed":"#2a1700","surface-container-high":"#dbece1","on-background":"#101e18","tertiary-fixed-dim":"#ffb95f","surface-container-highest":"#d6e7dc","primary-container":"#18794e","on-secondary":"#ffffff","tertiary":"#744800","surface-tint":"#006d43","on-secondary-fixed-variant":"#244f3c","on-surface":"#101e18"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"gutter":"1rem","space-md":"1rem","space-sm":"0.5rem","margin-sm":"1rem","space-xs":"0.25rem","margin":"1.25rem","space-xl":"2rem","gutter-sm":"0.75rem","space-lg":"1.5rem"},fontFamily:{"display":["Inter"],"body-lg-medium":["Inter"],"headline-md":["Inter"],"body-lg":["Inter"],"headline-lg":["Inter"],"body-md-medium":["Inter"],"label-sm":["Inter"],"headline-sm":["Inter"],"body-md":["Inter"],"currency-display":["Inter"],"label-md":["Inter"],"label-lg":["Inter"]},fontSize:{"display":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"700"}],"body-lg-medium":["16px",{"lineHeight":"24px","fontWeight":"500"}],"headline-md":["22px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}],"headline-lg":["26px",{"lineHeight":"34px","letterSpacing":"-0.015em","fontWeight":"700"}],"body-md-medium":["14px",{"lineHeight":"20px","fontWeight":"500"}],"label-sm":["10px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"600"}],"headline-sm":["18px",{"lineHeight":"24px","letterSpacing":"-0.005em","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"currency-display":["22px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"700"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.01em","fontWeight":"500"}],"label-lg":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"600"}]}}}};</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs min-w-0"><button aria-label="Go back" class="w-11 h-11 -ml-space-xs flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container active:bg-surface-variant transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><h1 class="font-headline-sm text-headline-sm text-on-surface truncate">Unit Detail &amp; Booking</h1></div><div class="flex items-center gap-space-xs shrink-0"><button aria-label="Support or Help" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:bg-surface-variant transition-colors"><span class="material-symbols-outlined text-[22px]">help_outline</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-safe bg-surface flex-1"><div class="flex flex-col w-full pb-8">
+<!-- Search & Quick Action Header Block -->
+<section class="px-margin pt-space-md flex flex-col gap-space-md">
+<!-- Search Bar with Live Filter Aesthetic -->
+<div class="relative w-full">
+<div class="flex items-center w-full h-12 px-space-md rounded-xl bg-surface-container-lowest shadow-sm">
+<span class="material-symbols-outlined text-secondary text-[22px] shrink-0 mr-space-xs">search</span>
+<input class="w-full bg-transparent font-body-md text-on-surface placeholder:text-outline text-body-md focus:outline-none" id="faqSearchInput" placeholder="Tìm câu hỏi thường gặp, quy chuẩn kho..." type="text"/>
+<button class="hidden text-outline hover:text-on-surface p-1" id="clearSearchBtn">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+</div>
+<!-- Highlight Banner with Warm Visual Frame -->
+<div class="relative overflow-hidden rounded-xl bg-surface-container p-space-md shadow-sm">
+<div class="absolute -right-6 -bottom-6 w-32 h-32 rounded-full bg-secondary-container opacity-40 blur-xl pointer-events-none"></div>
+<div class="flex items-start justify-between gap-space-sm relative z-10">
+<div class="flex flex-col gap-1 min-w-0">
+<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container w-fit">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-sm text-label-sm">Trực tuyến 24/7</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface mt-1">Cần trợ giúp trực tiếp từ quản lý kho?</h2>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">Đội ngũ kỹ thuật &amp; điều phối viên sẵn sàng giải quyết trong vòng 15 phút.</p>
+</div>
+<div class="w-12 h-12 rounded-xl bg-surface-container-lowest flex items-center justify-center shrink-0 shadow-sm text-primary">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">support_agent</span>
+</div>
+</div>
+<!-- Action Button -->
+<button class="mt-space-md w-full h-12 rounded-xl bg-primary hover:bg-on-primary-fixed-variant active:scale-[0.99] transition-all text-on-primary font-body-lg-medium text-body-lg-medium flex items-center justify-center gap-space-xs shadow-md shadow-primary/20" id="btnCreateTicket">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+<span>+ Tạo yêu cầu hỗ trợ mới</span>
+</button>
+</div>
+</section>
+<!-- Categories Grid (2x3) -->
+<section class="px-margin mt-space-xl flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Chủ đề hỗ trợ nhanh</h3>
+<span class="font-label-md text-label-md text-secondary">6 danh mục</span>
+</div>
+<div class="grid grid-cols-2 gap-space-sm">
+<!-- 1. Hợp đồng & Cọc -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">description</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Hợp đồng &amp; Cọc</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Gia hạn, tất toán, phụ lục</span>
+</button>
+<!-- 2. Truy cập ô kho -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-secondary-container flex items-center justify-center text-secondary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">pin</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Truy cập ô kho</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Smart Key, PIN phụ, vân tay</span>
+</button>
+<!-- 3. Thanh toán & Cước -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">payments</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Thanh toán &amp; Cước</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Hóa đơn VAT, thẻ định kỳ</span>
+</button>
+<!-- 4. Nhập / Xuất kho -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-secondary-container flex items-center justify-center text-secondary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">forklift</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Nhập / Xuất kho</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Xe nâng, bến đỗ tải, nhân công</span>
+</button>
+<!-- 5. Nhiệt độ & Bảo quản -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">device_thermostat</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Nhiệt độ &amp; Bảo quản</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Độ ẩm &lt;55%, cảm biến IoT</span>
+</button>
+<!-- 6. Khác -->
+<button class="flex flex-col p-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container-low transition-all text-left shadow-sm group">
+<div class="w-10 h-10 rounded-lg bg-secondary-container flex items-center justify-center text-secondary group-hover:scale-105 transition-transform mb-space-sm">
+<span class="material-symbols-outlined text-[22px]">more_horiz</span>
+</div>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Khác</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Bảo hiểm, gửi chuyển tiếp</span>
+</button>
+</div>
+</section>
+<!-- My Support Tickets -->
+<section class="px-margin mt-space-xl flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Yêu cầu của bạn</h3>
+<span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-sm text-label-sm">2 phiếu</span>
+</div>
+<button class="font-label-md text-label-md text-primary hover:underline">Xem lịch sử</button>
+</div>
+<!-- Ticket 1: Active In-Progress (TK-1082) -->
+<div class="flex flex-col rounded-xl bg-surface-container-lowest p-space-md shadow-sm transition-shadow hover:shadow-md">
+<div class="flex items-start justify-between gap-space-xs mb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md font-semibold text-primary">#TK-1082</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">15 phút trước</span>
+</div>
+<!-- Amber Status Badge -->
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+          Đang xử lý
+        </span>
+</div>
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">Hỗ trợ xe nâng hàng nặng cho đợt nhập 28/10</h4>
+<div class="flex items-center gap-1.5 text-on-surface-variant mt-1 mb-space-sm">
+<span class="material-symbols-outlined text-[16px] text-secondary">warehouse</span>
+<span class="font-label-md text-label-md">East Metro Logistics Hub</span>
+</div>
+<!-- Latest Message Preview Box -->
+<div class="rounded-lg bg-surface-container-low p-space-sm flex flex-col gap-1 mb-space-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-label-sm text-label-sm font-semibold text-primary">VaultSpace CS (Điều phối viên)</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant pl-3.5">
+          "Đội bốc xếp đã ghi nhận và bố trí xe nâng pallet 2.5T tại Cổng B2."
+        </p>
+</div>
+<div class="flex items-center justify-between pt-space-xs">
+<span class="font-label-sm text-label-sm text-secondary">Khoang B-14 • Dự kiến xong: 14:00 hôm nay</span>
+<button class="flex items-center gap-1 font-label-lg text-label-lg text-primary hover:text-on-primary-fixed-variant" id="toggleChatBtn">
+<span>Xem trao đổi</span>
+<span class="material-symbols-outlined text-[18px] transition-transform" id="chatChevron">expand_more</span>
+</button>
+</div>
+<!-- Integrated 2-Way Chat View (Collapsible) -->
+<div class="mt-space-md pt-space-md flex flex-col gap-space-sm" id="ticketChatSection">
+<div class="flex items-center justify-between px-1">
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Hội thoại trực tiếp với Điều phối</span>
+<span class="inline-flex items-center gap-1 text-[11px] text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Đang trực tuyến
+          </span>
+</div>
+<!-- Chat Bubble Thread -->
+<div class="flex flex-col gap-space-sm max-h-72 overflow-y-auto pr-1">
+<!-- Outgoing Message (Customer) -->
+<div class="flex flex-col items-end gap-1 ml-8">
+<div class="bg-primary text-on-primary rounded-2xl rounded-tr-xs px-3.5 py-2.5 shadow-sm max-w-[85%]">
+<p class="font-body-md text-body-md">Chào team, sáng mai tầm 9h mình có xe tải 3.5 tấn chở đồ nội thất gỗ nguyên khối vào Hub East Metro. Có sẵn xe nâng và nhân công đỡ không?</p>
+</div>
+<span class="font-label-sm text-label-sm text-outline mr-1">08:15 • Đã đọc</span>
+</div>
+<!-- Incoming Message (Staff) -->
+<div class="flex flex-col items-start gap-1 mr-8">
+<div class="flex items-center gap-1.5 mb-0.5">
+<span class="font-label-sm text-label-sm font-medium text-secondary">Trần Nam (Trưởng kíp B2)</span>
+</div>
+<div class="bg-surface-container text-on-surface rounded-2xl rounded-tl-xs px-3.5 py-2.5 shadow-sm max-w-[85%]">
+<p class="font-body-md text-body-md">Dạ chào anh! VaultSpace CS đã ghi nhận và bố trí sẵn xe nâng pallet 2.5T tại Cổng B2. Bác tài chỉ cần quét mã QR tại Barrier để vào thẳng nhé ạ.</p>
+</div>
+<span class="font-label-sm text-label-sm text-outline ml-1">08:24</span>
+</div>
+<!-- Outgoing Message (Customer) -->
+<div class="flex flex-col items-end gap-1 ml-8">
+<div class="bg-primary text-on-primary rounded-2xl rounded-tr-xs px-3.5 py-2.5 shadow-sm max-w-[85%]">
+<p class="font-body-md text-body-md">Tuyệt vời, có tính phí phụ trội giờ nâng không bạn?</p>
+</div>
+<span class="font-label-sm text-label-sm text-outline mr-1">08:27 • Đã đọc</span>
+</div>
+<!-- Incoming Message (Staff) with Rich Badge -->
+<div class="flex flex-col items-start gap-1 mr-8">
+<div class="bg-surface-container text-on-surface rounded-2xl rounded-tl-xs px-3.5 py-2.5 shadow-sm max-w-[85%]">
+<p class="font-body-md text-body-md">Miễn phí 45 phút đầu cho gói kho Tiêu chuẩn ạ. Bác tài đến nơi cứ gọi Hotline nội bộ số 104 để kíp mở cửa khoang B-14 ngay nha anh!</p>
+</div>
+<span class="font-label-sm text-label-sm text-outline ml-1">08:30</span>
+</div>
+</div>
+<!-- Chat Input Bar -->
+<div class="flex items-center gap-space-xs mt-space-xs pt-space-xs">
+<button aria-label="Đính kèm ảnh" class="w-10 h-10 rounded-full bg-surface-container text-secondary flex items-center justify-center hover:bg-surface-variant transition-colors shrink-0">
+<span class="material-symbols-outlined text-[20px]">attach_file</span>
+</button>
+<div class="flex-1 relative">
+<input class="w-full h-11 px-3.5 rounded-full bg-surface-container-low text-on-surface font-body-md text-body-md placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest shadow-inner" id="chatInputField" placeholder="Nhập phản hồi hoặc ghi chú thêm..." type="text"/>
+</div>
+<button aria-label="Gửi tin nhắn" class="w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-on-primary-fixed-variant active:scale-95 transition-all shrink-0 shadow-sm" id="chatSendBtn">
+<span class="material-symbols-outlined text-[20px]">send</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Ticket 2: Resolved (TK-0941) -->
+<div class="flex flex-col rounded-xl bg-surface-container-lowest p-space-md shadow-sm opacity-90 hover:opacity-100 transition-opacity">
+<div class="flex items-start justify-between gap-space-xs mb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md font-semibold text-secondary">#TK-0941</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">19/10/2024</span>
+</div>
+<!-- Green Closed Badge -->
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+          Đã hoàn tất
+        </span>
+</div>
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">Hướng dẫn cài đặt mã PIN phụ cho người ủy quyền</h4>
+<div class="flex items-center gap-1.5 text-on-surface-variant mt-1 mb-space-xs">
+<span class="material-symbols-outlined text-[16px] text-secondary">warehouse</span>
+<span class="font-label-md text-label-md">Saigon South Flagship</span>
+</div>
+<div class="flex items-center justify-between mt-2 pt-2 text-on-surface-variant">
+<span class="font-label-sm text-label-sm">Đánh giá dịch vụ: ★★★★★</span>
+<button class="font-label-md text-label-md text-secondary hover:text-primary">Xem lại phiếu</button>
+</div>
+</div>
+</section>
+<!-- Facilities 24/7 Direct Hotline Section -->
+<section class="px-margin mt-space-xl flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Hotline trực tiếp các cơ sở</h3>
+<p class="font-label-md text-label-md text-on-surface-variant">Liên hệ khẩn cấp bảo vệ &amp; kỹ thuật trực kho</p>
+</div>
+<a class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm" href="tel:19006828">
+<span class="material-symbols-outlined text-[16px]">call</span>
+<span>1900 6828</span>
+</a>
+</div>
+<!-- Facility Cards -->
+<div class="flex flex-col gap-space-sm">
+<!-- Hub 1: East Metro -->
+<div class="flex items-center justify-between p-space-md rounded-xl bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="A modern architectural entrance of a climate-controlled urban self-storage facility in Vietnam with lush tropical greenery, polished concrete ramps, and soft natural daylight reflecting off emerald tinted glass panels." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3TFI3WEsRgKmThFKA1uIBO0BER75DVvOQatUPG-lfUpsf6VMQaExWtIdRBV8E00Dbb1xn7Evqyfy1COiX9bPJVT523AzZO1EmuGqMWV2z2CH3qSHWIHyr2Or_gBBym1lAnIsoeaAhUwmuv99OVUmFLK6116oQ2Xe_j0ldMtAbqIzIOLWC7PDaFkMXa1BZ5g87bQev6Cckp9ZHCtxVyB_uofaa357P_boNPxQxUu0N"/>
+</div>
+<div class="min-w-0">
+<h4 class="font-body-md-medium text-body-md-medium text-on-surface truncate">East Metro Logistics Hub</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Khu Công Nghệ Cao, TP. Thủ Đức</span>
+<span class="font-label-sm text-label-sm text-secondary font-medium mt-0.5 inline-block">Trực ban kho: (028) 3892 1102</span>
+</div>
+</div>
+<a aria-label="Gọi East Metro" class="w-10 h-10 rounded-full bg-surface-container text-primary flex items-center justify-center hover:bg-secondary-container transition-colors shrink-0 ml-2" href="tel:02838921102">
+<span class="material-symbols-outlined text-[20px]">phone_in_talk</span>
+</a>
+</div>
+<!-- Hub 2: Saigon South -->
+<div class="flex items-center justify-between p-space-md rounded-xl bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Interior hallway of a high-end luxury self-storage warehouse in District 7 Ho Chi Minh City with pristine white storage units, emerald green accent lighting, clean epoxy floor, and smart keypads." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBLKEPUUbSLnD9nA1RjtfRMjM3tVxeP2hnqtmcjbRPfEvpIgMP6BUFEONzSccnxPRuW1PsQwQL6r7ZPzdgujr5DqiguYpUHwXreI3oKhBUimfxSvymsNqc1_0ocI8fxWrH5QGvn0UlzSQMmFyddRSHq3DSkU-MBkso5AO1CalYduSx2uWZnwkdvJnFr3vTcBOQY1Ln4u3X3G3I1KB1kyeJhPVidq10FTp7aeXhDXmuB"/>
+</div>
+<div class="min-w-0">
+<h4 class="font-body-md-medium text-body-md-medium text-on-surface truncate">Saigon South Flagship</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Nguyễn Văn Linh, Quận 7, TP. HCM</span>
+<span class="font-label-sm text-label-sm text-secondary font-medium mt-0.5 inline-block">Trực ban kho: (028) 5410 8899</span>
+</div>
+</div>
+<a aria-label="Gọi Saigon South" class="w-10 h-10 rounded-full bg-surface-container text-primary flex items-center justify-center hover:bg-secondary-container transition-colors shrink-0 ml-2" href="tel:02854108899">
+<span class="material-symbols-outlined text-[20px]">phone_in_talk</span>
+</a>
+</div>
+<!-- Hub 3: Hanoi West Metro -->
+<div class="flex items-center justify-between p-space-md rounded-xl bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Secure warehouse loading dock in West Hanoi with electric pallet jacks, automated roller shutter doors, ambient green architectural lighting, and pristine polished floors." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB2JTOrPX4R-XGSymZjGj8ubGOwCKyvEj5M-ww6EswJAtNUl8k8WBeqNYL_r6PYelPcZIypHq3nH3841a29UC23E1LsF_fAi2SUFB9fjTgFuIUzeUMoUX7MuYrBRv4X3o2fKtj4n0kpI0dWNrQO_Tup1oiIw88Lf1FzdTFQv8RoE11L9zsfrE0BWwbg0QSZ-mwRTiVyxVuIkpX1pQmqSqr_M4E1nb1GH9pQYGEp_0lg"/>
+</div>
+<div class="min-w-0">
+<h4 class="font-body-md-medium text-body-md-medium text-on-surface truncate">Hanoi West Metro Center</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Đại lộ Thăng Long, Nam Từ Liêm, HN</span>
+<span class="font-label-sm text-label-sm text-secondary font-medium mt-0.5 inline-block">Trực ban kho: (024) 7300 2468</span>
+</div>
+</div>
+<a aria-label="Gọi Hanoi West" class="w-10 h-10 rounded-full bg-surface-container text-primary flex items-center justify-center hover:bg-secondary-container transition-colors shrink-0 ml-2" href="tel:02473002468">
+<span class="material-symbols-outlined text-[20px]">phone_in_talk</span>
+</a>
+</div>
+</div>
+</section>
+<!-- Friendly Tip Footer Box -->
+<section class="px-margin mt-space-xl">
+<div class="p-space-md rounded-xl bg-surface-container-low flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[22px] shrink-0 mt-0.5">tips_and_updates</span>
+<div class="flex flex-col gap-0.5">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Mẹo gửi đồ nhanh</span>
+<p class="font-label-sm text-label-sm text-on-surface-variant">
+          Quý khách có thể tự tạo mã PIN khách vãng lai dùng 1 lần trực tiếp trong mục <span class="text-primary font-medium">Chi tiết ô kho &gt; Quản lý quyền truy cập</span> mà không cần chờ duyệt ticket.
+        </p>
+</div>
+</div>
+</section>
+</div>
+<script>
+  (function() {
+    // Search input toggle clear button
+    const searchInput = document.getElementById('faqSearchInput');
+    const clearBtn = document.getElementById('clearSearchBtn');
+
+    if (searchInput && clearBtn) {
+      searchInput.addEventListener('input', (e) => {
+        if (e.target.value.trim().length > 0) {
+          clearBtn.classList.remove('hidden');
+        } else {
+          clearBtn.classList.add('hidden');
+        }
+      });
+
+      clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        clearBtn.classList.add('hidden');
+        searchInput.focus();
+      });
+    }
+
+    // Interactive ticket chat collapsible toggle
+    const toggleChatBtn = document.getElementById('toggleChatBtn');
+    const chatSection = document.getElementById('ticketChatSection');
+    const chatChevron = document.getElementById('chatChevron');
+
+    if (toggleChatBtn && chatSection && chatChevron) {
+      toggleChatBtn.addEventListener('click', () => {
+        if (chatSection.classList.contains('hidden')) {
+          chatSection.classList.remove('hidden');
+          chatChevron.style.transform = 'rotate(180deg)';
+        } else {
+          chatSection.classList.add('hidden');
+          chatChevron.style.transform = 'rotate(0deg)';
+        }
+      });
+    }
+
+    // Mini chat send interaction
+    const chatInput = document.getElementById('chatInputField');
+    const chatSendBtn = document.getElementById('chatSendBtn');
+
+    if (chatInput && chatSendBtn) {
+      const handleSend = () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        // Visual feedback micro-action
+        const container = chatSection.querySelector('.max-h-72');
+        if (container) {
+          const newBubble = document.createElement('div');
+          newBubble.className = 'flex flex-col items-end gap-1 ml-8';
+          newBubble.innerHTML = `
+            <div class="bg-primary text-on-primary rounded-2xl rounded-tr-xs px-3.5 py-2.5 shadow-sm max-w-[85%]">
+              <p class="font-body-md text-body-md">${text}</p>
+            </div>
+            <span class="font-label-sm text-label-sm text-outline mr-1">Vừa xong • Đang gửi</span>
+          `;
+          container.appendChild(newBubble);
+          container.scrollTop = container.scrollHeight;
+        }
+        chatInput.value = '';
+      };
+
+      chatSendBtn.addEventListener('click', handleSend);
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          handleSend();
+        }
+      });
+    }
+
+    // Create ticket button micro-tap feedback
+    const btnCreate = document.getElementById('btnCreateTicket');
+    if (btnCreate) {
+      btnCreate.addEventListener('click', () => {
+        const originalText = btnCreate.innerHTML;
+        btnCreate.innerHTML = '<span class="material-symbols-outlined animate-spin text-[20px]">sync</span><span>Đang mở mẫu yêu cầu...</span>';
+        setTimeout(() => {
+          btnCreate.innerHTML = originalText;
+        }, 1200);
+      });
+    }
+  })();
+</script></main></body></html>

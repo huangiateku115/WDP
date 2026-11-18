@@ -137,7 +137,21 @@ export class ManagedSkuService {
       return recordDto(await InventoryItemModel.findById(saved!._id).populate('categoryId', 'code name isActive deletedAt').exec());
     } finally { await session.endSession(); }
   }
-  static async listSpecifications(skuId: unknown, actor: any) { assertCustomer(actor); const sku = await ownSku(skuId, actor._id); const rows = await ItemSpecificationModel.find({ skuId: sku._id, customerId: actor._id, status: { $ne: ItemSpecificationStatus.DELETED } }).populate('quantityUnitId', 'code name isActive deletedAt').sort({ createdAt: 1, _id: 1 }).lean().exec(); return rows.map(specDto); }
+  static async listSpecifications(skuId: unknown, actor: any) {
+    if (!actor?._id) fail(401, 'Authentication required', 'AUTH_REQUIRED');
+    const key = oid(skuId, 'skuId');
+    const sku: any = await InventoryItemModel.findOne({ _id: key, inventorySchemaVersion: 3, deletedAt: { $exists: false } }).lean().exec();
+    if (!sku) fail(404, 'SKU not found', 'SKU_NOT_FOUND');
+    if (actor.role === UserRole.CUSTOMER) {
+      if (String(sku.customerId) !== String(actor._id)) fail(404, 'SKU not found', 'SKU_NOT_FOUND');
+    } else if ([UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF].includes(actor.role)) {
+      if (!actor.assignedFacilityId || String(sku.facilityId) !== String(actor.assignedFacilityId)) fail(404, 'SKU not found', 'SKU_NOT_FOUND');
+    } else if (![UserRole.ADMIN, UserRole.BOM].includes(actor.role)) fail(403, 'Forbidden', 'FORBIDDEN');
+    const rows = await ItemSpecificationModel.find({ skuId: key, customerId: sku.customerId, facilityId: sku.facilityId,
+      status: { $ne: ItemSpecificationStatus.DELETED }, deletedAt: { $exists: false } } as any)
+      .populate('quantityUnitId', 'code name isActive deletedAt').sort({ createdAt: 1, _id: 1 }).lean().exec();
+    return rows.map(specDto);
+  }
   static async createSpecification(skuId: unknown, input: unknown, actor: any) {
     assertCustomer(actor); const sku = await ownSku(skuId, actor._id), data = parseSpec(input);
     const reservationId = sku.reservationId ?? sku.managedReservationId; if (!reservationId) fail(409, 'SKU reservation scope is missing');

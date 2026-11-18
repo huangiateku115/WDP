@@ -2,6 +2,8 @@ import nodemailer from 'nodemailer';
 import UserModel from '../../models/users/user.model';
 import FacilityModel from '../../models/facilities/facility.model';
 import StorageUnitModel from '../../models/storage-units/storage-unit.model';
+import { randomUUID } from 'node:crypto';
+import { logOperationalFailure } from '../operations/operational-error.logger';
 
 const NON_DELIVERABLE_DOMAINS = new Set([
   'example.com',
@@ -124,14 +126,14 @@ export class EmailService {
   /**
    * Hàm gửi mail an toàn với cơ chế fallback: không bao giờ throw lỗi ra luồng chính.
    */
-  static async safeSendMail(toEmail: string, subject: string, html: string): Promise<boolean> {
+  static async safeSendMail(toEmail: string, subject: string, html: string, correlationId: string = randomUUID()): Promise<boolean> {
     try {
       if (!this.isDeliverableEmail(toEmail)) {
-        console.info(`[EmailService] Skipped non-deliverable/test email: ${toEmail}`);
+        logOperationalFailure({ operation: 'email.send', stage: 'recipient_validation', provider: 'gmail', error: Object.assign(new Error(), { code: 'INVALID_RECIPIENT' }), correlationId, retryable: false });
         return false;
       }
       if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-        console.info('[EmailService] Skipped email: GMAIL_USER or GMAIL_APP_PASSWORD is missing.');
+        logOperationalFailure({ operation: 'email.send', stage: 'configuration', provider: 'gmail', error: Object.assign(new Error(), { code: 'PROVIDER_CONFIGURATION_MISSING' }), correlationId, retryable: false });
         return false;
       }
 
@@ -146,8 +148,19 @@ export class EmailService {
       await transporter.sendMail(mailOptions);
       return true;
     } catch (error: any) {
-      console.error(`[EmailService] Failed to send email to ${toEmail} (${subject}):`, error?.message || error);
+      logOperationalFailure({ operation: 'email.send', stage: 'provider_request', provider: 'gmail', error, correlationId });
       return false;
+    }
+  }
+
+  private static async renderAndSend(context: ReservationEmailContext, operation: string, correlationId: string,
+    render: () => { subject: string; html: string }): Promise<boolean> {
+    try {
+      const { subject, html } = render();
+      return await this.safeSendMail(context.toEmail, subject, html, correlationId);
+    } catch (error) {
+      logOperationalFailure({ operation, stage: 'template_render', provider: 'internal', error, correlationId, retryable: false });
+      throw error;
     }
   }
 
@@ -155,13 +168,16 @@ export class EmailService {
    * Giữ nguyên hành vi throw cho OTP quên mật khẩu.
    */
   static async sendOtpEmail(toEmail: string, otpCode: string): Promise<void> {
-    const mailOptions = {
-      from: `"VaultSpace" <${process.env.GMAIL_USER}>`,
-      to: toEmail,
-      subject: '[VaultSpace] Yêu cầu khôi phục mật khẩu',
-      html: wrapVaultSpaceTemplate(
-        'Khôi phục mật khẩu',
-        `
+    const correlationId = randomUUID();
+    let mailOptions;
+    try {
+      mailOptions = {
+        from: `"VaultSpace" <${process.env.GMAIL_USER}>`,
+        to: toEmail,
+        subject: '[VaultSpace] Yêu cầu khôi phục mật khẩu',
+        html: wrapVaultSpaceTemplate(
+          'Khôi phục mật khẩu',
+          `
           <p>Chào bạn,</p>
           <p>Bạn vừa yêu cầu khôi phục mật khẩu. Vui lòng sử dụng mã OTP dưới đây để tiếp tục:</p>
           <div style="text-align: center; margin: 24px 0;">
@@ -171,15 +187,19 @@ export class EmailService {
           </div>
           <p>Mã OTP này sẽ tự động hết hạn sau <strong>5 phút</strong>.</p>
           <p style="color: #64748b; font-size: 13px;">Nếu bạn không yêu cầu đổi mật khẩu, vui lòng bỏ qua email này. Tuyệt đối không cung cấp mã này cho bất kỳ ai.</p>
-        `
-      ),
-    };
+          `
+        ),
+      };
+    } catch (error) {
+      logOperationalFailure({ operation: 'email.send_otp', stage: 'template_render', provider: 'internal', error, correlationId, retryable: false });
+      throw error;
+    }
 
     try {
       const transporter = this.getTransporter();
       await transporter.sendMail(mailOptions);
     } catch (error) {
-      console.error('Lỗi khi gửi email:', error);
+      logOperationalFailure({ operation: 'email.send_otp', stage: 'provider_request', provider: 'gmail', error, correlationId });
       throw new Error('Hệ thống không thể gửi email lúc này. Vui lòng thử lại sau.');
     }
   }
@@ -189,11 +209,11 @@ export class EmailService {
       if (!reservation) return null;
 
       let toEmail = reservation.customerId?.email || '';
-      let fullName = reservation.customerId?.fullName || '';
+      let fullName = reservation.customerId?.displayName || reservation.customerId?.fullName || '';
       if (!toEmail && reservation.customerId) {
-        const user: any = await UserModel.findById(reservation.customerId).select('email fullName').lean().exec();
+        const user: any = await UserModel.findById(reservation.customerId).select('email displayName').lean().exec();
         toEmail = user?.email || '';
-        fullName = user?.fullName || fullName;
+        fullName = user?.displayName || fullName;
       }
 
       if (!toEmail) return null;
@@ -226,7 +246,7 @@ export class EmailService {
         signingDeadline: formatDateVi(reservation.signingDeadline),
       };
     } catch (error: any) {
-      console.error('[EmailService] resolveReservationEmailContext failed:', error?.message);
+      logOperationalFailure({ operation: 'email.resolve_context', stage: 'context_lookup', provider: 'internal', error, retryable: false });
       return null;
     }
   }
@@ -238,6 +258,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
     const amount = formatMoneyVi(amountOverride ?? reservation.rentalPricingSnapshot?.totalDue ?? reservation.estimatedRent);
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendReservationCreatedEmail', correlationId, () => {
     const subject = `[VaultSpace] Xác nhận yêu cầu thuê kho ${ctx.reservationCode} – Lưu ý thời hạn ký hợp đồng 3 ngày`;
     const html = wrapVaultSpaceTemplate(
       'Xác nhận yêu cầu thuê kho tự quản',
@@ -256,7 +278,8 @@ export class EmailService {
         <p>Vui lòng hoàn tất thanh toán trên hệ thống VaultSpace để tiếp tục.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -265,6 +288,8 @@ export class EmailService {
   static async sendExtensionCreatedEmail(reservation: any, extItem: any): Promise<boolean> {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx || !extItem) return false;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendExtensionCreatedEmail', correlationId, () => {
     const subject = `[VaultSpace] Xác nhận yêu cầu gia hạn ${extItem.extensionCode} – Lưu ý thời hạn ký phụ lục 3 ngày`;
     const html = wrapVaultSpaceTemplate(
       'Xác nhận yêu cầu gia hạn hợp đồng',
@@ -285,7 +310,8 @@ export class EmailService {
         <p>Vui lòng hoàn tất thanh toán trên hệ thống VaultSpace để tiếp tục.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -295,6 +321,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
     const amount = formatMoneyVi(amountOverride ?? reservation.rentalPricingSnapshot?.totalDue ?? reservation.estimatedRent);
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendRentalPaidEmail', correlationId, () => {
     const subject = `[VaultSpace] Cảm ơn bạn đã thanh toán đơn thuê kho ${ctx.reservationCode}`;
     const html = wrapVaultSpaceTemplate(
       'Thanh toán đơn thuê kho thành công',
@@ -313,7 +341,8 @@ export class EmailService {
         Vui lòng đến trực tiếp cơ sở trước ngày <strong>${escapeHtml(ctx.signingDeadline)}</strong> để kiểm tra thực tế ô kho, ký hợp đồng giấy và nhận bàn giao kho cùng mã PIN mở cửa. Nếu quá thời hạn 3 ngày mà bạn chưa đến ký hợp đồng, đơn thuê sẽ tự động bị hủy (khấu trừ 10% phí giữ kho và hoàn lại 90% số tiền).</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -323,6 +352,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
     const pin = accessPinCode || reservation.accessPinCode || '—';
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendHandoverPinEmail', correlationId, () => {
     const subject = `[VaultSpace] Bàn giao kho ${ctx.unitCode} thành công – Mã PIN mở cửa của bạn`;
     const html = wrapVaultSpaceTemplate(
       'Bàn giao kho thành công',
@@ -343,7 +374,8 @@ export class EmailService {
         <p>Chúc bạn có trải nghiệm lưu trữ an toàn và thuận tiện cùng VaultSpace.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -353,6 +385,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
     const amount = formatMoneyVi(reservation.rentalPricingSnapshot?.totalDue ?? reservation.estimatedRent);
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendStaffCancelledNoReceiveEmail', correlationId, () => {
     const subject = `[VaultSpace] Xin lỗi và xác nhận hủy đơn thuê kho ${ctx.reservationCode}`;
     const html = wrapVaultSpaceTemplate(
       'Xin lỗi và xác nhận hủy đơn thuê kho',
@@ -366,7 +400,8 @@ export class EmailService {
         <p>Đối với số tiền bạn đã thanh toán (${amount} đ), bộ phận quản lý cơ sở sẽ liên hệ và hoàn thành thủ tục hoàn tiền cho bạn trong thời gian sớm nhất. Rất mong có cơ hội được phục vụ bạn ở những lần sau.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -376,6 +411,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
     const conditionLabel = CONDITION_LABELS[condition] || condition || 'Hoàn tất';
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendCheckoutCompletedEmail', correlationId, () => {
     const subject = `[VaultSpace] Xác nhận trả kho thành công – Đơn ${ctx.reservationCode}`;
     const html = wrapVaultSpaceTemplate(
       'Xác nhận hoàn tất trả kho (Checkout)',
@@ -393,7 +430,8 @@ export class EmailService {
         <p>Cảm ơn bạn đã tin tưởng và đồng hành cùng dịch vụ kho tự quản của VaultSpace. Rất hân hạnh được tiếp tục phục vụ bạn trong tương lai.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -402,6 +440,8 @@ export class EmailService {
   static async sendExtensionPaidEmail(reservation: any, extItem: any): Promise<boolean> {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx || !extItem) return false;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendExtensionPaidEmail', correlationId, () => {
     const subject = `[VaultSpace] Xác nhận thanh toán gia hạn hợp đồng ${extItem.extensionCode}`;
     const html = wrapVaultSpaceTemplate(
       'Thanh toán gia hạn hợp đồng thành công',
@@ -420,7 +460,8 @@ export class EmailService {
         Vui lòng đến trực tiếp cơ sở trước ngày <strong>${formatDateVi(extItem.signingDeadline)}</strong> để ký bản phụ lục hợp đồng gia hạn giấy. Trong thời gian chờ ký phụ lục, kho và mã PIN mở cửa hiện tại của bạn vẫn hoạt động bình thường. Nếu quá thời hạn 3 ngày mà bạn chưa đến ký phụ lục, yêu cầu gia hạn sẽ tự động bị hủy (khấu trừ 10% phí gia hạn và hoàn lại 90% số tiền).</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -430,6 +471,8 @@ export class EmailService {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx || !extItem) return false;
     const newEndDate = formatDateVi(extItem.newEndDate);
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendExtensionConfirmedEmail', correlationId, () => {
     const subject = `[VaultSpace] Gia hạn hợp đồng thành công – Hạn mới đến ${newEndDate}`;
     const html = wrapVaultSpaceTemplate(
       'Gia hạn hợp đồng thành công',
@@ -446,7 +489,8 @@ export class EmailService {
         <p>Mã PIN mở cửa kho hiện tại của bạn vẫn giữ nguyên và tiếp tục sử dụng bình thường đến hết thời hạn mới.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -455,6 +499,8 @@ export class EmailService {
   static async sendExtensionRejectedEmail(reservation: any, extItem: any, reason: string): Promise<boolean> {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx || !extItem) return false;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendExtensionRejectedEmail', correlationId, () => {
     const subject = `[VaultSpace] Thông báo từ chối yêu cầu gia hạn ${extItem.extensionCode}`;
     const html = wrapVaultSpaceTemplate(
       'Thông báo từ chối yêu cầu gia hạn hợp đồng',
@@ -467,7 +513,8 @@ export class EmailService {
         <p>Hạn kết thúc hợp đồng hiện tại của bạn vẫn giữ nguyên tại ngày ${escapeHtml(ctx.endDate)}. Đối với số tiền gia hạn đã thanh toán (${formatMoneyVi(extItem.amount)} đ), bộ phận quản lý cơ sở sẽ liên hệ và hoàn thành thủ tục hoàn tiền 100% cho bạn trong thời gian sớm nhất.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -479,6 +526,8 @@ export class EmailService {
     const total = Number(reservation.rentalPricingSnapshot?.totalDue ?? reservation.estimatedRent ?? 0);
     const penalty = Math.round(total * 0.1);
     const refund = total - penalty;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendSigningSlaExpiredRentalEmail', correlationId, () => {
     const subject = `[VaultSpace] Hủy đơn thuê kho ${ctx.reservationCode} do quá hạn ký hợp đồng 3 ngày`;
     const html = wrapVaultSpaceTemplate(
       'Thông báo hủy đơn do quá thời hạn ký hợp đồng',
@@ -495,7 +544,8 @@ export class EmailService {
         <p>Bộ phận quản lý cơ sở sẽ liên hệ và hoàn thành thủ tục hoàn lại 90% số tiền cho bạn trong thời gian sớm nhất.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -507,6 +557,8 @@ export class EmailService {
     const total = Number(extItem.amount ?? 0);
     const penalty = Math.round(total * 0.1);
     const refund = total - penalty;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendSigningSlaExpiredExtensionEmail', correlationId, () => {
     const subject = `[VaultSpace] Hủy yêu cầu gia hạn ${extItem.extensionCode} do quá hạn ký phụ lục 3 ngày`;
     const html = wrapVaultSpaceTemplate(
       'Thông báo hủy yêu cầu gia hạn do quá thời hạn ký phụ lục',
@@ -523,7 +575,8 @@ export class EmailService {
         <p>Bộ phận quản lý cơ sở sẽ liên hệ và hoàn thành thủ tục hoàn lại 90% số tiền cho bạn trong thời gian sớm nhất.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -532,6 +585,8 @@ export class EmailService {
   static async sendExpiringSoonReminderEmail(reservation: any, daysLeft: number): Promise<boolean> {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendExpiringSoonReminderEmail', correlationId, () => {
     const subject = `[VaultSpace] Nhắc nhở: Hợp đồng thuê kho ${ctx.unitCode} còn ${daysLeft} ngày nữa sẽ hết hạn`;
     const html = wrapVaultSpaceTemplate(
       'Nhắc nhở sắp hết hạn hợp đồng thuê kho',
@@ -545,7 +600,8 @@ export class EmailService {
         </ul>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 
   /**
@@ -554,6 +610,8 @@ export class EmailService {
   static async sendOverdueRentalEmail(reservation: any): Promise<boolean> {
     const ctx = await this.resolveReservationEmailContext(reservation);
     if (!ctx) return false;
+    const correlationId = randomUUID();
+    return this.renderAndSend(ctx, 'email.sendOverdueRentalEmail', correlationId, () => {
     const subject = `[VaultSpace] Cảnh báo quá hạn: Hợp đồng thuê kho ${ctx.unitCode} đã hết hạn`;
     const html = wrapVaultSpaceTemplate(
       'Thông báo hợp đồng thuê kho đã quá hạn',
@@ -564,6 +622,7 @@ export class EmailService {
         <p>Vui lòng liên hệ trực tiếp quản lý cơ sở ${escapeHtml(ctx.facilityName)} để làm thủ tục tất toán công nợ, gia hạn đặc biệt hoặc hoàn tất dọn đồ và trả kho trong vòng <strong>3 ngày</strong> tới trước khi VaultSpace áp dụng chính sách xử lý quá hạn.</p>
       `
     );
-    return this.safeSendMail(ctx.toEmail, subject, html);
+      return { subject, html };
+    });
   }
 }

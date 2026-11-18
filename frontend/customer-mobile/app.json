@@ -6,7 +6,7 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-router", "expo-font", "expo-secure-store"],
+    "plugins": ["expo-router", "expo-font", "expo-secure-store", ["expo-image-picker", {"photosPermission":"Cho phép VaultSpace truy cập ảnh để thêm hình hàng hóa.","cameraPermission":"Cho phép VaultSpace chụp ảnh hàng hóa.","microphonePermission":false}]],
     "ios": {"supportsTablet": true, "bundleIdentifier": "vn.vaultspace.customer"},
     "android": {"package": "vn.vaultspace.customer"},
     "web": {"bundler": "metro", "output": "single"},

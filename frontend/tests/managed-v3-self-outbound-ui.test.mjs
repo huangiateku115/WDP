@@ -37,7 +37,8 @@ test("V3 direct outbound API routes are mounted for Customer only with preview a
 
 test("Customer outbound resolves SKU identity from canonical SKU wrappers", async () => {
   const source = await read("../src/components/customer/inventory/ManagedSelfOutboundV3.jsx");
-  assert.match(source, /value\?\.skuId\?\._id \?\? value\?\.skuId \?\? value\?\._id/);
+  assert.match(source, /value\?\._id \?\? value\?\.id/);
+  assert.match(source, /itemSpecId: refId\(spec\?\.itemSpecId \?\? spec\)/);
 });
 
 test("Customer direct outbound adapter keeps exact request identity for recovery", async () => {

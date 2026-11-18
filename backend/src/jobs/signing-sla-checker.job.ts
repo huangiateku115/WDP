@@ -37,9 +37,21 @@ export async function checkSigningSla(checkTime: Date = new Date()): Promise<Sla
     paperContractProofUrl: { $in: [null, undefined, ''] }
   } as any).exec()) as any[];
 
+  // A legacy Self-Storage contract may already be digitally signed while its
+  // Reservation paper-proof URL is still empty. Such a Contract is not unsigned.
+  const signedReservationIds = new Set<string>();
+  if (expiredReservations.length) {
+    const signedContracts = await ContractModel.find({
+      reservationId: { $in: expiredReservations.map(reservation => reservation._id) },
+      status: ContractStatus.SIGNED,
+    }).select('reservationId').lean().exec();
+    for (const contract of signedContracts) signedReservationIds.add(String(contract.reservationId));
+  }
+
   const cancelledReservations: SlaCheckResult['cancelledReservations'] = [];
 
   for (const reservation of expiredReservations) {
+    if (signedReservationIds.has(String(reservation._id))) continue;
     const now = new Date();
     reservation.status = ReservationStatus.CANCELLED;
     reservation.cancellationReason = 'SIGNING_SLA_EXPIRED';

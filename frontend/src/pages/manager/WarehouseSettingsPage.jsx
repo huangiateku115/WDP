@@ -4,9 +4,33 @@ import { getAccessToken, useAuthSession } from '@/lib/authSession';
 import useFacilityResource, { announceReviewChange } from '@/lib/useFacilityResource';
 import { apiRecord, apiRows, objectId, recordId, reviewError } from '@/lib/facilityReview';
 import { positiveNumber, scopedTopology } from '@/lib/managedFacilityReview';
+import { cellStockDiagnosticError, cellStockDiagnosticState, validateCellStockResponse } from '@/lib/managerCellStockDiagnostic';
 import { Screen, Panel, Input, Field, Select, Button, Table, Message, Dialog, OpenLink, Status } from '@/components/manager/ManagerUI';
 
 const kinds = [['warehouse-zones', 'Khu vực'], ['racks', 'Kệ'], ['rack-cells', 'Ô lưu trữ']];
+const capacityStatus = {
+  RECONCILED: 'Đã đối soát', EMPTY_VERIFIED: 'Đã xác minh trống', MISMATCH: 'Sai lệch cần xử lý',
+  UNKNOWN: 'Chưa thể xác minh', NOT_CONFIGURED: 'Chưa cấu hình', WITHIN_LIMIT: 'Trong giới hạn',
+};
+const capacityReason = {
+  CELL_COUNTER_MISMATCH: 'Counter ô không khớp với sổ tồn', CELL_COUNTER_RECONCILIATION_REQUIRED: 'Cần đối soát counter ô',
+  CELL_CAPACITY_INVALID: 'Thiếu hoặc sai cấu hình sức chứa ô', CELL_CAPACITY_EXCEEDED: 'Tải đang dùng vượt định mức ô',
+  LEDGER_PROJECTION_NOT_RECONCILED: 'Sổ tồn và dữ liệu chiếu chưa khớp', LEGACY_MOVEMENT_NOT_REPLAYED: 'Có biến động cũ chưa được đối soát',
+  RESERVATION_CELL_ALLOCATION_UNVERIFIED: 'Phân bổ ô theo đơn thuê chưa xác minh',
+  LEDGER_PROJECTION_COUNTER_MISMATCH: 'Counter ô khác với tải được phát lại từ sổ tồn', AUTHORITATIVE_SOURCES_INCOMPLETE: 'Chưa đủ nguồn dữ liệu có thẩm quyền để kết luận',
+  PHYSICAL_COUNTERS_MISSING: 'Chưa cấu hình counter tải trọng hoặc thể tích', STOCK_PROJECTION_INVALID: 'Dữ liệu chiếu tồn không hợp lệ',
+  LEGACY_STOCK_REQUIRES_RECONCILIATION: 'Có dữ liệu tồn cũ cần Facility đối soát',
+  NO_STOCK_HISTORY: 'Chưa có lịch sử tồn kho', STOCK_SCOPE_MISMATCH: 'Phạm vi SKU, Reservation hoặc Facility không khớp',
+  CANONICAL_LEDGER_OR_PROJECTION_UNVERIFIED: 'Chưa xác minh được sổ tồn và projection', MOVEMENT_HISTORY_LIMIT_EXCEEDED: 'Lịch sử vượt giới hạn đọc an toàn',
+  STOCK_LEDGER_UNKNOWN: 'Không thể phát lại sổ tồn kho', STOCK_LEDGER_REVISION_GAP: 'Lịch sử thiếu revision liên tiếp',
+  RESERVATION_CELL_USAGE_REPLAY_REQUIRED: 'Cần phát lại dung lượng đã dùng của Reservation', LEGACY_RESERVATION_STOCK_UNRECONCILED: 'Tồn kho Reservation cũ chưa được đối soát',
+  RESERVATION_COUNTER_NOT_CONFIGURED: 'Counter dung lượng Reservation chưa cấu hình', RESERVATION_ALLOCATION_NOT_CONFIGURED: 'Dung lượng Reservation chưa được phân bổ',
+  RESERVATION_STOCK_EXCEEDS_ALLOCATION: 'Tồn kho vượt dung lượng Reservation', RESERVATION_COUNTER_MISMATCH: 'Counter Reservation không khớp ledger',
+};
+const displayCapacity = (value, digits = 3) => Number.isFinite(value) && value >= 0 ? `${Number(value.toFixed(digits)).toLocaleString('vi-VN')} ` : 'Chưa xác minh';
+const diagnosticStatus = value => ({ VERIFIED: 'Đã xác minh', EMPTY_VERIFIED: 'Đã xác minh trống', REPLAYED: 'Đã phát lại', MATCH: 'Khớp', MISMATCH: 'Sai lệch', UNKNOWN: 'Chưa đủ bằng chứng', READ: 'Đã đọc projection', INVALID: 'Dữ liệu không hợp lệ' }[value] || 'Chưa đủ bằng chứng');
+const displayDiagnosticValue = (value, unit, digits) => Number.isFinite(value) && value >= 0 ? `${Number(value.toFixed(digits)).toLocaleString('vi-VN')} ${unit}` : 'Chưa đủ bằng chứng';
+const displayDifference = (value, unit, digits) => Number.isFinite(value) ? `${value > 0 ? '+' : ''}${Number(value.toFixed(digits)).toLocaleString('vi-VN')} ${unit}` : 'Chưa đủ bằng chứng';
 
 async function allRows(kind, facilityId, signal) {
   const rows = [], seen = new Set();
@@ -28,27 +52,117 @@ export default function WarehouseSettingsPage() {
   const facilityId = user?.assignedFacilityId;
   const permitted = user?.role === 'FACILITY_MANAGER' && objectId(facilityId);
   const [kind, setKind] = useState('warehouse-zones'), [selected, setSelected] = useState(null), [feedback, setFeedback] = useState({});
+  const [stockDialog, setStockDialog] = useState(null);
+  const [capacity, setCapacity] = useState(null), [capacityError, setCapacityError] = useState(''), [capacityLoading, setCapacityLoading] = useState(false), [capacityRevision, setCapacityRevision] = useState(0);
   useEffect(() => { setSelected(null); setFeedback({}); }, [facilityId, accessToken]);
   const load = useCallback(async signal => {
     const [zones, racks, cells] = await Promise.all(kinds.map(([key]) => allRows(key, facilityId, signal)));
     return { zones, racks, cells };
   }, [facilityId, accessToken]);
   const resource = useFacilityResource(load, permitted, { refreshOnFocus: !selected });
+  const loadCapacity = useCallback(async signal => {
+    if (!permitted) return;
+    setCapacityLoading(true); setCapacityError('');
+    try {
+      const response = await api.capacityDiagnostics({ signal });
+      const payload = response?.data?.data;
+      if (response?.data?.success !== true || !payload || recordId(payload.facilityId) !== facilityId || !Array.isArray(payload.cells)) throw Error('Báo cáo sức chứa không đúng phạm vi cơ sở.');
+      setCapacity(payload);
+    } catch (cause) {
+      if (cause.name !== 'CanceledError' && cause.name !== 'AbortError') setCapacityError(reviewError(cause));
+    } finally { if (!signal?.aborted) setCapacityLoading(false); }
+  }, [permitted, facilityId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCapacity(controller.signal);
+    return () => controller.abort();
+  }, [loadCapacity, capacityRevision]);
+  const reloadAll = () => { resource.reload(); setCapacityRevision(value => value + 1); };
+  const editCell = cellId => {
+    const cell = resource.data?.cells?.find(candidate => recordId(candidate) === String(cellId));
+    if (cell) { setKind('rack-cells'); setSelected(cell); }
+  };
+  const openCellStock = async cell => {
+    setStockDialog({ cell, loading: true, error: '', data: null });
+    try {
+      const response = await api.cellStock(cell.cellId);
+      const payload = validateCellStockResponse(response, cell.cellId, facilityId);
+      setStockDialog({ cell, loading: false, error: '', data: payload });
+    } catch (cause) {
+      setStockDialog(current => current?.cell === cell ? { cell, loading: false, error: cellStockDiagnosticError(cause), data: null } : current);
+    }
+  };
   const rows = resource.data ? resource.data[{ 'warehouse-zones': 'zones', racks: 'racks', 'rack-cells': 'cells' }[kind]] : [];
+  const stockDiagnosticState = stockDialog ? cellStockDiagnosticState(stockDialog) : 'CLOSED';
   return <Screen title="Cấu hình không gian hàng hóa" notice="Quản lý khu vực, kệ, kích thước và điều kiện sử dụng trong cơ sở được phân công." action={<OpenLink to="/manager/warehouse-map">Xem bản đồ kho</OpenLink>}>
     {!permitted ? <Panel title="Không có quyền"><p>Chỉ quản lý cơ sở được phân công có quyền cấu hình không gian.</p></Panel> : <>
       <Message {...feedback} /><Message error={resource.error} />{resource.loading && <p role="status">Đang tải cấu trúc kho…</p>}
       <Panel title="Danh mục cấu trúc"><Select label="Loại cấu trúc" value={kind} onChange={value => { setKind(value); setSelected(null); setFeedback({}); }} options={kinds} />
-        <div className="my-4 flex flex-wrap gap-3"><Button variant="outline" onClick={resource.reload}>Tải lại</Button>{kind !== 'rack-cells' && resource.data && <Button onClick={() => setSelected({})}>Tạo {kind === 'racks' ? 'kệ' : 'khu vực'}</Button>}</div>
+        <div className="my-4 flex flex-wrap gap-3"><Button variant="outline" onClick={reloadAll}>Tải lại</Button>{kind !== 'rack-cells' && resource.data && <Button onClick={() => setSelected({})}>Tạo {kind === 'racks' ? 'kệ' : 'khu vực'}</Button>}</div>
         {resource.data && <Table label="Cấu trúc không gian" rows={rows.map(row => ({ ...row, id: recordId(row) }))} columns={[
           { key: 'code', label: 'Mã', render: row => row.code || row.rackCode }, { key: 'name', label: 'Tên', render: row => row.name || '—' },
           { key: 'status', label: 'Điều kiện', render: row => <Status value={row.operationalStatus || (row.isActive ? 'ACTIVE' : 'INACTIVE')} /> },
-          { key: 'maxWeightKg', label: kind === 'racks' ? 'Tải trọng mỗi tầng (kg)' : 'Tải trọng ô (kg)', render: row => kind === 'racks' ? row.maxWeightKgPerLevel : row.maxWeightKg ?? '—' },
+          { key: 'maxWeightKg', label: kind === 'racks' ? 'Tải trọng mỗi tầng (kg)' : 'Tải trọng ô (kg)', render: row => { const value = kind === 'racks' ? row.maxWeightKgPerLevel : row.maxWeightKg; return Number.isFinite(value) && value > 0 ? value : 'Chưa cấu hình'; } },
           { key: 'action', label: 'Thao tác', render: row => <Button variant="outline" onClick={() => setSelected(row)}>Chỉnh sửa</Button> },
         ]} />}
       </Panel>
-      {selected && resource.data && <TopologyForm key={`${kind}:${recordId(selected) || 'new'}:${selected.updatedAt || ''}`} kind={kind} row={selected} data={resource.data} facilityId={facilityId} onClose={() => setSelected(null)} onSaved={() => { setSelected(null); setFeedback({ success: 'Đã lưu và xác minh cấu trúc từ hệ thống.' }); announceReviewChange(); }} />}
+      {selected && resource.data && <TopologyForm key={`${kind}:${recordId(selected) || 'new'}:${selected.updatedAt || ''}`} kind={kind} row={selected} data={resource.data} facilityId={facilityId} onClose={() => setSelected(null)} onSaved={() => { setSelected(null); setFeedback({ success: 'Đã lưu và xác minh cấu trúc từ hệ thống.' }); setCapacityRevision(value => value + 1); announceReviewChange(); }} />}
+      <Panel title="Tải trọng và đối soát theo ô" subtitle="Theo dõi tải trọng, thể tích đang sử dụng và kết quả đối soát từng ô.">
+        {capacityLoading && <p role="status">Đang tải báo cáo sức chứa…</p>}
+        <Message error={capacityError} />
+        {capacity && <Table label="Tải trọng và đối soát ô lưu trữ" rows={capacity.cells.map(cell => ({ ...cell, id: String(recordId(cell.cellId)) }))} empty="Chưa có ô lưu trữ trong cơ sở." columns={[
+          { key: 'cell', label: 'Ô / kệ / tầng', render: cell => <span>{cell.cellCode || 'Ô chưa có mã'}<small className="block text-slate-500">{[cell.rackCode, cell.levelNumber != null ? `Tầng ${cell.levelNumber}` : null].filter(Boolean).join(' · ') || '—'}</small></span> },
+          { key: 'weight', label: 'Tải trọng (kg)', render: cell => <span>Định mức: {displayCapacity(cell.maxWeightKg, 2)}{Number.isFinite(cell.maxWeightKg) ? 'kg' : ''}<small className="block text-slate-600">Đang dùng: {displayCapacity(cell.usedWeightKg, 2)}{Number.isFinite(cell.usedWeightKg) ? 'kg' : ''}</small><small className="block text-slate-600">Còn lại: {displayCapacity(cell.remainingWeightKg, 2)}{Number.isFinite(cell.remainingWeightKg) ? 'kg' : ''}</small></span> },
+          { key: 'volume', label: 'Thể tích (m³)', render: cell => <span>Định mức: {displayCapacity(cell.maxVolumeM3, 6)}{Number.isFinite(cell.maxVolumeM3) ? 'm³' : ''}<small className="block text-slate-600">Đang dùng: {displayCapacity(cell.usedVolumeM3, 6)}{Number.isFinite(cell.usedVolumeM3) ? 'm³' : ''}</small><small className="block text-slate-600">Còn lại: {displayCapacity(cell.remainingVolumeM3, 6)}{Number.isFinite(cell.remainingVolumeM3) ? 'm³' : ''}</small></span> },
+          { key: 'reconciliation', label: 'Đối soát ô / tầng', render: cell => <span>{capacityStatus[cell.reconciliationStatus] || 'Chưa xác minh'}<small className="block text-slate-600">Tầng: {capacityStatus[cell.levelCapacityStatus] || 'Chưa xác minh'}</small>{cell.reasonCode && <small className="block text-amber-800">{capacityReason[cell.reasonCode] || `Lý do: ${cell.reasonCode}`}</small>}</span> },
+          { key: 'diagnostic', label: 'Chẩn đoán', render: cell => <Button variant="outline" onClick={() => void openCellStock(cell)}>Xem đối soát</Button> },
+          { key: 'edit', label: 'Cấu hình', render: cell => <Button variant="outline" onClick={() => editCell(cell.cellId)} disabled={!resource.data?.cells?.some(row => recordId(row) === String(recordId(cell.cellId)))}>Sửa định mức / kích thước</Button> },
+        ]} />}
+        <p className="mt-3 text-xs leading-5 text-slate-500">Sửa định mức chỉ đổi giới hạn thiết kế của ô. Không sửa tồn, tải đang dùng hay lịch sử. Nhập tải trọng và kích thước đã được cơ sở xác minh; không dùng giá trị ước lượng. Định mức mỗi tầng được chỉnh trong mục “Kệ”.</p>
+      </Panel>
       <Panel title="Điều kiện hình học và an toàn"><p>Thông số phải được đối chiếu với không gian thực tế. Hệ thống kiểm tra ràng buộc phân bổ và hàng đang lưu trước khi chấp nhận thay đổi.</p><p className="mt-3">Chưa có chức năng quản lý nhóm ô liền kề và hồ sơ chứng nhận hình học/tải trọng. Các trường hợp một vật chiếm nhiều ô cần được cơ sở xem xét trước khi thực hiện.</p></Panel>
+      {stockDialog && <Dialog title={`Đối soát Cell ${stockDialog.cell.cellCode || ''}`} onClose={() => setStockDialog(null)}>
+        <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-1">
+          <p className="text-sm text-slate-600">{stockDialog.cell.cellCode || 'Cell'} · {stockDialog.cell.rackCode || 'Rack chưa xác định'} · {stockDialog.cell.levelNumber != null ? `Tầng ${stockDialog.cell.levelNumber}` : 'Tầng chưa xác định'}</p>
+          {stockDiagnosticState === 'LOADING' && <p role="status" className="rounded-lg bg-slate-50 p-4 text-sm">Đang tải bằng chứng đối soát…</p>}
+          {stockDiagnosticState === 'ERROR' && <Message error={stockDialog.error} />}
+          {stockDiagnosticState === 'MISMATCH' && <p role="status" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">Đã xác định sai lệch. Dialog chỉ hiển thị bằng chứng đọc được; không có thao tác sửa dữ liệu.</p>}
+          {stockDialog.data && (() => {
+            const data = stockDialog.data, diagnostic = data.diagnostics || {}, ledger = diagnostic.ledger || {}, projection = diagnostic.projection || {}, counter = diagnostic.counter || {}, difference = diagnostic.difference || {};
+            const lines = [...(ledger.lines || []), ...(projection.lines || [])];
+            const uniqueLines = [...new Map(lines.map(line => [`${line.skuId}:${line.itemSpecId}:${line.receiptId}:${line.itemInstanceId || ''}`, line])).values()];
+            return <>
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="font-semibold">Trạng thái xác minh</h3>
+                <p className="mt-2 text-sm">Đối soát Cell: <b>{capacityStatus[data.reconciliationStatus] || 'Chưa đủ bằng chứng'}</b></p>
+                <p className="text-sm">Ledger: <b>{diagnosticStatus(ledger.status)}</b> · Projection: <b>{diagnosticStatus(projection.status)}</b></p>
+                <p className="mt-1 text-xs text-amber-800">{capacityReason[data.reasonCode] || (data.reasonCode ? `Lý do: ${data.reasonCode}` : 'Không ghi nhận lý do sai lệch.')}</p>
+                {stockDiagnosticState === 'UNKNOWN' && <p className="mt-2 text-sm text-amber-800">Chưa đủ bằng chứng có thẩm quyền để kết luận nguyên nhân. Không diễn giải dữ liệu thiếu thành tồn bằng 0.</p>}
+              </section>
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="font-semibold">Tải trọng và thể tích</h3>
+                <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+                  <p>Counter tải trọng: {displayDiagnosticValue(counter.weightKg, 'kg', 3)}</p><p>Counter thể tích: {displayDiagnosticValue(counter.volumeM3, 'm³', 6)}</p>
+                  <p>Ledger expected tải trọng: {displayDiagnosticValue(ledger.expectedWeightKg, 'kg', 3)}</p><p>Ledger expected thể tích: {displayDiagnosticValue(ledger.expectedVolumeM3, 'm³', 6)}</p>
+                  <p>Projection tải trọng: {displayDiagnosticValue(projection.weightKg, 'kg', 3)}</p><p>Projection thể tích: {displayDiagnosticValue(projection.volumeM3, 'm³', 6)}</p>
+                  <p>Counter − Ledger: {displayDifference(difference.counterMinusLedgerWeightKg, 'kg', 3)}</p><p>Counter − Ledger: {displayDifference(difference.counterMinusLedgerVolumeM3, 'm³', 6)}</p>
+                  <p>Counter − Projection: {displayDifference(difference.counterMinusProjectionWeightKg, 'kg', 3)}</p><p>Counter − Projection: {displayDifference(difference.counterMinusProjectionVolumeM3, 'm³', 6)}</p>
+                </div>
+              </section>
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="font-semibold">SKU / Item Specification / Receipt liên quan</h3>
+                {uniqueLines.length ? <ul className="mt-2 space-y-2 text-sm">{uniqueLines.map((line, index) => <li key={`${line.skuId}:${line.itemSpecId}:${line.receiptId}:${line.itemInstanceId || ''}:${index}`} className="rounded-lg bg-slate-50 p-3">
+                  <p><b>{line.skuCode || line.skuName || line.skuId}</b>{line.skuName && line.skuCode ? ` · ${line.skuName}` : ''}</p>
+                  <p>Item: {line.itemSpecCode || line.itemSpecId}{line.itemSpecName ? ` · ${line.itemSpecName}` : ''} · {line.kind === 'PHYSICAL_UNIT' ? 'Physical Unit' : 'Lô hàng'}</p>
+                  <p>Receipt: {line.receiptId || 'Không có mã receipt'}{line.itemInstanceId ? ` · Unit ${line.itemInstanceId}` : ''}</p>
+                  <p>Reservation: {line.reservationId || 'Chưa xác định'} · Số lượng: {Number.isFinite(line.quantity) ? line.quantity : '—'} · {Number.isFinite(line.weightKg) ? `${line.weightKg} kg` : '—'} · {Number.isFinite(line.volumeM3) ? `${line.volumeM3} m³` : '—'}</p>
+                </li>)}</ul> : <p className="mt-2 text-sm text-slate-500">Không có dòng tồn liên quan được xác minh trong response.</p>}
+                {!!ledger.movementIds?.length && <p className="mt-3 text-xs text-slate-500">Movement liên quan: {ledger.movementIds.join(', ')}</p>}
+              </section>
+            </>;
+          })()}
+        </div>
+      </Dialog>}
     </>}
   </Screen>;
 }
@@ -123,13 +237,13 @@ function TopologyForm({ kind, row, data, facilityId, onClose, onSaved }) {
     } catch (cause) { setUncertain(sent); setError(reviewError(cause) + (sent ? ' Đóng biểu mẫu và tải lại danh sách để đối chiếu kết quả trước khi thao tác tiếp.' : '')); }
     finally { busy.current = false; setSaving(false); setPending(null); }
   }
-  const numberField = (key, label) => <Field key={key} label={label}><Input type="number" min="0" step="any" required disabled={saving} value={fields[key]} onChange={event => change(key, event.target.value)} /></Field>;
+  const numberField = (key, label, hint) => <Field key={key} label={label} hint={hint}><Input type="number" min="0" step="any" required disabled={saving} value={fields[key]} onChange={event => change(key, event.target.value)} /></Field>;
   return <Panel title={`${editing ? 'Sửa' : 'Tạo'} ${kind === 'warehouse-zones' ? 'khu vực' : kind === 'racks' ? 'kệ' : 'ô lưu trữ'}`} action={<Button variant="outline" disabled={saving} onClick={onClose}>Đóng</Button>}>
-    <Message error={error} /><form onSubmit={prepare}><fieldset disabled={saving || uncertain} className="grid gap-4 sm:grid-cols-2">
+    <Message error={error} />{kind !== 'warehouse-zones' && editing && <p className="rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-900">Nhập tải trọng định mức và kích thước đã được cơ sở xác minh. Đây là giới hạn thiết kế; tải đang dùng và counter được quản lý từ sổ tồn, không thể sửa tại đây. Thay đổi có thể bị từ chối nếu thấp hơn mức đang sử dụng.</p>}<form onSubmit={prepare}><fieldset disabled={saving || uncertain} className="grid gap-4 sm:grid-cols-2">
       {!editing && <Field label="Mã"><Input required maxLength={40} value={fields.code} onChange={event => change('code', event.target.value)} /></Field>}
       {kind === 'warehouse-zones' ? <><Field label="Tên khu vực"><Input required maxLength={120} value={fields.name} onChange={event => change('name', event.target.value)} /></Field><Field label="Mô tả"><Input maxLength={1000} value={fields.description} onChange={event => change('description', event.target.value)} /></Field><label><input type="checkbox" checked={fields.isActive} onChange={event => change('isActive', event.target.checked)} /> Đang hoạt động</label></> : <>
         {kind === 'racks' && <>{!editing && <Field label="Khu vực"><Select label="Khu vực của kệ" value={fields.zoneId} onChange={value => change('zoneId', value)} options={[["", 'Chọn khu vực'], ...data.zones.filter(zone => zone.isActive).map(zone => [recordId(zone), `${zone.code} · ${zone.name}`])]} /></Field>}<Field label="Mã dãy"><Input required value={fields.aisleCode} onChange={event => change('aisleCode', event.target.value)} /></Field>{numberField('heightM', 'Chiều cao kệ (m)')}{numberField('mapX', 'Tọa độ ngang')}{numberField('mapY', 'Tọa độ dọc')}{!editing && <>{numberField('levelCount', 'Số tầng')}{numberField('cellsPerLevel', 'Số ô mỗi tầng')}</>}</>}
-        {numberField('widthM', 'Chiều rộng (m)')}{numberField('depthM', 'Chiều sâu (m)')}{(kind === 'rack-cells' || !editing) && numberField('usableHeightM', 'Chiều cao sử dụng mỗi tầng (m)')}{numberField('maxWeightKg', kind === 'racks' ? 'Tải trọng mỗi tầng (kg)' : 'Tải trọng ô (kg)')}
+        {numberField('widthM', 'Chiều rộng (m)', 'Số đo thực tế đã được xác minh tại cơ sở.')}{numberField('depthM', 'Chiều sâu (m)', 'Số đo thực tế đã được xác minh tại cơ sở.')}{(kind === 'rack-cells' || !editing) && numberField('usableHeightM', 'Chiều cao sử dụng mỗi tầng (m)', 'Không dùng chiều cao ước lượng hoặc giá trị mặc định.')}{numberField('maxWeightKg', kind === 'racks' ? 'Tải trọng mỗi tầng (kg)' : 'Tải trọng ô (kg)', 'Nhập tải trọng định mức theo thông số thực tế của cơ sở.')}
         <Field label="Trạng thái vận hành"><Select label="Trạng thái cấu trúc" value={fields.operationalStatus} onChange={value => change('operationalStatus', value)} options={['AVAILABLE', 'MAINTENANCE', 'BLOCKED']} /></Field>
       </>}
       <Button type="submit" disabled={saving}>Kiểm tra và lưu</Button>

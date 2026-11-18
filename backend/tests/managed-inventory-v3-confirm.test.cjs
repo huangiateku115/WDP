@@ -1,191 +1,237 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const mongoose = require('mongoose');
 const { Types } = mongoose;
 const Item = require('../dist/models/inventory-items/inventory-item.model').default;
 const Movement = require('../dist/models/inventory-items/item-movement.model').default;
-const Projection = require('../dist/models/inventory-items/managed-v3-stock-projection.model').default;
+const Reservation = require('../dist/models/reservations/reservation.model').default;
+const Contract = require('../dist/models/contracts/contract.model').default;
+const AccessSession = require('../dist/models/access/managed-access-session.model').default;
+const ItemSpec = require('../dist/models/inventory-items/item-specification.model').default;
+const CellStock = require('../dist/models/inventory-items/managed-cell-stock.model').default;
+const ItemInstance = require('../dist/models/inventory-items/managed-item-instance.model').default;
+const StockProjection = require('../dist/models/inventory-items/managed-v3-stock-projection.model').default;
+const BatchPlacement = require('../dist/models/inventory-items/managed-v3-batch-placement.model').default;
 const PhysicalUnit = require('../dist/models/inventory-items/managed-v3-physical-unit.model').default;
 const Footprint = require('../dist/models/inventory-items/managed-v3-footprint.model').default;
-const BatchPlacement = require('../dist/models/inventory-items/managed-v3-batch-placement.model').default;
-const Topology = require('../dist/models/warehouse-map/managed-v3-topology-certification.model').default;
 const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').default;
 const Rack = require('../dist/models/warehouse-map/warehouse-rack.model').default;
 const Allocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
-const Reservation = require('../dist/models/reservations/reservation.model').default;
-const Session = require('../dist/models/access/managed-access-session.model').default;
-const access = require('../dist/services/access/managed-access.service');
+const InventoryStockBalance = require('../dist/models/inventory-items/inventory-stock-balance.model').default;
 const { ManagedInventoryV3Service } = require('../dist/services/inventory-items/managed-inventory-v3.service');
+const { ManagedUnifiedInboundService } = require('../dist/services/inventory-items/managed-unified-inbound.service');
+const { ManagedUnifiedInboundDomainError, normalizeUnifiedInbound, measurementSnapshot, assertUnifiedInboundCapacity } = require('../dist/services/inventory-items/managed-unified-inbound.domain');
 
 const oid = () => new Types.ObjectId();
+const ids = { sku: oid(), customer: oid(), reservation: oid(), facility: oid(), session: oid(), spec: oid(), cellA: oid(), cellB: oid() };
+const actor = { _id: ids.customer, role: 'CUSTOMER' };
 class Query {
   constructor(value) { this.value = value; }
   session() { return this; } lean() { return this; } sort() { return this; } select() { return this; }
+  populate() { return this; } limit() { return this; }
   exec() { return Promise.resolve(this.value); }
 }
-const ids = { sku: oid(), reservation: oid(), customer: oid(), facility: oid(), session: oid(), cell1: oid(), cell2: oid(), rack: oid(), zone: oid(), unit: oid() };
-const now = new Date();
-const geometry = (cellId, xStartM = 0) => ({ cellId, xStartM, xEndM: xStartM + 1, yStartM: 0, yEndM: 1, usableHeightM: 1,
-  maxWeightKg: 100, maxVolumeM3: 1, obstacles: [] });
-let keySequence = 0;
-const makeWorld = (t, { cells = [ids.cell1], capacity = 100, unitWeight = 10, unitDimensions = { widthM: .2, depthM: .2, heightM: .2 }, unitVolume = .008,
-  topologyMaxVolume = 1, levelCapacity = 1000, existing = null, failProjection = false, accessFailure = null, staleInventory = false } = {}) => {
-  const rack = { _id: ids.rack, facilityId: ids.facility, layoutVersion: 1, maxWeightKgPerLevel: 1000, operationalStatus: 'AVAILABLE', managedInventoryRevision: 0 };
-  const cellDocs = cells.map((cellId, index) => ({ _id: cellId, facilityId: ids.facility, rackId: ids.rack, zoneId: ids.zone, levelNumber: 1,
-    dimensions: { widthM: 1, depthM: 1, heightM: 1 }, maxWeightKg: capacity, usedWeightKg: 0, usedVolumeM3: 0, managedInventoryRevision: 0, allocationVersion: 1, operationalStatus: 'AVAILABLE' }));
-  const cert = { _id: oid(), facilityId: ids.facility, rackId: ids.rack, levelNumber: 1, revision: 1, rackLayoutVersion: 1, managedInventoryRevision: 0,
-    supportSurfaceId: 'surface-a', certificationState: 'CERTIFIED', certifiedAt: new Date(now.getTime() - 1000), expiresAt: new Date(now.getTime() + 3600000), certifiedBy: oid(), provenance: 'FACILITY_SURVEY',
-    worldTransform: { origin: [0, 0, 0], axes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] }, levelMaxWeightKg: levelCapacity,
-    cells: cells.map((cellId, index) => ({ ...geometry(cellId, index), maxVolumeM3: topologyMaxVolume })) };
-  const item = { _id: ids.sku, managedReservationId: ids.reservation, customerId: ids.customer, facilityId: ids.facility, inventorySchemaVersion: 3,
-    managedV3Revision: 0, quantityUnit: 'box', toObject() { return { ...this }; } };
-  let persistedItemRevision = 0;
-  const reservation = { _id: ids.reservation, customerId: ids.customer, facilityId: ids.facility, serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3,
-    status: 'ACTIVE', startDate: new Date(now.getTime() - 60000), endDate: new Date(now.getTime() + 3600000), handoverAt: now,
-    allocatedCellIds: cells, allocatedCapacity: 20, usedCapacityM3: 0, inventoryVersion: 0 };
-  const allocations = cells.map(cellId => ({ reservationId: ids.reservation, customerId: ids.customer, facilityId: ids.facility, cellId, status: 'OCCUPIED', startDate: new Date(now.getTime() - 60000), endDate: new Date(now.getTime() + 3600000) }));
-  const unit = { _id: ids.unit, skuId: ids.sku, reservationId: ids.reservation, customerId: ids.customer, facilityId: ids.facility,
-    state: 'PREPARED', revision: 0, serial: 'PU-1', weightKg: unitWeight, dimensionsM: unitDimensions, volumeM3: unitVolume, currentPose: null };
-  const log = { movements: existing ? [existing] : [], projections: [], units: [], footprints: [], batches: [], cellAdds: 0, reservationAdds: 0, transactionAborted: false };
-  const transaction = { withTransaction: async fn => { const snapshot = { ...log, movements: [...log.movements], projections: [...log.projections], units: [...log.units], footprints: [...log.footprints], batches: [...log.batches],
-      cellRows: cellDocs.map(row => ({ ...row })), reservation: { ...reservation }, itemRevision: persistedItemRevision };
-    try { return await fn(); } catch (error) { Object.assign(log, snapshot); cellDocs.forEach((row, index) => Object.assign(row, snapshot.cellRows[index]));
-      Object.assign(reservation, snapshot.reservation); persistedItemRevision = snapshot.itemRevision; log.transactionAborted = true; throw error; } }, endSession: async () => {} };
-  t.mock.method(mongoose, 'startSession', async () => transaction);
-  t.mock.method(access, 'assertManagedAccessSessionScope', async input => { assert.equal(String(input.customerId), String(ids.customer)); assert.equal(String(input.reservationId), String(ids.reservation)); if (accessFailure) throw accessFailure; return { _id: ids.session }; });
-  t.mock.method(Item, 'findOne', () => new Query({ ...item, managedV3Revision: persistedItemRevision, toObject() { return { ...this }; } }));
-  t.mock.method(Item, 'findOneAndUpdate', filter => { if (staleInventory || filter.managedV3Revision !== persistedItemRevision) return new Query(null); persistedItemRevision += 1;
-    return new Query({ ...item, managedV3Revision: persistedItemRevision, toObject() { return { ...this }; } }); });
-  t.mock.method(Reservation, 'findOne', () => new Query(reservation));
-  t.mock.method(Reservation, 'findOneAndUpdate', (_filter, update) => { log.reservationAdds += update.$inc.usedCapacityM3; reservation.usedCapacityM3 += update.$inc.usedCapacityM3; reservation.inventoryVersion += update.$inc.inventoryVersion; return new Query({ ...reservation }); });
-  t.mock.method(Movement, 'findOne', filter => new Query(existing || log.movements.find(row => String(row.idempotencyKey) === String(filter.idempotencyKey)) || null));
-  t.mock.method(Movement, 'create', async (rows) => { const created = rows.map(row => ({ ...row, _id: row._id || oid() })); log.movements.push(...created); return created; });
-  t.mock.method(Movement, 'find', () => new Query(log.movements));
-  t.mock.method(Allocation, 'find', filter => new Query(allocations.filter(row => !filter.cellId?.$in || filter.cellId.$in.some(value => String(value) === String(row.cellId)))));
-  t.mock.method(Cell, 'find', filter => new Query(filter._id?.$in ? cellDocs.filter(row => filter._id.$in.some(value => String(value) === String(row._id))) : cellDocs));
-  t.mock.method(Cell, 'updateOne', (filter, update) => { const row = cellDocs.find(value => String(value._id) === String(filter._id)); if (!row || row.managedInventoryRevision !== filter.managedInventoryRevision) return new Query({ matchedCount: 0 });
-    row.usedWeightKg += update.$inc.usedWeightKg; row.usedVolumeM3 += update.$inc.usedVolumeM3; row.managedInventoryRevision += update.$inc.managedInventoryRevision; log.cellAdds += update.$inc.usedWeightKg; return new Query({ matchedCount: 1 }); });
-  t.mock.method(Rack, 'find', () => new Query([rack]));
-  t.mock.method(Rack, 'findOne', () => new Query(rack));
-  t.mock.method(Rack, 'updateOne', () => new Query({ matchedCount: 1 }));
-  t.mock.method(Topology, 'find', () => new Query([cert]));
-  t.mock.method(Topology, 'updateOne', () => new Query({ matchedCount: 1 }));
-  t.mock.method(Session, 'findOne', () => new Query({ _id: ids.session }));
-  t.mock.method(PhysicalUnit, 'findOne', () => new Query(unit));
-  t.mock.method(PhysicalUnit, 'updateOne', (_filter, update) => { log.units.push(update.$set); return new Query({ matchedCount: 1 }); });
-  t.mock.method(Footprint, 'create', async rows => { log.footprints.push(...rows); return rows; });
-  t.mock.method(BatchPlacement, 'create', async rows => { log.batches.push(...rows); return rows; });
-  t.mock.method(Projection, 'findOne', () => new Query(log.projections.at(-1) || null));
-  t.mock.method(Projection, 'create', async rows => { if (failProjection) throw Error('projection failure'); await new Projection(rows[0]).validate(); log.projections.push(rows[0]); return rows; });
-  t.mock.method(Projection, 'updateOne', (_filter, update) => ({ exec: async () => { const next = new Projection(update.$set); await next.validate(); log.projections[log.projections.length - 1] = update.$set; return { matchedCount: 1 }; } }));
-  return { item, reservation, cert, cellDocs, unit, log, get persistedItemRevision() { return persistedItemRevision; } };
-};
+const body = (overrides = {}) => ({ accessSessionId: ids.session.toString(), sessionRevision: 4, skuRevision: 7,
+  lines: [{ lineId: 'lot-10', itemSpecId: ids.spec.toString(), itemSpecRevision: 3, quantity: 10, measurementMode: 'SPECIFICATION',
+    cellAllocations: [{ cellId: ids.cellA.toString(), quantity: 6 }, { cellId: ids.cellB.toString(), quantity: 4 }] }], ...overrides });
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value instanceof Types.ObjectId ? value :
+  value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+const requestHash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 
-const a1Request = (pose = { xStartM: .1, yStartM: .1, rotationDeg: 0 }) => ({ itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: ids.session.toString(), sessionRevision: 1,
-  physicalUnitId: ids.unit.toString(), cellIds: [ids.cell1.toString()], placements: [{ cellId: ids.cell1.toString() }], pose,
-  topologyCertificationId: 'replace-cert', topologyRevision: 1, previewRevision: 0 });
-const a2Request = (cells = [ids.cell1], quantities = [2]) => ({ itemKind: 'A2_BATCH', accessSessionId: ids.session.toString(), sessionRevision: 1,
-  quantity: quantities.reduce((a, b) => a + b, 0), quantityUnit: 'box', actualUnitWeightKg: 1, dimensionsM: { widthM: .1, depthM: .1, heightM: .1 },
-  cellIds: cells.map(String), placements: cells.map((cellId, index) => ({ cellId: String(cellId), quantity: quantities[index] })),
-  topologyCertificationIds: ['replace-cert'], topologyRevisions: [1], previewRevision: 0 });
+function mockActiveReservation(t, { skuRevision = 7, reservationRow, accessSessionRow = null } = {}) {
+  const now = Date.now();
+  const sku = { _id: ids.sku, customerId: ids.customer, facilityId: ids.facility, reservationId: ids.reservation,
+    inventorySchemaVersion: 3, skuStatus: 'ACTIVE', managedV3Revision: skuRevision };
+  const reservation = reservationRow ?? { _id: ids.reservation, customerId: ids.customer, facilityId: ids.facility,
+    serviceType: 'MANAGED_INVENTORY', bookingFlowVersion: 3, status: 'ACTIVE', startDate: new Date(now - 60_000),
+    endDate: new Date(now + 3_600_000), handoverAt: new Date(now - 30_000), handoverByStaffId: oid(),
+    allocatedCellIds: [ids.cellA, ids.cellB], allocatedCapacity: 5, usedCapacityM3: 0, inventoryVersion: 2 };
+  const contentHash = 'a'.repeat(64);
+  const contract = { status: 'SIGNED', signedByCustomerAt: new Date(), signedByFMAt: new Date(), currentContentVersion: 1,
+    contentVersions: [{ version: 1, contentHash }], signatures: [
+      { version: 1, contentHash, signerRole: 'CUSTOMER' }, { version: 1, contentHash, signerRole: 'FACILITY_STAFF' },
+    ] };
+  t.mock.method(Item, 'findOne', () => new Query(sku));
+  let reservationFilter;
+  t.mock.method(Reservation, 'findOne', filter => { reservationFilter = filter; return new Query(reservation); });
+  t.mock.method(Contract, 'findOne', () => new Query(contract));
+  t.mock.method(AccessSession, 'findOne', () => new Query(accessSessionRow));
+  return { sku, reservation, contract, get reservationFilter() { return reservationFilter; } };
+}
 
-test('confirmInbound A1 persists the validated pose on Movement, PhysicalUnit and Footprint', async t => {
-  const world = makeWorld(t); const payload = a1Request(); payload.topologyCertificationId = world.cert._id.toString();
-  const preview = await ManagedInventoryV3Service.previewInbound(ids.sku.toString(), { itemKind: payload.itemKind, accessSessionId: payload.accessSessionId,
-    physicalUnitId: payload.physicalUnitId, cellIds: payload.cellIds, pose: payload.pose }, { _id: ids.customer, role: 'CUSTOMER' });
-  assert.deepEqual(preview.pose, payload.pose);
-  payload.topologyCertificationId = preview.topologyCertificationId; payload.topologyRevision = preview.topologyRevision; payload.previewRevision = preview.previewRevision;
-  const result = await ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'a1-confirm-key');
-  assert.equal(result.movement.v3Effect.destination[0].pose.xStartM, .1);
-  assert.deepEqual(world.log.units[0].currentPose, payload.pose); assert.deepEqual(world.log.footprints[0].pose, payload.pose);
-  assert.equal(result.projection.byPhysicalUnit[0].quantity, 1); assert.deepEqual(result.projection.byPhysicalUnit[0].pose, payload.pose);
+function mockPreviewWorld(t, { skuRevision = 7, cellMaxWeightKg = 100, cellWidthM = 1, accessPurpose = 'INBOUND', sessionRevision = 4 } = {}) {
+  const world = mockActiveReservation(t, { skuRevision, accessSessionRow: { _id: ids.session, customerId: ids.customer,
+    reservationId: ids.reservation, facilityId: ids.facility, status: 'ACTIVE', allowedPurposes: [accessPurpose], revision: sessionRevision,
+    startedAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 60_000), allowedCellIds: [ids.cellA, ids.cellB] } });
+  const spec = { _id: ids.spec, skuId: ids.sku, customerId: ids.customer, reservationId: ids.reservation, facilityId: ids.facility,
+    status: 'ACTIVE', revision: 3, name: 'Test Spec', code: 'SPEC-TEST', quantityUnitId: { code: 'box', name: 'box' },
+    unitWeightKg: 1, dimensionsM: { widthM: .1, depthM: .1, heightM: .1 } };
+  const cells = [ids.cellA, ids.cellB].map((cellId, index) => ({ _id: cellId, facilityId: ids.facility, rackId: oid(), levelNumber: 1,
+    code: `CELL-${index + 1}`, operationalStatus: 'AVAILABLE', maxWeightKg: cellMaxWeightKg, usedWeightKg: 0, usedVolumeM3: 0,
+    managedInventoryRevision: 0, allocationVersion: 1, dimensions: { widthM: cellWidthM, depthM: 1, usableHeightM: 1 } }));
+  const rackIds = [...new Map(cells.map(cell => [String(cell.rackId), cell.rackId])).values()];
+  const allocations = cells.map(cell => ({ reservationId: ids.reservation, customerId: ids.customer, facilityId: ids.facility,
+    cellId: cell._id, status: 'OCCUPIED', startDate: new Date(Date.now() - 60_000), endDate: new Date(Date.now() + 60_000) }));
+  t.mock.method(ItemSpec, 'find', () => new Query([spec]));
+  t.mock.method(Cell, 'find', () => new Query(cells));
+  t.mock.method(Rack, 'find', () => new Query(rackIds.map(_id => ({ _id, facilityId: ids.facility, operationalStatus: 'AVAILABLE', maxWeightKgPerLevel: 1000 }))));
+  t.mock.method(Allocation, 'find', filter => new Query(filter.reservationId ? allocations : []));
+  t.mock.method(Movement, 'find', () => new Query([]));
+  t.mock.method(CellStock, 'find', () => new Query([]));
+  t.mock.method(ItemInstance, 'find', () => new Query([]));
+  t.mock.method(Reservation, 'find', () => new Query([world.reservation]));
+  t.mock.method(Item, 'find', () => new Query([]));
+  for (const model of [InventoryStockBalance, StockProjection, BatchPlacement, PhysicalUnit, Footprint]) {
+    t.mock.method(model, 'find', () => new Query([]));
+  }
+  return { ...world, spec, cells, allocations };
+}
+
+test('legacy inbound preview and confirm remain explicitly fail-closed', async () => {
+  await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), {}, actor, 'legacy-inbound-key-01'), error =>
+    error.status === 410 && error.code === 'STOCK_WORKFLOW_NOT_AVAILABLE');
 });
 
-test('confirmInbound A1 rejects missing pose before database access', async () => {
-  const payload = a1Request(null); delete payload.pose;
-  await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'a1-no-pose'), error => error.code === 'A1_POSE_REQUIRED');
+test('Unified Inbound A2 DTO accepts quantity 10 allocated across Cells without client totals', () => {
+  const result = normalizeUnifiedInbound(body());
+  assert.equal(result.lines[0].quantity, 10);
+  assert.deepEqual(result.lines[0].cellAllocations.map(row => row.quantity), [6, 4]);
+  assert.equal(result.skuRevision, 7);
+  assert.equal(result.sessionRevision, 4);
+  assert.throws(() => normalizeUnifiedInbound(body({ clientTotalWeightKg: 10 })), { code: 'INVALID_INPUT' });
 });
 
-test('confirmInbound A1 rejects oversized dimensions, out-of-cell pose, obstacles and insufficient weight/volume', async t => {
-  for (const scenario of [
-    { dimensions: { widthM: 1.1, depthM: .2, heightM: .2 }, volume: .044, code: 'A1_GEOMETRY_INVALID' },
-    { dimensions: { widthM: .2, depthM: 1.1, heightM: .2 }, volume: .044, code: 'A1_GEOMETRY_INVALID' },
-    { dimensions: { widthM: .2, depthM: .2, heightM: 1.1 }, volume: .044, code: 'A1_GEOMETRY_INVALID' },
-    { pose: { xStartM: .9, yStartM: .1, rotationDeg: 0 }, code: 'A1_GEOMETRY_INVALID' },
-    { weight: 101, code: 'A1_GEOMETRY_INVALID' },
-    { weight: 10, levelCapacity: 5, code: 'A1_GEOMETRY_INVALID' },
-    { volume: .008, maxVolume: .005, code: 'A1_GEOMETRY_INVALID' },
-  ]) await t.test(`rejects ${scenario.pose ? 'out-of-cell pose' : scenario.dimensions?.heightM > 1 ? 'oversized height' : scenario.dimensions?.depthM > 1 ? 'oversized depth' : scenario.dimensions ? 'oversized width' : scenario.levelCapacity ? 'level capacity' : scenario.weight ? 'weight capacity' : 'volume capacity'}`, async t => {
-    const world = makeWorld(t, { unitWeight: scenario.weight ?? 10, levelCapacity: scenario.levelCapacity ?? 1000,
-      unitDimensions: scenario.dimensions ?? { widthM: .2, depthM: .2, heightM: .2 }, unitVolume: scenario.volume ?? .008, topologyMaxVolume: scenario.maxVolume ?? 1 });
-    const payload = a1Request(scenario.pose); payload.topologyCertificationId = world.cert._id.toString();
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, `a1-invalid-${++keySequence}-key`), error => error.code === scenario.code);
-  });
-  await t.test('rejects obstacle collision', async t => {
-    const world = makeWorld(t); world.cert.cells[0].obstacles = [{ xStartM: .15, xEndM: .25, yStartM: .15, yEndM: .25 }];
-    const payload = a1Request(); payload.topologyCertificationId = world.cert._id.toString();
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'a1-obstacle-key'), error => error.code === 'A1_GEOMETRY_INVALID');
-  });
+test('Unified Inbound A2 preview produces server-priced spec snapshot and Cell allocation totals', async t => {
+  mockPreviewWorld(t);
+  const preview = await ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor);
+  assert.equal(preview.status, 'READY');
+  assert.equal(preview.totalQuantity, 10);
+  assert.equal(preview.totalWeightKg, 10);
+  assert.equal(preview.totalVolumeM3, .01);
+  assert.equal(preview.lines[0].itemName, 'Test Spec');
+  assert.deepEqual(preview.lines[0].cellAllocations.map(row => row.addedWeightKg), [6, 4]);
+  assert.equal(preview.previewRevision.skuRevision, 7);
+  assert.equal(preview.previewRevision.sessionRevision, 4);
+  assert.equal(preview.previewRevision.inventoryRevision, 2);
 });
 
-test('confirmInbound A1 multi-Cell stays blocked and stale topology fails closed', async t => {
-  await t.test('multi-Cell is fail-closed', async t => {
-    const world = makeWorld(t, { cells: [ids.cell1, ids.cell2] });
-    const multi = a1Request(); multi.cellIds = [ids.cell1.toString(), ids.cell2.toString()]; multi.placements.push({ cellId: ids.cell2.toString() }); multi.topologyCertificationId = world.cert._id.toString();
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), multi, { _id: ids.customer, role: 'CUSTOMER' }, 'a1-multi-key'), error => error.code === 'A1_LOAD_SHARING_UNCERTIFIED');
-  });
-  await t.test('stale topology is rejected', async t => {
-    const world = makeWorld(t); const stale = a1Request(); stale.topologyCertificationId = oid().toString();
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), stale, { _id: ids.customer, role: 'CUSTOMER' }, 'a1-stale-key'), error => error.code === 'STALE_TOPOLOGY');
-  });
+test('Unified Inbound A1 indivisible item requires quantity one and conserved multi-Cell load allocation', () => {
+  const item = body({ lines: [{ lineId: 'instance-1', itemSpecId: ids.spec.toString(), itemSpecRevision: 3,
+    quantity: 1, measurementMode: 'SPECIFICATION', cellAllocations: [{ cellId: ids.cellA.toString(), quantity: 1 }],
+    instanceAllocations: [{ cellId: ids.cellA.toString(), weightKg: 4, volumeM3: 0.08 }, { cellId: ids.cellB.toString(), weightKg: 6, volumeM3: 0.12 }] }] });
+  const result = normalizeUnifiedInbound(item);
+  assert.equal(result.lines[0].quantity, 1);
+  assert.equal(result.lines[0].instanceAllocations.length, 2);
+  assert.equal(result.lines[0].instanceAllocations.reduce((sum, row) => sum + row.weightKg, 0), 10);
+  assert.throws(() => normalizeUnifiedInbound({ ...item, lines: [{ ...item.lines[0], cellAllocations: [
+    { cellId: ids.cellA.toString(), quantity: 1 }, { cellId: ids.cellB.toString(), quantity: 1 },
+  ] }] }), error => error.code === 'INVALID_INSTANCE_ALLOCATION');
 });
 
-test('confirmInbound A2 first and repeated operations accept split Cells and preserve replay projection totals', async t => {
-  const world = makeWorld(t, { cells: [ids.cell1, ids.cell2] });
-  const payload = a2Request([ids.cell1, ids.cell2], [2, 3]); payload.actualUnitWeightKg = .3333;
-  payload.dimensionsM = { widthM: .123, depthM: .1, heightM: .1 }; payload.topologyCertificationIds = [world.cert._id.toString()];
-  const first = await ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'a2-first-inbound');
-  assert.equal(first.projection.onHandQuantity, 5); assert.equal(first.projection.byBatch.length, 2); assert.equal(first.projection.byCell.length, 2);
-  assert.equal(first.projection.totalWeightKg, 1.667); assert.equal(first.projection.totalVolumeM3, .00615);
-  assert.equal(world.log.batches.length, 2);
-  const repeat = a2Request([ids.cell1, ids.cell2], [1, 1]); repeat.actualUnitWeightKg = .3333;
-  repeat.dimensionsM = { widthM: .123, depthM: .1, heightM: .1 }; repeat.topologyCertificationIds = [world.cert._id.toString()]; repeat.previewRevision = 1;
-  const second = await ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), repeat, { _id: ids.customer, role: 'CUSTOMER' }, 'a2-second-inbound');
-  assert.equal(second.projection.onHandQuantity, 7); assert.equal(second.projection.ledgerRevision, 2); assert.equal(second.projection.byBatch.length, 4);
-  assert.equal(second.projection.totalWeightKg, 2.334); assert.equal(second.projection.totalVolumeM3, .00861);
-  assert.equal(world.log.movements.length, 2); assert.equal(world.log.batches.length, 4);
+test('Unified Inbound A1 preview keeps one item across multiple Cell load allocations', async t => {
+  mockPreviewWorld(t);
+  const request = body({ lines: [{ lineId: 'instance-1', itemSpecId: ids.spec.toString(), itemSpecRevision: 3,
+    quantity: 1, measurementMode: 'SPECIFICATION', cellAllocations: [{ cellId: ids.cellA.toString(), quantity: 1 }],
+    instanceAllocations: [{ cellId: ids.cellA.toString(), weightKg: .4, volumeM3: .0004 }, { cellId: ids.cellB.toString(), weightKg: .6, volumeM3: .0006 }] }] });
+  const preview = await ManagedUnifiedInboundService.preview(ids.sku.toString(), request, actor);
+  assert.equal(preview.totalQuantity, 1);
+  assert.equal(preview.totalWeightKg, 1);
+  assert.equal(preview.lines[0].cellAllocations.length, 2);
+  assert.equal(preview.warnings.length, 1);
 });
 
-test('same Idempotency-Key exact replay returns original movement; changed payload conflicts', async t => {
-  const payload = a2Request(); const { v3RequestHash } = require('../dist/services/inventory-items/managed-inventory-v3-ledger.service');
-  const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
-  const prior = { _id: oid(), schemaVersion: 3, v3Effect: { requestHash: v3RequestHash(canonical(payload)) } };
-  const world = makeWorld(t, { existing: prior });
-  const replay = await ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'a2-replay-key');
-  assert.equal(replay.replayed, true); assert.equal(replay.movement, prior);
-  await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), { ...payload, quantity: 9 }, { _id: ids.customer, role: 'CUSTOMER' }, 'a2-replay-key'), error => error.code === 'IDEMPOTENCY_CONFLICT');
-  assert.equal(world.log.movements.length, 1);
+test('Unified Inbound preview rejects dimensions that do not fit the selected Cell', async t => {
+  mockPreviewWorld(t, { cellWidthM: .05 });
+  await assert.rejects(ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor), error => error.status === 409 && error.code === 'ITEM_DOES_NOT_FIT');
 });
 
-test('invalid/revoked Access Session and stale inventory revision block writes', async t => {
-  await t.test('invalid/revoked Session is rejected', async t => {
-    const sessionError = Error('session invalid'); sessionError.status = 409; sessionError.code = 'ACCESS_SESSION_SCOPE_INVALID';
-    const world = makeWorld(t, { accessFailure: sessionError });
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), a2Request(), { _id: ids.customer, role: 'CUSTOMER' }, 'invalid-session'), error => error.code === 'ACCESS_SESSION_SCOPE_INVALID');
-    assert.equal(world.log.movements.length, 0);
-  });
-  await t.test('stale inventory revision is rejected', async t => {
-    const staleWorld = makeWorld(t, { staleInventory: true });
-    await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), a2Request(), { _id: ids.customer, role: 'CUSTOMER' }, 'stale-inventory'), error => error.code === 'STALE_INVENTORY_REVISION');
-    assert.equal(staleWorld.log.movements.length, 0);
-  });
+test('Unified Inbound preview enforces current capacity after aggregating all cell allocations', async t => {
+  mockPreviewWorld(t, { cellMaxWeightKg: 5 });
+  await assert.rejects(ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor), error => error.status === 409 && error.code === 'CAPACITY_EXCEEDED');
 });
 
-test('projection write failure rolls back the mocked ADD transaction effects', async t => {
-  const world = makeWorld(t, { failProjection: true });
-  const payload = a2Request(); payload.topologyCertificationIds = [world.cert._id.toString()];
-  await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), payload, { _id: ids.customer, role: 'CUSTOMER' }, 'rollback-key'), /projection failure/);
-  assert.equal(world.log.transactionAborted, true); assert.equal(world.log.movements.length, 0); assert.equal(world.log.batches.length, 0);
-  assert.equal(world.cellDocs[0].usedWeightKg, 0); assert.equal(world.cellDocs[0].usedVolumeM3, 0);
-  assert.equal(world.reservation.usedCapacityM3, 0); assert.equal(world.persistedItemRevision, 0);
+test('Item Specification snapshot is authoritative and stale specification revision fails closed', () => {
+  const specification = { status: 'ACTIVE', revision: 3, unitWeightKg: 5, dimensionsM: { widthM: .4, depthM: .3, heightM: .3 } };
+  const snapshot = measurementSnapshot(specification, { measurementMode: 'SPECIFICATION', itemSpecRevision: 3, quantity: 1 });
+  assert.deepEqual(snapshot, { unitWeightKg: 5, dimensionsM: specification.dimensionsM, unitVolumeM3: .036 });
+  assert.throws(() => measurementSnapshot(specification, { measurementMode: 'SPECIFICATION', itemSpecRevision: 2, quantity: 1 }),
+    error => error instanceof ManagedUnifiedInboundDomainError && error.code === 'ITEM_SPECIFICATION_STALE');
+  assert.equal(specification.unitWeightKg, 5, 'snapshot calculation must not mutate Item Specification');
+});
+
+test('Unified Inbound aggregate Cell and Rack capacity validates total additions', () => {
+  const cells = [
+    { _id: ids.cellA, rackId: ids.facility, levelNumber: 1, code: 'A', maxWeightKg: 50, usedWeightKg: 10, usedVolumeM3: .1,
+      dimensions: { widthM: 1, depthM: 1, usableHeightM: 1 } },
+    { _id: ids.cellB, rackId: ids.facility, levelNumber: 1, code: 'B', maxWeightKg: 50, usedWeightKg: 10, usedVolumeM3: .1,
+      dimensions: { widthM: 1, depthM: 1, usableHeightM: 1 } },
+  ];
+  const additions = new Map([[String(ids.cellA), { weightKg: 20, volumeM3: .2 }], [String(ids.cellB), { weightKg: 20, volumeM3: .2 }]]);
+  assert.equal(assertUnifiedInboundCapacity(cells, additions, new Map([[`${ids.facility}:1`, 40]]), [{ _id: ids.facility, maxWeightKgPerLevel: 100 }]), true);
+  assert.throws(() => assertUnifiedInboundCapacity(cells, new Map([[String(ids.cellA), { weightKg: 45, volumeM3: .2 }]]),
+    new Map([[`${ids.facility}:1`, 45]]), [{ _id: ids.facility, maxWeightKgPerLevel: 100 }]), { code: 'CAPACITY_EXCEEDED' });
+  assert.throws(() => assertUnifiedInboundCapacity(cells, additions, new Map([[`${ids.facility}:1`, 40]]),
+    [{ _id: ids.facility, maxWeightKgPerLevel: 50 }]), { code: 'LEVEL_CAPACITY_EXCEEDED' });
+});
+
+test('preview rejects foreign/missing Reservation ownership before Session lookup', async t => {
+  const world = mockActiveReservation(t, { reservationRow: false });
+  let sessionLookups = 0;
+  t.mock.method(AccessSession, 'findOne', () => { sessionLookups += 1; return new Query(null); });
+  await assert.rejects(ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor), error => error.code === 'RENTAL_NOT_ACTIVE');
+  assert.equal(String(world.reservationFilter._id), String(ids.reservation));
+  assert.equal(String(world.reservationFilter.customerId), String(ids.customer));
+  assert.equal(String(world.reservationFilter.facilityId), String(ids.facility));
+  assert.equal(sessionLookups, 0);
+});
+
+test('preview fences stale SKU revision before checking Access Session', async t => {
+  mockActiveReservation(t, { skuRevision: 8 });
+  let sessionLookups = 0;
+  t.mock.method(AccessSession, 'findOne', () => { sessionLookups += 1; return new Query(null); });
+  await assert.rejects(ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor), error => error.status === 412 && error.code === 'STALE_SKU_REVISION');
+  assert.equal(sessionLookups, 0);
+});
+
+test('preview requires active INBOUND Session with matching customer, reservation, facility and revision', async t => {
+  mockActiveReservation(t);
+  let filter;
+  t.mock.method(AccessSession, 'findOne', query => { filter = query; return new Query(null); });
+  await assert.rejects(ManagedUnifiedInboundService.preview(ids.sku.toString(), body(), actor), error => error.status === 409 && error.code === 'ACCESS_SESSION_SCOPE_INVALID');
+  assert.equal(String(filter.customerId), String(ids.customer));
+  assert.equal(String(filter.reservationId), String(ids.reservation));
+  assert.equal(String(filter.facilityId), String(ids.facility));
+  assert.equal(filter.allowedPurposes, 'INBOUND');
+  assert.equal(filter.revision, 4);
+  assert.equal(filter.status, 'ACTIVE');
+});
+
+test('confirm returns exact idempotent replay and rejects same key with changed payload', async t => {
+  mockActiveReservation(t);
+  const input = body(), normalized = normalizeUnifiedInbound(input), hash = requestHash(normalized);
+  const prior = { _id: oid(), itemId: ids.sku, idempotencyKey: 'unified-replay-key-01', schemaVersion: 4,
+    stockEffect: { action: 'ADD', requestHash: hash } };
+  t.mock.method(Movement, 'findOne', () => new Query(prior));
+  const replay = await ManagedUnifiedInboundService.confirm(ids.sku.toString(), input, actor, 'unified-replay-key-01');
+  assert.equal(replay.status, 'COMMITTED');
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.movement, prior);
+  await assert.rejects(ManagedUnifiedInboundService.confirm(ids.sku.toString(), { ...input, lines: [
+    { ...input.lines[0], quantity: 9, cellAllocations: [{ cellId: ids.cellA.toString(), quantity: 5 }, { cellId: ids.cellB.toString(), quantity: 4 }] },
+  ] }, actor, 'unified-replay-key-01'), error => error.status === 409 && error.code === 'IDEMPOTENCY_CONFLICT');
+});
+
+test('confirm retains production guard after idempotency lookup and before transaction creation', async t => {
+  mockActiveReservation(t);
+  t.mock.method(Movement, 'findOne', () => new Query(null));
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    await assert.rejects(ManagedUnifiedInboundService.confirm(ids.sku.toString(), body(), actor, 'unified-prod-guard-key'),
+      error => error.status === 503 && error.code === 'INBOUND_CONFIRM_ENVIRONMENT_BLOCKED');
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+  }
 });

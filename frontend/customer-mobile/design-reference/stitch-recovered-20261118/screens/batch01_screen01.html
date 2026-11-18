@@ -1,0 +1,425 @@
+<!-- VaultSpace — Warehouse Map & Cell Selection -->
+<!DOCTYPE html><html class="h-full" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-container-low": "#e7f8ed", "on-primary": "#ffffff", "on-surface": "#101e18", "on-secondary-fixed-variant": "#244f3c", "surface-container-high": "#dbece1", "tertiary-container": "#955e00", "background": "#ecfef2", "on-tertiary-fixed-variant": "#653e00", "on-secondary-fixed": "#002114", "on-primary-fixed": "#002111", "surface-container-lowest": "#ffffff", "tertiary-fixed": "#ffddb8", "on-background": "#101e18", "surface-tint": "#006d43", "inverse-on-surface": "#e4f5ea", "primary-fixed-dim": "#80d9a5", "error-container": "#ffdad6", "on-tertiary": "#ffffff", "surface": "#ecfef2", "on-tertiary-container": "#ffe7d0", "surface-dim": "#cdded3", "primary-container": "#18794e", "primary-fixed": "#9bf5c0", "inverse-surface": "#25342c", "tertiary-fixed-dim": "#ffb95f", "inverse-primary": "#80d9a5", "on-primary-fixed-variant": "#005231", "secondary-fixed": "#beedd3", "on-error": "#ffffff", "on-error-container": "#93000a", "surface-variant": "#d6e7dc", "secondary-fixed-dim": "#a3d1b8", "primary": "#005f3a", "outline": "#6f7a71", "tertiary": "#744800", "on-secondary-container": "#406b56", "outline-variant": "#bec9bf", "on-surface-variant": "#3f4942", "on-primary-container": "#a4fec9", "secondary-container": "#bbead0", "on-tertiary-fixed": "#2a1700", "secondary": "#3c6752", "surface-container-highest": "#d6e7dc", "surface-container": "#e1f2e7", "surface-bright": "#ecfef2", "on-secondary": "#ffffff", "error": "#ba1a1a" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "space-xl": "2rem", "margin-sm": "1rem", "space-md": "1rem", "space-lg": "1.5rem", "gutter": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "margin": "1.25rem", "gutter-sm": "0.75rem" }, fontFamily: { "body-md-medium": ["Inter"], "body-lg-medium": ["Inter"], "label-lg": ["Inter"], "body-lg": ["Inter"], "body-md": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"], "display": ["Inter"], "headline-lg": ["Inter"], "label-md": ["Inter"], "currency-display": ["Inter"], "label-sm": ["Inter"] }, fontSize: { "body-md-medium": ["14px", { lineHeight: "20px", fontWeight: "500" }], "body-lg-medium": ["16px", { lineHeight: "24px", fontWeight: "500" }], "label-lg": ["13px", { lineHeight: "18px", letterSpacing: "0.01em", fontWeight: "600" }], "body-lg": ["16px", { lineHeight: "24px", fontWeight: "400" }], "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }], "headline-md": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }], "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.005em", fontWeight: "600" }], "display": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }], "headline-lg": ["26px", { lineHeight: "34px", letterSpacing: "-0.015em", fontWeight: "700" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "currency-display": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "700" }], "label-sm": ["10px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "600" }] } } } };</script><style>@layer base{html,body{width:100%;margin:0;padding:0;min-height:100%;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}}::-webkit-scrollbar{display:none;}</style></head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col antialiased selection:bg-primary/20"><header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0"><button aria-label="Go back" class="w-11 h-11 -ml-2 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container-high transition-colors focus:outline-none" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><img alt="VaultSpace Brand Logo" class="h-7 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzrBZPuRd-_mKInF0iUsDZD_YEL35AwAzkaItyD2PHdxJDlWQvZ6dcHHepELW6PFxEvR-jJCnWOY2uinI01s_XaSGKO7LCn6l-fbRIESJCeX0jZPoCfXiHJmxhDpWyADSEhUjg5iJFr11xIF5vsHQvGXDcDLZ68uAAGSN6B5F8RdI0rLXmzKXBjDaA_jz7-gD8kFoyqX0AmmTZ50xNatfhHXNzJP1Efuuw7iMW1fNh"><h1 class="font-headline-sm text-headline-sm text-on-surface truncate">Reserve Unit Flow</h1></div><div class="flex items-center gap-space-xs shrink-0"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-surface-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBXc971_K8wjoUpMYeKsJ7cxkKwRkkFn_42i2tq95SMD6-w-qgiyfexMW3z8nhRm2gZs1sjW-YAAgEcT8x31geJbQUSChotNV3qz5UAsBDbZMZm77K5wQaUl06HgGLn_OZiybqhC_7IDqEgGe4DzilXu_qtozpPmZxigOQvsMKoaEqA-NzH5Wo-Sg-DV1PN0oNkiiMP6AdeetkXJolPXQkQUBCpfJN_siDGi0hnEf9"></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 bg-surface pb-safe min-h-[calc(100vh-4rem)]"><div class="flex flex-col w-full pb-36">
+<!-- Top Facility & Context Bar -->
+<div class="px-margin pt-space-sm pb-space-md flex flex-col gap-space-sm bg-surface-container-low">
+<div class="flex items-center justify-between gap-space-xs">
+<div class="flex items-center gap-1.5 min-w-0">
+<span class="material-symbols-outlined text-primary text-[18px]">warehouse</span>
+<span class="font-label-md text-label-md text-primary font-semibold tracking-wide uppercase truncate">District 9 • TP. Hồ Chí Minh</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded-full shrink-0">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+
+</div>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">East Metro Hub — Kho A</h2>
+<p class="font-body-md text-body-md text-on-surface-variant flex items-center gap-1.5 mt-0.5">
+<span class="material-symbols-outlined text-[16px] text-tertiary">inventory_2</span>
+        Managed Inventory Cells (Lưu kho phân tầng)
+      </p>
+</div>
+<!-- Rental Period Selector Trigger -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-surface-container-lowest shadow-sm">
+<div class="flex items-center gap-2 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-secondary-container text-[18px]">calendar_month</span>
+</div>
+<div class="min-w-0">
+<div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Thời hạn thuê (Term)</div>
+<div class="font-body-md-medium text-body-md-medium text-on-surface truncate">01/11/2024 – 31/01/2025 (3 Tháng)</div>
+</div>
+</div>
+<button aria-label="Thay đổi thời gian thuê" class="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-on-surface text-[18px]">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Zone Switcher Carousel -->
+<div class="pt-space-md pb-space-xs px-margin">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Khu vực lưu trữ (Zone)</span>
+<span class="font-label-sm text-label-sm text-primary font-semibold">18-22°C • 55% RH</span>
+</div>
+<div class="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
+<button class="px-3.5 py-2 rounded-xl bg-surface-container font-label-md text-label-md text-on-surface-variant whitespace-nowrap flex items-center gap-1.5 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">shelves</span>
+        Zone A: Hàng khô (Dry)
+      </button>
+<button class="px-3.5 py-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-semibold whitespace-nowrap flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">ac_unit</span>
+        Zone B: Climate Cold (Selected)
+      </button>
+<button class="px-3.5 py-2 rounded-xl bg-surface-container font-label-md text-label-md text-on-surface-variant whitespace-nowrap flex items-center gap-1.5 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">pallet</span>
+        Zone C: Pallet hàng rời
+      </button>
+</div>
+</div>
+<!-- Interactive 2D Warehouse Floor Map -->
+<div class="px-margin mt-space-sm">
+<div class="p-space-md rounded-2xl bg-surface-container-lowest shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">map</span>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Mặt bằng Tầng 1 — Zone B</span>
+</div>
+<!-- Map Controls -->
+<div class="flex items-center gap-1 bg-surface-container p-1 rounded-lg">
+<button aria-label="Phóng to" class="w-7 h-7 flex items-center justify-center rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container-high text-xs shadow-xs" id="btnZoomIn">
+<span class="material-symbols-outlined text-[16px]">add</span>
+</button>
+<button aria-label="Thu nhỏ" class="w-7 h-7 flex items-center justify-center rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container-high text-xs shadow-xs" id="btnZoomOut">
+<span class="material-symbols-outlined text-[16px]">remove</span>
+</button>
+<button aria-label="Đặt lại góc nhìn" class="px-2 h-7 flex items-center justify-center rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container-high font-label-sm text-label-sm" id="btnResetView">
+            Reset
+          </button>
+</div>
+</div>
+<!-- Top-Down Blueprint Canvas Representation -->
+<div class="relative w-full h-44 rounded-xl bg-surface-container-low overflow-hidden flex items-center justify-center p-3 select-none">
+<!-- Grid guidelines -->
+<div class="absolute inset-0 bg-[radial-gradient(#18794e_1px,transparent_1px)] [background-size:16px_16px] opacity-20"></div>
+<!-- Perimeter annotations -->
+<div class="absolute top-1 left-2 font-label-sm text-label-sm text-outline">Lối xuất nhập Cổng B2</div>
+<div class="absolute bottom-1 right-2 font-label-sm text-label-sm text-outline">Thang máy hàng tải 3.5T</div>
+<!-- Warehouse Aisle & Racks Top-down Layout -->
+<div class="relative z-10 w-full flex flex-col gap-2.5 transition-transform duration-300 ease-out origin-center" id="floorMapContainer">
+<div class="flex items-center justify-between px-1">
+<div class="font-label-sm text-label-sm text-secondary font-medium">HÀNG KỆ BÃI B (LỐI ĐI 2.8M)</div>
+<div class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> R-04 Được chọn
+            </div>
+</div>
+<div class="grid grid-cols-4 gap-2">
+<!-- Rack 01 -->
+<button class="flex flex-col items-center justify-center p-2 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors">
+<span class="font-label-md text-label-md text-on-surface font-semibold">R-01</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">0 trống</span>
+<div class="w-full h-1.5 bg-inverse-surface rounded-full mt-1"></div>
+</button>
+<!-- Rack 02 -->
+<button class="flex flex-col items-center justify-center p-2 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors">
+<span class="font-label-md text-label-md text-on-surface font-semibold">R-02</span>
+<span class="font-label-sm text-label-sm text-primary font-medium">1 trống</span>
+<div class="w-full h-1.5 bg-surface-variant rounded-full mt-1 overflow-hidden">
+<div class="w-2/3 h-full bg-primary-container"></div>
+</div>
+</button>
+<!-- Rack 03 -->
+<button class="flex flex-col items-center justify-center p-2 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors opacity-75">
+<span class="font-label-md text-label-md text-on-surface font-semibold">R-03</span>
+<span class="font-label-sm text-label-sm text-outline">Bảo trì</span>
+<div class="w-full h-1.5 bg-surface-dim rounded-full mt-1"></div>
+</button>
+<!-- Rack 04 (Selected) -->
+<button class="flex flex-col items-center justify-center p-2 rounded-lg bg-primary-container text-on-primary shadow-sm relative ring-offset-2">
+<span class="absolute -top-1.5 -right-1 px-1.5 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-[9px] rounded-full font-bold uppercase">Active</span>
+<span class="font-label-md text-label-md font-bold">R-04</span>
+<span class="font-label-sm text-label-sm text-primary-fixed">4 trống</span>
+<div class="w-full h-1.5 bg-on-primary/30 rounded-full mt-1 overflow-hidden">
+<div class="w-1/2 h-full bg-tertiary-fixed"></div>
+</div>
+</button>
+</div>
+</div>
+</div>
+<!-- Color Legend -->
+<div class="grid grid-cols-2 gap-2 pt-1">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-primary-container shrink-0"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Còn trống (Available)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-tertiary-fixed text-on-tertiary-fixed shrink-0"></span>
+<span class="font-label-sm text-label-sm text-on-surface font-medium">Đang chọn (Your Pick)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-inverse-surface shrink-0"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Đã thuê (Occupied)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-sm bg-surface-dim shrink-0"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Bảo trì (Maintenance)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive Shelf & Cell Elevation View -->
+<div class="px-margin mt-space-md">
+<div class="p-space-md rounded-2xl bg-surface-container-lowest shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Kệ B-04 (Rack Elevation)</h3>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold">Tải trọng 1,200kg</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-0.5">Chạm vào ô ngăn để chọn hoặc bỏ chọn ô lưu kho</p>
+</div>
+<div class="w-9 h-9 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[22px]">view_in_ar</span>
+</div>
+</div>
+<!-- 3-Tier Shelf Matrix -->
+<div class="flex flex-col gap-2.5 pt-1">
+<!-- Level 3 (Top - Light Goods) -->
+<div class="flex flex-col gap-1.5 bg-surface-container-low p-2.5 rounded-xl">
+<div class="flex items-center justify-between px-1">
+<span class="font-label-sm text-label-sm text-secondary font-bold uppercase tracking-wider">Tầng 3 (Cao: 2.2m – Hàng nhẹ)</span>
+<span class="font-label-sm text-label-sm text-outline">Tối đa 250 kg/ô</span>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<!-- Cell B04-L3-01: Available -->
+<button class="cell-toggle flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-surface-container-lowest text-primary hover:bg-secondary-container transition-all text-center shadow-xs" data-cell-id="B04-L3-01" data-price="440000" data-vol="1.8" data-weight="250">
+<span class="font-label-md text-label-md font-bold">B04-L3-01</span>
+<span class="font-label-sm text-label-sm text-primary font-medium mt-0.5">Trống</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant">₫440k/th</span>
+</button>
+<!-- Cell B04-L3-02: Occupied -->
+<div class="flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-inverse-surface text-inverse-on-surface opacity-85 text-center cursor-not-allowed">
+<span class="font-label-md text-label-md font-medium">B04-L3-02</span>
+<span class="font-label-sm text-label-sm text-surface-variant mt-0.5">Đã dùng</span>
+<span class="material-symbols-outlined text-[14px] text-surface-variant">lock</span>
+</div>
+<!-- Cell B04-L3-03: Available -->
+<button class="cell-toggle flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-surface-container-lowest text-primary hover:bg-secondary-container transition-all text-center shadow-xs" data-cell-id="B04-L3-03" data-price="440000" data-vol="1.8" data-weight="250">
+<span class="font-label-md text-label-md font-bold">B04-L3-03</span>
+<span class="font-label-sm text-label-sm text-primary font-medium mt-0.5">Trống</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant">₫440k/th</span>
+</button>
+</div>
+</div>
+<!-- Level 2 (Mid - Standard / User Focus) -->
+<div class="flex flex-col gap-1.5 bg-surface-container-low p-2.5 rounded-xl">
+<div class="flex items-center justify-between px-1">
+<span class="font-label-sm text-label-sm text-primary font-bold uppercase tracking-wider">Tầng 2 (Tầm với chuẩn – Tiêu chuẩn)</span>
+<span class="font-label-sm text-label-sm text-tertiary font-semibold">Khuyên dùng cho xuất nhập đều</span>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<!-- Cell B04-L2-01: Selected -->
+<button class="cell-toggle active-cell flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-tertiary-fixed text-on-tertiary-fixed transition-all text-center shadow-sm" data-cell-id="B04-L2-01" data-price="480000" data-vol="1.8" data-weight="350">
+<div class="flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px] text-on-tertiary-fixed">check_circle</span>
+<span class="font-label-md text-label-md font-bold">B04-L2-01</span>
+</div>
+<span class="font-label-sm text-label-sm font-semibold mt-0.5">Đã chọn</span>
+<span class="font-label-sm text-[10px] text-on-tertiary-fixed-variant">₫480k/th</span>
+</button>
+<!-- Cell B04-L2-02: Selected -->
+<button class="cell-toggle active-cell flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-tertiary-fixed text-on-tertiary-fixed transition-all text-center shadow-sm" data-cell-id="B04-L2-02" data-price="480000" data-vol="1.8" data-weight="350">
+<div class="flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[13px] text-on-tertiary-fixed">check_circle</span>
+<span class="font-label-md text-label-md font-bold">B04-L2-02</span>
+</div>
+<span class="font-label-sm text-label-sm font-semibold mt-0.5">Đã chọn</span>
+<span class="font-label-sm text-[10px] text-on-tertiary-fixed-variant">₫480k/th</span>
+</button>
+<!-- Cell B04-L2-03: Occupied -->
+<div class="flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-inverse-surface text-inverse-on-surface opacity-85 text-center cursor-not-allowed">
+<span class="font-label-md text-label-md font-medium">B04-L2-03</span>
+<span class="font-label-sm text-label-sm text-surface-variant mt-0.5">Đã dùng</span>
+<span class="material-symbols-outlined text-[14px] text-surface-variant">lock</span>
+</div>
+</div>
+</div>
+<!-- Level 1 (Heavy Floor) -->
+<div class="flex flex-col gap-1.5 bg-surface-container-low p-2.5 rounded-xl">
+<div class="flex items-center justify-between px-1">
+<span class="font-label-sm text-label-sm text-secondary font-bold uppercase tracking-wider">Tầng 1 (Đáy sàn – Hàng nặng/Thùng to)</span>
+<span class="font-label-sm text-label-sm text-outline">Tối đa 600 kg/ô</span>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<!-- Cell B04-L1-01: Occupied -->
+<div class="flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-inverse-surface text-inverse-on-surface opacity-85 text-center cursor-not-allowed">
+<span class="font-label-md text-label-md font-medium">B04-L1-01</span>
+<span class="font-label-sm text-label-sm text-surface-variant mt-0.5">Đã dùng</span>
+<span class="material-symbols-outlined text-[14px] text-surface-variant">lock</span>
+</div>
+<!-- Cell B04-L1-02: Occupied -->
+<div class="flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-inverse-surface text-inverse-on-surface opacity-85 text-center cursor-not-allowed">
+<span class="font-label-md text-label-md font-medium">B04-L1-02</span>
+<span class="font-label-sm text-label-sm text-surface-variant mt-0.5">Đã dùng</span>
+<span class="material-symbols-outlined text-[14px] text-surface-variant">lock</span>
+</div>
+<!-- Cell B04-L1-03: Available -->
+<button class="cell-toggle flex flex-col items-center justify-center py-3 px-1 rounded-xl bg-surface-container-lowest text-primary hover:bg-secondary-container transition-all text-center shadow-xs" data-cell-id="B04-L1-03" data-price="520000" data-vol="2.0" data-weight="600">
+<span class="font-label-md text-label-md font-bold">B04-L1-03</span>
+<span class="font-label-sm text-label-sm text-primary font-medium mt-0.5">Trống</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant">₫520k/th</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Capacity & Spec Callout for Highlighted Unit -->
+<div class="mt-space-xs p-3 rounded-xl bg-surface-container-high flex items-start gap-2.5">
+<span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">straighten</span>
+<div class="flex flex-col">
+<div class="font-label-md text-label-md text-on-surface font-semibold">Thông số kỹ thuật chuẩn ngăn B04-L2-01:</div>
+<div class="font-body-md text-body-md text-on-surface-variant">1.2m (Dài) × 1.0m (Rộng) × 1.5m (Cao)</div>
+<div class="font-label-sm text-label-sm text-primary font-semibold mt-1">
+            Thể tích hữu dụng: 1.8 m³ • Tải trọng an toàn: Max 350 kg/ngăn
+          </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Facility Assurances Strip -->
+<div class="px-margin mt-space-md">
+<div class="p-space-sm rounded-xl bg-surface-container flex items-center justify-around text-center">
+<div class="flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[20px]">security</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">CCTV AI 24/7</span>
+</div>
+<div class="w-px h-6 bg-outline-variant"></div>
+<div class="flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[20px]">thermostat</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Chuẩn 20°C ± 1.5</span>
+</div>
+<div class="w-px h-6 bg-outline-variant"></div>
+<div class="flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[20px]">shield_person</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Bảo hiểm PVI</span>
+</div>
+</div>
+</div>
+<!-- Sticky Bottom Reservation Sheet -->
+<div class="fixed bottom-0 inset-x-0 z-40 bg-surface-container-lowest/95 backdrop-blur-xl p-space-md shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-safe">
+<div class="max-w-md mx-auto flex flex-col gap-3">
+<!-- Summary Bar -->
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-body-md-medium text-body-md-medium text-on-surface" id="selectedCellsLabel">2 Ô được chọn: B04-L2-01, B04-L2-02</span>
+<span class="px-1.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-[10px] font-bold" id="badgeQty">2 CELLS</span>
+</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="specSummaryLabel">
+            Tổng dung tích: 3.6 m³ • Chịu tải: Max 700 kg
+          </div>
+</div>
+<div class="text-right">
+<div class="font-currency-display text-currency-display text-primary" id="totalRateLabel">₫960,000</div>
+<div class="font-label-sm text-label-sm text-outline">/ tháng (₫480k / ô)</div>
+</div>
+</div>
+<!-- Deposit Note & Price Breakdown Micro Row -->
+<div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface-container-low font-label-sm text-label-sm">
+<span class="text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary">savings</span>
+          Đặt cọc giữ vị trí (Hoàn lại):
+        </span>
+<span class="font-semibold text-on-surface" id="depositLabel">₫960,000 (1 Tháng)</span>
+</div>
+<!-- Primary Action CTA -->
+<button class="w-full h-12 rounded-xl bg-primary text-on-primary font-body-lg-medium text-body-lg-medium flex items-center justify-center gap-2 hover:bg-primary-container active:scale-[0.99] transition-all shadow-md">
+<span class="">Xác nhận đặt giữ ngăn (Review)</span>
+<span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+  (function initSelector() {
+    let currentScale = 1;
+    const map = document.getElementById('floorMapContainer');
+    const btnZoomIn = document.getElementById('btnZoomIn');
+    const btnZoomOut = document.getElementById('btnZoomOut');
+    const btnResetView = document.getElementById('btnResetView');
+
+    if (btnZoomIn && btnZoomOut && btnResetView && map) {
+      btnZoomIn.addEventListener('click', () => {
+        if (currentScale < 1.4) {
+          currentScale += 0.15;
+          map.style.transform = `scale(${currentScale})`;
+        }
+      });
+      btnZoomOut.addEventListener('click', () => {
+        if (currentScale > 0.8) {
+          currentScale -= 0.15;
+          map.style.transform = `scale(${currentScale})`;
+        }
+      });
+      btnResetView.addEventListener('click', () => {
+        currentScale = 1;
+        map.style.transform = 'scale(1)';
+      });
+    }
+
+    // Interactive Cell Multi-Select Logic
+    const cellButtons = document.querySelectorAll('.cell-toggle');
+    const selectedLabel = document.getElementById('selectedCellsLabel');
+    const badgeQty = document.getElementById('badgeQty');
+    const specSummary = document.getElementById('specSummaryLabel');
+    const totalRate = document.getElementById('totalRateLabel');
+    const deposit = document.getElementById('depositLabel');
+
+    let selectedCells = [
+      { id: 'B04-L2-01', price: 480000, vol: 1.8, weight: 350 },
+      { id: 'B04-L2-02', price: 480000, vol: 1.8, weight: 350 }
+    ];
+
+    function updateSummary() {
+      const count = selectedCells.length;
+      if (count === 0) {
+        selectedLabel.textContent = 'Chưa chọn ô lưu trữ';
+        badgeQty.textContent = '0 CELLS';
+        specSummary.textContent = 'Vui lòng chọn ít nhất 1 ô trên kệ';
+        totalRate.textContent = '₫0';
+        deposit.textContent = '₫0';
+        return;
+      }
+
+      const ids = selectedCells.map(c => c.id).join(', ');
+      selectedLabel.textContent = `${count} Ô được chọn: ${ids}`;
+      badgeQty.textContent = `${count} ${count > 1 ? 'CELLS' : 'CELL'}`;
+
+      const totalVol = selectedCells.reduce((acc, c) => acc + c.vol, 0).toFixed(1);
+      const totalWeight = selectedCells.reduce((acc, c) => acc + c.weight, 0);
+      specSummary.textContent = `Tổng dung tích: ${totalVol} m³ • Chịu tải: Max ${totalWeight} kg`;
+
+      const totalPrice = selectedCells.reduce((acc, c) => acc + c.price, 0);
+      totalRate.textContent = '₫' + totalPrice.toLocaleString('vi-VN');
+      deposit.textContent = '₫' + totalPrice.toLocaleString('vi-VN') + ' (1 Tháng)';
+    }
+
+    cellButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cellId = btn.getAttribute('data-cell-id');
+        const price = parseInt(btn.getAttribute('data-price') || '480000', 10);
+        const vol = parseFloat(btn.getAttribute('data-vol') || '1.8');
+        const weight = parseInt(btn.getAttribute('data-weight') || '350', 10);
+
+        const existingIndex = selectedCells.findIndex(c => c.id === cellId);
+
+        if (existingIndex > -1) {
+          // Deselect
+          selectedCells.splice(existingIndex, 1);
+          btn.classList.remove('bg-tertiary-fixed', 'text-on-tertiary-fixed', 'active-cell');
+          btn.classList.add('bg-surface-container-lowest', 'text-primary');
+          btn.innerHTML = `
+            <span class="font-label-md text-label-md font-bold">${cellId}</span>
+            <span class="font-label-sm text-label-sm text-primary font-medium mt-0.5">Trống</span>
+            <span class="font-label-sm text-[10px] text-on-surface-variant">₫${(price / 1000)}k/th</span>
+          `;
+        } else {
+          // Select
+          selectedCells.push({ id: cellId, price, vol, weight });
+          btn.classList.add('bg-tertiary-fixed', 'text-on-tertiary-fixed', 'active-cell');
+          btn.classList.remove('bg-surface-container-lowest', 'text-primary');
+          btn.innerHTML = `
+            <div class="flex items-center gap-0.5">
+              <span class="material-symbols-outlined text-[13px] text-on-tertiary-fixed">check_circle</span>
+              <span class="font-label-md text-label-md font-bold">${cellId}</span>
+            </div>
+            <span class="font-label-sm text-label-sm font-semibold mt-0.5">Đã chọn</span>
+            <span class="font-label-sm text-[10px] text-on-tertiary-fixed-variant">₫${(price / 1000)}k/th</span>
+          `;
+        }
+        updateSummary();
+      });
+    });
+  })();
+</script></main>
+
+</body></html>

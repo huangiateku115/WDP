@@ -23,7 +23,7 @@ const v3RelocationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, stand
 
 router.use(requireAuth);
 const phaseOneNoStockMutation: import('express').RequestHandler = (_req, res) => res.status(410).json({ success: false, code: 'STOCK_WORKFLOW_NOT_AVAILABLE', message: 'Stock operations are paused during the SKU and Item Specification redesign.' });
-router.get('/:skuId/specifications', customer, skuController.listSpecifications);
+router.get('/:skuId/specifications', itemReaders, skuController.listSpecifications);
 router.post('/:skuId/specifications', customer, skuController.createSpecification);
 router.patch('/:skuId/specifications/:specId', customer, skuController.updateSpecification);
 router.delete('/:skuId/specifications/:specId', customer, skuController.deleteSpecification);

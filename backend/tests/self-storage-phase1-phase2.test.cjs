@@ -162,14 +162,15 @@ test('Phase 2.3: mockPayReservation transitions status to PAID, sets signingDead
     customerId,
     facilityId,
     serviceType: FacilityServiceType.SELF_STORAGE,
-    status: ReservationStatus.PAID,
+    status: ReservationStatus.CONTRACTED,
     estimatedRent: 1_500_000,
     depositAmount: 1_500_000,
     signingDeadline: new Date(Date.now() + 3 * 24 * 3600 * 1000),
     save: async () => mockResDoc
   };
 
-  t.mock.method(ReservationModel, 'findOneAndUpdate', async () => mockResDoc);
+  t.mock.method(ReservationModel, 'findOneAndUpdate', async (_filter, update) => { Object.assign(mockResDoc, update); return mockResDoc; });
+  t.mock.method(ReservationModel, 'updateOne', () => ({ exec: async () => ({ matchedCount: 1 }) }));
   t.mock.method(ReservationPaymentModel, 'create', async (paymentData) => {
     assert.equal(paymentData.purpose, PaymentPurpose.FULL_RENT);
     assert.equal(paymentData.amount, 1_500_000);

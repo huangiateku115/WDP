@@ -1,4 +1,4 @@
-import {useRouter} from 'expo-router';
+import {useRouter,type Href} from 'expo-router';
 import {MobileInputError} from '../api/client';
 import {refId} from '../api/contracts/core';
 import {mobileRepo} from '../api/mobileRepository';
@@ -40,7 +40,7 @@ export function ManagedSessionSkuPicker({reservationId,sessionId}:{reservationId
       <AppText variant="card">{item.name}</AppText>
       <AppText>Mã hàng: {item.itemCode}</AppText>
       <AppText>Chỉ Item Specification đang hoạt động mới có thể lập dòng nhập.</AppText>
-      <Button label="Mở kiểm tra nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id,accessSessionId:data.data!.session._id}})}/>
+      <Button label="Mở kiểm tra nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]',params:{id:item._id,accessSessionId:data.data!.session._id}} as unknown as Href)}/>
     </Card>)}
   </LiveScreen>;
 }

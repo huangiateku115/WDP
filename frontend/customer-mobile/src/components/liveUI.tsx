@@ -4,12 +4,13 @@ import {useFocusEffect} from 'expo-router';
 import {ScreenHeading} from './livePresentation';
 import {Screen,StateCard} from './ui';
 import {apiIssue} from '../api/client';
+import axios from 'axios';
 
 export function useResource<T>(key:string, load:(signal:AbortSignal)=>Promise<T>) {
   const loader=useRef(load);
   loader.current=load;
   const [version,setVersion]=useState(0);
-  const [result,setResult]=useState<{key:string;data?:T;error?:string}>();
+  const [result,setResult]=useState<{key:string;data?:T;error?:string;httpStatus?:number;errorCode?:string}>();
   const reload=useCallback(()=>setVersion(value=>value+1),[]);
   useFocusEffect(useCallback(()=>{
     let request:AbortController|undefined;
@@ -21,7 +22,8 @@ export function useResource<T>(key:string, load:(signal:AbortSignal)=>Promise<T>
       void loader.current(abort.signal).then(data=>{
         if(!abort.signal.aborted)setResult({key,data});
       },error=>{
-        if(!abort.signal.aborted)setResult({key,error:apiIssue(error)});
+        if(!abort.signal.aborted)setResult({key,error:apiIssue(error),httpStatus:axios.isAxiosError(error)?error.response?.status:undefined,
+          errorCode:axios.isAxiosError(error)&&typeof error.response?.data?.code==='string'?error.response.data.code:undefined});
       });
     }
     refresh();
@@ -29,15 +31,16 @@ export function useResource<T>(key:string, load:(signal:AbortSignal)=>Promise<T>
     return ()=>{request?.abort();listener.remove();};
   },[key,version]));
   const current=result?.key===key?result:undefined;
-  return {data:current?.data,error:current?.error,loading:!current,reload};
+  return {data:current?.data,error:current?.error,httpStatus:current?.httpStatus,errorCode:current?.errorCode,loading:!current,reload};
 }
 
 export function LiveScreen({title,eyebrow,subtitle,children,onRefresh,refreshing}:PropsWithChildren<{title:string;eyebrow?:string;subtitle?:string;onRefresh?:()=>void;refreshing?:boolean}>) {
   return <Screen onRefresh={onRefresh} refreshing={refreshing}><ScreenHeading title={title} eyebrow={eyebrow} subtitle={subtitle}/>{children}</Screen>;
 }
-export function ResourceState({loading,error,reload}:ReturnType<typeof useResource<unknown>>) {
+export function ResourceState({loading,error,reload,httpStatus,errorCode,resource}:ReturnType<typeof useResource<unknown>> & {resource?:string}) {
   if(loading)return <StateCard kind="loading" title="Đang tải dữ liệu"/>;
-  if(error)return <StateCard kind="error" title="Không tải được dữ liệu" description={error} onRetry={reload}/>;
+  if(error)return <StateCard kind="error" title={resource?`Không tải được ${resource}`:'Không tải được dữ liệu'}
+    description={[error,httpStatus?`HTTP ${httpStatus}`:undefined,errorCode?`Mã lỗi: ${errorCode}`:undefined].filter(Boolean).join(' · ')} onRetry={reload}/>;
   return null;
 }
 export const money=(value:number)=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND'}).format(value);

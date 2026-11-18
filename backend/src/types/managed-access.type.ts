@@ -2,13 +2,16 @@ import { Document, Types } from 'mongoose';
 
 export const ACCESS_SESSION_MAX_DURATION_MINUTES = 60;
 export enum ManagedAccessPurpose { INBOUND = 'INBOUND', OUTBOUND = 'OUTBOUND', RELOCATION = 'RELOCATION', INSPECTION = 'INSPECTION' }
+/** Visit purpose is neutral for new bookings; operation permissions stay on Access Session. */
+export enum ManagedAccessVisitPurpose { WAREHOUSE_VISIT = 'WAREHOUSE_VISIT' }
+export type ManagedAccessVisitPurposeValue = ManagedAccessPurpose | ManagedAccessVisitPurpose;
 export enum ManagedAccessVisitStatus { SCHEDULED = 'SCHEDULED', CHECKED_IN = 'CHECKED_IN', COMPLETED = 'COMPLETED', CANCELLED = 'CANCELLED', MISSED = 'MISSED' }
 export enum ManagedAccessSessionStatus { ACTIVE = 'ACTIVE', CHECKED_OUT = 'CHECKED_OUT', REVOKED = 'REVOKED', EXPIRED = 'EXPIRED' }
 export type ManagedAccessAudit = { action: string; actorId?: Types.ObjectId; actorRole: string; at: Date; details?: Record<string, unknown> };
 export interface IManagedAccessVisit extends Document {
   reservationId: Types.ObjectId; customerId: Types.ObjectId; facilityId: Types.ObjectId;
   scopedReservationIds?: Types.ObjectId[];
-  purpose: ManagedAccessPurpose; startsAt: Date; endsAt: Date; note?: string;
+  purpose: ManagedAccessVisitPurposeValue; startsAt: Date; endsAt: Date; note?: string;
   status: ManagedAccessVisitStatus; assignedStaffId?: Types.ObjectId;
   idempotencyKey: string; requestHash: string; revision: number;
   checkedInAt?: Date; checkedInByStaffId?: Types.ObjectId; checkedOutAt?: Date;
@@ -19,7 +22,7 @@ export interface IManagedAccessVisit extends Document {
 }
 export interface IManagedAccessSession extends Document {
   visitId: Types.ObjectId; reservationId: Types.ObjectId; customerId: Types.ObjectId; facilityId: Types.ObjectId;
-  scopedReservationIds?: Types.ObjectId[];
+  scopedReservationIds: Types.ObjectId[];
   assignedStaffId: Types.ObjectId; allowedCellIds: Types.ObjectId[]; allowedPurposes: ManagedAccessPurpose[];
   startedAt: Date; expiresAt: Date; endedAt?: Date; revokedAt?: Date; revokedBy?: Types.ObjectId; revokeReason?: string;
   status: ManagedAccessSessionStatus; revision: number; checkInIdempotencyKey: string; checkInRequestHash?: string;

@@ -1,0 +1,361 @@
+<!-- VaultSpace — Thông tin cơ sở -->
+<!DOCTYPE html>
+
+<html lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-tertiary-container": "#ffe7d0", "outline": "#6f7a71", "on-error-container": "#93000a", "surface-container-high": "#dbece1", "inverse-primary": "#80d9a5", "on-primary-fixed-variant": "#005231", "surface": "#ecfef2", "secondary": "#3c6752", "error": "#ba1a1a", "on-primary-container": "#a4fec9", "on-primary": "#ffffff", "primary": "#005f3a", "on-error": "#ffffff", "secondary-fixed-dim": "#a3d1b8", "surface-bright": "#ecfef2", "surface-container-highest": "#d6e7dc", "primary-fixed-dim": "#80d9a5", "on-secondary-fixed": "#002114", "on-tertiary-fixed": "#2a1700", "on-surface": "#101e18", "outline-variant": "#bec9bf", "on-background": "#101e18", "surface-tint": "#006d43", "surface-container-low": "#e7f8ed", "on-secondary-fixed-variant": "#244f3c", "on-secondary": "#ffffff", "secondary-fixed": "#beedd3", "error-container": "#ffdad6", "on-tertiary-fixed-variant": "#653e00", "tertiary-fixed": "#ffddb8", "surface-container": "#e1f2e7", "surface-dim": "#cdded3", "inverse-on-surface": "#e4f5ea", "on-tertiary": "#ffffff", "background": "#ecfef2", "primary-container": "#18794e", "secondary-container": "#bbead0", "on-secondary-container": "#406b56", "on-surface-variant": "#3f4942", "tertiary-fixed-dim": "#ffb95f", "primary-fixed": "#9bf5c0", "tertiary": "#744800", "inverse-surface": "#25342c", "on-primary-fixed": "#002111", "tertiary-container": "#955e00", "surface-container-lowest": "#ffffff", "surface-variant": "#d6e7dc" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2rem", "margin": "1.25rem", "gutter": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem", "gutter-sm": "0.75rem", "space-sm": "0.5rem", "space-md": "1rem", "margin-sm": "1rem" }, "fontFamily": { "headline-lg": ["Inter"], "label-sm": ["Inter"], "label-md": ["Inter"], "display": ["Inter"], "currency-display": ["Inter"], "body-lg": ["Inter"], "label-lg": ["Inter"], "body-md-medium": ["Inter"], "headline-md": ["Inter"], "body-lg-medium": ["Inter"], "headline-sm": ["Inter"], "body-md": ["Inter"] }, "fontSize": { "headline-lg": ["26px", { "lineHeight": "34px", "letterSpacing": "-0.015em", "fontWeight": "700" }], "label-sm": ["10px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "500" }], "display": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "currency-display": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }], "label-lg": ["13px", { "lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "600" }], "body-md-medium": ["14px", { "lineHeight": "20px", "fontWeight": "500" }], "headline-md": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "body-lg-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }], "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.005em", "fontWeight": "600" }], "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }] } } } }</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-xs"><button aria-label="Quay lại" class="w-11 h-11 -ml-space-xs flex items-center justify-center rounded-full text-on-surface hover:text-primary transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back_ios_new</span></button><h1 class="font-headline-sm text-headline-sm text-on-surface tracking-tight truncate max-w-[200px]">Facility Detail</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Hỗ trợ trực tuyến" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[24px]">support_agent</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 w-full bg-surface pt-16 pb-safe"><div class="flex flex-col w-full pb-28">
+<!-- Interactive Top Action / Quick Bar -->
+<div class="px-margin pt-space-xs pb-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full text-label-sm font-label-sm bg-secondary-container text-on-secondary-container">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mr-1.5 animate-pulse"></span>
+        Cơ sở trung tâm
+      </span>
+<span class="text-label-sm font-label-sm text-outline">Mã kho: SGN-EM01</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button aria-label="Sao chép thông tin" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant active:scale-95 transition-transform" id="copy-btn" onclick="navigator.clipboard.writeText('East Metro Logistics Hub - SGN-EM01'); showToast();">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button aria-label="Chia sẻ cơ sở" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant active:scale-95 transition-transform" id="share-btn" onclick="shareFacility()">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- Hero Visual Stage / Image Gallery -->
+<div class="px-margin mb-space-lg">
+<div class="relative w-full h-64 rounded-xl overflow-hidden shadow-sm bg-surface-container-high">
+<div class="w-full h-full bg-cover bg-center transition-all duration-500 ease-out flex flex-col justify-between p-space-md" data-alt="Modern high-density indoor warehouse logistics hub in Vietnam with tall precision industrial racking systems in emerald and matte grey tones, climate controlled environment, pristine polished epoxy floors, clean warm LED lighting, reach trucks in dock staging area, hyper-organized, architectural tech aesthetic." id="gallery-image" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDtOkCzsFEq8JEp5n-K_RB332YU_X9lHlFWeMN66kbTlpkdPoWJM_FWtxXauUF-hsyWtnX9J01dZfb74i_6ti8-yKKvxJaLbWrlD4ezyXavaO6J4ZkYJuDP8SmYF9s4tuH1AwH8cE0irgpy7Hb874kFPFWsXIXpYJ3hdXdIs0QJZWel5AoqedRdcK6x8aNnMr7heAG5uBM4Ae4WVFbcRd4Oy0Ao5iNByVudITwna5Xl')">
+<!-- Floating Status Pills -->
+<div class="flex flex-wrap items-center gap-space-xs">
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface/90 backdrop-blur-md shadow-sm text-label-md font-label-md text-primary">
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">nest_clock_farsight_analog</span>
+<span>Đang mở cửa tiếp nhận 07:30 - 20:00</span>
+</div>
+<div class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-inverse-surface/80 backdrop-blur-md text-label-sm font-label-sm text-inverse-on-surface">
+<span class="material-symbols-outlined text-[13px]">location_on</span>
+<span>Khu Công Nghệ Cao, Thủ Đức</span>
+</div>
+</div>
+<!-- Carousel Micro Indicators & Gallery Trigger -->
+<div class="flex items-center justify-between">
+<div class="flex gap-1.5 bg-inverse-surface/60 backdrop-blur-md px-2 py-1 rounded-full">
+<span class="w-4 h-1.5 rounded-full bg-primary-fixed"></span>
+<span class="w-1.5 h-1.5 rounded-full bg-surface/40"></span>
+<span class="w-1.5 h-1.5 rounded-full bg-surface/40"></span>
+<span class="w-1.5 h-1.5 rounded-full bg-surface/40"></span>
+</div>
+<div class="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface/90 backdrop-blur-sm text-label-sm font-label-sm text-on-surface shadow-sm">
+<span class="material-symbols-outlined text-[14px]">photo_library</span>
+<span>1/8 ảnh</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Facility Header & Profile -->
+<div class="px-margin mb-space-lg">
+<div class="flex items-start justify-between gap-space-sm mb-space-xs">
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">East Metro Logistics Hub</h2>
+<div class="w-8 h-8 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+<!-- Address Block with Map Direct Link -->
+<div class="flex items-start gap-1.5 text-on-surface-variant mb-space-md">
+<span class="material-symbols-outlined text-[18px] shrink-0 text-primary mt-0.5">pin_drop</span>
+<p class="font-body-md text-body-md leading-snug">
+        Lô E2-3, Đường D1, Khu Công nghệ Cao, P. Tăng Nhơn Phú B, TP. Thủ Đức, TP.HCM
+      </p>
+</div>
+<!-- Operating Mode Badge -->
+<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary-container text-on-secondary-container shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">inventory_2</span>
+<span class="font-label-lg text-label-lg font-semibold">Managed Inventory V3</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-label-md text-label-md text-primary font-medium">Đang hoạt động</span>
+</div>
+</div>
+<!-- Interactive Quick Stat Bar -->
+<div class="px-margin mb-space-xl">
+<div class="grid grid-cols-3 gap-gutter-sm bg-surface-container-lowest p-space-md rounded-xl shadow-sm">
+<div class="flex flex-col items-center text-center">
+<span class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-0.5">Sức chứa</span>
+<span class="font-headline-sm text-headline-sm text-primary font-bold">12.500 m³</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">6 Khối kệ A-F</span>
+</div>
+<div class="flex flex-col items-center text-center">
+<span class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-0.5">Nhiệt độ</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">22°C</span>
+<span class="text-label-sm font-label-sm text-secondary">Độ ẩm 52%</span>
+</div>
+<div class="flex flex-col items-center text-center">
+<span class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-0.5">Xử lý hàng</span>
+<span class="font-headline-sm text-headline-sm text-primary font-bold">Real-time</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">Barcode/RFID</span>
+</div>
+</div>
+</div>
+<!-- Service Capabilities & Technical Specs -->
+<div class="px-margin mb-space-xl">
+<div class="flex items-center justify-between mb-space-md">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Thông số &amp; Hạ tầng kỹ thuật</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Tiêu chuẩn kiểm soát &amp; an toàn cấp công nghiệp</p>
+</div>
+<span class="material-symbols-outlined text-outline text-[20px]">engineering</span>
+</div>
+<!-- Specs Bento Grid -->
+<div class="flex flex-col gap-space-sm">
+<!-- 2D Rack Mapping Card -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">table_rows</span>
+</div>
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">2D Rack Mapping Tiêu chuẩn</h4>
+</div>
+<span class="px-2 py-0.5 rounded text-label-sm font-label-sm bg-surface-container text-on-surface-variant">Rack A — F</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+          Hệ thống kệ selective 5 tầng tiêu chuẩn tải nặng, đánh mã tọa độ chuẩn hóa đến từng khay hàng. Truy vết tự động qua hệ thống ERP kho vận.
+        </p>
+<!-- Visual Rack Mini Map Representation -->
+<div class="bg-surface-container-low rounded-lg p-space-sm mt-1">
+<div class="flex items-center justify-between text-label-sm font-label-sm text-outline mb-1.5">
+<span>Sơ đồ tổng quan mặt bằng</span>
+<span class="text-primary font-medium">92% ô trống khả dụng</span>
+</div>
+<div class="grid grid-cols-6 gap-1">
+<div class="h-6 rounded bg-primary text-on-primary font-label-sm text-label-sm flex items-center justify-center">A</div>
+<div class="h-6 rounded bg-primary text-on-primary font-label-sm text-label-sm flex items-center justify-center">B</div>
+<div class="h-6 rounded bg-primary text-on-primary font-label-sm text-label-sm flex items-center justify-center">C</div>
+<div class="h-6 rounded bg-primary text-on-primary font-label-sm text-label-sm flex items-center justify-center">D</div>
+<div class="h-6 rounded bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm flex items-center justify-center">E</div>
+<div class="h-6 rounded bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm flex items-center justify-center">F</div>
+</div>
+</div>
+</div>
+<!-- Climate Control Card -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[18px]">ac_unit</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-0.5">
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">Điều hòa &amp; Bảo quản chuyên dụng</h4>
+<span class="font-label-md text-label-md text-primary font-semibold">&lt;55% RH</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+            Duy trì nhiệt độ 20°C - 24°C liên tục 24/7, cảm biến độ ẩm tự động kích hoạt lọc khí chống ẩm mốc cho đồ gỗ, vải may mặc và linh kiện điện tử cao cấp.
+          </p>
+</div>
+</div>
+<!-- Heavy Infrastructure Card -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[18px]">forklift</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-0.5">
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">Hạ tầng nâng hạ &amp; Tải trọng</h4>
+<span class="font-label-md text-label-md text-secondary font-semibold">1.200 kg/m²</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+            Đội xe nâng Reach Truck 2.5T điện tĩnh âm, dock leveler thủy lực chuẩn hóa cho container 40ft ra vào thông suốt không tắc nghẽn.
+          </p>
+</div>
+</div>
+<!-- Security & Surveillance Card -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[18px]">videocam</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-0.5">
+<h4 class="font-body-lg-medium text-body-lg-medium text-on-surface">Giám sát &amp; Bảo an đa tầng</h4>
+<span class="font-label-md text-label-md text-primary font-semibold">4K • 90 ngày</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+            Camera hành lang 4K bao phủ 100% điểm mù, kiểm soát vào ra 2 lớp (Thẻ từ + Sinh trắc học), đội ngũ bảo vệ trực chốt 24/7.
+          </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Transparent Rental Rules (No fake pricing guarantee) -->
+<div class="px-margin mb-space-xl">
+<div class="p-space-md rounded-xl bg-surface-container flex flex-col gap-space-sm">
+<div class="flex items-center gap-space-xs text-tertiary">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">info</span>
+<h4 class="font-label-lg text-label-lg font-bold uppercase tracking-wider">Chính sách &amp; Quy tắc tính phí minh bạch</h4>
+</div>
+<div class="bg-surface-container-lowest/80 backdrop-blur-sm p-space-sm rounded-lg flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">verified_user</span>
+<p class="font-body-md text-body-md text-on-surface leading-snug">
+<strong>Lưu ý về đơn giá:</strong> Đơn giá thuê chính thức sẽ được máy chủ tính toán dựa trên số ô đã chọn và kỳ hạn thuê tại bước Báo giá.
+        </p>
+</div>
+<div class="bg-surface-container-lowest/80 backdrop-blur-sm p-space-sm rounded-lg flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px] shrink-0 mt-0.5">account_balance_wallet</span>
+<p class="font-body-md text-body-md text-on-surface leading-snug">
+<strong>Hình thức cọc:</strong> Thanh toán cước và tiền cọc theo chu kỳ hợp đồng sau khi chọn vị trí ô kho. Hợp đồng ký kết điện tử an toàn.
+        </p>
+</div>
+<div class="flex items-center justify-between text-label-md font-label-md text-outline pt-1">
+<span>Không phụ phí ẩn hạ tầng</span>
+<span class="text-primary font-medium">Bảo hiểm tài sản tích hợp</span>
+</div>
+</div>
+</div>
+<!-- Location & Route Preview -->
+<div class="px-margin mb-space-lg">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-space-xs">Vị trí &amp; Luồng phương tiện</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-space-sm">Thuận tiện cho xe tải lớn và container vào cổng 24/7</p>
+<div class="w-full h-44 rounded-xl shadow-sm bg-cover bg-center relative overflow-hidden flex flex-col justify-end p-space-sm" data-location="Khu Cong Nghe Cao, Tang Nhon Phu B, Thu Duc, Ho Chi Minh City" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDPye54Gc4t3krMEzCWH9NUvgxzoFHgXadqmZGogUu7Azq-RMPI7zn6UE1AGKG7xRf9vh-epYFUvIEjV07_yF32U468I8eTHkJRxfCDy_fBQ0hxu1HGBv7htCkaNKh8YhVmmSM6wpcHKMIjQRPyqm2cXnDEe3Vgk5-l5dSZVc_STDeEGSirtehTVj0o3epLgeKcCkt0XCgJFMd0HQ_4hxTs1N4TLoUg3cslesDjfN2y')">
+<div class="bg-surface/90 backdrop-blur-md rounded-lg p-2.5 flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">local_shipping</span>
+<span class="font-label-lg text-label-lg text-on-surface">Đường D1 rộng 30m, không cấm tải</span>
+</div>
+<button class="px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm" onclick="openNavigation()">
+          Chỉ đường
+        </button>
+</div>
+</div>
+</div>
+<!-- Sticky Bottom Action Bar with 2 CTAs -->
+<div class="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl shadow-[0_-4px_16px_rgba(0,0,0,0.06)] px-margin py-3 pb-safe">
+<div class="flex items-center gap-space-sm max-w-[480px] mx-auto">
+<!-- Secondary CTA: Direct preview of racks -->
+<button class="flex-1 h-12 rounded-xl bg-surface-container hover:bg-surface-container-high text-primary font-label-lg text-label-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all" id="btn-view-map" onclick="toggleRackModal()">
+<span class="material-symbols-outlined text-[18px]">view_in_ar</span>
+<span>Xem sơ đồ kho</span>
+</button>
+<!-- Primary CTA: Filled Emerald Green -->
+<button class="flex-[1.4] h-12 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-label-lg text-label-lg flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-all" id="btn-select-time" onclick="goToTimeSelection()">
+<span>Chọn thời gian thuê</span>
+<span class="material-symbols-outlined text-[18px]">calendar_month</span>
+</button>
+</div>
+</div>
+<!-- Interactive Rack Modal Preview Drawer (Hidden by default) -->
+<div class="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm hidden flex-col justify-end" id="rack-modal">
+<div class="w-full bg-surface-container-lowest rounded-t-2xl p-margin flex flex-col gap-space-md shadow-xl animate-in fade-in slide-in-from-bottom duration-200">
+<div class="w-12 h-1.5 rounded-full bg-surface-variant mx-auto mb-1"></div>
+<div class="flex items-center justify-between">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface">Mặt bằng hệ thống kệ Rack A-F</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">East Metro Logistics Hub • Tầng 1</p>
+</div>
+<button aria-label="Đóng" class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant" onclick="toggleRackModal()">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<!-- Interactive Rack Visualizer Component -->
+<div class="p-space-sm bg-surface-container rounded-xl flex flex-col gap-space-sm">
+<div class="flex items-center justify-between text-label-sm font-label-sm text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded bg-primary"></span>
+<span>Trống</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded bg-outline-variant"></span>
+<span>Đã thuê</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded bg-tertiary"></span>
+<span>Đang bảo trì</span>
+</div>
+</div>
+<div class="grid grid-cols-4 gap-2 pt-1">
+<button class="p-2.5 rounded-lg bg-surface text-center shadow-sm hover:ring-2 hover:ring-primary flex flex-col items-center" onclick="selectRackSlot('A-101')">
+<span class="font-label-sm text-label-sm text-outline">Kệ A</span>
+<span class="font-label-lg text-label-lg font-bold text-primary">A-101</span>
+<span class="text-label-sm text-label-sm text-secondary">2.5 m³</span>
+</button>
+<button class="p-2.5 rounded-lg bg-surface text-center shadow-sm hover:ring-2 hover:ring-primary flex flex-col items-center" onclick="selectRackSlot('A-102')">
+<span class="font-label-sm text-label-sm text-outline">Kệ A</span>
+<span class="font-label-lg text-label-lg font-bold text-primary">A-102</span>
+<span class="text-label-sm text-label-sm text-secondary">2.5 m³</span>
+</button>
+<div class="p-2.5 rounded-lg bg-surface-container-highest text-center opacity-60 flex flex-col items-center">
+<span class="font-label-sm text-label-sm text-outline">Kệ A</span>
+<span class="font-label-lg text-label-lg font-bold text-on-surface-variant">A-103</span>
+<span class="text-label-sm text-label-sm text-outline">Đã kín</span>
+</div>
+<button class="p-2.5 rounded-lg bg-surface text-center shadow-sm hover:ring-2 hover:ring-primary flex flex-col items-center" onclick="selectRackSlot('B-101')">
+<span class="font-label-sm text-label-sm text-outline">Kệ B</span>
+<span class="font-label-lg text-label-lg font-bold text-primary">B-101</span>
+<span class="text-label-sm text-label-sm text-secondary">5.0 m³</span>
+</button>
+</div>
+</div>
+<button class="w-full h-12 rounded-xl bg-primary text-on-primary font-label-lg text-label-lg font-semibold flex items-center justify-center" onclick="toggleRackModal(); goToTimeSelection();">
+        Tiếp tục chọn kỳ hạn thuê
+      </button>
+</div>
+</div>
+<!-- Micro Notification Toast -->
+<div class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-inverse-surface text-inverse-on-surface px-4 py-2 rounded-full text-label-md font-label-md shadow-lg opacity-0 transition-opacity pointer-events-none flex items-center gap-1.5" id="toast">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">check_circle</span>
+<span>Đã sao chép mã cơ sở vào bộ nhớ tạm!</span>
+</div>
+</div>
+<script>
+  function showToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.remove('opacity-0');
+    toast.classList.add('opacity-100');
+    setTimeout(() => {
+      toast.classList.remove('opacity-100');
+      toast.classList.add('opacity-0');
+    }, 2000);
+  }
+
+  function shareFacility() {
+    if (navigator.share) {
+      navigator.share({
+        title: 'East Metro Logistics Hub',
+        text: 'Cơ sở lưu trữ hàng hóa Managed Inventory V3 hiện đại tại Khu Công Nghệ Cao Thủ Đức',
+        url: window.location.href,
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      const toast = document.getElementById('toast');
+      toast.querySelector('span:last-child').textContent = 'Đã sao chép liên kết cơ sở!';
+      showToast();
+    }
+  }
+
+  function toggleRackModal() {
+    const modal = document.getElementById('rack-modal');
+    if (modal.classList.contains('hidden')) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    } else {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  }
+
+  function selectRackSlot(slotCode) {
+    const toast = document.getElementById('toast');
+    toast.querySelector('span:last-child').textContent = 'Đã ghi nhận vị trí ' + slotCode;
+    showToast();
+  }
+
+  function goToTimeSelection() {
+    window.location.hash = '#select-tenure';
+  }
+
+  function openNavigation() {
+    const address = encodeURIComponent('East Metro Logistics Hub, Khu Cong Nghe Cao, Tang Nhon Phu B, Thu Duc');
+    window.open('https://maps.google.com/?q=' + address, '_blank');
+  }
+</script></main></body></html>

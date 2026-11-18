@@ -12,12 +12,14 @@ import ManagedCellStockModelRaw from '../../models/inventory-items/managed-cell-
 import ManagedItemInstanceModelRaw from '../../models/inventory-items/managed-item-instance.model';
 import ContractModelRaw from '../../models/contracts/contract.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
+import { accessSessionCoversReservations } from '../access/managed-access-policy';
+import { nextManagedStockLedgerRevision } from './managed-cell-stock.domain';
 import { readManagedFacilityStockState } from './managed-unified-inbound.service';
 import { FacilityServiceType } from '../../types/facility.type';
 import { ReservationStatus } from '../../types/reservation.type';
 import { ItemMovementType } from '../../types/item-movement.type';
 import { UserRole } from '../../types/user.type';
-import { ManagedAccessPurpose, ManagedAccessSessionStatus } from '../../types/managed-access.type';
+import { ManagedAccessPurpose, ManagedAccessSessionStatus, ManagedAccessVisitPurpose } from '../../types/managed-access.type';
 import { ItemSpecificationStatus } from '../../types/item-specification.type';
 
 const Item: any = InventoryItemModelRaw, Movement: any = ItemMovementModelRaw;
@@ -28,6 +30,11 @@ type Actor = { _id: Types.ObjectId; role: UserRole; assignedFacilityId?: Types.O
 export type Plain = Record<string, any>;
 export class ManagedV3OutboundError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
 function fail(status: number, code: string, message: string): never { throw new ManagedV3OutboundError(status, code, message); }
+export function isOutboundPresenceVisitPurpose(purpose: unknown): boolean {
+  // New visits represent a general warehouse appointment. Keep legacy purpose
+  // values readable for visits booked before the unified appointment flow.
+  return purpose === ManagedAccessVisitPurpose.WAREHOUSE_VISIT || purpose === ManagedAccessPurpose.OUTBOUND;
+}
 const same = (a: any, b: any) => String(a?._id ?? a) === String(b?._id ?? b);
 const id = (value: any) => String(value?._id ?? value);
 const stockLotKey = (line: any) => `${id(line.itemSpecId)}:${line.receiptId}:${id(line.cellId)}`;
@@ -37,24 +44,34 @@ function physicalTotals(unitWeightKg: number, unitVolumeM3: number, quantity: nu
   return { totalWeightKg, totalVolumeM3 };
 }
 const live = { deletedAt: { $exists: false } };
-const oid = (value: unknown, name: string) => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(value as string); };
+export const normalizeOutboundObjectId = (value: unknown, name: string) => {
+  // Internal callers may pass the ObjectId parsed from the route. Keep the
+  // boundary strict for external values while accepting that already-validated
+  // representation inside the service.
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`);
+  return new Types.ObjectId(value);
+};
+const oid = normalizeOutboundObjectId;
 const key = (value: unknown) => { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value; };
 const version = (value: unknown) => { const match = typeof value === 'string' ? value.trim().match(/^(?:W\/)?"(0|[1-9]\d*)"$/) : null; const n = match ? Number(match[1]) : NaN; if (!Number.isSafeInteger(n)) fail(typeof value === 'undefined' ? 428 : 400, 'IF_MATCH_REQUIRED', 'Cần If-Match là revision hiện tại.'); return n; };
 const canonical = (value: any): any => value?.toHexString ? value.toHexString() : value instanceof Date ? value.toISOString() : Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).filter(k => !['_id', '__v', 'createdAt', 'updatedAt'].includes(k) && value[k] !== undefined).sort().map(k => [k, canonical(value[k])])) : value;
 const stable = (value: any) => JSON.stringify(canonical(value));
 const hash = (value: unknown) => createHash('sha256').update(stable(value)).digest('hex');
+export const directOutboundRequestHash = (candidate: DirectOutboundCandidate) => hash(candidate);
 const errorLabel = (error: any, label: string) => !!error?.hasErrorLabel?.(label) || error?.errorLabels?.includes?.(label);
 const money = (v: number, places: 3 | 6) => Math.round((v + Number.EPSILON) * 10 ** places) / 10 ** places;
 const round = money;
 
 export type DirectOutboundLine = { lineId: string; itemSpecId: string; itemSpecRevision: number; quantity: number;
   cellAllocations?: Array<{ cellId: string; quantity: number; receiptId?: string }>; itemInstanceIds?: string[] };
-export type DirectOutboundCandidate = { accessSessionId: string; sessionRevision: number; skuRevision: number; lines: DirectOutboundLine[]; reason?: string; referenceCode?: string; notes?: string; physicalRemovalConfirmed?: boolean; customerAttestation?: string };
+export type DirectOutboundCandidate = { accessSessionId: string; sessionRevision: number; skuRevision: number; reservationId?: string; lines: DirectOutboundLine[]; reason?: string; referenceCode?: string; notes?: string; physicalRemovalConfirmed?: boolean; customerAttestation?: string };
 
 export function normalizeDirectOutbound(input: unknown): DirectOutboundCandidate {
   const shape = (input && typeof input === 'object' && !Array.isArray(input)) ? input as Plain : null;
-  if (!shape || Object.keys(shape).some(key => !['accessSessionId','sessionRevision','skuRevision','lines','reason','referenceCode','notes','physicalRemovalConfirmed','customerAttestation'].includes(key)) ||
+  if (!shape || Object.keys(shape).some(key => !['accessSessionId','sessionRevision','skuRevision','reservationId','lines','reason','referenceCode','notes','physicalRemovalConfirmed','customerAttestation'].includes(key)) ||
       typeof shape.accessSessionId !== 'string' || !/^[a-f\d]{24}$/i.test(shape.accessSessionId) ||
+      shape.reservationId !== undefined && (typeof shape.reservationId !== 'string' || !/^[a-f\d]{24}$/i.test(shape.reservationId)) ||
       !Number.isSafeInteger(shape.sessionRevision) || shape.sessionRevision < 0 || !Number.isSafeInteger(shape.skuRevision) || shape.skuRevision < 0 ||
       !Array.isArray(shape.lines) || shape.lines.length < 1 || shape.lines.length > 50) fail(422, 'INVALID_OUTBOUND_INPUT', 'Thông tin xuất kho không đúng định dạng.');
   const lines: DirectOutboundLine[] = shape.lines.map((raw: any, index: number) => {
@@ -73,27 +90,44 @@ export function normalizeDirectOutbound(input: unknown): DirectOutboundCandidate
   if (new Set(lines.map(line => line.itemSpecId)).size !== lines.length || new Set(lines.map(line => line.lineId)).size !== lines.length) fail(422, 'DUPLICATE_OUTBOUND_LINE', 'Mỗi loại hàng chỉ được xuất trên một dòng phiếu.');
   for (const field of ['reason','referenceCode','notes','customerAttestation'] as const) if (shape[field] !== undefined && (typeof shape[field] !== 'string' || shape[field].length > (field === 'notes' || field === 'customerAttestation' ? 1000 : 240))) fail(422, 'INVALID_OUTBOUND_INPUT', `${field} không hợp lệ.`);
   if (shape.physicalRemovalConfirmed !== undefined && typeof shape.physicalRemovalConfirmed !== 'boolean') fail(422, 'INVALID_OUTBOUND_INPUT', 'physicalRemovalConfirmed phải là boolean.');
-  return { accessSessionId: shape.accessSessionId, sessionRevision: shape.sessionRevision, skuRevision: shape.skuRevision, lines,
+  return { accessSessionId: shape.accessSessionId, sessionRevision: shape.sessionRevision, skuRevision: shape.skuRevision,
+    ...(shape.reservationId ? { reservationId: shape.reservationId } : {}), lines,
     ...(shape.reason ? { reason: shape.reason.trim() } : {}), ...(shape.referenceCode ? { referenceCode: shape.referenceCode.trim() } : {}), ...(shape.notes ? { notes: shape.notes.trim() } : {}),
     ...(shape.physicalRemovalConfirmed !== undefined ? { physicalRemovalConfirmed: shape.physicalRemovalConfirmed } : {}),
     ...(shape.customerAttestation ? { customerAttestation: shape.customerAttestation.trim() } : {}) };
 }
 
-function assertCurrentSignedContract(contract: any) {
+export function assertCurrentSignedContract(contract: any) {
   const active = contract?.contentVersions?.find((version: any) => version.version === contract.currentContentVersion);
+  const contentValid = !!active && /^[a-f\d]{64}$/i.test(active.contentHash) &&
+    createHash('sha256').update(JSON.stringify(active.content)).digest('hex') === active.contentHash;
   const signatures = (contract?.signatures ?? []).filter((signature: any) => signature.version === contract.currentContentVersion && signature.contentHash === active?.contentHash);
-  return contract?.status === 'SIGNED' && !!active && signatures.some((signature: any) => signature.signerRole === UserRole.CUSTOMER) &&
+  return contract?.status === 'SIGNED' && contentValid && !!contract.signedProofPublicId && !!contract.verifiedAt &&
+    signatures.some((signature: any) => signature.signerRole === UserRole.CUSTOMER) &&
     signatures.some((signature: any) => [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(signature.signerRole));
 }
 
-function directScope(sku: any, reservation: any, actor: Actor) {
-  const now = new Date();
+export function validateDirectOutboundReservationScope(sku: any, reservation: any, actor: Actor, now = new Date(), requestedReservationId?: string) {
   if (actor.role !== UserRole.CUSTOMER || !same(sku.customerId, actor._id)) fail(404, 'SKU_NOT_FOUND', 'Không tìm thấy mặt hàng.');
   if (sku.inventorySchemaVersion !== 3 || sku.skuStatus !== 'ACTIVE' || !same(sku.facilityId, reservation.facilityId) ||
-      !same(sku.reservationId ?? sku.managedReservationId, reservation._id)) fail(409, 'OUTBOUND_SCOPE_INVALID', 'SKU không thuộc Reservation đang chọn.');
+      !same(reservation.customerId, actor._id) || requestedReservationId && !same(reservation._id, requestedReservationId)) fail(409, 'OUTBOUND_SCOPE_INVALID', 'SKU và Reservation không cùng Customer/Facility hoặc Reservation đã chọn không khớp.');
   if (reservation.serviceType !== FacilityServiceType.MANAGED_INVENTORY || reservation.bookingFlowVersion !== 3 || reservation.status !== ReservationStatus.ACTIVE ||
       reservation.customerId.toString() !== actor._id.toString() || reservation.startDate > now || reservation.endDate <= now || !reservation.handoverAt || !reservation.handoverByStaffId ||
       reservation.activeClosureRequestId) fail(409, 'RENTAL_NOT_ACTIVE', 'Reservation phải đang hoạt động, trong hạn và đã hoàn tất bàn giao.');
+}
+
+export function validateDirectOutboundAccessScope(access: Plain, visit: Plain, reservation: Plain, actor: Actor,
+  candidate: DirectOutboundCandidate, cellIds: string[], now = new Date()) {
+  const allowed = new Set((access?.allowedCellIds ?? []).map(id));
+  if (!access || !same(access._id, candidate.accessSessionId) || !same(access.customerId, actor._id) || !same(access.reservationId, reservation._id) || !same(access.facilityId, reservation.facilityId) ||
+      access.status !== ManagedAccessSessionStatus.ACTIVE || !(access.allowedPurposes ?? []).includes(ManagedAccessPurpose.OUTBOUND) ||
+      access.revision !== candidate.sessionRevision || !(access.startedAt instanceof Date) || access.startedAt > now ||
+      !(access.expiresAt instanceof Date) || access.expiresAt <= now || !cellIds.length || cellIds.some(cellId => !allowed.has(cellId)) ||
+      !visit || !same(visit._id, access.visitId) || !same(visit.reservationId, reservation._id) || !same(visit.customerId, actor._id) ||
+      !same(visit.facilityId, reservation.facilityId) || visit.purpose !== ManagedAccessPurpose.OUTBOUND || visit.status !== 'CHECKED_IN') {
+    fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần Access Session OUTBOUND còn hiệu lực, đúng Reservation và bao phủ toàn bộ Cell nguồn.');
+  }
+  return access;
 }
 
 export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain; candidate: DirectOutboundCandidate; state: Plain; specifications: Plain[]; now?: Date }) {
@@ -113,7 +147,7 @@ export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain;
   let quantity = 0, totalWeightKg = 0, totalVolumeM3 = 0;
   for (const line of candidate.lines) {
     const spec = specMap.get(line.itemSpecId);
-    if (!spec || !same(spec.skuId,sku._id) || !same(spec.customerId,sku.customerId) || !same(spec.reservationId,reservation._id) || spec.status !== ItemSpecificationStatus.ACTIVE || spec.revision !== line.itemSpecRevision) fail(409, 'ITEM_SPECIFICATION_STALE', `Loại hàng tại dòng ${line.lineId} không còn hợp lệ; hãy tải lại.`);
+    if (!spec || !same(spec.skuId,sku._id) || !same(spec.customerId,sku.customerId) || !same(spec.facilityId ?? sku.facilityId,sku.facilityId) || spec.status !== ItemSpecificationStatus.ACTIVE || spec.revision !== line.itemSpecRevision) fail(409, 'ITEM_SPECIFICATION_STALE', `Loại hàng tại dòng ${line.lineId} không còn hợp lệ; hãy tải lại.`);
     const specLots = lots.filter(row=>same(row.itemSpecId,spec._id));
     const specInstances = instances.filter(row=>same(row.itemSpecId,spec._id));
     if (specLots.length && specInstances.length) fail(409, 'MIXED_STOCK_KIND_UNSUPPORTED', `Hàng ${spec.name} đang có dạng lô và món nguyên khối cùng lúc; cần đối soát trước khi xuất.`);
@@ -125,8 +159,8 @@ export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain;
         const instance = instances.find(row=>row.itemInstanceId===instanceId && same(row.itemSpecId,spec._id));
         if (!instance || instance.status !== 'PLACED' || instance.quantity !== 1 || !Array.isArray(instance.allocations) || !instance.allocations.length) fail(409, 'ITEM_INSTANCE_NOT_AVAILABLE', 'Một món nguyên vẹn không còn trong kho hoặc đã được xuất.');
         for (const allocation of [...instance.allocations].sort((a,b)=>id(a.cellId).localeCompare(id(b.cellId)))) {
-          const cellId=id(allocation.cellId); if (!allocatedCellIds.has(cellId)) fail(409,'CELL_NOT_ALLOCATED','Món hàng nằm ngoài ô kệ được cấp cho Reservation.');
-          const effect = { lineId: line.lineId, itemSpecId: spec._id, receiptId: instance.sourceReceiptId, itemInstanceId: instance.itemInstanceId, cellId: allocation.cellId,
+          const cellId=id(allocation.cellId); if (!same(instance.reservationId, reservation._id) || !allocatedCellIds.has(cellId)) fail(409,'CELL_NOT_ALLOCATED','Món hàng không thuộc Reservation/ô nguồn đã chọn.');
+          const effect = { lineId: line.lineId, itemSpecId: spec._id, reservationId: reservation._id, receiptId: instance.sourceReceiptId, itemInstanceId: instance.itemInstanceId, cellId: allocation.cellId,
             quantity: 1, quantityUnitSnapshot: spec.quantityUnitName ?? spec.quantityUnitId?.name ?? 'đơn vị', unitWeightKgSnapshot: instance.unitWeightKgSnapshot,
             unitVolumeM3Snapshot: instance.unitVolumeM3Snapshot, unitDimensionsSnapshot: instance.unitDimensionsSnapshot, allocatedWeightKg: allocation.weightKg,
             allocatedVolumeM3: allocation.volumeM3, quantityBefore: 1, quantityAfter: 0 };
@@ -144,7 +178,7 @@ export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain;
         return ao.at-bo.at||ao.movementId.localeCompare(bo.movementId)||a.receiptId.localeCompare(b.receiptId)||id(a.cellId).localeCompare(id(b.cellId));
       });
       for (const allocation of allocations) {
-        if (allocation.cellId && !allocatedCellIds.has(allocation.cellId)) fail(409,'CELL_NOT_ALLOCATED','Có ô kệ nguồn nằm ngoài Reservation.');
+        if (allocation.cellId && !allocatedCellIds.has(allocation.cellId)) fail(409,'CELL_NOT_ALLOCATED','Có ô kệ nguồn nằm ngoài Reservation đã chọn.');
         let cellNeeded=allocation.quantity;
         const candidates=fifo.filter(row=>(!allocation.cellId||id(row.cellId)===allocation.cellId)&&(!allocation.receiptId||row.receiptId===allocation.receiptId));
         for (const lot of candidates) {
@@ -152,7 +186,9 @@ export function buildDirectOutboundPlan(input: { sku: Plain; reservation: Plain;
           const lotKey=stockLotKey(lot), remaining=remainingByLot.get(lotKey)??0;
           const take=Math.min(cellNeeded,remaining); if (take<1) continue;
           const amounts=physicalTotals(lot.unitWeightKgSnapshot,lot.unitVolumeM3Snapshot,take), cellId=id(lot.cellId);
-          effectLines.push({ lineId:line.lineId,itemSpecId:spec._id,receiptId:lot.receiptId,cellId:lot.cellId,quantity:take,quantityUnitSnapshot:lot.quantityUnitSnapshot??'đơn vị',
+          if (!same(lot.reservationId, reservation._id) || !same(lot.skuId, sku._id) || lot.customerId != null && !same(lot.customerId, sku.customerId) ||
+              lot.facilityId != null && !same(lot.facilityId, sku.facilityId)) fail(409,'OUTBOUND_SCOPE_INVALID','Receipt không thuộc SKU và Reservation đã chọn.');
+          effectLines.push({ lineId:line.lineId,itemSpecId:spec._id,reservationId:reservation._id,receiptId:lot.receiptId,cellId:lot.cellId,quantity:take,quantityUnitSnapshot:lot.quantityUnitSnapshot??'đơn vị',
             unitWeightKgSnapshot:lot.unitWeightKgSnapshot,unitVolumeM3Snapshot:lot.unitVolumeM3Snapshot,unitDimensionsSnapshot:lot.unitDimensionsSnapshot,
             allocatedWeightKg:amounts.totalWeightKg,allocatedVolumeM3:amounts.totalVolumeM3,quantityBefore:lot.quantityOnHand,quantityAfter:lot.quantityOnHand-take });
           addCell(cellId,amounts.totalWeightKg,amounts.totalVolumeM3); lineWeightKg=money(lineWeightKg+amounts.totalWeightKg,3); lineVolumeM3=money(lineVolumeM3+amounts.totalVolumeM3,6);
@@ -196,8 +232,8 @@ async function directOwnedSku(input: unknown, actor: Actor, session?: ClientSess
   return sku;
 }
 
-async function directReservation(sku: Plain, actor: Actor, session?: ClientSession) {
-  const reservationId = sku.reservationId ?? sku.managedReservationId;
+async function directReservation(sku: Plain, actor: Actor, requestedReservationId?: string, session?: ClientSession) {
+  const reservationId = requestedReservationId ? oid(requestedReservationId, 'reservationId') : sku.reservationId ?? sku.managedReservationId;
   let query = ReservationModel.findOne({ _id: reservationId, customerId: actor._id, facilityId: sku.facilityId,
     serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3, status: ReservationStatus.ACTIVE,
     startDate: { $lte: new Date() }, endDate: { $gt: new Date() }, handoverAt: { $exists: true, $ne: null },
@@ -209,6 +245,7 @@ async function directReservation(sku: Plain, actor: Actor, session?: ClientSessi
   if (session) contractQuery.session(session);
   const contract: any = await contractQuery.lean().exec();
   if (!assertCurrentSignedContract(contract)) fail(409, 'CONTRACT_NOT_SIGNED', 'Hợp đồng hiện hành chưa được Customer và đại diện cơ sở ký đầy đủ.');
+  validateDirectOutboundReservationScope(sku, reservation, actor, new Date(), requestedReservationId);
   return reservation;
 }
 
@@ -236,30 +273,34 @@ async function rejectUnresolvedLegacyV3Request(skuId: Types.ObjectId, session?: 
 async function loadDirectCandidateState(skuId: unknown, body: unknown, actor: Actor, session?: ClientSession) {
   const candidate = normalizeDirectOutbound(body);
   const sku = await directOwnedSku(skuId, actor, session);
-  const reservation = await directReservation(sku, actor, session);
+  const reservation = await directReservation(sku, actor, candidate.reservationId, session);
   if (Number(sku.managedV3Revision ?? 0) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'SKU đã thay đổi; hãy tải lại tồn kho.');
   await rejectUnresolvedLegacyV3Request(sku._id, session);
   const state = await directFacilityState(sku, reservation, session);
   const specIds = candidate.lines.map(line => new Types.ObjectId(line.itemSpecId));
-  let specQuery = ItemSpec.find({ _id: { $in: specIds }, skuId: sku._id, customerId: actor._id, reservationId: reservation._id, facilityId: sku.facilityId,
+  let specQuery = ItemSpec.find({ _id: { $in: specIds }, skuId: sku._id, customerId: actor._id, facilityId: sku.facilityId,
     status: 'ACTIVE', deletedAt: { $exists: false } }).populate('quantityUnitId', 'name code');
   if (session) specQuery = specQuery.session(session);
   const specifications: Plain[] = await specQuery.lean().exec();
-  if (specifications.length !== specIds.length) fail(404, 'ITEM_SPECIFICATION_NOT_FOUND', 'Một hoặc nhiều loại hàng không thuộc SKU hoặc Reservation này.');
+  if (specifications.length !== specIds.length) fail(404, 'ITEM_SPECIFICATION_NOT_FOUND', 'Một hoặc nhiều loại hàng không thuộc SKU/Facility này.');
   const plan = buildDirectOutboundPlan({ sku, reservation, candidate, state, specifications });
   return { candidate, sku, reservation, state, specifications, plan };
 }
 
 async function readOnlySessionScope(candidate: DirectOutboundCandidate, reservation: Plain, actor: Actor, cellIds: string[]) {
-  const currentSession: any = await AccessSession.findOne({ _id: candidate.accessSessionId, customerId: actor._id, reservationId: reservation._id,
+  const currentSession: any = await AccessSession.findOne({ _id: candidate.accessSessionId, customerId: actor._id,
+    $or: [{ reservationId: reservation._id }, { scopedReservationIds: reservation._id }],
     facilityId: reservation.facilityId, status: ManagedAccessSessionStatus.ACTIVE, allowedPurposes: ManagedAccessPurpose.OUTBOUND,
     revision: candidate.sessionRevision, startedAt: { $lte: new Date() }, expiresAt: { $gt: new Date() } }).lean().exec();
   if (!currentSession) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần Access Session OUTBOUND đang hoạt động và còn hạn.');
   const allowed = new Set((currentSession.allowedCellIds ?? []).map(id));
   if (!cellIds.length || cellIds.some(cellId => !allowed.has(cellId))) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Session không bao phủ toàn bộ Cell nguồn.');
-  const visit: any = await Visit.findOne({ _id: currentSession.visitId, reservationId: reservation._id, customerId: actor._id, facilityId: reservation.facilityId,
-    purpose: ManagedAccessPurpose.OUTBOUND, status: 'CHECKED_IN' }).select('_id status purpose').lean().exec();
-  if (!visit) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Customer cần có Visit OUTBOUND đã CHECK_IN.');
+  const visit: any = await Visit.findOne({ _id: currentSession.visitId, customerId: actor._id, facilityId: reservation.facilityId,
+    purpose: { $in: [ManagedAccessVisitPurpose.WAREHOUSE_VISIT, ManagedAccessPurpose.OUTBOUND] }, status: 'CHECKED_IN' }).select('_id status purpose reservationId scopedReservationIds').lean().exec();
+  if (!visit || !isOutboundPresenceVisitPurpose(visit.purpose) || !accessSessionCoversReservations({ reservationId: currentSession.reservationId,
+    scopedReservationIds: currentSession.scopedReservationIds, requestedReservationIds: [reservation._id] }) ||
+    !accessSessionCoversReservations({ reservationId: visit.reservationId, scopedReservationIds: visit.scopedReservationIds,
+      requestedReservationIds: [reservation._id, currentSession.reservationId] })) fail(409, 'ACCESS_SESSION_SCOPE_INVALID', 'Cần lịch đến kho đã CHECK_IN, bao phủ đơn thuê và phiên còn quyền OUTBOUND cho các ô nguồn.');
   return currentSession;
 }
 
@@ -285,7 +326,7 @@ function directStockResponse(sku: Plain, reservation: Plain, state: Plain, speci
           weightKg: allocation.weightKg, volumeM3: allocation.volumeM3 })) })) };
   });
   return { skuId: sku._id, reservationId: reservation._id, facilityId: sku.facilityId, skuRevision: sku.managedV3Revision ?? 0,
-    ledgerRevision: Math.max(0, ...state.movements.filter((movement: Plain) => same(movement.itemId, sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+    ledgerRevision: nextManagedStockLedgerRevision(state.movements, sku._id) - 1,
     reconciliationStatus: 'RECONCILED', itemSpecifications };
 }
 
@@ -295,6 +336,10 @@ function checkTransactionUnavailable(error: any): boolean {
 
 async function findDirectReplay(skuId: Types.ObjectId, actor: Actor, requestKey: string, payloadHash?: string) {
   const movement: any = await Movement.findOne({ itemId: skuId, customerId: actor._id, idempotencyKey: requestKey, schemaVersion: 4, 'stockEffect.action': 'REMOVE' }).lean().exec();
+  return resolveDirectOutboundReplay(movement, payloadHash);
+}
+
+export function resolveDirectOutboundReplay(movement: Plain | null, payloadHash?: string) {
   if (!movement) return null;
   if (payloadHash && movement.stockEffect?.requestHash !== payloadHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được sử dụng với nội dung khác.');
   return { status: 'COMMITTED', replayed: true, movement };
@@ -311,7 +356,7 @@ async function applyDirectStockEffects(plan: Plain, scope: Plain, actor: Actor, 
   for (const lines of byLot.values()) {
     const line = lines[0]!;
     if (lines.length !== 1) fail(409, 'DUPLICATE_SOURCE_ALLOCATION', 'Receipt/Cell nguồn bị lặp trong cùng một phiếu.');
-    const current: any = await CellStock.findOne({ skuId: scope.sku._id, itemSpecId: line.itemSpecId, reservationId: scope.reservation._id,
+    const current: any = await CellStock.findOne({ skuId: scope.sku._id, itemSpecId: line.itemSpecId, reservationId: line.reservationId,
       facilityId: scope.sku.facilityId, customerId: actor._id, cellId: line.cellId, receiptId: line.receiptId }).session(session).lean().exec();
     if (!current || current.quantityOnHand !== line.quantityBefore || line.quantity > current.quantityAvailable) fail(409, 'SOURCE_STOCK_CHANGED', 'Tồn receipt nguồn đã thay đổi; hãy tải lại và xem trước lần nữa.');
     const after = current.quantityOnHand - line.quantity;
@@ -335,7 +380,7 @@ async function applyDirectStockEffects(plan: Plain, scope: Plain, actor: Actor, 
     const selectedCells = selected.map(line => id(line.cellId)).sort();
     if (stable(expectedCells) !== stable(selectedCells)) fail(409, 'ITEM_INSTANCE_FOOTPRINT_MISMATCH', 'Phải xuất toàn bộ các ô của món nguyên khối.');
     const updated = await ItemInstance.updateOne({ itemInstanceId: instanceId, skuId: scope.sku._id, itemSpecId: instance.itemSpecId,
-      reservationId: scope.reservation._id, customerId: actor._id, facilityId: scope.sku.facilityId, status: 'PLACED', revision: instance.revision },
+      reservationId: instance.reservationId, customerId: actor._id, facilityId: scope.sku.facilityId, status: 'PLACED', revision: instance.revision },
     { $set: { status: 'REMOVED', allocations: [] }, $inc: { revision: 1 } }, { session, runValidators: true }).exec();
     if (updated.matchedCount !== 1) fail(412, 'STALE_ITEM_INSTANCE', 'Món nguyên khối vừa thay đổi.');
   }
@@ -344,15 +389,33 @@ async function applyDirectStockEffects(plan: Plain, scope: Plain, actor: Actor, 
 export class ManagedInventoryV3OutboundService {
   static async context(skuId: unknown, actor: Actor) {
     const sku = await directOwnedSku(skuId, actor);
-    const reservation = await directReservation(sku, actor);
     await rejectUnresolvedLegacyV3Request(sku._id);
-    const state = await directFacilityState(sku, reservation);
-    const specQuery = ItemSpec.find({ skuId: sku._id, customerId: actor._id, reservationId: reservation._id, facilityId: sku.facilityId,
+    const specQuery = ItemSpec.find({ skuId: sku._id, customerId: actor._id, facilityId: sku.facilityId,
       status: 'ACTIVE', deletedAt: { $exists: false } }).populate('quantityUnitId', 'name code').sort({ createdAt: 1, _id: 1 });
     const specifications: Plain[] = await specQuery.lean().exec();
+    const [stockReservationIds, instanceReservationIds] = await Promise.all([
+      CellStock.distinct('reservationId', { skuId: sku._id, customerId: actor._id, facilityId: sku.facilityId }),
+      ItemInstance.distinct('reservationId', { skuId: sku._id, customerId: actor._id, facilityId: sku.facilityId, status: 'PLACED' }),
+    ]);
+    const originalReservationId = id(sku.reservationId ?? sku.managedReservationId);
+    const possibleIds = [...new Set([originalReservationId, ...stockReservationIds.map(id), ...instanceReservationIds.map(id)])];
+    if (possibleIds.length > 20) fail(503, 'RESERVATION_SCOPE_UNKNOWN', 'Có quá nhiều Reservation chứa tồn của SKU để hiển thị an toàn.');
+    const reservationScopes: Plain[] = [];
+    for (const reservationId of possibleIds) {
+      try {
+        const scopedReservation = await directReservation(sku, actor, reservationId);
+        const scopedState = await directFacilityState(sku, scopedReservation);
+        reservationScopes.push({ reservation: { id: scopedReservation._id, reservationCode: scopedReservation.reservationCode,
+          facilityId: scopedReservation.facilityId, status: scopedReservation.status },
+          stock: directStockResponse(sku, scopedReservation, scopedState, specifications) });
+      } catch (error: any) {
+        if (!(error instanceof ManagedV3OutboundError) || !['RENTAL_NOT_ACTIVE', 'CONTRACT_NOT_SIGNED'].includes(error.code)) throw error;
+      }
+    }
+    const defaultScope = reservationScopes.find(row => same(row.reservation.id, originalReservationId)) ?? reservationScopes[0];
+    if (!defaultScope) fail(409, 'OUTBOUND_SCOPE_INVALID', 'SKU không có Reservation hiện hành đủ điều kiện xuất kho.');
     return { sku: { id: sku._id, itemCode: sku.itemCode, name: sku.name, categoryId: sku.categoryId, images: sku.images ?? [] },
-      reservation: { id: reservation._id, reservationCode: reservation.reservationCode, facilityId: reservation.facilityId, status: reservation.status },
-      stock: directStockResponse(sku, reservation, state, specifications) };
+      reservation: defaultScope.reservation, stock: defaultScope.stock, reservationScopes };
   }
 
   static async preview(skuId: unknown, body: unknown, actor: Actor) {
@@ -367,13 +430,13 @@ export class ManagedInventoryV3OutboundService {
           weightRemovedKg: source.allocatedWeightKg, volumeRemovedM3: source.allocatedVolumeM3, unitWeightKgSnapshot: source.unitWeightKgSnapshot,
           unitVolumeM3Snapshot: source.unitVolumeM3Snapshot, unitDimensionsSnapshot: source.unitDimensionsSnapshot })) })),
       capacity: scope.plan.capacity, totalQuantity: scope.plan.quantity, totalWeightKg: scope.plan.totalWeightKg, totalVolumeM3: scope.plan.totalVolumeM3,
-      ledgerRevision: Math.max(0, ...scope.state.movements.filter((movement: Plain) => same(movement.itemId, scope.sku._id)).map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))),
+      ledgerRevision: nextManagedStockLedgerRevision(scope.state.movements, scope.sku._id) - 1,
       skuRevision: scope.sku.managedV3Revision ?? 0,
       warnings: ['Preview không ghi tồn kho. Customer sẽ ghi nhận đã thực hiện xuất hàng trong phiên OUTBOUND có Staff giám sát.'] };
   }
 
   static async confirm(skuId: unknown, body: unknown, idempotencyInput: unknown, ifMatchInput: unknown, actor: Actor) {
-    const skuIdObject = oid(skuId, 'skuId'), requestKey = key(idempotencyInput), candidate = normalizeDirectOutbound(body), requestHash = hash(candidate);
+    const skuIdObject = oid(skuId, 'skuId'), requestKey = key(idempotencyInput), candidate = normalizeDirectOutbound(body), requestHash = directOutboundRequestHash(candidate);
     if (candidate.physicalRemovalConfirmed !== true || !candidate.customerAttestation?.trim()) fail(422, 'CUSTOMER_ATTESTATION_REQUIRED', 'Customer cần xác nhận đã thực tế lấy hàng khỏi Cell trước khi hoàn tất.');
     await directOwnedSku(skuIdObject, actor);
     const replay = await findDirectReplay(skuIdObject, actor, requestKey, requestHash);
@@ -419,7 +482,7 @@ export class ManagedInventoryV3OutboundService {
         { $set: { usedCapacityM3: Math.max(0, nextUsed) }, $inc: { inventoryVersion: 1 } }, { session }).exec();
         if (reservationUpdated.matchedCount !== 1) fail(412, 'STALE_RESERVATION_CAPACITY', 'Reservation capacity vừa thay đổi.');
         const movements = (scope.state.movements as Plain[]).filter((movement: Plain) => same(movement.itemId, scope.sku._id));
-        const ledgerRevision = Math.max(0, ...movements.map((movement: Plain) => Number(movement.stockEffect?.ledgerRevision ?? 0))) + 1;
+        const ledgerRevision = nextManagedStockLedgerRevision(movements, scope.sku._id);
         const movementId = new Types.ObjectId(), operationId = 'MI-OUT:' + String(scope.sku._id) + ':' + createHash('sha256').update(requestKey).digest('hex');
         const quantityUnit = new Set(scope.plan.effectLines.map((line: Plain) => line.quantityUnitSnapshot)).size === 1
           ? scope.plan.effectLines[0]!.quantityUnitSnapshot : 'MIXED';

@@ -1,0 +1,404 @@
+<!-- VaultSpace — Lịch sử hàng hóa -->
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100%;min-height:100%;margin:0;padding:0;}body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"surface":"#ecfef2","primary-fixed-dim":"#80d9a5","surface-container":"#e1f2e7","error-container":"#ffdad6","surface-dim":"#cdded3","on-tertiary":"#ffffff","inverse-surface":"#25342c","on-primary-fixed":"#002111","on-error":"#ffffff","on-tertiary-fixed-variant":"#653e00","on-secondary-container":"#406b56","secondary":"#3c6752","secondary-fixed-dim":"#a3d1b8","surface-bright":"#ecfef2","surface-variant":"#d6e7dc","on-surface-variant":"#3f4942","surface-container-lowest":"#ffffff","on-primary":"#ffffff","on-primary-fixed-variant":"#005231","tertiary-container":"#955e00","outline":"#6f7a71","inverse-primary":"#80d9a5","secondary-container":"#bbead0","outline-variant":"#bec9bf","tertiary-fixed":"#ffddb8","secondary-fixed":"#beedd3","on-tertiary-container":"#ffe7d0","on-primary-container":"#a4fec9","primary":"#005f3a","on-secondary-fixed":"#002114","on-error-container":"#93000a","error":"#ba1a1a","primary-fixed":"#9bf5c0","background":"#ecfef2","inverse-on-surface":"#e4f5ea","surface-container-low":"#e7f8ed","on-tertiary-fixed":"#2a1700","surface-container-high":"#dbece1","on-background":"#101e18","tertiary-fixed-dim":"#ffb95f","surface-container-highest":"#d6e7dc","primary-container":"#18794e","on-secondary":"#ffffff","tertiary":"#744800","surface-tint":"#006d43","on-secondary-fixed-variant":"#244f3c","on-surface":"#101e18"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"gutter":"1rem","space-md":"1rem","space-sm":"0.5rem","margin-sm":"1rem","space-xs":"0.25rem","margin":"1.25rem","space-xl":"2rem","gutter-sm":"0.75rem","space-lg":"1.5rem"},fontFamily:{"display":["Inter"],"body-lg-medium":["Inter"],"headline-md":["Inter"],"body-lg":["Inter"],"headline-lg":["Inter"],"body-md-medium":["Inter"],"label-sm":["Inter"],"headline-sm":["Inter"],"body-md":["Inter"],"currency-display":["Inter"],"label-md":["Inter"],"label-lg":["Inter"]},fontSize:{"display":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"700"}],"body-lg-medium":["16px",{"lineHeight":"24px","fontWeight":"500"}],"headline-md":["22px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}],"headline-lg":["26px",{"lineHeight":"34px","letterSpacing":"-0.015em","fontWeight":"700"}],"body-md-medium":["14px",{"lineHeight":"20px","fontWeight":"500"}],"label-sm":["10px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"600"}],"headline-sm":["18px",{"lineHeight":"24px","letterSpacing":"-0.005em","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"currency-display":["22px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"700"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.01em","fontWeight":"500"}],"label-lg":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"600"}]}}}};</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs min-w-0"><button aria-label="Go back" class="w-11 h-11 -ml-space-xs flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container active:bg-surface-variant transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><h1 class="font-headline-sm text-headline-sm text-on-surface truncate">Unit Detail &amp; Booking</h1></div><div class="flex items-center gap-space-xs shrink-0"><button aria-label="Support or Help" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:bg-surface-variant transition-colors"><span class="material-symbols-outlined text-[22px]">help_outline</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-safe bg-surface flex-1"><div class="flex flex-col w-full pb-8">
+<!-- Top Utility Context & Filter Strip -->
+<div class="px-margin pt-space-xs pb-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+        Hệ thống WMS Đồng bộ
+      </span>
+</div>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-primary font-label-lg text-label-lg active:scale-95 transition-transform shadow-sm" id="openFilterModal">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span>Bộ lọc nâng cao</span>
+</button>
+</div>
+<!-- 1. Thẻ thông tin mặt hàng (Master Asset Spotlight) -->
+<div class="px-margin mb-space-md">
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm relative overflow-hidden">
+<!-- Decorative Organic Glow -->
+<div class="absolute -right-10 -bottom-10 w-36 h-36 rounded-full bg-secondary-container/30 blur-2xl pointer-events-none"></div>
+<div class="flex gap-space-sm items-start relative z-10">
+<!-- Visual Thumbnail Placeholder -->
+<div class="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-surface-container shadow-inner">
+<img class="w-full h-full object-cover" data-alt="Premium organic Highland Arabica coffee beans packaged inside vacuum-sealed branded jute pouches in a climate-controlled modern warehouse storage bay, ambient soft green lighting, sharp depth of field, high-end commercial packaging." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBe2ok8gmYVZQh4FSatuQuI6j5dTxbQDGMZIFGE0mZHByG04GCtqhtDOYuSzi90S1UKkDftHbZbud0fDaDslyjZxXZuKMOWn3dE467OS4DQRfLQWC4w_ZCt9u1O0pkRgPbeuIHtIuItnMVqojzrB2MHRwRh005euL9_hvAZfvwAbLevZAy7t5cleL2Lrk3uf9KKrwEGNDSVrJ5bxWdtx83bOblBJvZMXS6C57UGfSu8"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-1.5 mb-0.5">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">
+              SKU-CF-0891
+            </span>
+<span class="inline-flex items-center gap-0.5 text-primary font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+              Đã niêm phong
+            </span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface truncate">
+            Highland Arabica Coffee Beans (1kg)
+          </h2>
+<div class="flex items-center gap-1 text-on-surface-variant font-label-md text-label-md mt-1 truncate">
+<span class="material-symbols-outlined text-[15px] text-primary">warehouse</span>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">East Metro Hub</span>
+<span class="text-outline-variant">•</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface font-label-sm text-label-sm">Ô B04-L2-01</span>
+</div>
+</div>
+</div>
+<!-- Cumulative Movement Metrics Ribbon -->
+<div class="mt-space-md pt-3 bg-surface-container-low rounded-lg p-space-sm flex items-center justify-between divide-x divide-outline-variant/30">
+<div class="flex-1 text-center px-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant flex items-center justify-center gap-0.5">
+<span class="material-symbols-outlined text-[12px] text-primary">south_west</span>
+            Tổng nhập
+          </p>
+<p class="font-headline-sm text-headline-sm text-primary mt-0.5">340 <span class="font-label-sm text-label-sm text-on-surface-variant">túi</span></p>
+</div>
+<div class="flex-1 text-center px-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant flex items-center justify-center gap-0.5">
+<span class="material-symbols-outlined text-[12px] text-tertiary">north_east</span>
+            Tổng xuất
+          </p>
+<p class="font-headline-sm text-headline-sm text-tertiary mt-0.5">100 <span class="font-label-sm text-label-sm text-on-surface-variant">túi</span></p>
+</div>
+<div class="flex-1 text-center px-1 bg-surface-container-lowest/80 rounded py-1">
+<p class="font-label-sm text-label-sm text-on-secondary-container flex items-center justify-center gap-0.5 font-semibold">
+<span class="material-symbols-outlined text-[12px] text-primary">inventory_2</span>
+            Hiện tồn
+          </p>
+<p class="font-currency-display text-currency-display text-primary mt-0.5">240 <span class="font-label-sm text-label-sm text-on-surface-variant">túi</span></p>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. Bộ lọc loại biến động (Pills filter) -->
+<div class="px-margin mb-space-md">
+<div class="flex items-center gap-space-xs overflow-x-auto pb-1 no-scrollbar -mx-margin px-margin">
+<button class="filter-pill active shrink-0 px-3.5 py-1.5 rounded-full bg-primary text-on-primary font-label-lg text-label-lg transition-all shadow-sm" id="btn-filter-all" onclick="filterTimeline('all')">
+        Tất cả (5)
+      </button>
+<button class="filter-pill shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label-lg text-label-lg transition-all active:scale-95" id="btn-filter-inbound" onclick="filterTimeline('inbound')">
+        Nhập kho (2)
+      </button>
+<button class="filter-pill shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label-lg text-label-lg transition-all active:scale-95" id="btn-filter-outbound" onclick="filterTimeline('outbound')">
+        Xuất kho (2)
+      </button>
+<button class="filter-pill shrink-0 px-3.5 py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label-lg text-label-lg transition-all active:scale-95" id="btn-filter-relocation" onclick="filterTimeline('relocation')">
+        Điều chuyển ô (1)
+      </button>
+</div>
+</div>
+<!-- 3. Dòng thời gian chuyển động kho (Chronological Movement Timeline) -->
+<div class="px-margin flex flex-col space-y-space-md relative">
+<!-- Timeline Vertical Axis Connector Track -->
+<div class="absolute left-[31px] top-6 bottom-6 w-0.5 bg-surface-container-high -z-0"></div>
+<!-- BIẾN ĐỘNG 1: XUẤT KHO (Outbound In Progress) -->
+<div class="timeline-item outbound relative flex gap-space-sm items-start" data-category="outbound">
+<!-- Icon Marker -->
+<div class="relative z-10 w-9 h-9 rounded-full bg-tertiary-fixed flex items-center justify-center shrink-0 shadow-sm ring-4 ring-surface">
+<span class="material-symbols-outlined text-[18px] text-tertiary">local_shipping</span>
+</div>
+<!-- Detail Card -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-ping"></span>
+            XUẤT KHO
+          </span>
+<span class="font-label-md text-label-md text-on-surface-variant">24/10/2024 • 10:15</span>
+</div>
+<div class="flex items-baseline justify-between mt-1">
+<p class="font-headline-sm text-headline-sm text-on-surface">Lệnh xuất #EX-102</p>
+<span class="font-headline-sm text-headline-sm text-tertiary">-20 túi</span>
+</div>
+<!-- Progress Status Badge -->
+<div class="mt-2 p-2 rounded-lg bg-surface-container-low flex items-start gap-2">
+<span class="material-symbols-outlined text-[18px] text-tertiary shrink-0 mt-0.5">skateboarding</span>
+<div class="min-w-0">
+<p class="font-body-md-medium text-body-md-medium text-on-surface truncate">Đang gom hàng tại kệ B04</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Nhân viên kho Nguyễn Văn Cường đang quét mã vạch</p>
+</div>
+</div>
+<!-- Metadata Grid -->
+<div class="mt-2.5 pt-2.5 flex items-center justify-between text-on-surface-variant font-label-md text-label-md bg-surface-container/50 px-2.5 py-1.5 rounded">
+<span>Mã lô: <strong class="text-on-surface">#VN-2410</strong></span>
+<span class="text-outline-variant">•</span>
+<span>Khối lượng: <strong class="text-on-surface">20 kg</strong></span>
+<span class="text-outline-variant">•</span>
+<span class="text-primary font-medium">Xe gom 02</span>
+</div>
+</div>
+</div>
+<!-- BIẾN ĐỘNG 2: ĐIỀU CHUYỂN Ô (Internal Relocation) -->
+<div class="timeline-item relocation relative flex gap-space-sm items-start" data-category="relocation">
+<!-- Icon Marker -->
+<div class="relative z-10 w-9 h-9 rounded-full bg-secondary-fixed flex items-center justify-center shrink-0 shadow-sm ring-4 ring-surface">
+<span class="material-symbols-outlined text-[18px] text-secondary">sync_alt</span>
+</div>
+<!-- Detail Card -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-semibold">
+            ĐIỀU CHUYỂN Ô
+          </span>
+<span class="font-label-md text-label-md text-on-surface-variant">22/10/2024 • 16:00</span>
+</div>
+<h3 class="font-body-lg-medium text-body-lg-medium text-on-surface mt-1">
+          Điều chuyển nội bộ bởi thủ kho
+        </h3>
+<!-- Waypoint Routing Micro-Visual -->
+<div class="mt-2 bg-surface-container-low p-2 rounded-lg flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded bg-surface-container-high font-label-sm text-label-sm text-on-surface line-through text-outline">Ô B04-L1-02</span>
+<span class="material-symbols-outlined text-[16px] text-secondary">trending_flat</span>
+<span class="px-2 py-0.5 rounded bg-secondary-container font-label-sm text-label-sm text-on-secondary-container font-bold">Ô B04-L2-01</span>
+</div>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-surface-container-highest text-secondary font-medium">240 túi</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-primary">ac_unit</span>
+          Lý do: Tối ưu chuẩn độ ẩm hạt đặc sản (18°C &lt; 60% RH)
+        </p>
+<div class="mt-2 pt-2 flex items-center justify-between font-label-sm text-label-sm text-outline">
+<span>Biên bản #REL-401</span>
+<span class="text-primary font-medium flex items-center gap-0.5 cursor-pointer">
+            Xem log cảm biến
+            <span class="material-symbols-outlined text-[13px]">chevron_right</span>
+</span>
+</div>
+</div>
+</div>
+<!-- BIẾN ĐỘNG 3: NHẬP KHO (Inbound with rich evidence) -->
+<div class="timeline-item inbound relative flex gap-space-sm items-start" data-category="inbound">
+<!-- Icon Marker -->
+<div class="relative z-10 w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center shrink-0 shadow-sm ring-4 ring-surface">
+<span class="material-symbols-outlined text-[18px] text-primary">archive</span>
+</div>
+<!-- Detail Card -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-fixed-dim/40 text-primary font-label-sm text-label-sm font-semibold">
+            NHẬP KHO GỐC
+          </span>
+<span class="font-label-md text-label-md text-on-surface-variant">20/10/2024 • 14:30</span>
+</div>
+<div class="flex items-baseline justify-between mt-1">
+<p class="font-headline-sm text-headline-sm text-on-surface">Lệnh nhập #INB-8410</p>
+<span class="font-headline-sm text-headline-sm text-primary">+240 túi</span>
+</div>
+<div class="mt-1 flex items-center gap-2 font-label-md text-label-md text-on-surface-variant">
+<span>12 thùng carton</span>
+<span>•</span>
+<span>240 kg thực nhận</span>
+<span>•</span>
+<span class="text-primary font-medium flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Khớp 100%
+          </span>
+</div>
+<!-- Vị trí nhập ban đầu -->
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-2">
+          Vị trí nhập ban đầu: <span class="font-body-md-medium text-body-md-medium text-on-surface">Ô B04-L1-02</span>
+</p>
+<!-- Đính kèm hồ sơ & ảnh niêm phong (Visual Delight Proof) -->
+<div class="mt-3 pt-3">
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-2 font-semibold">Chứng từ nghiệm thu &amp; Niêm phong</p>
+<div class="grid grid-cols-2 gap-space-xs">
+<!-- Inspection Photo 1 -->
+<div class="relative rounded-lg overflow-hidden h-20 bg-surface-container group cursor-pointer shadow-sm">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Digital photo of stacked premium coffee carton boxes with tamper-evident green holographic security tape seals in an organized warehouse bay with barcode tags." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmWjozfjEkTFJDtCCssExAhG1dUVLh8gACXt9xTorK_ZFoK0Zk6tczMuRLW5mcemXASXv3fsZV6eD2vhj21jwWxD-ZDJtFvvGMeuJA7r0m1BDY4qiUkuv9sNJCKR-TVLrWzlfCdmph8Fg9CpN7k8J5ZnWbQrwf505pLLOYTSp5BQGB0cOGa8XDx90gUEnPtSJkCkaH7XZMYS_lqd9XSuM7rH1JMbU07Rj8r5xtEjQU"/>
+<div class="absolute inset-0 bg-gradient-to-t from-inverse-surface/70 to-transparent flex items-end p-1.5">
+<span class="font-label-sm text-label-sm text-inverse-on-surface flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">photo_camera</span> Seal niêm phong
+                </span>
+</div>
+</div>
+<!-- Handover Note 2 -->
+<div class="relative rounded-lg overflow-hidden h-20 bg-surface-container-high p-2 flex flex-col justify-between cursor-pointer">
+<div class="flex items-center justify-between text-primary">
+<span class="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+<span class="font-label-sm text-label-sm text-primary font-bold">PDF KÝ DUYỆT</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface font-semibold truncate">Biên bản nhận hàng</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Thủ kho: Trần Đ. Nam</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- BIẾN ĐỘNG 4: XUẤT KHO (Past completed outbound) -->
+<div class="timeline-item outbound relative flex gap-space-sm items-start" data-category="outbound">
+<!-- Icon Marker -->
+<div class="relative z-10 w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 shadow-sm ring-4 ring-surface">
+<span class="material-symbols-outlined text-[18px] text-tertiary">check_circle</span>
+</div>
+<!-- Detail Card -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-semibold">
+            XUẤT KHO HOÀN TẤT
+          </span>
+<span class="font-label-md text-label-md text-on-surface-variant">15/10/2024 • 16:45</span>
+</div>
+<div class="flex items-baseline justify-between mt-1">
+<p class="font-headline-sm text-headline-sm text-on-surface">Lệnh xuất #EX-089</p>
+<span class="font-headline-sm text-headline-sm text-tertiary">-40 túi</span>
+</div>
+<div class="mt-2 p-2 rounded-lg bg-surface-container-low flex items-center justify-between text-on-surface font-body-md text-body-md">
+<span class="font-label-md text-label-md text-on-surface-variant">Người nhận ủy quyền:</span>
+<span class="font-body-md-medium text-body-md-medium text-on-surface">Lê Minh Tuấn</span>
+</div>
+<p class="font-label-sm text-label-sm text-outline mt-1.5 text-right">Mã vận đơn bưu cục: VNPOST-8812903</p>
+</div>
+</div>
+<!-- BIẾN ĐỘNG 5: NHẬP KHO KHỞI TẠO (Initial Batch Inbound) -->
+<div class="timeline-item inbound relative flex gap-space-sm items-start" data-category="inbound">
+<!-- Icon Marker -->
+<div class="relative z-10 w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 shadow-sm ring-4 ring-surface">
+<span class="material-symbols-outlined text-[18px] text-primary">inventory</span>
+</div>
+<!-- Detail Card -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-semibold">
+            NHẬP MẪU BAN ĐẦU
+          </span>
+<span class="font-label-md text-label-md text-on-surface-variant">01/10/2024 • 09:00</span>
+</div>
+<div class="flex items-baseline justify-between mt-1">
+<p class="font-headline-sm text-headline-sm text-on-surface">Lệnh nhập #INB-7901</p>
+<span class="font-headline-sm text-headline-sm text-primary">+100 túi</span>
+</div>
+<p class="font-label-md text-label-md text-on-surface-variant mt-1">
+          Đợt ký gửi mẫu đầu vụ Cầu Đất • Kiểm định độ ẩm hạt 11.8%
+        </p>
+</div>
+</div>
+</div>
+<!-- Empty state fallback container (toggled via JS when no items match) -->
+<div class="hidden px-margin py-8 text-center" id="timelineEmptyState">
+<div class="w-16 h-16 rounded-full bg-surface-container-high mx-auto flex items-center justify-center text-on-surface-variant mb-2">
+<span class="material-symbols-outlined text-[28px]">search_off</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Không tìm thấy biến động</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Chưa có lịch sử khớp với bộ lọc bạn đã chọn.</p>
+</div>
+<!-- 4. Thẻ lưu ý nghiệp vụ (Governance & System Transparency Notice) -->
+<div class="px-margin mt-space-lg">
+<div class="bg-surface-container rounded-xl p-space-md shadow-sm flex items-start gap-space-sm">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5 text-primary">
+<span class="material-symbols-outlined text-[20px]">shield_with_heart</span>
+</div>
+<div class="flex-1">
+<h4 class="font-body-md-medium text-body-md-medium text-on-surface">
+          Chứng thực bất biến bởi VaultSpace WMS
+        </h4>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 leading-relaxed">
+          Nhật ký chuyển động là dữ liệu ghi nhận thực tế từ hệ thống quản lý kho VaultSpace (WMS). Khách hàng xem lịch sử minh bạch và không thể tự ý thao tác vật lý ô kho.
+        </p>
+<div class="mt-2.5 flex items-center gap-2">
+<button class="font-label-sm text-label-sm text-primary font-semibold flex items-center gap-0.5 active:opacity-75">
+            Chính sách bảo hiểm hàng hóa
+            <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Floating Action Trigger for Exporting Movement Log -->
+<div class="px-margin mt-space-md">
+<button class="w-full h-12 rounded-xl bg-primary text-on-primary font-headline-sm text-headline-sm flex items-center justify-center gap-2 shadow-md active:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">download</span>
+<span>Xuất báo cáo sao kê lưu chuyển (PDF)</span>
+</button>
+</div>
+<!-- Micro Modal for Advanced Date Range (Simulated Delight Component) -->
+<div class="hidden fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-end justify-center p-0" id="filterModal">
+<div class="w-full bg-surface-container-lowest rounded-t-2xl p-space-lg shadow-xl animate-in slide-in-from-bottom duration-200">
+<div class="w-12 h-1 bg-outline-variant/60 rounded-full mx-auto mb-space-md"></div>
+<div class="flex items-center justify-between mb-space-md">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Lọc theo khoảng thời gian</h3>
+<button class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant" id="closeFilterModal">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<div class="space-y-space-sm">
+<button class="w-full p-3 rounded-lg bg-surface-container-low text-left font-body-md-medium text-body-md-medium text-on-surface flex items-center justify-between">
+<span>7 ngày gần nhất</span>
+<span class="material-symbols-outlined text-[18px] text-primary">check</span>
+</button>
+<button class="w-full p-3 rounded-lg bg-surface-container-lowest text-left font-body-md text-body-md text-on-surface-variant flex items-center justify-between">
+<span>30 ngày qua (Tháng 10/2024)</span>
+<span class="material-symbols-outlined text-[18px] text-transparent">check</span>
+</button>
+<button class="w-full p-3 rounded-lg bg-surface-container-lowest text-left font-body-md text-body-md text-on-surface-variant flex items-center justify-between">
+<span>Toàn bộ chu kỳ ký gửi</span>
+<span class="material-symbols-outlined text-[18px] text-transparent">check</span>
+</button>
+</div>
+<button class="w-full mt-space-md h-12 rounded-xl bg-primary text-on-primary font-headline-sm text-headline-sm flex items-center justify-center shadow-md" id="applyFilterModal">
+        Áp dụng lọc
+      </button>
+</div>
+</div>
+</div>
+<script>
+  function filterTimeline(type) {
+    const items = document.querySelectorAll('.timeline-item');
+    const pills = document.querySelectorAll('.filter-pill');
+    let visibleCount = 0;
+
+    // Reset pill styles
+    pills.forEach(pill => {
+      pill.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+      pill.classList.add('bg-surface-container', 'text-on-surface-variant');
+    });
+
+    // Activate current pill
+    const activeBtn = document.getElementById('btn-filter-' + type);
+    if (activeBtn) {
+      activeBtn.classList.remove('bg-surface-container', 'text-on-surface-variant');
+      activeBtn.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+    }
+
+    // Toggle items
+    items.forEach(item => {
+      if (type === 'all' || item.getAttribute('data-category') === type) {
+        item.style.display = 'flex';
+        visibleCount++;
+      } else {
+        item.style.display = 'none';
+      }
+    });
+
+    // Empty state trigger
+    const emptyState = document.getElementById('timelineEmptyState');
+    if (emptyState) {
+      if (visibleCount === 0) {
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+      }
+    }
+  }
+
+  // Modal interaction handles
+  const openModalBtn = document.getElementById('openFilterModal');
+  const closeModalBtn = document.getElementById('closeFilterModal');
+  const applyModalBtn = document.getElementById('applyFilterModal');
+  const filterModal = document.getElementById('filterModal');
+
+  if (openModalBtn && filterModal) {
+    openModalBtn.addEventListener('click', () => filterModal.classList.remove('hidden'));
+    closeModalBtn.addEventListener('click', () => filterModal.classList.add('hidden'));
+    applyModalBtn.addEventListener('click', () => filterModal.classList.add('hidden'));
+  }
+</script></main></body></html>

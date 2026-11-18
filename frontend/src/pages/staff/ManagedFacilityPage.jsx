@@ -20,7 +20,7 @@ export default function ManagedFacilityPage() {
   const role = user?.role === 'FACILITY_MANAGER' ? 'manager' : 'staff';
   const permitted = ['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(user?.role) && objectId(user?.assignedFacilityId);
   const itemId = params.get('itemId');
-  return <Screen title="Hàng hóa và tồn kho" notice="Tra cứu hàng hóa theo đúng nguồn ghi nhận của từng mặt hàng. Nhân viên và quản lý chỉ xem, không nhập hoặc xuất hàng thay khách.">
+  return <Screen title="Hàng hóa và tồn kho" notice="Tra cứu hàng hóa, tồn kho và lịch sử nhập xuất của khách hàng.">
     {!permitted ? <Panel title="Chưa có quyền truy cập"><p>Cần tài khoản nhân viên hoặc quản lý được phân công cơ sở.</p></Panel> : <>
       <Panel title="Nghiệp vụ"><div className="flex flex-wrap gap-2">{tabs.map(([key, label]) => <Button key={key} variant={tab === key ? 'default' : 'outline'} onClick={() => setParams({ tab: key })}>{label}</Button>)}</div></Panel>
       {tab === 'inventory' && (itemId ? objectId(itemId) ? <FacilityInventoryDetail key={`${user.id}:${user.assignedFacilityId}:${accessToken}:${itemId}`} itemId={itemId} user={user} role={role}/> : <Panel title="Mã mặt hàng không hợp lệ"><p>Chọn mặt hàng từ danh sách để xem tồn và lịch sử.</p><OpenLink to={`/${role}/managed`}>Về danh sách hàng hóa</OpenLink></Panel> : <Inventory key={`${user.assignedFacilityId}:${accessToken}`} user={user} role={role} />)}
