@@ -9,6 +9,17 @@ import {assertConfirmedRequest} from '../src/api/confirmedContract.js';
 import {facilityPageVisible} from '../src/lib/facilityWorkspace.js';
 const facility='a'.repeat(24),other='b'.repeat(24),filters={fromDate:'2026-11-01',toDate:'2026-11-17',serviceType:'MANAGED_INVENTORY',granularity:'week',status:'OPEN',page:99};
 const response=data=>({data:{success:true,data,meta:{facilityScope:{type:'FACILITY',facilityId:facility},timezone:'Asia/Ho_Chi_Minh'}}});
+
+test('report charts use disjoint totals for pies and preserve missing data',()=>{
+ const pie=statistics.reportChart('service-mix',{items:[{serviceType:'SELF_STORAGE',reservationCount:4,uniqueCustomers:3},{serviceType:'MANAGED_INVENTORY',reservationCount:2,uniqueCustomers:3}]});
+ assert.equal(pie.type,'pie');assert.deepEqual(pie.rows.map(row=>row.value),[4,2]);
+ assert.equal(statistics.reportChart('customers',{customersByService:[{uniqueCustomers:3}]}),null);
+ const unknown=statistics.reportChart('storage-capacity',{occupiedUnits:1,reservedUnits:0,availableUnits:null,maintenanceUnits:0,unavailableUnits:0});
+ assert.equal(unknown.unknown,true);assert.deepEqual(unknown.rows,[]);
+ const zero=statistics.reportChart('revenue',{collectedByService:[{serviceType:'SELF_STORAGE',collectedAmount:0}]});assert.equal(zero.unknown,false);assert.equal(zero.rows[0].value,0);
+ assert.equal(statistics.reportChart('revenue',{collectedByService:[{collectedAmount:-1}]}).unknown,true);
+ const operations=statistics.reportChart('managed-operations',{operationsByAction:[{action:'ADD',operationCount:2},{action:'MOVE',operationCount:3}]});assert.equal(operations.type,'bar');assert.deepEqual(operations.rows.map(row=>row.value),[2,3]);
+});
 test('report queries are scoped and send only supported filters; snapshot exports exclude dates',()=>{
  assert.deepEqual(statistics.statisticsQuery('managed-capacity',filters,facility,{exporting:true}),{facilityId:facility});
  assert.deepEqual(statistics.statisticsQuery('incidents',filters,facility),{facilityId:facility,fromDate:filters.fromDate,toDate:filters.toDate,granularity:'week',status:'OPEN'});
