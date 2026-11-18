@@ -4,8 +4,10 @@ import {
   Screen, Panel, Table, Status, OpenLink, Select, Details, Button,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, TruncatedNotice, PendingAction } from "@/components/bom/LiveBomUI";
+import RuleEffectBadge from "@/components/bom/RuleEffectBadge";
 import { bomPolicyApi } from "@/api/bomApi";
+import { POLICY_WRITE_REASON, bomCapability } from "@/lib/bomCapabilities";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
@@ -64,7 +66,8 @@ function RecordList({ kind, config }) {
         const rows = recordPage.rows.map(config.fromDto).filter((row) =>
           (!status || row.status === status) &&
           (!filter || (kind === "discount" && row.kind === filter)));
-        return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
+        return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}
+          action={bomCapability("policyWrite") ? undefined : <PendingAction label="Tạo mới" reason={POLICY_WRITE_REASON} />}>
           {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={recordPage.rows.length} />}
           <Table label={config.title} rows={rows} columns={kind === "discount" ? [
             { key: "name", label: "Tên giảm giá", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
@@ -72,6 +75,7 @@ function RecordList({ kind, config }) {
             { key: "value", label: "Giá trị", render: (r) => discountValueLabel(r) },
             { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
             { key: "effectiveFrom", label: "Hiệu lực từ" },
+            { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
             { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
             { key: "revision", label: "Phiên bản" },
           ] : [
@@ -81,6 +85,7 @@ function RecordList({ kind, config }) {
             { key: "blockedCount", label: "Danh mục bị chặn", render: (r) => r.blockedCount },
             { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
             { key: "effectiveFrom", label: "Hiệu lực từ" },
+            { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
             { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
             { key: "revision", label: "Phiên bản" },
           ]} />
@@ -102,13 +107,15 @@ function RecordDetail({ kind, config }) {
         ["Hình thức", BOM_DISCOUNT_KIND_LABELS[record.kind] || record.kind.replaceAll("_", " ")],
         ["Loại chính sách", record.policyType],
         ["Giá trị", discountValueLabel(record)], ["Điều kiện áp dụng", record.conditions], ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
+        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+        ["Hiệu lực", <RuleEffectBadge record={record} />], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ] : [
         // The CATEGORY policy only carries the two category lists; the DTO has no description,
         // handling note, restriction or acceptance flag, so those rows are not rendered.
         ["Danh mục", record.name], ["Danh mục được phép", record.allowedCount], ["Danh mục bị chặn", record.blockedCount],
         ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
+        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+        ["Hiệu lực", <RuleEffectBadge record={record} />], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ]} />
     </Panel>} />
   </Screen>;

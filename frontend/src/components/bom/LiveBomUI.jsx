@@ -27,6 +27,18 @@ export function TruncatedNotice({ total, shown }) {
   );
 }
 
+// A write control whose backend endpoint does not exist yet (see lib/bomCapabilities). The screen
+// keeps its final shape: the control is rendered, stays inert, and the reason is written in
+// business wording instead of a technical note.
+export function PendingAction({ label, reason }) {
+  return (
+    <div>
+      <Button disabled title={reason}>{label}</Button>
+      {reason && <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">{reason}</p>}
+    </div>
+  );
+}
+
 export function ConfirmDialog({ title, summary, confirmLabel = "Xác nhận", onConfirm, onClose, children }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");

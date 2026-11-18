@@ -4,10 +4,12 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import { AsyncBoundary, ConfirmDialog, PendingAction } from "@/components/bom/LiveBomUI";
+import RuleEffectBadge from "@/components/bom/RuleEffectBadge";
 import ListPager from "@/components/bom/ListPager";
 import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
+import { POLICY_WRITE_REASON, bomCapability } from "@/lib/bomCapabilities";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { usePageIndex } from "@/lib/usePageIndex";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
@@ -89,9 +91,13 @@ function RecordList({ kind, config }) {
       description={kind === "pricing"
         ? "Giá kho riêng và đơn giá công suất lưu trữ theo từng thời gian hiệu lực."
         : "Chính sách kinh doanh theo từng loại chính sách."}
-      action={kind === "pricing"
-        ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo quy tắc giá</Link></Button>
-        : undefined}
+      action={kind === "pricing" ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo quy tắc giá</Link></Button> : (
+        // A business policy is created through POST /policies, which the backend still rejects;
+        // the control keeps its final shape and explains the state instead of hiding the feature.
+        bomCapability("policyWrite")
+          ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo chính sách</Link></Button>
+          : <PendingAction label="Tạo chính sách" reason={POLICY_WRITE_REASON} />
+      )}
     >
       <Panel title="Bộ lọc">
         <div className="manager-filters">
@@ -119,6 +125,7 @@ function RecordList({ kind, config }) {
                 { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "rate", label: "Đơn giá", render: (r) => `${money(r.rate)} ${r.currency}` },
                 { key: "effectiveFrom", label: "Hiệu lực từ" },
+                { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
                 { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
                 { key: "revision", label: "Phiên bản" },
               ] : [
@@ -126,6 +133,7 @@ function RecordList({ kind, config }) {
                 { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "rule", label: "Quy tắc" },
                 { key: "effectiveFrom", label: "Hiệu lực từ" },
+                { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
                 { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
                 { key: "revision", label: "Phiên bản" },
               ]}
@@ -180,6 +188,7 @@ function RecordDetail({ kind, config }) {
                 ["Đơn giá", `${money(record.rate)} ${record.currency}`],
                 ["Hiệu lực từ", record.effectiveFrom],
                 ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+                ["Hiệu lực", <RuleEffectBadge record={record} />],
                 ["Trạng thái", <Status value={record.status} />],
                 ["Phiên bản", record.revision],
               ] : [
@@ -190,6 +199,7 @@ function RecordDetail({ kind, config }) {
                 ["Quy tắc", record.rule || "—"],
                 ["Hiệu lực từ", record.effectiveFrom],
                 ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+                ["Hiệu lực", <RuleEffectBadge record={record} />],
                 ["Trạng thái", <Status value={record.status} />],
                 ["Phiên bản", record.revision],
               ]} />
@@ -203,6 +213,13 @@ function RecordDetail({ kind, config }) {
                 <p className="mt-4 text-sm text-slate-600">
                   Quy tắc đã có hiệu lực nên không thể ngừng áp dụng. Hãy hẹn mức giá mới bằng nút Sửa.
                 </p>
+              )}
+              {kind === "policy" && !bomCapability("policyWrite") && (
+                // Closing a policy needs PATCH /policies/:id with an effectiveTo; until the backend
+                // accepts it the control keeps its final shape and stays inert.
+                <div className="mt-5">
+                  <PendingAction label="Đóng từ ngày…" reason={POLICY_WRITE_REASON} />
+                </div>
               )}
             </Panel>
             {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
