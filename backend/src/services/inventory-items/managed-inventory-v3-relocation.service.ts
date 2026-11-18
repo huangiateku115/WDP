@@ -34,7 +34,13 @@ const Reservation: any = ReservationRaw, Contract: any = ContractRaw, InventoryI
 const ItemMovement: any = ItemMovementRaw, ManagedCellStock: any = ManagedCellStockRaw, ManagedItemInstance: any = ManagedItemInstanceRaw;
 const WarehouseCell: any = WarehouseCellRaw, WarehouseRack: any = WarehouseRackRaw, CellAllocation: any = CellAllocationRaw;
 const AccessSession: any = AccessSessionRaw, AccessVisit: any = AccessVisitRaw;
-const oid = (value: unknown, name: string): Types.ObjectId => { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(value as string); };
+const oid = (value: unknown, name: string): Types.ObjectId => {
+  // The HTTP boundary supplies a 24-character string, while confirm() passes
+  // this already-validated ObjectId into the transactional scope recheck.
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`);
+  return new Types.ObjectId(value as string);
+};
 const requestKey = (value: unknown): string => { if (typeof value !== 'string' || !/^[\w.:/-]{8,128}$/.test(value)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ.'); return value as string; };
 export const RELOCATION_DESTINATION_MIN_REMAINING_DAYS = 7;
 const RELOCATION_DESTINATION_MIN_REMAINING_MS = RELOCATION_DESTINATION_MIN_REMAINING_DAYS * 24 * 60 * 60 * 1000;
