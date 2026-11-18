@@ -56,6 +56,8 @@ const loadRecords = (config, signal) =>
 export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
   const config = configFor(kind, basePath);
   if (!config) return <BomUnavailable />;
+  // Business policies are system-controlled: even if a route exposes new/edit later, the page
+  // refuses to render a write form, so the console can never POST a policy.
   if (kind === "policy" && ["new", "edit"].includes(mode)) return <BomUnavailable />;
   if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
   if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;

@@ -8,15 +8,15 @@ import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { bomReservationApi, bomReservationWriteApi } from "@/api/bomApi";
 import { responseData } from "@/lib/bomMappers";
-import { canMockPayReservations, canReviewReservations } from "@/lib/roles";
+import { canReviewReservations } from "@/lib/roles";
 
 // Dedicated detail page for a reservation. The list pages link here instead of expanding
 // detail/actions inline, matching /facilities/:id and /inventory/:id.
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
 const customerName = (reservation) => {
   const customer = reservation?.customerId;
-  if (customer && typeof customer === "object") return customer.fullName || customer.displayName || customer.email || "Customer";
-  return "Customer";
+  if (customer && typeof customer === "object") return customer.fullName || customer.displayName || customer.email || "Khách hàng";
+  return "Khách hàng";
 };
 const facilityName = (reservation) => {
   const facility = reservation?.facilityId;
@@ -27,7 +27,7 @@ const unitLabel = (reservation) => {
   return (unit && typeof unit === "object" ? unit.unitCode : unit) || "—";
 };
 const timelineOf = (reservation) => (Array.isArray(reservation?.statusHistory) ? reservation.statusHistory : [])
-  .map((entry) => ({ at: entry.createdAt, status: entry.status, note: entry.reason || "Status change" }))
+  .map((entry) => ({ at: entry.createdAt, status: entry.status, note: entry.reason || "Đổi trạng thái" }))
   .reverse();
 
 export default function ReservationDetailPage({ managed = false, basePath = "/admin/reservations" }) {
@@ -35,7 +35,6 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
   const nav = useNavigate();
   const { user } = useAuthSession();
   const canReview = canReviewReservations(user?.role);
-  const canMockPay = canMockPayReservations(user?.role);
   const [decision, setDecision] = useState(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,25 +51,22 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
     setBusy(true);
     setFeedback({});
     try {
+      // Only Self Storage reservations have an approve/reject transition: the backend
+      // approves `serviceType: SELF_STORAGE` and rejects others as not found. Managed
+      // reservations move through contract + handover at the facility instead.
       if (action === "approve") {
-        if (managed) await bomReservationWriteApi.managedApprove(id);
-        else await bomReservationWriteApi.approve(id);
+        await bomReservationWriteApi.approve(id);
       } else if (action === "reject") {
         const note = reason.trim();
-        if (!note) throw new Error("A rejection reason is required.");
-        if (managed) await bomReservationWriteApi.managedReject(id, note);
-        else await bomReservationWriteApi.reject(id, note);
-      } else if (action === "mock-pay") {
-        await bomReservationWriteApi.managedMockPay(id);
-      } else if (action === "activate") {
-        await bomReservationWriteApi.managedActivate(id);
+        if (!note) throw new Error("Hãy nhập lý do từ chối.");
+        await bomReservationWriteApi.reject(id, note);
       }
       setDecision(null);
       setReason("");
-      setFeedback({ success: "Action completed." });
+      setFeedback({ success: "Đã cập nhật đơn đặt thuê." });
       resource.reload();
     } catch (error) {
-      setFeedback({ error: error?.response?.data?.message || error?.message || "Unable to update the reservation." });
+      setFeedback({ error: error?.response?.data?.message || error?.message || "Không cập nhật được đơn đặt thuê." });
       if ([404, 409].includes(error?.response?.status)) resource.reload();
     } finally {
       setBusy(false);
@@ -114,19 +110,18 @@ export default function ReservationDetailPage({ managed = false, basePath = "/ad
             ]} />
             <Message {...feedback} />
             <div className="mt-5 flex flex-wrap gap-2">
-              {canReview && reservation.status === "RESERVED" && (
+              {!managed && canReview && reservation.status === "RESERVED" && (
                 <>
                   <Button onClick={() => { setReason(""); setDecision({ kind: "approve", code: reservation.reservationCode }); }}>Duyệt</Button>
                   <Button variant="outline" onClick={() => { setReason(""); setDecision({ kind: "reject", code: reservation.reservationCode }); }}>Từ chối</Button>
                 </>
               )}
-              {managed && canMockPay && reservation.status === "CONTRACTED" && (
-                <Button variant="outline" onClick={() => apply("mock-pay")} disabled={busy}>Mô phỏng thanh toán</Button>
+              {managed && (
+                <p className="bom-note">
+                  Đơn lưu trữ hàng hóa được duyệt theo luồng hợp đồng và bàn giao tại cơ sở.
+                </p>
               )}
-              {managed && canReview && reservation.status === "PAID" && (
-                <Button onClick={() => apply("activate")} disabled={busy}>Kích hoạt đơn</Button>
-              )}
-              {!canReview && <p className="text-xs text-slate-500">Vai trò của bạn chỉ được xem, không được duyệt, từ chối hay kích hoạt đơn.</p>}
+              {!managed && !canReview && <p className="text-xs text-slate-500">Vai trò của bạn chỉ được xem, không được duyệt hay từ chối đơn.</p>}
             </div>
           </Panel>
 

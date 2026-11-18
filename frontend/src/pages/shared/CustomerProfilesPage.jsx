@@ -22,7 +22,7 @@ function toRow(profile) {
   const account = user && typeof user === "object" ? user : {};
   return {
     id: profile?._id,
-    name: account.fullName || account.displayName || account.email || "Customer",
+    name: account.fullName || account.displayName || account.email || "Khách hàng",
     email: account.email || "",
     phone: account.phone || "",
     identityCard: profile?.identityCard || "",

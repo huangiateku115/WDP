@@ -1,11 +1,10 @@
 import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Button, Details } from "@/components/manager/ManagerUI";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
-import { CellDialog, RackDialog, ZoneDialog } from "@/components/bom/WarehouseStructureDialogs";
-import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";
-import { useAsyncData } from "@/lib/useAsyncData";
-import { loadCells, loadFacilities, loadManagedCapacity, loadRacks, loadZones } from "@/lib/bomApiData";
+import { ManagedCapacityDialog } from "@/components/bom/ManagedCapacityDialog";import { useAsyncData } from "@/lib/useAsyncData";
+import { loadFacilities, loadManagedCapacity, loadRacks, loadZones } from "@/lib/bomApiData";
 import { bomWarehouseApi } from "@/api/bomApi";
 import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics";
 
@@ -15,7 +14,8 @@ import { countBy, formatKg as kg, formatM3 as m3, sumBy } from "@/lib/bomMetrics
 // facilityForMap, which requires status ACTIVE + serviceTypes MANAGED_INVENTORY. Facilities
 // that do not qualify answer 409, so the selector only offers eligible facilities.
 const eligible = (facility) => facility.status === "ACTIVE" && facility.serviceTypes.includes("MANAGED_INVENTORY");
-const dims = (d) => `${d.widthM}×${d.depthM}×${d.heightM} m`;
+// Dimensions are printed with their meaning instead of a bare "2×0.6×2 m" sequence.
+const dims = (d) => `rộng ${d.widthM} × sâu ${d.depthM} × cao ${d.heightM} m`;
 
 // The capacity read is interval based, so the console reports on the current calendar month.
 function currentMonthWindow() {
@@ -25,24 +25,18 @@ function currentMonthWindow() {
   return { startDate: start.toISOString(), endDate: end.toISOString() };
 }
 
-export default function WarehouseStructurePage() {
+export default function WarehouseStructurePage({ basePath = "/bom" }) {
   const directory = useAsyncData(loadFacilities, []);
-  const [facilityId, setFacilityId] = useState("");
-  const [zoneFilter, setZoneFilter] = useState("");
-  const [rackId, setRackId] = useState("");
-  const [zoneDialog, setZoneDialog] = useState(null);
-  const [rackDialog, setRackDialog] = useState(null);
-  const [cellDialog, setCellDialog] = useState(null);
+  // The selected facility lives in the URL so the rack-cell route can link back to the same view.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [facilityId, setFacilityId] = useState(searchParams.get("facility") || "");
+  const [zoneFilter, setZoneFilter] = useState(searchParams.get("zone") || "");
   const [capacityOpen, setCapacityOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const window = currentMonthWindow();
 
   const zones = useAsyncData(({ signal }) => (facilityId ? loadZones(facilityId, { signal }) : Promise.resolve(null)), [facilityId]);
   const racks = useAsyncData(({ signal }) => (facilityId ? loadRacks(facilityId, { signal }) : Promise.resolve(null)), [facilityId]);
-  const cells = useAsyncData(
-    ({ signal }) => (facilityId && rackId ? loadCells(facilityId, rackId, { signal }) : Promise.resolve(null)),
-    [facilityId, rackId],
-  );
   const capacity = useAsyncData(
     ({ signal }) => (facilityId ? loadManagedCapacity(facilityId, { ...window, signal }) : Promise.resolve(null)),
     [facilityId],
@@ -51,13 +45,23 @@ export default function WarehouseStructurePage() {
   function selectFacility(id) {
     setFacilityId(id);
     setZoneFilter("");
-    setRackId("");
+    setSearchParams(id ? { facility: id } : {}, { replace: true });
   }
+
+  // Keeps the chosen facility and zone in the URL so the form routes can link back here.
+  function selectZone(id) {
+    setZoneFilter(id);
+    const next = {};
+    if (facilityId) next.facility = facilityId;
+    if (id) next.zone = id;
+    setSearchParams(next, { replace: true });
+  }
+
+  const formHref = (kind, id) => `${basePath}/warehouse/${encodeURIComponent(facilityId)}/${kind}/${id ? `${encodeURIComponent(id)}/edit` : "new"}${zoneFilter ? `?zone=${encodeURIComponent(zoneFilter)}` : ""}`;
 
   function reloadStructure() {
     zones.reload();
     racks.reload();
-    if (rackId) cells.reload();
   }
   function removeZone(zone) {
     setConfirm({
@@ -73,14 +77,14 @@ export default function WarehouseStructurePage() {
       title: `Xóa kệ ${rack.rackCode}?`,
       summary: "Chỉ xóa được kệ khi mọi ô đều đang bị chặn hoặc đang bảo trì, và không ô nào còn hàng, đang giữ hoặc đang được đặt.",
       label: "Xóa kệ",
-      run: async () => { await bomWarehouseApi.deleteRack(rack.id); if (rack.id === rackId) setRackId(""); reloadStructure(); },
+      run: async () => { await bomWarehouseApi.deleteRack(rack.id); reloadStructure(); },
     });
   }
 
   return (
     <Screen
-      title="Cấu trúc kho"
-      description="Khu vực, kệ và ô chứa của cơ sở lưu trữ hàng hóa."
+      title="Thông tin kho"
+      description="Khu vực, kệ và ô lưu trữ của cơ sở lưu trữ hàng hóa."
     >
       <AsyncBoundary state={directory} render={(facilities) => {
         const options = facilities.filter(eligible);
@@ -91,7 +95,7 @@ export default function WarehouseStructurePage() {
               ["Số cơ sở hiển thị", options.length, "Cơ sở đang hoạt động có dịch vụ Lưu trữ hàng hóa"],
               ["Khu vực", zones.data?.total ?? "—", "Khu vực của cơ sở đã chọn"],
               ["Kệ", racks.data?.total ?? "—", "Kệ của cơ sở đã chọn"],
-              ["Ô chứa", sumBy(racks.data?.rows || [], "cellCount") || "—", "Tạo tự động theo kệ"],
+              ["Ô lưu trữ", sumBy(racks.data?.rows || [], "cellCount") || "—", "Tạo tự động theo kệ"],
             ]} />
 
             <Panel
@@ -111,7 +115,7 @@ export default function WarehouseStructurePage() {
                   <Select
                     label="Lọc theo khu vực"
                     value={zoneFilter}
-                    onChange={setZoneFilter}
+                    onChange={selectZone}
                     disabled={!facilityId}
                     options={[["", "Tất cả khu vực"], ...(zones.data?.rows || []).map((z) => [z.id, `${z.code} · ${z.name}`])]}
                   />
@@ -126,7 +130,7 @@ export default function WarehouseStructurePage() {
 
             {!facilityId && (
               <Panel title="Chọn cơ sở">
-                <p className="text-sm text-slate-500">Khu vực, kệ và ô chứa thuộc một cơ sở.</p>
+                <p className="text-sm text-slate-500">Khu vực, kệ và ô lưu trữ thuộc một cơ sở.</p>
               </Panel>
             )}
 
@@ -142,7 +146,7 @@ export default function WarehouseStructurePage() {
                       ["Khoảng thời gian", `${String(data.interval?.startDate || window.startDate).slice(0, 10)} → ${String(data.interval?.endDate || window.endDate).slice(0, 10)}`],
                       ["Sellable capacity", m3(data.sellableCapacityM3)],
                       ["Committed peak", m3(data.committedPeakCapacityM3)],
-                      ["Available", m3(data.availableCapacityM3)],
+                      ["Available capacity", m3(data.availableCapacityM3)],
                       ["Overdue obligation", m3(data.unresolvedOverdueObligationM3)],
                     ]} />
                   ) : (
@@ -157,7 +161,7 @@ export default function WarehouseStructurePage() {
                   <Panel
                     title="Khu vực"
                     subtitle={`${data.total} khu vực`}
-                    action={<Button onClick={() => setZoneDialog("new")}>Tạo khu vực</Button>}
+                    action={<Button asChild><Link to={formHref("zones")}>Tạo khu vực</Link></Button>}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
                     <Table
@@ -174,7 +178,7 @@ export default function WarehouseStructurePage() {
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setZoneDialog(r)}>Sửa</Button>
+                            <Button asChild size="sm" variant="outline"><Link to={formHref("zones", r.id)}>Sửa</Link></Button>
                             <Button size="sm" variant="outline" onClick={() => removeZone(r)}>Xóa</Button>
                             </div>
                           ),
@@ -189,9 +193,9 @@ export default function WarehouseStructurePage() {
                   <Panel
                     title="Kệ"
                     action={(
-                      <Button onClick={() => setRackDialog("new")} disabled={!(zones.data?.rows || []).length}>
-                        Tạo kệ
-                      </Button>
+                      (zones.data?.rows || []).length
+                        ? <Button asChild><Link to={formHref("racks")}>Tạo kệ</Link></Button>
+                        : <Button disabled title="Hãy tạo một khu vực kho trước khi thêm kệ">Tạo kệ</Button>
                     )}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}
@@ -206,17 +210,19 @@ export default function WarehouseStructurePage() {
                         { key: "zone", label: "Zone", render: (r) => (zones.data?.rows || []).find((z) => z.id === r.zoneId)?.code || "—" },
                         { key: "aisleCode", label: "Aisle" },
                         { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-                        { key: "layout", label: "Layout", render: (r) => `${r.levelCount} levels × ${r.cellsPerLevel} cells (${r.cellCount})` },
+                        { key: "layout", label: "Layout", render: (r) => `${r.levelCount} tầng × ${r.cellsPerLevel} ô (tổng ${r.cellCount} ô)` },
                         { key: "dimensions", label: "Dimensions", render: (r) => dims(r.dimensions) },
-                        { key: "maxWeightKg", label: "Rated weight", render: (r) => `${kg(r.maxWeightKg)} · ${kg(r.maxWeightKgPerLevel)}/level` },
-                        { key: "map", label: "Map", render: (r) => `X ${r.mapX} · Y ${r.mapY} · ${r.orientation}°` },
+                        { key: "maxWeightKg", label: "Rated weight", render: (r) => `${kg(r.maxWeightKg)} · ${kg(r.maxWeightKgPerLevel)} mỗi tầng` },
+                        { key: "map", label: "Map", render: (r) => `Ngang ${r.mapX} · Dọc ${r.mapY} · hướng ${r.orientation}°` },
                         {
                           key: "actions",
                           label: "Actions",
                           render: (r) => (
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" onClick={() => setRackId(r.id)}>Ô chứa</Button>
-                              <Button size="sm" variant="outline" onClick={() => setRackDialog(r)}>Sửa</Button>
+                              <Button asChild size="sm" variant="outline">
+                                <Link to={`${basePath}/warehouse/${encodeURIComponent(facilityId)}/racks/${encodeURIComponent(r.id)}/cells`}>Ô lưu trữ</Link>
+                              </Button>
+                              <Button asChild size="sm" variant="outline"><Link to={formHref("racks", r.id)}>Sửa</Link></Button>
                               <Button size="sm" variant="outline" onClick={() => removeRack(r)}>Xóa</Button>
                             </div>
                           ),
@@ -226,70 +232,12 @@ export default function WarehouseStructurePage() {
                     />
                   </Panel>
                 ) : null)} />
-
-                {rackId && (
-                  <AsyncBoundary state={cells} render={(data) => (data ? (
-                    <Panel
-                      title="Ô trên kệ"
-                      subtitle={`${data.total} ô chứa`}
-                      action={<Button variant="outline" onClick={() => setRackId("")}>Đóng danh sách ô</Button>}
-                    >
-                      <Details values={[
-                        ["Rack", (racks.data?.rows || []).find((r) => r.id === rackId)?.rackCode || rackId],
-                        ["Available cells", countBy(data.rows, "operationalStatus", "AVAILABLE")],
-                        ["Rated cell weight", kg(sumBy(data.rows, "maxWeightKg"))],
-                        ["Cell volume", m3(sumBy(data.rows, "usableVolumeM3"))],
-                      ]} />
-                      <div className="mt-5">
-                        <Table
-                          label="Ô trên kệ"
-                          rows={data.rows}
-                          columns={[
-                            { key: "code", label: "Cell" },
-                            { key: "levelNumber", label: "Level" },
-                            { key: "cellNumber", label: "Position" },
-                            { key: "dimensions", label: "Dimensions", render: (r) => `${r.dimensions.widthM}×${r.dimensions.depthM} m · ${r.dimensions.usableHeightM ?? "—"} m usable` },
-                            { key: "maxWeightKg", label: "Max weight", render: (r) => kg(r.maxWeightKg) },
-                            { key: "usableVolumeM3", label: "Volume", render: (r) => (r.usableVolumeM3 === null ? "—" : m3(r.usableVolumeM3)) },
-                            { key: "operationalStatus", label: "Status", render: (r) => <Status value={r.operationalStatus} /> },
-                            {
-                              key: "actions",
-                              label: "Actions",
-                              render: (r) => <Button size="sm" variant="outline" onClick={() => setCellDialog(r)}>Sửa</Button>,
-                            },
-                          ]}
-                          empty="Kệ này chưa có ô chứa nào."
-                        />
-                      </div>
-                    </Panel>
-                  ) : null)} />
-                )}
               </>
             )}
           </>
         );
       }} />
 
-      {zoneDialog && (
-        <ZoneDialog
-          facilityId={facilityId}
-          zone={zoneDialog === "new" ? null : zoneDialog}
-          onClose={() => setZoneDialog(null)}
-          onSaved={reloadStructure}
-        />
-      )}
-      {rackDialog && (
-        <RackDialog
-          facilityId={facilityId}
-          zones={(zones.data?.rows || []).filter((z) => z.isActive)}
-          rack={rackDialog === "new" ? null : rackDialog}
-          onClose={() => setRackDialog(null)}
-          onSaved={reloadStructure}
-        />
-      )}
-      {cellDialog && (
-        <CellDialog cell={cellDialog} onClose={() => setCellDialog(null)} onSaved={() => cells.reload()} />
-      )}
       {capacityOpen && (
         <ManagedCapacityDialog
           facilityId={facilityId}
