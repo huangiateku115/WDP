@@ -85,6 +85,8 @@ const reservationSchema = new Schema<IReservation>({
   }],
   extendContract: [{
     extensionCode: { type: String, required: true },
+    requestIdempotencyKey: { type: String, maxlength: 160 },
+    requestPayloadHash: { type: String, match: /^[a-f0-9]{64}$/ },
     durationMonths: { type: Number, required: true },
     amount: { type: Number, required: true },
     status: { 

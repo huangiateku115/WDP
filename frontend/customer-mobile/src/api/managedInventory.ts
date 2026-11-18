@@ -82,6 +82,22 @@ export const managedInventory={
     }
     return detail;
   },
+  async cellLabels(facilityId:string,cellIds:string[],signal?:AbortSignal){
+    const wanted=new Set(cellIds.map(id)),labels:Record<string,string>={};
+    if(!wanted.size)return labels;
+    const map=await managedInventory.map(facilityId,undefined,signal);
+    for(const zone of map.zones){
+      for(const aisle of zone.aisles){
+        for(const rack of aisle.racks){
+          const detail=await managedInventory.rack(facilityId,zone._id,rack._id,undefined,signal);
+          for(const cell of detail.levels.flatMap(level=>level.cells))if(wanted.has(cell._id))
+            labels[cell._id]=`${cell.code} · ${rack.rackCode} · Tầng ${detail.levels.find(level=>level.cells.some(row=>row._id===cell._id))?.levelNumber??'—'}`;
+          if(Object.keys(labels).length===wanted.size)return labels;
+        }
+      }
+    }
+    return labels;
+  },
   async capacity(facilityId:string,range:ManagedRange,signal?:AbortSignal){
     const result=readData(capacitySchema,await wire('GET','/reservations/managed/capacity/'+id(facilityId),{params:range,signal}));
     if(result.facilityId!==facilityId)throw new MobileInputError('Sức chứa không thuộc cơ sở này.');

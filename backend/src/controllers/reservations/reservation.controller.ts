@@ -1489,6 +1489,8 @@ export const rejectCheckout = async (req: Request, res: Response) => {
  * Helper dùng chung: tìm đúng PricingRule khớp kỳ hạn và tính giá qua ReservationService.calculatePricing
  */
 const resolveExtensionPricing = async (reservation: any, termValue: number, termUnit: string = 'MONTH') => {
+  const oldEndDate = new Date(reservation.endDate);
+  if (!Number.isFinite(oldEndDate.getTime())) throw new Error('Ngày kết thúc hợp đồng hiện tại không hợp lệ.');
   const PricingRuleModel = mongoose.model('PricingRule');
   let unitSize = reservation.storageUnitSize;
   if (!unitSize && reservation.storageUnitId) {
@@ -1503,6 +1505,8 @@ const resolveExtensionPricing = async (reservation: any, termValue: number, term
     'term.value': termValue,
     'term.unit': termUnit,
     isActive: true,
+    effectiveFrom: { $lte: oldEndDate },
+    $or: [{ effectiveTo: { $exists: false } }, { effectiveTo: null }, { effectiveTo: { $gt: oldEndDate } }],
   }).exec();
 
   if (!exactRule) {
@@ -1510,12 +1514,16 @@ const resolveExtensionPricing = async (reservation: any, termValue: number, term
     throw new Error(`Cơ sở hiện không có chính sách giá cho gói gia hạn ${termValue} ${unitLabel}.`);
   }
 
-  const oldEndDate = new Date(reservation.endDate);
   const newEndDate = new Date(oldEndDate);
   if (termUnit === 'DAY') {
     newEndDate.setUTCDate(newEndDate.getUTCDate() + termValue);
   } else {
-    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + termValue * (termUnit === 'YEAR' ? 12 : 1));
+    const months = termValue * (termUnit === 'YEAR' ? 12 : 1);
+    const originalDay = newEndDate.getUTCDate();
+    newEndDate.setUTCDate(1);
+    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + months);
+    const lastDay = new Date(Date.UTC(newEndDate.getUTCFullYear(), newEndDate.getUTCMonth() + 1, 0)).getUTCDate();
+    newEndDate.setUTCDate(Math.min(originalDay, lastDay));
   }
 
   const pricing = await ReservationService.calculatePricing(
@@ -1523,6 +1531,9 @@ const resolveExtensionPricing = async (reservation: any, termValue: number, term
     oldEndDate,
     newEndDate
   );
+  if (pricing.currency !== 'VND' || !Number.isSafeInteger(pricing.estimatedRent) || pricing.estimatedRent <= 0) {
+    throw new Error('Chính sách gia hạn phải có giá VND hợp lệ.');
+  }
 
   return {
     rule: exactRule,
@@ -1534,14 +1545,29 @@ const resolveExtensionPricing = async (reservation: any, termValue: number, term
   };
 };
 
+const parseExtensionTerm = (body: any) => {
+  const termUnit = String(body?.termUnit || 'MONTH').toUpperCase();
+  const rawValue = body?.termValue ?? body?.durationMonths ?? 1;
+  const termValue = typeof rawValue === 'number' ? rawValue : /^\d+$/.test(String(rawValue)) ? Number(rawValue) : NaN;
+  if (!['DAY', 'MONTH', 'YEAR'].includes(termUnit) || !Number.isSafeInteger(termValue) || termValue < 1 || termValue > 120) {
+    throw new ReservationControllerError(400, 'Kỳ hạn gia hạn không hợp lệ.');
+  }
+  return { termUnit, termValue };
+};
+
 export const renewQuote = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const termUnit = String(req.body.termUnit || 'MONTH').toUpperCase();
-    const termValue = Math.max(1, parseInt(req.body.termValue || req.body.durationMonths || '1', 10) || 1);
+    const { termUnit, termValue } = parseExtensionTerm(req.body);
     const reservation = await ReservationModel.findById(id);
     if (!reservation) {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    if (req.user?.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, code: 'RESERVATION_FORBIDDEN', message: 'Bạn không có quyền xem báo giá đơn thuê này.' });
+    }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
+      return res.status(409).json({ success: false, code: 'RENEWAL_NOT_SUPPORTED', message: 'Gia hạn chỉ hỗ trợ Self Storage.' });
     }
 
     let canExtend = true;
@@ -1558,6 +1584,15 @@ export const renewQuote = async (req: Request, res: Response) => {
       pricingResult = await resolveExtensionPricing(reservation, termValue, termUnit);
     } catch (priceErr: any) {
       return res.status(400).json({ success: false, message: priceErr.message });
+    }
+
+    if (canExtend && reservation.storageUnitId) {
+      const conflict = await ReservationModel.exists({ _id: { $ne: reservation._id }, serviceType: FacilityServiceType.SELF_STORAGE,
+        storageUnitId: reservation.storageUnitId, ...ReservationService.buildOverlapFilter(pricingResult.oldEndDate, pricingResult.newEndDate) }).exec();
+      if (conflict) {
+        canExtend = false;
+        reason = 'Ô kho này đã có đơn đặt chỗ khác trong khoảng thời gian gia hạn dự kiến.';
+      }
     }
 
     return res.json({
@@ -1579,7 +1614,8 @@ export const renewQuote = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    const status = error instanceof ReservationControllerError ? error.status : 500;
+    return res.status(status).json({ success: false, ...(error?.code ? { code: error.code } : {}), message: error.message });
   }
 };
 
@@ -1618,15 +1654,19 @@ export const validateExtensionPrerequisites = async (reservation: any) => {
     throw new Error('Hợp đồng gốc ban đầu chưa có bản chứng minh hợp đồng giấy đã ký. Vui lòng liên hệ nhân viên.');
   }
 
+  const contract = await ContractModel.findOne({ reservationId: reservation._id, customerId: reservation.customerId }).exec();
+  if (!contract || contract.status !== ContractStatus.SIGNED || !contract.signedProofUrl || !contract.verifiedAt) {
+    throw new Error('Hợp đồng hiện tại chưa được xác minh đầy đủ để gia hạn. Vui lòng liên hệ nhân viên cơ sở.');
+  }
+
   // 6. Kiểm tra trạng thái ô kho vật lý (chặn bảo trì / ngừng hoạt động / đã xóa)
-  if (reservation.storageUnitId) {
-    const unit = await StorageUnitModel.findById(reservation.storageUnitId);
-    if (!unit || (unit as any).deletedAt) {
-      throw new Error('Ô kho vật lý không còn tồn tại hoặc đã bị gỡ khỏi hệ thống.');
-    }
-    if (unit.status === StorageUnitStatus.MAINTENANCE || unit.status === StorageUnitStatus.INACTIVE) {
-      throw new Error(`Ô kho vật lý hiện đang bảo trì hoặc ngừng hoạt động (${unit.status}). Vui lòng liên hệ nhân viên.`);
-    }
+  if (!reservation.storageUnitId) throw new Error('Reservation không còn liên kết với Ô kho Self Storage. Vui lòng liên hệ nhân viên.');
+  const unit = await StorageUnitModel.findById(reservation.storageUnitId);
+  if (!unit || (unit as any).deletedAt || String(unit.facilityId) !== String(reservation.facilityId)) {
+    throw new Error('Ô kho vật lý không còn tồn tại hoặc không thuộc đúng cơ sở.');
+  }
+  if (unit.status !== StorageUnitStatus.OCCUPIED) {
+    throw new Error(`Ô kho vật lý không ở trạng thái OCCUPIED (${unit.status}). Vui lòng liên hệ nhân viên.`);
   }
 };
 
@@ -1634,11 +1674,21 @@ export const validateExtensionPrerequisites = async (reservation: any) => {
  * Tạo yêu cầu gia hạn hợp đồng (Extension Request)
  */
 export const createExtensionRequest = async (req: Request, res: Response) => {
+  let requestReservationId: string | undefined;
+  let requestCustomerId: any;
+  let requestIdempotencyKey: string | undefined;
+  let requestPayloadHash: string | undefined;
   try {
     const { id } = req.params;
-    const termUnit = String(req.body.termUnit || 'MONTH').toUpperCase();
-    const termValue = Math.max(1, parseInt(req.body.termValue || req.body.durationMonths || '1', 10) || 1);
+    requestReservationId = typeof id === 'string' ? id : undefined;
+    const { termUnit, termValue } = parseExtensionTerm(req.body);
     const durationMonths = termUnit === 'YEAR' ? termValue * 12 : termValue;
+    const rawIdempotencyKey = req.get?.('Idempotency-Key');
+    requestIdempotencyKey = typeof rawIdempotencyKey === 'string' ? rawIdempotencyKey.trim() : undefined;
+    if (requestIdempotencyKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(requestIdempotencyKey)) {
+      return res.status(400).json({ success: false, code: 'INVALID_IDEMPOTENCY_KEY', message: 'Idempotency-Key không hợp lệ.' });
+    }
+    requestPayloadHash = createHash('sha256').update(JSON.stringify({ termUnit, termValue })).digest('hex');
 
     const reservation = await ReservationModel.findById(id);
     if (!reservation) {
@@ -1646,6 +1696,27 @@ export const createExtensionRequest = async (req: Request, res: Response) => {
     }
     if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
+    }
+    requestCustomerId = req.user?._id;
+
+    const priorRequest = requestIdempotencyKey
+      ? (reservation.extendContract || []).find((entry: any) => entry.requestIdempotencyKey === requestIdempotencyKey)
+      : undefined;
+    if (priorRequest) {
+      if (priorRequest.requestPayloadHash !== requestPayloadHash) {
+        return res.status(409).json({ success: false, code: 'IDEMPOTENCY_KEY_CONFLICT', message: 'Idempotency-Key đã được dùng cho kỳ hạn khác.' });
+      }
+      return res.status(200).json({ success: true, outcome: 'REPLAYED', data: { reservationId: reservation._id, extension: priorRequest } });
+    }
+
+    const inProgress = (reservation.extendContract || []).find((entry: any) => ['PENDING_PAYMENT', 'PAID'].includes(entry.status));
+    if (inProgress) {
+      if (inProgress.requestPayloadHash === requestPayloadHash &&
+          (!requestIdempotencyKey || inProgress.requestIdempotencyKey === requestIdempotencyKey)) {
+        return res.status(200).json({ success: true, outcome: 'REPLAYED', data: { reservationId: reservation._id, extension: inProgress } });
+      }
+      return res.status(409).json({ success: false, code: 'EXTENSION_ALREADY_IN_PROGRESS',
+        message: `Đang có yêu cầu gia hạn ${inProgress.extensionCode} chưa hoàn tất.` });
     }
 
     // Kiểm tra điều kiện tiên quyết (Status & Conflict Guards)
@@ -1677,14 +1748,13 @@ export const createExtensionRequest = async (req: Request, res: Response) => {
       }
     }
 
-    const extensionCode = 'EXT-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    if (!Array.isArray(reservation.extendContract)) {
-      reservation.extendContract = [];
-    }
+    const extensionCode = 'EXT-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
     const newExtItem = {
+      _id: new mongoose.Types.ObjectId(),
       extensionCode,
+      ...(requestIdempotencyKey ? { requestIdempotencyKey } : {}),
+      requestPayloadHash,
       durationMonths,
       amount: totalAmount,
       status: 'PENDING_PAYMENT' as const,
@@ -1694,10 +1764,38 @@ export const createExtensionRequest = async (req: Request, res: Response) => {
       updatedAt: new Date(),
     };
 
-    reservation.extendContract.push(newExtItem as any);
-    await reservation.save();
+    const session = await mongoose.startSession();
+    let createdItem: any;
+    try {
+      await session.withTransaction(async () => {
+        const current = await ReservationModel.findOne({ _id: reservation._id, customerId: reservation.customerId,
+          serviceType: FacilityServiceType.SELF_STORAGE, status: ReservationStatus.ACTIVE,
+          endDate: oldEndDate, ...versionCas(reservation.inventoryVersion, 'inventoryVersion'),
+          extendContract: { $not: { $elemMatch: { status: { $in: ['PENDING_PAYMENT', 'PAID'] } } } } }).session(session).exec();
+        if (!current) throw new ReservationControllerError(409, 'Reservation or another Extension changed concurrently. Refresh and retry.');
 
-    const createdItem = reservation.extendContract[reservation.extendContract.length - 1];
+        // Serialize extensions and new bookings for the same physical Unit using its existing bookingVersion lock.
+        const unit = await StorageUnitModel.findById(current.storageUnitId).session(session).exec();
+        if (!unit || unit.deletedAt || unit.status === StorageUnitStatus.MAINTENANCE || unit.status === StorageUnitStatus.INACTIVE ||
+            String(unit.facilityId) !== String(current.facilityId)) {
+          throw new ReservationControllerError(409, 'Storage Unit is no longer eligible for extension.');
+        }
+        const lockedUnit = await StorageUnitModel.findOneAndUpdate({ _id: unit._id, facilityId: current.facilityId,
+          bookingVersion: currentVersion(unit.bookingVersion), status: { $nin: [StorageUnitStatus.MAINTENANCE, StorageUnitStatus.INACTIVE] },
+          deletedAt: { $exists: false } }, { $inc: { bookingVersion: 1 } }, { new: true, session }).exec();
+        if (!lockedUnit) throw new ReservationControllerError(409, 'Storage Unit changed concurrently. Refresh and retry.');
+
+        const overlapping = await (ReservationModel as any).exists({ _id: { $ne: current._id }, serviceType: FacilityServiceType.SELF_STORAGE,
+          storageUnitId: current.storageUnitId, ...ReservationService.buildOverlapFilter(oldEndDate, newEndDate) }).session(session).exec();
+        if (overlapping) throw new ReservationControllerError(409, 'Ô kho này đã có đơn đặt chỗ khác trong khoảng thời gian gia hạn dự kiến.');
+
+        current.extendContract = current.extendContract ?? [];
+        current.extendContract.push(newExtItem as any);
+        current.inventoryVersion = currentVersion(current.inventoryVersion) + 1;
+        await current.save({ session });
+        createdItem = current.extendContract[current.extendContract.length - 1];
+      }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+    } finally { await session.endSession(); }
 
     void EmailService.sendExtensionCreatedEmail(reservation, createdItem).catch(() => {});
 
@@ -1710,78 +1808,22 @@ export const createExtensionRequest = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(400).json({ success: false, message: error.message });
-  }
-};
-
-/**
- * Khởi tạo thanh toán PayOS cho yêu cầu gia hạn
- */
-export const createExtensionPayosCheckout = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { extensionId } = req.body;
-    const reservation = await ReservationModel.findById(id);
-    if (!reservation) {
-      return res.status(404).json({ success: false, message: 'Reservation not found.' });
-    }
-    const extItem = (reservation.extendContract || []).find(
-      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
-    );
-    if (!extItem) {
-      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
-    }
-    if (extItem.status !== 'PENDING_PAYMENT') {
-      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn đang ở trạng thái ${extItem.status}, không thể thanh toán.` });
-    }
-
-    const orderCode = extItem.payosOrderCode || Math.floor(1000000000 + Math.random() * 9000000000);
-    extItem.payosOrderCode = orderCode;
-    await reservation.save();
-
-    let checkoutUrl = '';
-    let qrCode = '';
-
-    if (process.env.PAYOS_CLIENT_ID && process.env.PAYOS_API_KEY && process.env.PAYOS_CHECKSUM_KEY) {
-      try {
-        const payos = new PayOS({
-          clientId: process.env.PAYOS_CLIENT_ID,
-          apiKey: process.env.PAYOS_API_KEY,
-          checksumKey: process.env.PAYOS_CHECKSUM_KEY,
-          logLevel: 'off' as const,
-        });
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const link = await payos.paymentRequests.create({
-          orderCode,
-          amount: extItem.amount,
-          description: `Gia han ${extItem.extensionCode}`.slice(0, 25),
-          returnUrl: `${frontendUrl}/portal`,
-          cancelUrl: `${frontendUrl}/portal`,
-        });
-        checkoutUrl = link.checkoutUrl;
-        qrCode = link.qrCode;
-      } catch (payosErr: any) {
-        console.warn('PayOS API call failed, falling back to mock payment details:', payosErr.message);
+    if (requestReservationId && requestCustomerId && (error?.status === 409 || isTransactionConflict(error))) {
+      const latest = await ReservationModel.findById(requestReservationId).catch(() => null);
+      if (latest && String(latest.customerId) === String(requestCustomerId)) {
+        const replay = (latest.extendContract || []).find((entry: any) =>
+          (requestIdempotencyKey && entry.requestIdempotencyKey === requestIdempotencyKey) ||
+          (!requestIdempotencyKey && entry.requestPayloadHash === requestPayloadHash && ['PENDING_PAYMENT', 'PAID'].includes(entry.status)));
+        if (replay) {
+          if (replay.requestPayloadHash !== requestPayloadHash) {
+            return res.status(409).json({ success: false, code: 'IDEMPOTENCY_KEY_CONFLICT', message: 'Idempotency-Key đã được dùng cho kỳ hạn khác.' });
+          }
+          return res.status(200).json({ success: true, outcome: 'REPLAYED', data: { reservationId: latest._id, extension: replay } });
+        }
       }
     }
-
-    if (!checkoutUrl) {
-      checkoutUrl = `https://pay.payos.vn/web/${orderCode}`;
-      qrCode = `00020101021238540010A000000727012400069704220110${orderCode}520460115303704540${extItem.amount}5802VN6304`;
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        orderCode,
-        amount: extItem.amount,
-        checkoutUrl,
-        qrCode,
-        extension: extItem,
-      },
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    const status = Number.isInteger(error?.status) ? error.status : isTransactionConflict(error) ? 409 : 400;
+    return res.status(status).json({ success: false, ...(error?.code ? { code: error.code } : {}), message: error.message });
   }
 };
 
@@ -1789,69 +1831,8 @@ export const createExtensionPayosCheckout = async (req: Request, res: Response) 
  * Dev Mock Payment Bypass: Giả lập thanh toán gia hạn 100% trong môi trường test
  */
 export const mockPayExtension = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { extensionId } = req.body;
-    const reservation = await ReservationModel.findById(id);
-    if (!reservation) {
-      return res.status(404).json({ success: false, message: 'Reservation not found.' });
-    }
-    const extItem = (reservation.extendContract || []).find(
-      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
-    );
-    if (!extItem) {
-      return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
-    }
-    if (extItem.status !== 'PENDING_PAYMENT') {
-      return res.status(400).json({ success: false, message: `Yêu cầu gia hạn đang ở trạng thái ${extItem.status}, không thể thanh toán.` });
-    }
-
-    const orderCode = extItem.payosOrderCode || Math.floor(1000000000 + Math.random() * 9000000000);
-    extItem.payosOrderCode = orderCode;
-    extItem.status = 'PAID';
-    extItem.signingDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 ngày SLA
-    extItem.updatedAt = new Date();
-
-    const payment = await ReservationPaymentModel.create({
-      reservationId: reservation._id,
-      customerId: reservation.customerId,
-      facilityId: reservation.facilityId,
-      serviceType: reservation.serviceType,
-      purpose: PaymentPurpose.RENEWAL,
-      amount: extItem.amount,
-      currency: 'VND',
-      idempotencyKey: `EXT-MOCK-${extItem.extensionCode}-${Date.now()}`,
-      provider: PaymentProvider.PAYOS,
-      providerReference: String(orderCode),
-      status: PaymentStatus.SUCCEEDED,
-      providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
-      applicationStatus: PaymentApplicationStatus.APPLIED,
-      succeededAt: new Date(),
-    });
-    extItem.paymentId = payment._id;
-
-    reservation.statusHistory.push({
-      status: reservation.status,
-      ...(req.user?._id ? { actorId: req.user._id } : {}),
-      reason: `Thanh toán phí gia hạn ${extItem.extensionCode} (+${extItem.durationMonths} tháng) thành công qua Dev Mock Bypass. Hạn ký giấy: ${extItem.signingDeadline.toLocaleDateString('vi-VN')}`,
-      createdAt: new Date(),
-    });
-
-    await reservation.save();
-
-    void EmailService.sendExtensionPaidEmail(reservation, extItem).catch(() => {});
-
-    return res.json({
-      success: true,
-      message: `Giả lập thanh toán gia hạn thành công! Vui lòng đến cơ sở ký phụ lục hợp đồng giấy trong vòng 3 ngày (trước ${extItem.signingDeadline.toLocaleDateString('vi-VN')}).`,
-      data: {
-        reservation,
-        extension: extItem,
-      },
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
+  return res.status(410).json({ success: false, code: 'RENEWAL_MOCK_PAYMENT_DISABLED',
+    message: 'Thanh toán mô phỏng gia hạn đã bị tắt.' });
 };
 
 /**
@@ -1865,13 +1846,35 @@ export const confirmExtension = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Reservation not found.' });
     }
     const extItem = (reservation.extendContract || []).find(
-      (e: any) => String(e._id) === String(extensionId) || e.extensionCode === extensionId
+      (e: any) => String(e._id) === String(extensionId)
     );
     if (!extItem) {
       return res.status(404).json({ success: false, message: 'Yêu cầu gia hạn không tồn tại.' });
     }
+    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE ||
+        ![UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER].includes(req.user?.role as UserRole) ||
+        !req.user?.assignedFacilityId || String(req.user.assignedFacilityId) !== String(reservation.facilityId)) {
+      return res.status(404).json({ success: false, code: 'EXTENSION_NOT_FOUND', message: 'Không tìm thấy yêu cầu gia hạn.' });
+    }
     if (extItem.status !== 'PAID') {
       return res.status(400).json({ success: false, message: `Yêu cầu gia hạn chưa thanh toán hoặc đã được xử lý (trạng thái: ${extItem.status}).` });
+    }
+
+    const verifiedPayment = extItem.paymentId ? await ReservationPaymentModel.findById(extItem.paymentId).where({
+      reservationId: reservation._id, customerId: reservation.customerId,
+      facilityId: reservation.facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+      purpose: PaymentPurpose.RENEWAL, extensionId: extItem._id, provider: PaymentProvider.PAYOS,
+      status: PaymentStatus.SUCCEEDED, providerSettlementStatus: ProviderSettlementStatus.VERIFIED,
+      applicationStatus: PaymentApplicationStatus.APPLIED, amount: extItem.amount, currency: 'VND',
+    }).exec() : null;
+    if (!verifiedPayment) {
+      return res.status(409).json({ success: false, code: 'VERIFIED_RENEWAL_PAYMENT_REQUIRED',
+        message: 'Chỉ xác nhận phụ lục sau khi PayOS xác minh và áp dụng đúng khoản thanh toán gia hạn.' });
+    }
+    if (new Date(reservation.endDate).getTime() !== new Date(extItem.oldEndDate).getTime() ||
+        new Date(extItem.newEndDate).getTime() <= new Date(extItem.oldEndDate).getTime()) {
+      return res.status(409).json({ success: false, code: 'EXTENSION_DATE_CONFLICT',
+        message: 'Thời hạn Reservation đã thay đổi; cần đối soát yêu cầu gia hạn trước khi xác nhận.' });
     }
 
     let proofUrl = req.body?.paperProofUrl;
@@ -1884,42 +1887,63 @@ export const confirmExtension = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Vui lòng tải lên ảnh chụp bản phụ lục hợp đồng giấy đã ký.' });
     }
 
-    extItem.status = 'ACTIVE';
-    extItem.paperProofUrl = proofUrl;
-    if (req.user?._id) {
-      extItem.verifiedBy = req.user._id;
+    const session = await mongoose.startSession();
+    let activatedReservation: any;
+    let activatedExtension: any;
+    try {
+      await session.withTransaction(async () => {
+        const current = await ReservationModel.findById(id).session(session).exec();
+        if (!current || String(current.facilityId) !== String(reservation.facilityId) ||
+            String(current.facilityId) !== String(req.user!.assignedFacilityId)) {
+          throw new ReservationControllerError(404, 'Extension not found');
+        }
+        const currentExtension = (current.extendContract || []).find((entry: any) => String(entry._id) === String(extensionId));
+        if (!currentExtension || currentExtension.status !== 'PAID' ||
+            String(currentExtension.paymentId) !== String(verifiedPayment._id) ||
+            currentExtension.amount !== verifiedPayment.amount ||
+            new Date(current.endDate).getTime() !== new Date(currentExtension.oldEndDate).getTime() ||
+            new Date(currentExtension.newEndDate).getTime() <= new Date(currentExtension.oldEndDate).getTime()) {
+          throw new ReservationControllerError(409, 'Extension or Reservation changed; reload and reconcile before confirmation');
+        }
+        const now = new Date();
+        currentExtension.status = 'ACTIVE';
+        currentExtension.paperProofUrl = proofUrl;
+        currentExtension.verifiedBy = req.user!._id;
+        currentExtension.verifiedAt = now;
+        currentExtension.updatedAt = now;
+        current.endDate = currentExtension.newEndDate;
+        current.statusHistory.push({
+          status: current.status,
+          actorId: req.user!._id,
+          reason: `Staff xác nhận phụ lục hợp đồng giấy ${currentExtension.extensionCode} (+${currentExtension.durationMonths} tháng). Hạn kết thúc mới: ${currentExtension.newEndDate.toLocaleDateString('vi-VN')}`,
+          createdAt: now,
+        });
+        await current.save({ session });
+        const contract = await ContractModel.findOneAndUpdate(
+          { reservationId: current._id, customerId: current.customerId, status: ContractStatus.SIGNED },
+          { $set: { 'pricingSnapshot.endDate': currentExtension.newEndDate, updatedAt: now } },
+          { new: true, session }
+        ).exec();
+        if (!contract) throw new ReservationControllerError(409, 'The current Contract could not be updated; renewal confirmation was rolled back');
+        activatedReservation = current;
+        activatedExtension = currentExtension;
+      }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+    } finally {
+      await session.endSession();
     }
-    extItem.verifiedAt = new Date();
-    extItem.updatedAt = new Date();
 
-    // Chính thức cộng dồn ngày kết thúc hợp đồng
-    reservation.endDate = extItem.newEndDate;
-    reservation.statusHistory.push({
-      status: reservation.status,
-      ...(req.user?._id ? { actorId: req.user._id } : {}),
-      reason: `Staff xác nhận phụ lục hợp đồng giấy ${extItem.extensionCode} (+${extItem.durationMonths} tháng). Hạn kết thúc mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}`,
-      createdAt: new Date(),
-    });
-
-    await reservation.save();
-
-    // Đồng bộ sang Contract
-    await ContractModel.findOneAndUpdate(
-      { reservationId: reservation._id },
-      { $set: { 'pricingSnapshot.endDate': extItem.newEndDate, updatedAt: new Date() } }
-    ).exec();
-
-    void EmailService.sendExtensionConfirmedEmail(reservation, extItem).catch(() => {});
+    void EmailService.sendExtensionConfirmedEmail(activatedReservation, activatedExtension).catch(() => {});
 
     return res.json({
       success: true,
-      message: `Xác nhận gia hạn thành công! Hạn hợp đồng mới: ${extItem.newEndDate.toLocaleDateString('vi-VN')}.`,
+      message: `Xác nhận gia hạn thành công! Hạn hợp đồng mới: ${activatedExtension.newEndDate.toLocaleDateString('vi-VN')}.`,
       data: {
-        reservation,
-        extension: extItem,
+        reservation: activatedReservation,
+        extension: activatedExtension,
       },
     });
   } catch (error: any) {
+    if (error instanceof ReservationControllerError) return res.status(error.status).json({ success: false, code: 'EXTENSION_CONFIRMATION_BLOCKED', message: error.message });
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -2024,81 +2048,6 @@ export const cancelExtensionRequest = async (req: Request, res: Response) => {
  * Phase 5.2: Khách hàng xác nhận và thanh toán gia hạn (Renew Reservation)
  */
 export const renewReservation = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const durationMonths = Math.min(6, Math.max(1, parseInt(req.body.durationMonths || '1', 10) || 1));
-    const reservation = await ReservationModel.findById(id);
-    if (!reservation) {
-      return res.status(404).json({ success: false, message: 'Reservation not found.' });
-    }
-    if (reservation.serviceType !== FacilityServiceType.SELF_STORAGE) {
-      return res.status(400).json({ success: false, message: 'Chỉ áp dụng gia hạn cho Self-Storage.' });
-    }
-    if (reservation.status !== ReservationStatus.ACTIVE) {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể gia hạn đơn thuê đang ACTIVE.' });
-    }
-    if (req.user && req.user.role === UserRole.CUSTOMER && String(reservation.customerId) !== String(req.user._id)) {
-      return res.status(403).json({ success: false, message: 'Bạn không có quyền gia hạn đơn thuê này.' });
-    }
-
-    let monthlyPrice = 0;
-    if (reservation.pricingPolicyId) {
-      const PricingRuleModel = mongoose.model('PricingRule');
-      const rule: any = await PricingRuleModel.findById(reservation.pricingPolicyId).exec();
-      if (rule && typeof rule.price === 'number') {
-        monthlyPrice = rule.price;
-      }
-    }
-    if (!monthlyPrice) {
-      const currentDays = Math.max(30, Math.round((new Date(reservation.endDate).getTime() - new Date(reservation.startDate).getTime()) / (24 * 60 * 60 * 1000)));
-      monthlyPrice = Math.round((reservation.estimatedRent / currentDays) * 30);
-    }
-
-    const totalAmount = monthlyPrice * durationMonths;
-    const oldEndDate = new Date(reservation.endDate);
-    const newEndDate = new Date(oldEndDate);
-    newEndDate.setUTCMonth(newEndDate.getUTCMonth() + durationMonths);
-
-    if (!Array.isArray(reservation.renewals)) {
-      reservation.renewals = [];
-    }
-    reservation.renewals.push({
-      renewalDate: new Date(),
-      durationMonths,
-      amount: totalAmount,
-      oldEndDate,
-      newEndDate,
-    });
-    reservation.endDate = newEndDate;
-    reservation.statusHistory.push({
-      status: ReservationStatus.ACTIVE,
-      actorId: req.user!._id,
-      reason: `Gia hạn hợp đồng thêm ${durationMonths} tháng thành công (Hạn mới: ${newEndDate.toLocaleDateString('vi-VN')})`,
-      createdAt: new Date(),
-    });
-    await reservation.save();
-
-    await ContractModel.findOneAndUpdate(
-      { reservationId: reservation._id },
-      {
-        $set: {
-          'pricingSnapshot.endDate': newEndDate,
-        },
-      }
-    ).exec();
-
-    return res.json({
-      success: true,
-      message: `Gia hạn thành công thêm ${durationMonths} tháng. Thời hạn mới: ${newEndDate.toLocaleDateString('vi-VN')}.`,
-      data: {
-        reservation,
-        durationMonths,
-        amount: totalAmount,
-        oldEndDate,
-        newEndDate,
-      },
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
+  return res.status(410).json({ success: false, code: 'LEGACY_RENEWAL_DISABLED',
+    message: 'Luồng gia hạn cũ đã bị tắt. Hãy dùng quy trình Extension có thanh toán được xác minh.' });
 };

@@ -1,6 +1,6 @@
 import {CardHeading,MetricTile,TintedPanel} from '../components/livePresentation';
 import {useState} from 'react';
-import {useRouter} from 'expo-router';
+import {useRouter,type Href} from 'expo-router';
 import {View} from 'react-native';
 import {refId} from '../api/contracts/core';
 import {lifecycle} from '../api/contracts/customer';
@@ -36,6 +36,7 @@ export function ManagedDashboard(){
     <TintedPanel><CardHeading icon="business-outline" title="Không gian kho ký gửi" subtitle="Khám phá các cơ sở đang cung cấp dịch vụ."/>
     <Button label="Tìm kho ký gửi" icon="compass-outline" onPress={()=>router.push('/managed/facilities')}/></TintedPanel>
     <Button label="Làm mới kho hàng" variant="quiet" onPress={refresh}/>
+    <Button label="Khai báo SKU" icon="add-circle-outline" variant="outline" onPress={()=>router.push('/inventory/register')}/>
     <ResourceState {...rentals}/>
     {rentals.data&&<Card>
       <CardHeading icon="key-outline" title="Đơn thuê kho ký gửi"/>
@@ -71,7 +72,7 @@ export function ManagedDashboard(){
           <AppText>Khả dụng: {stock.data.stock.availableQuantity===undefined?'Chưa có xác nhận':stock.data.stock.availableQuantity+' '+stock.data.stock.quantityUnit}</AppText>
         </>}
       </>}
-      <Button label="Xem hàng hóa" variant="outline" onPress={()=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id}})}/>
+      <Button label="Xem hàng hóa" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]',params:{id:item._id}} as unknown as Href)}/>
     </Card>)}
     {inventory.data&&inventory.data.pagination.totalPages>1&&<View style={ui.between}>
       <Button label="Trang trước" variant="quiet" disabled={page<=1} onPress={()=>{setStockItem('');setPage(page-1);}}/>

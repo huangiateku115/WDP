@@ -1,10 +1,12 @@
 import {useEffect,useRef,useState} from 'react';
 import axios from 'axios';
 import {journal,newAttempt} from '../state/attemptJournal';
-import {apiIssue} from '../api/client';
+import {apiIssueWithStatus} from '../api/client';
 import type {ReservationDto} from '../api/contracts/customer';
+import {refId} from '../api/contracts/core';
 import {eligibleInboundCells,buildUnifiedInboundRequest,managedInboundPreview} from '../api/managedInboundPreview';
 import {managedReservationReads} from '../api/managedReservationReads';
+import {managedInventory} from '../api/managedInventory';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,Filter,Input} from './ui';
 import {ResourceState,useResource} from './liveUI';
@@ -14,8 +16,8 @@ const sessionTime=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'
 type Item=Awaited<ReturnType<typeof mobileRepo.item>>;
 type InboundRequest=ReturnType<typeof buildUnifiedInboundRequest>;
 
-export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessionId}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void;initialSessionId?:string}){
-  const [open,setOpen]=useState(!!initialSessionId),[sessionId,setSession]=useState(initialSessionId??''),[specId,setSpec]=useState('');
+export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessionId,screenMode=false}:{item:Item;r:ReservationDto;owner:string;onCommitted:()=>void;initialSessionId?:string;screenMode?:boolean}){
+  const [open,setOpen]=useState(screenMode||!!initialSessionId),[sessionId,setSession]=useState(initialSessionId??''),[specId,setSpec]=useState('');
   const [counts,setCounts]=useState<Record<string,string>>({}),[proof,setProof]=useState<Awaited<ReturnType<typeof managedInboundPreview.preview>>>();
   const [error,setError]=useState(''),[pending,setPending]=useState(false),[committed,setCommitted]=useState('');
   const lock=useRef(false),mounted=useRef(false);
@@ -27,6 +29,8 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessi
   const sessions=useResource(open?scope:'',signal=>open?managedReservationReads.sessions(r,owner,signal):Promise.resolve(null));
   const usable=sessions.data?.filter(session=>eligibleInboundCells(r,session).length>0&&(!initialSessionId||session._id===initialSessionId))??[];
   const session=usable.find(row=>row._id===sessionId),cells=session?eligibleInboundCells(r,session):[];
+  const cellLabels=useResource(open&&cells.length?owner+':inbound-cell-labels:'+refId(r.facilityId)+':'+cells.join(','):'',signal=>
+    open&&cells.length?managedInventory.cellLabels(refId(r.facilityId),cells,signal):Promise.resolve({} as Record<string,string>));
   const specifications=context.data?.specifications??[],spec=specifications.find(row=>row._id===specId);
   useEffect(()=>{if(!specId&&specifications[0])setSpec(specifications[0]._id);},[specId,specifications]);
   useEffect(()=>{if(session){setCounts(current=>Object.keys(current).length?current:Object.fromEntries(cells.map(cell=>[cell,''])));}},[sessionId,session?.revision]);
@@ -74,7 +78,7 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessi
       if(!current())return;
       await store.clear();
       if(current()){setProof(undefined);setCommitted(movement.operationId);context.reload();onCommitted();}
-    }catch(cause){if(current())setError(apiIssue(cause));}
+    }catch(cause){if(current())setError(apiIssueWithStatus(cause));}
     finally{lock.current=false;if(current()){setPending(false);attemptResource.reload();}}
   }
 
@@ -87,30 +91,32 @@ export function ManagedInboundPreviewCard({item,r,owner,onCommitted,initialSessi
           measurementMode:'SPECIFICATION',cellAllocations:selectedAllocations}]});
       const result=await managedInboundPreview.preview(item,r,owner,session,request);
       if(mounted.current&&useLiveSession.getState().user?._id===owner)setProof(result);
-    }catch(cause){if(mounted.current&&useLiveSession.getState().user?._id===owner)setError(apiIssue(cause));}
+    }catch(cause){if(mounted.current&&useLiveSession.getState().user?._id===owner)setError(apiIssueWithStatus(cause));}
     finally{if(mounted.current)setPending(false);}
   }
 
   return <Card>
-    <Button label={open?'Ẩn kiểm tra nhập hàng':'Kiểm tra nhập kho'} variant="outline" disabled={pending} onPress={()=>{setOpen(!open);setProof(undefined);}}/>
+    {!screenMode&&<Button label={open?'Ẩn kiểm tra nhập hàng':'Kiểm tra nhập kho'} variant="outline" disabled={pending} onPress={()=>{setOpen(!open);setProof(undefined);}}/>}
     {open&&<>
-      <AppText>Chọn Item Specification, phiên INBOUND và phân bổ số lượng vào các ô được cấp. Xem trước chỉ kiểm tra; xác nhận mới ghi tồn kho.</AppText>
-      <AppText variant="caption">Kiện riêng A1 hiện chưa khả dụng: Backend chưa mở Physical Unit API (HTTP 410). Không có request A1 nào được gửi.</AppText>
-      <ResourceState {...context}/><ResourceState {...sessions}/>
-      {context.data&&specifications.length===0&&<AppText>SKU chưa có Item Specification hoạt động. Hãy tạo loại hàng trước khi nhập.</AppText>}
+      <AppText>Chọn loại hàng, lịch nhập kho và phân bổ số lượng vào các ô được cấp. Xem trước chưa làm thay đổi tồn kho; xác nhận sẽ hoàn tất nhập kho.</AppText>
+      <AppText variant="caption">Nhập kiện riêng chưa khả dụng: Backend hiện khóa API A1 bằng HTTP 410 (STOCK_WORKFLOW_NOT_AVAILABLE). A2 chỉ có thể xem trước trong production.</AppText>
+      <ResourceState {...context} resource="ngữ cảnh nhập kho · GET /inventory-items/{skuId}/v3/inbound/context"/>
+      <ResourceState {...sessions} resource="Access Session · GET /access/managed-v3/sessions/me"/>
+      {context.data&&specifications.length===0&&<AppText>Hàng hóa chưa có loại hàng đang hoạt động. Hãy thêm loại hàng trước khi nhập.</AppText>}
       {specifications.map(row=><Filter key={row._id} label={`${row.code} · ${row.name} · ${row.quantityUnit}`} selected={specId===row._id}
         onPress={()=>{if(!pending){setSpec(row._id);setProof(undefined);}}}/>)}
       {usable.map(row=><Filter key={row._id} label={'Phiên nhập hàng · hết hạn '+sessionTime.format(new Date(row.expiresAt))} selected={sessionId===row._id}
         onPress={()=>{if(!pending){setSession(row._id);setCounts({});setProof(undefined);}}}/>)}
       {sessions.data&&usable.length===0&&<AppText>Cần phiên INBOUND còn hiệu lực và bao phủ các ô được cấp.</AppText>}
-      {session&&cells.map(cell=><Input key={cell} label={`Số lượng tại ô ${cell}`} value={counts[cell]??''} keyboardType="number-pad" editable={!pending}
+      {session&&<ResourceState {...cellLabels} resource="tên Cell từ sơ đồ kho · GET /warehouse-map và /racks/{rackId}/detail-map"/>}
+      {session&&cells.map(cell=><Input key={cell} label={`Số lượng tại ${cellLabels.data?.[cell]??(cellLabels.loading?'Đang xác định Cell…':'Cell chưa xác định')}`} value={counts[cell]??''} keyboardType="number-pad" editable={!pending}
         onChangeText={value=>{setCounts(current=>({...current,[cell]:value}));setProof(undefined);}}/>)}
       <Button label="Xem trước nhập kho" loading={pending} disabled={!canUseRental||!context.data||!spec||!session||!validCounts||attemptResource.loading||!!attemptResource.error||!!attemptResource.data} onPress={()=>void preview()}/>
-      {proof&&<Card><AppText variant="card">Kết quả kiểm tra</AppText>{proof.proof.lines.map(line=><AppText key={line.lineId}>{line.itemName}: {line.quantity} {line.quantityUnit} · {line.totalWeightKg} kg · {line.totalVolumeM3} m³</AppText>)}<AppText>Tổng: {proof.proof.totalQuantity} đơn vị · {proof.proof.totalWeightKg} kg · {proof.proof.totalVolumeM3} m³</AppText>{proof.proof.lines.flatMap(line=>line.cellAllocations).map(row=><AppText key={row.cellId}>Ô {row.cellCode||row.cellId} · thêm {row.addedWeightKg} kg, {row.addedVolumeM3} m³</AppText>)}</Card>}
+      {proof&&<Card><AppText variant="card">Kết quả kiểm tra</AppText>{proof.proof.lines.map(line=><AppText key={line.lineId}>{line.itemName}: {line.quantity} {line.quantityUnit} · {line.totalWeightKg} kg · {line.totalVolumeM3} m³</AppText>)}<AppText>Tổng: {proof.proof.totalQuantity} đơn vị · {proof.proof.totalWeightKg} kg · {proof.proof.totalVolumeM3} m³</AppText>{proof.proof.lines.flatMap(line=>line.cellAllocations).map(row=><AppText key={row.cellId}>Ô {row.cellCode||cellLabels.data?.[row.cellId]||'Cell không xác định'} · thêm {row.addedWeightKg} kg, {row.addedVolumeM3} m³</AppText>)}</Card>}
       <ResourceState {...attemptResource}/>
       {attemptResource.data&&<Button label="Đối soát lần nhập đang chờ" loading={pending} onPress={()=>void reconcile(true)}/>}
       {proof&&!attemptResource.data&&<Button label="Xác nhận nhập kho" loading={pending} disabled={attemptResource.loading||!!attemptResource.error||!session||proof.proof.previewRevision.sessionRevision!==session.revision} onPress={()=>void reconcile(false)}/>}
-      {!!committed&&<AppText>Backend đã xác nhận phiếu nhập {committed}.</AppText>}
+      {!!committed&&<AppText>Đã ghi nhận phiếu nhập {committed}.</AppText>}
       {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}
     </>}
   </Card>;

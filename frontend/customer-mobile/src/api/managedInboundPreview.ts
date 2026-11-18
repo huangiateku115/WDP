@@ -97,8 +97,8 @@ export const managedInboundPreview={
   },
   async operation(item:Item,r:ReservationDto,owner:string,key:string){
     const path=scope(item,r,owner),result=readData(operationDto,await wire('GET',path+'operations',{params:{key}}));
-    const row=readData(z.object({_id:objectId,itemId:objectId,managedReservationId:objectId,customerId:objectId,facilityId:objectId,
-      schemaVersion:z.literal(4),idempotencyKey:z.string(),operationId:z.string(),stockEffect:z.object({action:z.literal('ADD')}).passthrough()}).passthrough(),result.movement);
+    const row=z.object({_id:objectId,itemId:objectId,managedReservationId:objectId,customerId:objectId,facilityId:objectId,
+      schemaVersion:z.literal(4),idempotencyKey:z.string(),operationId:z.string(),stockEffect:z.object({action:z.literal('ADD')}).passthrough()}).passthrough().parse(result.movement);
     if(row.idempotencyKey!==key||row.itemId!==item._id||row.customerId!==owner||row.managedReservationId!==r._id||row.facilityId!==ref(r.facilityId))
       throw new MobileInputError('Bằng chứng phiếu nhập đã đối soát không khớp yêu cầu.');
     const movement=mapV3Movements({success:true,data:[row]},item,owner)[0];

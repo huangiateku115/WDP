@@ -196,6 +196,7 @@ test('Manager assignment is facility-scoped and rejects an overlapping assigned 
  const facilityId=oid(3),visit={_id:oid(12),facilityId,status:'SCHEDULED',revision:1,startsAt:new Date(Date.now()+86400000),endsAt:new Date(Date.now()+86400000+3600000)};
  const actor={_id:oid(13),role:'FACILITY_MANAGER',assignedFacilityId:facilityId},staffId=oid(14);let fenceArgs,assignmentArgs;
  t.mock.method(Visit,'findById',()=>new Query(visit));
+ t.mock.method(Visit,'find',()=>new Query([]));
  t.mock.method(mongoose,'startSession',async()=>({withTransaction:async fn=>fn(),endSession:async()=>{}}));
  t.mock.method(User,'findOneAndUpdate',(filter,update,options)=>{fenceArgs={filter,update,options};return new Query({_id:staffId});});
  t.mock.method(Visit,'findOne',()=>new Query(null));
@@ -222,6 +223,32 @@ test('Staff check-in creates one server-timed Session bounded by Rental and Visi
  const actor={_id:staffId,role:'FACILITY_STAFF',assignedFacilityId:facilityId};
  const result=await ManagedAccessService.checkIn(String(visitId),{identityVerified:true,customerPresent:true,safetyReviewed:true,safetyNotes:'ID and safety checked'},actor,key);
  assert.ok(result.session.expiresAt.getTime()-result.session.startedAt.getTime()<=60*60*1000);assert.ok(result.session.expiresAt<=visit.endsAt);assert.ok(result.session.expiresAt<=reservation.endDate);assert.deepEqual(result.session.allowedCellIds,[cellId]);assert.equal(result.visit.status,'CHECKED_IN');assert.equal(createdSession.audit[0].action,'SESSION_ACTIVATED');
+});
+
+test('Staff check-in rejects a primary Reservation already covered as another ACTIVE Session secondary scope',async t=>{
+ const now=Date.now(),facilityId=oid(3),staffId=oid(35),customerId=oid(1),reservationId=oid(36),priorReservationId=oid(37),cellId=oid(4),visitId=oid(38);
+ const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'INBOUND',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
+ const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(39),allocatedCellIds:[cellId]};
+ const content={reservationId:String(reservationId)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+ const contract={signedProofPublicId:'proof',verifiedAt:new Date(now-60000),currentContentVersion:1,contentVersions:[{version:1,content,contentHash}],signatures:[{version:1,contentHash,signerRole:'CUSTOMER'},{version:1,contentHash,signerRole:'FACILITY_STAFF'}]};
+ const existing={_id:oid(40),reservationId:priorReservationId,scopedReservationIds:[priorReservationId,reservationId],status:'ACTIVE',expiresAt:new Date(now+60000)};let overlapFilter,created=0;
+ t.mock.method(Visit,'findById',()=>new Query(visit));t.mock.method(Visit,'findOne',()=>new Query(visit));
+ t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
+ t.mock.method(Payment,'findOne',()=>new Query({_id:reservation.fullPaymentId}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
+ t.mock.method(Contract,'findOne',()=>new Query(contract));t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));
+ t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(User,'findOneAndUpdate',()=>new Query({_id:staffId}));
+ t.mock.method(Allocation,'find',()=>new Query([{cellId}]));t.mock.method(Allocation,'updateMany',()=>new Query({matchedCount:1}));
+ t.mock.method(Session,'find',()=>new Query([]));t.mock.method(Session,'findOne',filter=>{
+   if (filter.checkInIdempotencyKey) return new Query(null);
+   overlapFilter=filter;
+   return new Query(filter.$or?.some(branch=>branch.scopedReservationIds?.$in?.some(value=>String(value)===String(reservationId)))?existing:null);
+ });
+ t.mock.method(Session,'updateMany',()=>new Query({modifiedCount:0}));t.mock.method(Session,'create',async()=>{created++;return [];});
+ t.mock.method(mongoose,'startSession',async()=>({withTransaction:async fn=>fn(),endSession:async()=>{}}));
+ await assert.rejects(ManagedAccessService.checkIn(String(visitId),{identityVerified:true,customerPresent:true,safetyReviewed:true,safetyNotes:'Checked'},
+   {_id:staffId,role:'FACILITY_STAFF',assignedFacilityId:facilityId},'secondary-scope-checkin-key'),error=>error instanceof ManagedAccessError&&error.code==='ACTIVE_SESSION_EXISTS');
+ assert.ok(overlapFilter.$or.some(branch=>branch.scopedReservationIds?.$in?.some(value=>String(value)===String(reservationId))));
+ assert.equal(created,0);
 });
 
 test('Revoked check-in replay is not reported as success; checkout/revoke are facility and revision scoped',async t=>{

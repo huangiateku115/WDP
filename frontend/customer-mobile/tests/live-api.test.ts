@@ -391,9 +391,19 @@ test.each([401,403])('owned Reservation list HTTP %s preserves phase and clears 
   expect(adapter).toHaveBeenCalledTimes(1);
 });
 
+test('payment history failure stays local and blocks new checkout creation for review',async()=>{
+  configureApiSession('fixture-access');
+  const adapter=fixture(c=>c.url===historyPath?httpError(c,503,'TEMPORARY_UNAVAILABLE'):depositFixture(c));
+  const context=await paymentContext(rentalId,owner);
+  expect(context.historyError).toContain('Tải lịch sử thanh toán chưa thành công');
+  expect(context.reservation._id).toBe(rentalId);
+  expect(context.decision.kind).toBe('REVIEW');
+  expect(adapter.mock.calls.some(([c])=>c.url===contractPath)).toBe(true);
+  expect(adapter.mock.calls.every(([c])=>c.method==='get')).toBe(true);
+});
+
 test.each([
   [contractPath,'contract',null],
-  [historyPath,'history','FIXTURE_FORBIDDEN'],
   [statusPath,'status',null],
 ] as const)('GET %s 403 identifies the failed step without opening or creating checkout',async (path,step,code)=>{
   configureApiSession('fixture-access');
@@ -404,6 +414,15 @@ test.each([
   });
   expect(launch).not.toHaveBeenCalled();
   expect(adapter.mock.calls.every(([config])=>config.method==='get')).toBe(true);
+});
+
+test('payment history HTTP 403 is reported separately while rental progress stays readable',async()=>{
+  configureApiSession('fixture-access');
+  const adapter=fixture(c=>c.url===historyPath?httpError(c,403,'FIXTURE_FORBIDDEN'):depositFixture(c));
+  const context=await paymentContext(rentalId,owner);
+  expect(context.historyError).toContain('HTTP 403');
+  expect(context.decision.kind).toBe('REVIEW');
+  expect(adapter.mock.calls.some(([c])=>c.url===contractPath)).toBe(true);
 });
 
 test.each(['UNKNOWN','APPLIED'] as const)('%s never opens checkout or POSTs a new attempt',async state=>{

@@ -841,14 +841,17 @@ test('Self Storage mock payment requires owner role and applies customer ownersh
   assert.equal(denied.statusCode, 403);
 });
 
-test('dedicated Managed reservation routes are registered behind role gates', () => {
+test('current dedicated Managed reservation routes are registered behind role gates', () => {
   const router = require('../dist/routes/reservation.routes').default;
   const routes = router.stack.filter(layer => layer.route).map(layer => `${Object.keys(layer.route.methods)[0].toUpperCase()} ${layer.route.path}`);
   for (const expected of [
     'POST /managed/quote', 'POST /managed', 'GET /managed/capacity/:facilityId', 'PUT /managed/capacity/:facilityId',
-    'GET /managed/:id', 'PATCH /managed/:id/approve', 'PATCH /managed/:id/reject', 'PATCH /managed/:id/cancel',
-    'POST /managed/:id/mock-pay', 'PATCH /managed/:id/activate',
+    'GET /managed/:id', 'GET /managed/:id/closure-readiness', 'PATCH /managed/:id/cancel',
+    'POST /managed/:id/contract', 'POST /managed/:id/handover', 'POST /managed/:id/payments/payos',
   ]) assert.ok(routes.includes(expected), expected);
+  for (const retired of ['PATCH /managed/:id/approve', 'PATCH /managed/:id/reject', 'PATCH /managed/:id/activate', 'POST /managed/:id/mock-pay']) {
+    assert.equal(routes.includes(retired), false, retired);
+  }
 });
 
 test('reservation schema has explicit Managed quote and simulated payment snapshots', () => {

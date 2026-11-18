@@ -14,14 +14,15 @@ test('Full-upfront signing SLA query is excluded from the legacy auto-cancel job
   const ReservationModel = require('../dist/models/reservations/reservation.model').default;
   const { checkSigningSla } = require('../dist/jobs/signing-sla-checker.job');
   const originalFind = ReservationModel.find;
-  let observed;
+  const observed = [];
   try {
     ReservationModel.find = query => {
-      observed = query;
+      observed.push(query);
       return { exec: async () => [] };
     };
     const result = await checkSigningSla(new Date('2026-11-15T17:00:00.000Z'));
-    assert.deepEqual(observed.rentalPaymentFlow, { $ne: 'FULL_UPFRONT_V1' });
+    assert.deepEqual(observed[0].rentalPaymentFlow, { $ne: 'FULL_UPFRONT_V1' });
+    assert.equal(observed.length, 2, 'the second query checks overdue Extension signatures separately');
     assert.equal(result.processedCount, 0);
   } finally {
     ReservationModel.find = originalFind;

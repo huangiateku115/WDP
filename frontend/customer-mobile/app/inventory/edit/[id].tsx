@@ -1,1 +1,1 @@
-export {UnavailableScreen as default} from '../../../src/components/liveUI';
+export {EditManagedSku as default} from '../../../src/screens/ManagedSkuForms';

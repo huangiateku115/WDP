@@ -1,1 +1,1 @@
-export {UnavailableScreen as default} from '../../src/components/liveUI';
+export {LiveSupportNew as default} from '../../src/screens/LiveSupport';

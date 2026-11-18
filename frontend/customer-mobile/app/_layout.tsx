@@ -12,6 +12,7 @@ const fontAssets={
 import {ActivityIndicator,Text,View} from 'react-native';
 import {colors} from '../src/theme/tokens';
 import {useLiveSession} from '../src/state/useLiveSession';
+import {ToastViewport} from '../src/components/ToastViewport';
 
 export default function RootLayout(){
  const [loaded,error]=useFonts(fontAssets);
@@ -21,12 +22,12 @@ export default function RootLayout(){
  useEffect(()=>{void restore();},[restore]);
  useEffect(()=>{if(error)console.warn('Không tải được phông chữ cục bộ.');},[error]);
  if(!loaded||restoring)return <SafeAreaProvider><View style={{flex:1,alignItems:'center',justifyContent:'center',backgroundColor:colors.background,gap:12}}>{error?<Text accessibilityRole="alert">Không tải được phông chữ. Vui lòng khởi động lại ứng dụng.</Text>:<><ActivityIndicator accessibilityLabel="Đang khởi động" color={colors.primary}/><Text>Đang chuẩn bị không gian của bạn…</Text></>}</View></SafeAreaProvider>;
- return <SafeAreaProvider><StatusBar style="dark"/><Stack screenOptions={{headerStyle:{backgroundColor:colors.card},headerTintColor:colors.primary,headerTitleStyle:{fontFamily:'Inter_700Bold',fontSize:17},headerShadowVisible:false,contentStyle:{backgroundColor:colors.background},headerBackButtonDisplayMode:'minimal'}}>
+ return <SafeAreaProvider><StatusBar style="dark"/><View style={{flex:1}}><Stack screenOptions={{headerStyle:{backgroundColor:colors.card},headerTintColor:colors.primary,headerTitleStyle:{fontFamily:'Inter_700Bold',fontSize:17},headerShadowVisible:false,contentStyle:{backgroundColor:colors.background},headerBackButtonDisplayMode:'minimal'}}>
   <Stack.Screen name="index" options={{headerShown:false}}/>
   {/* Payment provider callbacks must open in-app even when a session needs restoring. */}
   <Stack.Screen name="payments" options={{title:'Thanh toán'}}/>
   <Stack.Protected guard={!user} redirectTo="/(tabs)"><Stack.Screen name="(auth)" options={{headerShown:false}}/></Stack.Protected>
   <Stack.Protected guard={!!user} redirectTo="/(auth)/login"><Stack.Screen name="notifications" options={{title:'Thông báo'}}/><Stack.Screen name="support" options={{title:'Hỗ trợ'}}/><Stack.Screen name="(tabs)" options={{headerShown:false}}/><Stack.Screen name="rentals" options={{title:'Hồ sơ thuê'}}/><Stack.Screen name="inventory" options={{title:'Hàng hóa'}}/><Stack.Screen name="managed" options={{title:'Kho ký gửi'}}/><Stack.Screen name="booking" options={{title:'Đặt kho'}}/><Stack.Screen name="preview/[kind]/[id]" options={{title:'Chi tiết'}}/></Stack.Protected>
   <Stack.Screen name="+not-found" options={{title:'Không tìm thấy'}}/>
- </Stack></SafeAreaProvider>;
+ </Stack><ToastViewport/></View></SafeAreaProvider>;
 }

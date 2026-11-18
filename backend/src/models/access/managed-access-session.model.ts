@@ -5,7 +5,13 @@ const audit = new Schema({ action: { type: String, required: true }, actorId: { 
 const schema = new Schema<IManagedAccessSession>({
   visitId: { type: Schema.Types.ObjectId, ref: 'ManagedAccessVisit', required: true, index: true },
   reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation', required: true, index: true },
-  scopedReservationIds: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }],
+  scopedReservationIds: { type: [{ type: Schema.Types.ObjectId, ref: 'Reservation' }], required: true,
+    default: function (this: any) { return this.reservationId ? [this.reservationId] : undefined; },
+    validate: { validator: function (this: any, ids: unknown[]) {
+      if (!Array.isArray(ids) || !ids.length || !this.reservationId) return false;
+      const normalized = ids.map(value => String(value));
+      return new Set(normalized).size === normalized.length && normalized.includes(String(this.reservationId));
+    }, message: 'scopedReservationIds must contain unique Reservation IDs including reservationId.' } },
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true, index: true },
   assignedStaffId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -16,7 +22,10 @@ const schema = new Schema<IManagedAccessSession>({
   checkInRequestHash: { type: String, match: /^[a-f\d]{64}$/i },
   audit: { type: [audit], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
-schema.index({ reservationId: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE } });
+schema.index({ reservationId: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE },
+  name: 'managed_access_session_active_reservation_unique' });
+schema.index({ scopedReservationIds: 1 }, { unique: true, partialFilterExpression: { status: ManagedAccessSessionStatus.ACTIVE },
+  name: 'managed_access_session_active_scope_unique' });
 schema.index({ visitId: 1, checkInIdempotencyKey: 1 }, { unique: true });
 schema.index({ facilityId: 1, status: 1, expiresAt: 1 });
 export default mongoose.model('ManagedAccessSession', schema);

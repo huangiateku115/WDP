@@ -59,12 +59,14 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
   const id=reservation._id;
   if(reservation.serviceType!=='SELF_STORAGE')throw new MobileInputError('PayOS hiện chỉ hỗ trợ kho tự quản.');
   const upfront = reservation.rentalPaymentFlow === 'FULL_UPFRONT_V1';
-  const [contract,history,attemptStore,balanceStore]=await Promise.all([
+  const [contract,historyResult,attemptStore,balanceStore]=await Promise.all([
     atStep('contract',()=>mobileRepo.contract(reservation,owner,signal)),
-    atStep('history',()=>mobileRepo.payments(reservation,owner,signal)),
+    atStep('history',()=>mobileRepo.payments(reservation,owner,signal)).then(items=>({items,error:null as string|null})).catch(error=>({items:[] as Awaited<ReturnType<typeof mobileRepo.payments>>,error:error instanceof Error?error.message:'Không thể tải lịch sử thanh toán. Vui lòng thử lại.'})),
     journal(upfront?'full-rent':'deposit',owner,id),
     refreshBalance&&!upfront?journal('balance',owner,id):null,
   ]);
+  const history=historyResult.items;
+  const historyError=historyResult.error;
   const [attempt,balanceAttempt]=await Promise.all([attemptStore.read(),balanceStore?.read()]);
   const payments=[...history].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id));
   const targets=new Map<string,PaymentPurpose>();
@@ -97,10 +99,13 @@ export async function readRentalPayment(reservation:ReservationDto,owner:string,
   for(const payment of refreshed){
     if(!payments.some(row=>row.id===payment.id))verifiedPayments.push(payment);
   }
-  return {reservation,contract,payments:verifiedPayments,attempt,attemptStore,balanceStore,balanceAttemptExists:!!balanceAttempt,
-    fullRentDecision:upfront?fullRentDecision(reservation,contract,verifiedPayments,attempt):null,
-    decision:depositDecision(reservation,contract,verifiedPayments,!!attempt),
-    balanceDecision:balanceDecision(reservation,contract,verifiedPayments,!!balanceAttempt)};
+  const fullRent=upfront?fullRentDecision(reservation,contract,verifiedPayments,attempt):null;
+  const deposit=depositDecision(reservation,contract,verifiedPayments,!!attempt);
+  const balance=balanceDecision(reservation,contract,verifiedPayments,!!balanceAttempt);
+  return {reservation,contract,payments:verifiedPayments,historyError,attempt,attemptStore,balanceStore,balanceAttemptExists:!!balanceAttempt,
+    fullRentDecision:historyError&&fullRent?.kind==='CREATE'?{kind:'REVIEW' as const}:fullRent,
+    decision:historyError&&deposit.kind==='CREATE'?{kind:'REVIEW' as const}:deposit,
+    balanceDecision:historyError&&balance.kind==='CREATE'?{kind:'REVIEW' as const}:balance};
 }
 
 export async function openDeposit(id:string,owner:string,isCurrent:()=>boolean,openUrl:(url:string)=>Promise<unknown>){

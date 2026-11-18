@@ -38,6 +38,8 @@ test('payment history translates mixed settlement, reconciliation and terminal s
   expect(managedPaymentLabel({...row,status:'SUCCEEDED'})).toBe('Đang xác minh');
   expect(managedPaymentLabel({...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'})).toBe('Đã thanh toán');
   expect(managedPaymentLabel({...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',reconciliationRequired:true})).toBe('Cần đối soát');
+  expect(managedPaymentLabel({...row,checkoutStatus:'UNKNOWN'})).toBe('Đang xác minh');
+  expect(managedPaymentLabel({...row,checkoutStatus:'CREATING'})).toBe('Đang xác minh');
   expect(managedPaymentLabel({...row,status:'FAILED'})).toBe('Thanh toán thất bại');
   expect(managedPaymentProgress(undefined)).toBe('NONE');
   const applied={...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'};
@@ -64,6 +66,17 @@ test('payment that needs reconciliation blocks the next workflow steps',()=>{
   const steps=managedRentalProgress({reservationStatus:'PAID',payment:'REVIEW'});
   expect(steps.find(step=>step.key==='payment')?.state).toBe('BLOCKED');
   expect(steps.find(step=>step.key==='contract')?.state).toBe('BLOCKED');
+});
+
+test('ACTIVE reservation does not turn an uncertain PayOS checkout into a reconciliation requirement',()=>{
+  const payment={...row,checkoutStatus:'UNKNOWN' as const};
+  const progress=managedPaymentProgress([payment]);
+  expect(progress).toBe('VERIFYING');
+  expect(managedPaymentLabel(payment)).toBe('Đang xác minh');
+  expect(managedRentalProgress({reservationStatus:'ACTIVE',payment:progress}).find(step=>step.key==='payment')?.state).toBe('CURRENT');
+  expect(managedPaymentProgress([{...payment,checkoutStatus:'CREATING'}])).toBe('VERIFYING');
+  expect(managedPaymentProgress([{...payment,reconciliationRequired:true}])).toBe('REVIEW');
+  expect(managedPaymentProgress([{...payment,status:'RECONCILIATION_REQUIRED'}])).toBe('REVIEW');
 });
 
 test('paper-contract next step requires both the paid reservation lifecycle and fully applied payment',()=>{

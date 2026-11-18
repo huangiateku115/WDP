@@ -4,6 +4,7 @@ jest.mock('expo-secure-store',()=>({getItemAsync:async(key:string)=>mockVisitVau
 import {apiClient,configureApiSession} from '../src/api/client';
 import axios from 'axios';
 import {managedReservationReads} from '../src/api/managedReservationReads';
+import {mapManagedAccessRows} from '../src/api/managedReservationReads';
 import {journal} from '../src/state/attemptJournal';
 
 const [owner,facilityId,reservationId,visitId]=['1','2','3','4'].map(value=>value.repeat(24)) as [string,string,string,string];
@@ -26,6 +27,17 @@ test('availability uses the confirmed read endpoint and Backend-provided Asia/Ho
   await expect(managedReservationReads.visitAvailability(r,owner,'2099-07-02')).resolves.toMatchObject({timeZone:'Asia/Ho_Chi_Minh',slots:[{startsAt,endsAt}]});
   await expect(managedReservationReads.visitAvailability(r,visitId,'2099-07-02')).rejects.toThrow();
   await expect(managedReservationReads.visitAvailability({...r,status:'CANCELLED'},owner,'2099-07-02')).rejects.toThrow();
+});
+
+test('visit eligibility is confirmed by Backend with the Reservation ObjectId',async()=>{
+  apiClient.defaults.adapter=async config=>{
+    expect(config.method).toBe('get');
+    expect(config.url).toBe('/access/managed-v3/visits/availability');
+    expect(config.params).toEqual({reservationId,date:'2026-11-17'});
+    return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{timeZone:'Asia/Ho_Chi_Minh',slotDurationMinutes:30,
+      capacityBasis:'FACILITY_STAFF',staffAssignmentRequired:true,slots:[]}}};
+  };
+  await expect(managedReservationReads.visitEligibility(r,owner,'2026-11-17')).resolves.toMatchObject({slots:[]});
 });
 
 test('visit create sends the exact selected slot with a stable idempotency key and validates owner scope',async()=>{
@@ -71,4 +83,26 @@ test('pending Visit request survives app-facing journal reads with the original 
   expect(restored).toEqual(saved);
   expect(await store.claim({...saved,key:'wdp-mobile-22345678-1234-4abc-9abc-123456789abc'})).toBe(false);
   expect((await store.read())?.key).toBe(saved.key);
+});
+
+test('Visit list accepts Backend MISSED status and populated assigned staff',async()=>{
+  apiClient.defaults.adapter=async config=>({config,status:200,statusText:'OK',headers:{},data:{success:true,data:[{
+    ...visit,status:'MISSED',assignedStaffId:{_id:'5'.repeat(24),displayName:'Nhân viên kho'},
+  }]}});
+  await expect(managedReservationReads.visits(r,owner)).resolves.toMatchObject([
+    {status:'MISSED',assignedStaffId:{displayName:'Nhân viên kho'}},
+  ]);
+});
+
+test('Visit and Session scope mapping includes a secondary Reservation and ignores independent scope',()=>{
+  const otherReservation='6'.repeat(24),current={...r,_id:reservationId};
+  const row={customerId:owner,facilityId,reservationId:otherReservation,scopedReservationIds:[otherReservation,reservationId]};
+  const independent={...row,scopedReservationIds:[otherReservation]};
+  expect(mapManagedAccessRows([row,independent],current,owner)).toEqual([row]);
+});
+
+test('Visit list preserves forbidden API errors instead of treating them as an empty list',async()=>{
+  apiClient.defaults.adapter=async config=>{throw new axios.AxiosError('Forbidden','ERR_BAD_REQUEST',config,undefined,
+    {config,status:403,statusText:'Forbidden',headers:{},data:{success:false,code:'FORBIDDEN'}});};
+  await expect(managedReservationReads.visits(r,owner)).rejects.toMatchObject({response:{status:403}});
 });

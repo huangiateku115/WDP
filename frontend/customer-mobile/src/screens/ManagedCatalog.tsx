@@ -1,9 +1,8 @@
-import {ManagedSkuEditor} from '../components/ManagedSkuEditor';
 import {ManagedReservationOperations} from '../components/ManagedReservationOperations';
 import {ManagedPaymentCard} from '../components/ManagedPaymentCard';
 import {CardHeading} from '../components/livePresentation';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {useLocalSearchParams,useRouter} from 'expo-router';
+import {useLocalSearchParams,useRouter,type Href} from 'expo-router';
 import {StyleSheet,View} from 'react-native';
 import {managedInventory} from '../api/managedInventory';
 import {mobileRepo} from '../api/mobileRepository';
@@ -12,6 +11,7 @@ import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,Input,StateCard,ui} from '../components/ui';
 import {ManagedFacilityVisual} from '../components/ManagedFacilityVisual';
 import {managedPaperContractNextStep,type ManagedPaymentProgress} from '../domain/managedV3RentalProgress';
+import {managedSkuEligible} from '../api/managedSkuV3';
 import {ManagedRentalProgress} from '../components/ManagedRentalProgress';
 import type {ManagedOperationProgress} from '../components/ManagedReservationOperations';
 import {colors} from '../theme/tokens';
@@ -129,6 +129,6 @@ export function ManagedRentalDetail(){
       <Button label="Xem hợp đồng" variant="outline" onPress={()=>router.push({pathname:'/rentals/[id]/contract',params:{id:r._id}})}/>
     </Card>}
     {r?.bookingFlowVersion===3&&<ManagedReservationOperations key={'ops:'+owner+':'+r._id} r={r} owner={owner} onProgress={receiveOperationProgress}/>}
-    {r?.bookingFlowVersion===3&&<ManagedSkuEditor key={'sku:'+owner+':'+r._id} r={r} owner={owner} onSaved={item=>router.push({pathname:'/preview/[kind]/[id]',params:{kind:'inventory',id:item._id}})}/>}
+    {r?.bookingFlowVersion===3&&managedSkuEligible(r)&&<Card><Button label="Khai báo SKU" icon="add-circle-outline" onPress={()=>router.push({pathname:'/inventory/register',params:{reservationId:r._id}})}/></Card>}
   </LiveScreen>;
 }

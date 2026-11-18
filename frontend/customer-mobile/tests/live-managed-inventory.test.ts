@@ -159,7 +159,7 @@ test('V3 quotes verify the exact Cell set at the wire boundary',async()=>{
 
 test('V3 inventory readers select canonical routes without falling back after a rejection',async()=>{
   const item={_id:cellId,customerId:owner,managedReservationId:reservationId,facilityId,itemCode:'MI-01',name:'Fixture',
-    category:'Box',quantity:2,quantityUnit:'box',unitWeightKg:1,unitDimensionsM:{widthM:1,depthM:1,heightM:1},status:'IN_STORAGE'};
+    inventorySchemaVersion:3 as const,category:'Box',revision:0,currentCellId:null,status:'ACTIVE' as const};
   const rental={_id:reservationId,customerId:owner,facilityId,reservationCode:'MIR-FIXTURE',
     serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate,endDate};
   const adapter=fixture(c=>{

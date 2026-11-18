@@ -94,11 +94,12 @@ test('ledger replay DTO validates as a strict persisted projection for both A1 a
   assert.equal(a1Read.totalWeightKg, 50); assert.equal(a1Read.totalVolumeM3, .475);
 });
 
-test('direct confirm rejects A1 without a declared pose before any database access', async () => {
+test('legacy confirmInbound remains explicitly fail-closed while Unified Inbound owns the active route', async () => {
   await assert.rejects(ManagedInventoryV3Service.confirmInbound(ids.sku.toString(), {
     itemKind: 'A1_PHYSICAL_UNIT', accessSessionId: ids.session.toString(), sessionRevision: 0,
     physicalUnitId: ids.unit.toString(), cellIds: [ids.c1.toString()], placements: [{ cellId: ids.c1.toString() }],
-  }, { _id: ids.customer, role: 'CUSTOMER' }, 'missing-pose-key'), error => error.code === 'A1_POSE_REQUIRED' && error.status === 422);
+  }, { _id: ids.customer, role: 'CUSTOMER' }, 'legacy-inbound-blocked-key'), error =>
+    error.status === 410 && error.code === 'STOCK_WORKFLOW_NOT_AVAILABLE' && /paused until Cell Stock and Movement/.test(error.message));
 });
 
 test('MOVE conserves A2 batches split across Cells and moves an entire A1 footprint as one unit', () => {

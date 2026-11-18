@@ -12,12 +12,11 @@ export type ProgressState = 'COMPLETED' | 'CURRENT' | 'PENDING' | 'BLOCKED';
 export function managedPaymentProgress(rows?: readonly PaymentRow[]): ManagedPaymentProgress {
   if (!rows) return 'NONE';
   if (rows.some(row => row.reconciliationRequired || row.status === 'RECONCILIATION_REQUIRED' ||
-    row.checkoutStatus === 'RECONCILIATION_REQUIRED' || row.checkoutStatus === 'UNKNOWN' ||
-    row.applicationStatus === 'MANUAL_REVIEW')) return 'REVIEW';
+    row.checkoutStatus === 'RECONCILIATION_REQUIRED' || row.applicationStatus === 'MANUAL_REVIEW')) return 'REVIEW';
   if (rows.some(row => row.status === 'SUCCEEDED' && row.providerSettlementStatus === 'VERIFIED' &&
     row.applicationStatus === 'APPLIED' && !row.reconciliationRequired)) return 'APPLIED';
   if (rows.some(row => row.status === 'SUCCEEDED' || row.providerSettlementStatus === 'VERIFIED' ||
-    row.applicationStatus === 'APPLIED')) return 'VERIFYING';
+    row.applicationStatus === 'APPLIED' || row.checkoutStatus === 'UNKNOWN' || row.checkoutStatus === 'CREATING')) return 'VERIFYING';
   if (rows.length && rows.every(row => row.status === 'CANCELLED' || row.checkoutStatus === 'CANCELLED')) return 'CANCELLED';
   if (rows.some(row => row.status === 'FAILED' || row.checkoutStatus === 'FAILED')) return 'FAILED';
   return rows.length ? 'PENDING' : 'NONE';

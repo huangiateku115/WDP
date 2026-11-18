@@ -70,6 +70,19 @@ test('Contract Extension: Chặn tạo yêu cầu gia hạn nếu đơn không �
   assert.match(res.body.message, /không ở trạng thái ACTIVE/i);
 });
 
+test('Contract Extension: Customer cannot create an Extension for another Customer Reservation', async t => {
+  const ownerId = new mongoose.Types.ObjectId(), callerId = new mongoose.Types.ObjectId();
+  const reservationId = new mongoose.Types.ObjectId();
+  const originalFindById = ReservationModel.findById;
+  ReservationModel.findById = () => ({ then: resolve => resolve({ _id: reservationId, customerId: ownerId }) });
+  t.after(() => { ReservationModel.findById = originalFindById; });
+  const res = mockResponse();
+  await ReservationController.createExtensionRequest({ params: { id: String(reservationId) }, body: { durationMonths: 1 },
+    get: () => undefined, user: { _id: callerId, role: 'CUSTOMER' } }, res);
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /không có quyền gia hạn/i);
+});
+
 test('Contract Extension: Chặn tạo yêu cầu gia hạn nếu đơn đang có yêu cầu checkout PENDING', async (t) => {
   const reservationId = new mongoose.Types.ObjectId();
   const customerId = new mongoose.Types.ObjectId();
@@ -154,7 +167,7 @@ test('Contract Extension: Chặn tạo yêu cầu gia hạn nếu đang có 1 y�
 
   await ReservationController.createExtensionRequest(req, res);
 
-  assert.equal(res.statusCode, 400);
+  assert.equal(res.statusCode, 409);
   assert.match(res.body.message, /đang có yêu cầu gia hạn/i);
 });
 
@@ -187,20 +200,32 @@ test('Contract Extension: Tạo yêu cầu gia hạn thành công (PENDING_PAYME
 
   const origFindById = ReservationModel.findById;
   const origFindOne = ReservationModel.findOne;
+  const origExists = ReservationModel.exists;
+  const origContractFindOne = ContractModel.findOne;
   ReservationModel.findById = () => ({
     exec: async () => fakeReservation,
     then: (resolve) => resolve(fakeReservation),
   });
-  ReservationModel.findOne = () => ({
+  ReservationModel.findOne = (filter) => ({
+    session: () => ({ exec: async () => filter.endDate ? fakeReservation : null }),
     exec: async () => null,
     then: (resolve) => resolve(null),
   });
+  ReservationModel.exists = () => ({ session: () => ({ exec: async () => null }), exec: async () => null });
+  ContractModel.findOne = () => ({ exec: async () => ({ status: 'SIGNED', signedProofUrl: 'https://proof.example/original', verifiedAt: new Date() }) });
 
   const origStorageUnit = StorageUnitModel.findById;
+  const fakeUnit = { _id: storageUnitId, status: 'OCCUPIED', facilityId };
   StorageUnitModel.findById = () => ({
-    exec: async () => ({ _id: storageUnitId, status: 'OCCUPIED', facilityId }),
-    then: (resolve) => resolve({ _id: storageUnitId, status: 'OCCUPIED', facilityId }),
+    exec: async () => fakeUnit,
+    session: () => ({ exec: async () => fakeUnit }),
+    then: (resolve) => resolve(fakeUnit),
   });
+  const origUnitFindOneAndUpdate = StorageUnitModel.findOneAndUpdate;
+  StorageUnitModel.findOneAndUpdate = () => ({ exec: async () => ({ _id: storageUnitId }) });
+  const originalStartSession = mongoose.startSession;
+  const transaction = { withTransaction: async callback => callback(), endSession: async () => {} };
+  mongoose.startSession = async () => transaction;
 
   const origPricingRule = PricingRuleModel.findById;
   const origPricingRuleFindOne = PricingRuleModel.findOne;
@@ -225,6 +250,10 @@ test('Contract Extension: Tạo yêu cầu gia hạn thành công (PENDING_PAYME
   t.after(() => {
     ReservationModel.findById = origFindById;
     StorageUnitModel.findById = origStorageUnit;
+    StorageUnitModel.findOneAndUpdate = origUnitFindOneAndUpdate;
+    ReservationModel.exists = origExists;
+    ContractModel.findOne = origContractFindOne;
+    mongoose.startSession = originalStartSession;
     PricingRuleModel.findById = origPricingRule;
     PricingRuleModel.findOne = origPricingRuleFindOne;
   });
@@ -232,6 +261,7 @@ test('Contract Extension: Tạo yêu cầu gia hạn thành công (PENDING_PAYME
   const req = {
     params: { id: reservationId.toString() },
     body: { durationMonths: 2 },
+    get: name => name === 'Idempotency-Key' ? 'extension-request-key-01' : undefined,
     user: { _id: customerId, role: 'CUSTOMER' },
   };
   const res = mockResponse();
@@ -247,9 +277,22 @@ test('Contract Extension: Tạo yêu cầu gia hạn thành công (PENDING_PAYME
   // Ngày endDate của đơn chính vẫn giữ nguyên cho đến khi staff ký duyệt
   assert.equal(fakeReservation.endDate.toISOString(), initialEndDate.toISOString());
   assert.equal(fakeReservation.extendContract.length, 1);
+  assert.equal(fakeReservation.extendContract[0].requestPayloadHash.length, 64);
+
+  const replayRes = mockResponse();
+  await ReservationController.createExtensionRequest(req, replayRes);
+  assert.equal(replayRes.statusCode, 200);
+  assert.equal(replayRes.body.outcome, 'REPLAYED');
+  assert.equal(fakeReservation.extendContract.length, 1, 'same Idempotency-Key must not append another Extension');
+
+  const mismatchRes = mockResponse();
+  await ReservationController.createExtensionRequest({ ...req, body: { durationMonths: 3 } }, mismatchRes);
+  assert.equal(mismatchRes.statusCode, 409);
+  assert.equal(mismatchRes.body.code, 'IDEMPOTENCY_KEY_CONFLICT');
+  assert.equal(fakeReservation.extendContract.length, 1);
 });
 
-test('Contract Extension: Dev Mock Pay Bypass thành công (PAID, SLA 3 ngày)', async (t) => {
+test('Contract Extension: Dev Mock Pay Bypass fail-closed without changing Extension state', async (t) => {
   const reservationId = new mongoose.Types.ObjectId();
   const customerId = new mongoose.Types.ObjectId();
   const facilityId = new mongoose.Types.ObjectId();
@@ -276,22 +319,12 @@ test('Contract Extension: Dev Mock Pay Bypass thành công (PAID, SLA 3 ngày)',
   };
 
   const origFindById = ReservationModel.findById;
-  const origFindOne = ReservationModel.findOne;
   ReservationModel.findById = () => ({
     exec: async () => fakeReservation,
     then: (resolve) => resolve(fakeReservation),
   });
-  ReservationModel.findOne = () => ({
-    exec: async () => null,
-    then: (resolve) => resolve(null),
-  });
-
-  const origPaymentCreate = ReservationPaymentModel.create;
-  ReservationPaymentModel.create = async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc });
-
   t.after(() => {
     ReservationModel.findById = origFindById;
-    ReservationPaymentModel.create = origPaymentCreate;
   });
 
   const req = {
@@ -303,13 +336,11 @@ test('Contract Extension: Dev Mock Pay Bypass thành công (PAID, SLA 3 ngày)',
 
   await ReservationController.mockPayExtension(req, res);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.success, true);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body.code, 'RENEWAL_MOCK_PAYMENT_DISABLED');
   const ext = fakeReservation.extendContract[0];
-  assert.equal(ext.status, 'PAID');
-  assert.ok(ext.signingDeadline instanceof Date);
-  const diffDays = Math.round((ext.signingDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  assert.equal(diffDays, 3);
+  assert.equal(ext.status, 'PENDING_PAYMENT');
+  assert.equal(ext.paymentId, undefined);
   // Đơn chính vẫn giữ nguyên ACTIVE
   assert.equal(fakeReservation.status, ReservationStatus.ACTIVE);
 });
@@ -319,12 +350,15 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
   const customerId = new mongoose.Types.ObjectId();
   const extensionId = new mongoose.Types.ObjectId();
   const staffId = new mongoose.Types.ObjectId();
+  const facilityId = new mongoose.Types.ObjectId();
+  const paymentId = new mongoose.Types.ObjectId();
   const initialEndDate = new Date('2026-12-01T00:00:00.000Z');
   const targetNewEndDate = new Date('2027-02-01T00:00:00.000Z');
 
   const fakeReservation = {
     _id: reservationId,
     customerId,
+    facilityId,
     serviceType: FacilityServiceType.SELF_STORAGE,
     status: ReservationStatus.ACTIVE,
     endDate: initialEndDate,
@@ -336,6 +370,8 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
         durationMonths: 2,
         amount: 2400000,
         status: 'PAID',
+        paymentId,
+        oldEndDate: initialEndDate,
         newEndDate: targetNewEndDate,
       }
     ],
@@ -344,14 +380,24 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
 
   const origFindById = ReservationModel.findById;
   const origFindOne = ReservationModel.findOne;
+  const origPaymentFindById = ReservationPaymentModel.findById;
+  const origStartSession = mongoose.startSession;
+  const confirmSession = { withTransaction: async callback => callback(), endSession: async () => {} };
   ReservationModel.findById = () => ({
     exec: async () => fakeReservation,
+    session: () => ({ exec: async () => fakeReservation }),
     then: (resolve) => resolve(fakeReservation),
   });
+  mongoose.startSession = async () => confirmSession;
   ReservationModel.findOne = () => ({
     exec: async () => null,
     then: (resolve) => resolve(null),
   });
+  ReservationPaymentModel.findById = requestedPaymentId => ({ where: filter => ({ exec: async () => ({
+    _id: requestedPaymentId, reservationId, customerId, facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+    purpose: 'RENEWAL', extensionId: filter.extensionId, provider: 'PAYOS', status: 'SUCCEEDED', providerSettlementStatus: 'VERIFIED',
+    applicationStatus: 'APPLIED', amount: 2400000, currency: 'VND',
+  }) }) });
 
   const origContractUpdate = ContractModel.findOneAndUpdate;
   ContractModel.findOneAndUpdate = () => ({
@@ -360,13 +406,15 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
 
   t.after(() => {
     ReservationModel.findById = origFindById;
+    ReservationPaymentModel.findById = origPaymentFindById;
+    mongoose.startSession = origStartSession;
     ContractModel.findOneAndUpdate = origContractUpdate;
   });
 
   const req = {
     params: { id: reservationId.toString(), extensionId: extensionId.toString() },
     body: { paperProofUrl: 'https://res.cloudinary.com/test/image/upload/v1/extension_proof.jpg' },
-    user: { _id: staffId, role: 'FACILITY_STAFF' },
+    user: { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId },
   };
   const res = mockResponse();
 
@@ -380,6 +428,62 @@ test('Contract Extension: Staff tải ảnh phụ lục & Xác nhận gia hạn 
   assert.equal(ext.verifiedBy.toString(), staffId.toString());
   // Ngày kết thúc của đơn chính CHÍNH THỨC được cộng dồn sang ngày mới
   assert.equal(fakeReservation.endDate.toISOString(), targetNewEndDate.toISOString());
+
+  const duplicateRes = mockResponse();
+  await ReservationController.confirmExtension(req, duplicateRes);
+  assert.equal(duplicateRes.statusCode, 400, 'an already ACTIVE Extension cannot be confirmed twice');
+  assert.equal(fakeReservation.endDate.toISOString(), targetNewEndDate.toISOString(), 'duplicate confirm must not add the term again');
+
+  const secondExtensionId = new mongoose.Types.ObjectId(), secondPaymentId = new mongoose.Types.ObjectId();
+  const secondEndDate = new Date('2027-05-01T00:00:00.000Z');
+  fakeReservation.extendContract.push({ _id: secondExtensionId, extensionCode: 'EXT-SECOND-01', durationMonths: 3,
+    amount: 2400000, status: 'PAID', paymentId: secondPaymentId, oldEndDate: targetNewEndDate, newEndDate: secondEndDate });
+  const secondRes = mockResponse();
+  await ReservationController.confirmExtension({ ...req, params: { id: String(reservationId), extensionId: String(secondExtensionId) } }, secondRes);
+  assert.equal(secondRes.statusCode, 200);
+  assert.equal(fakeReservation.extendContract[1].status, 'ACTIVE');
+  assert.equal(fakeReservation.endDate.toISOString(), secondEndDate.toISOString(), 'a later Extension uses the prior activated end date');
+});
+
+test('Contract Extension: Staff cannot activate PAID state without verified and applied Renewal Payment', async t => {
+  const reservationId = new mongoose.Types.ObjectId(), customerId = new mongoose.Types.ObjectId();
+  const facilityId = new mongoose.Types.ObjectId(), extensionId = new mongoose.Types.ObjectId();
+  const paymentId = new mongoose.Types.ObjectId(), staffId = new mongoose.Types.ObjectId();
+  const initialEndDate = new Date('2027-01-01T00:00:00.000Z');
+  const reservation = { _id: reservationId, customerId, facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+    status: ReservationStatus.ACTIVE, endDate: initialEndDate, statusHistory: [], extendContract: [{ _id: extensionId,
+      paymentId, amount: 100000, status: 'PAID', oldEndDate: initialEndDate, newEndDate: new Date('2027-02-01T00:00:00.000Z') }] };
+  const oldFind = ReservationModel.findById, oldPaymentFind = ReservationPaymentModel.findById;
+  ReservationModel.findById = () => ({ then: resolve => resolve(reservation) });
+  ReservationPaymentModel.findById = () => ({ where: () => ({ exec: async () => null }) });
+  t.after(() => { ReservationModel.findById = oldFind; ReservationPaymentModel.findById = oldPaymentFind; });
+  const res = mockResponse();
+  await ReservationController.confirmExtension({ params: { id: String(reservationId), extensionId: String(extensionId) }, body: { paperProofUrl: 'https://proof.example/addendum' },
+    user: { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: facilityId } }, res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.code, 'VERIFIED_RENEWAL_PAYMENT_REQUIRED');
+  assert.equal(reservation.extendContract[0].status, 'PAID');
+  assert.equal(reservation.endDate.toISOString(), initialEndDate.toISOString());
+});
+
+test('Contract Extension: Staff assigned to another Facility cannot confirm the paper addendum', async t => {
+  const reservationId = new mongoose.Types.ObjectId(), customerId = new mongoose.Types.ObjectId();
+  const facilityId = new mongoose.Types.ObjectId(), otherFacilityId = new mongoose.Types.ObjectId();
+  const extensionId = new mongoose.Types.ObjectId(), staffId = new mongoose.Types.ObjectId();
+  const endDate = new Date('2027-01-01T00:00:00.000Z');
+  const reservation = { _id: reservationId, customerId, facilityId, serviceType: FacilityServiceType.SELF_STORAGE,
+    status: ReservationStatus.ACTIVE, endDate, extendContract: [{ _id: extensionId, status: 'PAID', amount: 100000,
+      oldEndDate: endDate, newEndDate: new Date('2027-02-01T00:00:00.000Z') }] };
+  const originalFindById = ReservationModel.findById;
+  ReservationModel.findById = () => ({ then: resolve => resolve(reservation) });
+  t.after(() => { ReservationModel.findById = originalFindById; });
+  const res = mockResponse();
+  await ReservationController.confirmExtension({ params: { id: String(reservationId), extensionId: String(extensionId) },
+    body: { paperProofUrl: 'https://proof.example/addendum' },
+    user: { _id: staffId, role: 'FACILITY_STAFF', assignedFacilityId: otherFacilityId } }, res);
+  assert.equal(res.statusCode, 404);
+  assert.equal(reservation.extendContract[0].status, 'PAID');
+  assert.equal(reservation.endDate.toISOString(), endDate.toISOString());
 });
 
 test('Contract Extension: Staff từ chối gia hạn hợp đồng (REJECTED, giữ nguyên endDate cũ)', async (t) => {

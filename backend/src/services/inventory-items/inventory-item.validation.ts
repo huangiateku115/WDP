@@ -6,9 +6,19 @@ export class InventoryItemError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
 }
 
+export interface CanonicalRelocationInput {
+  sourceCellId: string;
+  destinationCellId: string;
+  physicalPackingConfirmed: boolean;
+  relocationNote: string;
+  idempotencyKey: string;
+}
+
 function invalid(message: string): never { throw new InventoryItemError(400, message); }
 function record(value: unknown, allowed: string[], label = 'body') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid(`${label} must be an object`);
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype) invalid(`${label} must be a plain object`);
   const input = value as Record<string, unknown>;
   if (Object.keys(input).some(key => !allowed.includes(key))) invalid(`${label} contains an unsupported field`);
   return input;
@@ -16,6 +26,17 @@ function record(value: unknown, allowed: string[], label = 'body') {
 export function parseId(value: unknown, field: string): string {
   if (typeof value !== 'string' || !Types.ObjectId.isValid(value) || new Types.ObjectId(value).toString() !== value.toLowerCase()) invalid(`Invalid ${field}`);
   return value.toLowerCase();
+}
+export function parseCanonicalRelocation(value: unknown, idempotencyKey: unknown): CanonicalRelocationInput {
+  const input = record(value, ['sourceCellId', 'destinationCellId', 'physicalPackingConfirmed', 'relocationNote'], 'body');
+  const sourceCellId = parseId(input.sourceCellId, 'sourceCellId');
+  const destinationCellId = parseId(input.destinationCellId, 'destinationCellId');
+  if (sourceCellId === destinationCellId) invalid('sourceCellId and destinationCellId must be different');
+  if (typeof input.physicalPackingConfirmed !== 'boolean') invalid('physicalPackingConfirmed must be a boolean');
+  const relocationNote = text(input.relocationNote, 'relocationNote', 1000);
+  const key = text(idempotencyKey, 'Idempotency-Key', 128);
+  if (key.length < 8 || !/^[\w.:/-]+$/.test(key)) invalid('Idempotency-Key is invalid');
+  return { sourceCellId, destinationCellId, physicalPackingConfirmed: input.physicalPackingConfirmed, relocationNote, idempotencyKey: key };
 }
 function text(value: unknown, field: string, max: number): string {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) invalid(`${field} must be a non-empty string of at most ${max} characters`);

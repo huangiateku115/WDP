@@ -41,6 +41,7 @@ export interface IReservationPayment extends Document {
   facilityId: Types.ObjectId;
   serviceType: FacilityServiceType;
   purpose: PaymentPurpose;
+  extensionId?: Types.ObjectId;
   amount: number;
   currency: string;
   idempotencyKey: string;

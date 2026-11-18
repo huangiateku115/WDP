@@ -97,6 +97,8 @@ export interface IReservation extends Document {
   extendContract?: Array<{
     _id?: Types.ObjectId;
     extensionCode: string;
+    requestIdempotencyKey?: string;
+    requestPayloadHash?: string;
     durationMonths: number;
     amount: number;
     status: 'PENDING_PAYMENT' | 'PAID' | 'ACTIVE' | 'CANCELLED' | 'REJECTED';
