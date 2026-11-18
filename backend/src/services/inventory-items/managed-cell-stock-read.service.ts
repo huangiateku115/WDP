@@ -41,6 +41,16 @@ function sameInstanceProjection(replayed: any[], projected: any[]) {
     return expected.every((line: any, index: number) => idText(line.cellId) === idText(actual[index]?.cellId) && line.weightKg === actual[index]?.weightKg && line.volumeM3 === actual[index]?.volumeM3);
   });
 }
+export function sameCellDiagnosticLines(ledgerLines: any[], projectionLines: any[]) {
+  const key = (row: any) => `${row.kind}|${idText(row.itemSpecId)}|${row.receiptId}|${row.itemInstanceId ?? ''}|${idText(row.reservationId)}`;
+  if (ledgerLines.length !== projectionLines.length) return false;
+  const actual = new Map(projectionLines.map(row => [key(row), row]));
+  return ledgerLines.every(expected => {
+    const found: any = actual.get(key(expected));
+    return !!found && (expected.kind === 'PHYSICAL_UNIT' || expected.quantity === found.quantity) &&
+      expected.weightKg === found.weightKg && expected.volumeM3 === found.volumeM3;
+  });
+}
 export function reconcileManagedV4SkuEvidence(input: { skuId: unknown; movements: any[]; stocks: any[]; instances: any[]; specifications: any[]; canonicalScopeMatches: boolean; initialized: boolean }) {
   const historyBounded = input.movements.length <= 10000;
   const legacyMovement = input.movements.some(row => row.schemaVersion !== 4);
@@ -114,7 +124,7 @@ function physicalSummary(rows: any[], instances: any[]) {
 }
 
 export class ManagedCellStockReadService {
-  static async skuStock(skuIdInput: unknown, actor: any) {
+  static async skuStock(skuIdInput: unknown, actor: any, includeFacilityDiagnostics = false) {
     const skuId = oid(skuIdInput, 'skuId'), sku: any = await InventoryItemModel.findOne({ _id: skuId, deletedAt: { $exists: false } }).lean().exec();
     if (!sku) fail(404, 'SKU not found', 'SKU_NOT_FOUND'); assertSkuAccess(sku, actor);
     const [specifications, stocks, instances, movements, legacySku] = await Promise.all([
@@ -158,6 +168,64 @@ export class ManagedCellStockReadService {
       totalWeightKg: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalWeightKg, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitWeightKgSnapshot, 0),
       totalVolumeM3: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.totalVolumeM3, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.unitVolumeM3Snapshot, 0),
     })) : [];
+    let diagnosticEvidence: any;
+    if (includeFacilityDiagnostics) {
+      const metadata = new Map(specifications.map((spec: any) => [idText(spec._id), spec]));
+      const skuMeta = { skuId, skuCode: sku.itemCode ?? null, skuName: sku.name ?? null };
+      const scopeProvesLedger = initialized || canonicalScopeMatches && historyBounded && !legacyMovement && !!replay;
+      const ledgerCellMap = new Map<string, any>();
+      const addLedger = (cellId: string, line: any) => {
+        const row = ledgerCellMap.get(cellId) ?? { cellId, quantity: 0, weightKg: 0, volumeM3: 0, lines: [] };
+        row.quantity += line.quantity ?? 0; row.weightKg = Math.round((row.weightKg + line.weightKg + Number.EPSILON) * 1000) / 1000;
+        row.volumeM3 = Math.round((row.volumeM3 + line.volumeM3 + Number.EPSILON) * 1_000_000) / 1_000_000;
+        row.lines.push(line); ledgerCellMap.set(cellId, row);
+      };
+      if (scopeProvesLedger && replay) {
+        for (const row of replay.lots) addLedger(idText(row.cellId), { ...skuMeta, itemSpecId: row.itemSpecId, itemSpecCode: metadata.get(idText(row.itemSpecId))?.code ?? null,
+          itemSpecName: metadata.get(idText(row.itemSpecId))?.name ?? null, receiptId: row.receiptId, reservationId: row.reservationId,
+          kind: 'BATCH', quantity: row.quantityOnHand, weightKg: row.totalWeightKg, volumeM3: row.totalVolumeM3 });
+        for (const instance of replay.instances.filter((row: any) => row.status === 'PLACED')) {
+          const ordered = [...instance.allocations].sort((a: any, b: any) => idText(a.cellId).localeCompare(idText(b.cellId)));
+          for (let index = 0; index < ordered.length; index += 1) {
+            const allocation = ordered[index], spec = metadata.get(idText(instance.itemSpecId));
+            addLedger(idText(allocation.cellId), { ...skuMeta, itemSpecId: instance.itemSpecId, itemSpecCode: spec?.code ?? null, itemSpecName: spec?.name ?? null,
+              receiptId: instance.sourceReceiptId, itemInstanceId: instance.itemInstanceId, reservationId: instance.reservationId,
+              kind: 'PHYSICAL_UNIT', quantity: index === 0 ? 1 : 0, weightKg: allocation.weightKg, volumeM3: allocation.volumeM3 });
+          }
+        }
+      }
+      let projectionByCell = new Map<string, any>(), projectionStatus = 'UNKNOWN';
+      try {
+        projectionByCell = aggregateCellStock(stocks, instances);
+        projectionStatus = canonicalScopeMatches && historyBounded ? 'READ' : 'UNKNOWN';
+      } catch { projectionStatus = 'INVALID'; }
+      const projectionCellMap = new Map<string, any>();
+      if (projectionStatus === 'READ') {
+        for (const row of stocks) {
+          const cellId = idText(row.cellId), spec = metadata.get(idText(row.itemSpecId)), target = projectionCellMap.get(cellId) ?? { cellId, quantity: 0, weightKg: 0, volumeM3: 0, lines: [] };
+          target.lines.push({ ...skuMeta, itemSpecId: row.itemSpecId, itemSpecCode: spec?.code ?? null, itemSpecName: spec?.name ?? null, receiptId: row.receiptId,
+            reservationId: row.reservationId, kind: 'BATCH', quantity: row.quantityOnHand, quantityHeld: row.quantityHeld, weightKg: row.totalWeightKg, volumeM3: row.totalVolumeM3 });
+          projectionCellMap.set(cellId, target);
+        }
+        for (const instance of instances.filter((row: any) => row.status === 'PLACED')) for (const allocation of instance.allocations ?? []) {
+          const cellId = idText(allocation.cellId), spec = metadata.get(idText(instance.itemSpecId)), target = projectionCellMap.get(cellId) ?? { cellId, quantity: 0, weightKg: 0, volumeM3: 0, lines: [] };
+          target.lines.push({ ...skuMeta, itemSpecId: instance.itemSpecId, itemSpecCode: spec?.code ?? null, itemSpecName: spec?.name ?? null, receiptId: instance.sourceReceiptId,
+            itemInstanceId: instance.itemInstanceId, reservationId: instance.reservationId, kind: 'PHYSICAL_UNIT', quantity: 1, weightKg: allocation.weightKg, volumeM3: allocation.volumeM3 });
+          projectionCellMap.set(cellId, target);
+        }
+        for (const [cellId, row] of projectionCellMap) {
+          const totals = projectionByCell.get(cellId); row.quantity = totals?.quantity ?? 0; row.weightKg = totals?.weightKg ?? 0; row.volumeM3 = totals?.volumeM3 ?? 0;
+        }
+      }
+      const movementCellIds = (movement: any) => [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? []),
+        ...(movement.v3Effect?.source ?? []), ...(movement.v3Effect?.destination ?? [])].map((line: any) => idText(line.cellId));
+      diagnosticEvidence = { ledgerStatus: initialized ? 'EMPTY_VERIFIED' : scopeProvesLedger ? 'VERIFIED' : 'UNKNOWN',
+        ledgerByCell: [...ledgerCellMap.values()], projectionStatus, projectionByCell: [...projectionCellMap.values()],
+        movementIdsByCell: movements.reduce((result: Record<string, string[]>, movement: any) => {
+          for (const cellId of new Set(movementCellIds(movement))) if (cellId) result[cellId] = [...(result[cellId] ?? []), idText(movement._id)];
+          return result;
+        }, {}) };
+    }
     const result = { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
       ledgerStatus, reconciliationStatus: reconciled.reconciliationStatus, reasonCode,
       totalQuantity: initialized ? 0 : replayMatchesProjection ? summary.byCell.size === 0 ? 0 : [...summary.byCell.values()].reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) : null,
@@ -168,6 +236,7 @@ export class ManagedCellStockReadService {
         totalWeightKg: initialized ? 0 : replayMatchesProjection ? value?.totalWeightKg ?? 0 : null, totalVolumeM3: initialized ? 0 : replayMatchesProjection ? value?.totalVolumeM3 ?? 0 : null,
         byCell: initialized ? [] : replayMatchesProjection && value ? [...value.byCell.values()] : [], byReceipt: initialized ? [] : replayMatchesProjection ? value?.byReceipt ?? [] : [] }; }),
       byCell: initialized ? [] : replayMatchesProjection ? [...summary.byCell.entries()].map(([cellId, value]) => ({ cellId, ...value })) : [],
+      ...(includeFacilityDiagnostics ? { facilityDiagnosticEvidence: diagnosticEvidence } : {}),
     };
     return result;
   }
@@ -197,8 +266,9 @@ export class ManagedCellStockReadService {
     const bounded = stocks.length <= 10000 && instances.length <= 10000 && movements.length <= 10000 && allocations.length <= 10000 && legacyItems.length <= 1000;
     const skuIds = new Set<string>([...stocks.map((row: any) => idText(row.skuId)), ...instances.map((row: any) => idText(row.skuId)), ...movements.map((row: any) => idText(row.itemId))].filter(Boolean));
     let canonical: any[] = [];
-    if (bounded && !legacyItems.length && skuIds.size <= 100) { try { canonical = await Promise.all([...skuIds].map(skuId => this.skuStock(skuId, actor))); } catch { canonical = []; } }
-    const canonicalVerified = bounded && !legacyItems.length && skuIds.size <= 100 && canonical.length === skuIds.size && canonical.every((row: any) => ['REPLAYED','NOT_REQUIRED'].includes(row.ledgerStatus) && row.reconciliationStatus !== 'MISMATCH');
+    if (bounded && !legacyItems.length && skuIds.size <= 100) { try { canonical = await Promise.all([...skuIds].map(skuId => this.skuStock(skuId, actor, true))); } catch { canonical = []; } }
+    const movementSkuScopeComplete = movements.every((row: any) => !!idText(row.itemId) && skuIds.has(idText(row.itemId)));
+    const canonicalVerified = bounded && !legacyItems.length && movementSkuScopeComplete && skuIds.size <= 100 && canonical.length === skuIds.size && canonical.every((row: any) => ['REPLAYED','NOT_REQUIRED'].includes(row.ledgerStatus) && row.reconciliationStatus !== 'MISMATCH');
     const placements = [...stocks, ...instances.flatMap((row: any) => row.allocations.map((allocation: any) => ({ reservationId: row.reservationId, cellId: allocation.cellId })))];
     const allocationsMatch = placementsHaveCellAllocations(placements, allocations);
     const byCell = canonical.flatMap((row: any) => row.byCell.filter((entry: any) => idText(entry.cellId) === String(cellId)));
@@ -207,13 +277,39 @@ export class ManagedCellStockReadService {
     const reconciliation = reconcileCell({ hasMovementHistory: hasHistory, stockQuantity: summary.quantity, projectedWeightKg: summary.weightKg, projectedVolumeM3: summary.volumeM3,
       counterWeightKg: cell.usedWeightKg, counterVolumeM3: cell.usedVolumeM3, sourceComplete: canonicalVerified && allocationsMatch });
     const initialized = reconciliation.status === 'NOT_REQUIRED';
+    const skuEvidenceComplete = bounded && !legacyItems.length && movementSkuScopeComplete && canonical.length === skuIds.size && canonical.every((row: any) => ['VERIFIED', 'EMPTY_VERIFIED'].includes(row.facilityDiagnosticEvidence?.ledgerStatus));
+    const ledgerLines = canonical.flatMap((row: any) => row.facilityDiagnosticEvidence?.ledgerByCell?.find((entry: any) => idText(entry.cellId) === String(cellId))?.lines ?? []);
+    const projectionLines = canonical.flatMap((row: any) => row.facilityDiagnosticEvidence?.projectionByCell?.find((entry: any) => idText(entry.cellId) === String(cellId))?.lines ?? []);
+    const ledgerTotals = skuEvidenceComplete ? canonical.reduce((total: any, row: any) => {
+      const entry = row.facilityDiagnosticEvidence?.ledgerByCell?.find((value: any) => idText(value.cellId) === String(cellId));
+      return { quantity: total.quantity + (entry?.quantity ?? 0), weightKg: total.weightKg + (entry?.weightKg ?? 0), volumeM3: total.volumeM3 + (entry?.volumeM3 ?? 0) };
+    }, { quantity: 0, weightKg: 0, volumeM3: 0 }) : null;
+    const projectionEvidenceValid = bounded && movementSkuScopeComplete && canonical.length === skuIds.size && canonical.every((row: any) => row.facilityDiagnosticEvidence?.projectionStatus === 'READ');
+    let projectionTotals: any = null, projectionDataValid = projectionEvidenceValid;
+    if (projectionEvidenceValid) {
+      try { projectionTotals = aggregateCellStock(stocks, instances).get(String(cellId)) ?? { quantity: 0, weightKg: 0, volumeM3: 0 }; }
+      catch { projectionDataValid = false; /* malformed stored projection remains UNKNOWN; never normalize it to zero */ }
+    }
+    const counterValid = Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0;
+    const difference = (counter: number | null, value: number | null, places: 3 | 6) => counter !== null && value !== null && counterValid
+      ? Math.round((counter - value + Number.EPSILON) * 10 ** places) / 10 ** places : null;
+    const projectionLinesMatch = skuEvidenceComplete && projectionDataValid && sameCellDiagnosticLines(ledgerLines, projectionLines);
+    const fullProjectionMatch = skuEvidenceComplete && canonical.every((row: any) => ['REPLAYED', 'NOT_REQUIRED'].includes(row.ledgerStatus));
     const maxVolumeM3 = Number(cell.dimensions?.widthM) * Number(cell.dimensions?.depthM) * Number(cell.dimensions?.usableHeightM);
     let capacity: any = null, capacityError = 'CELL_CAPACITY_INVALID'; try { capacity = calculateCapacity({ maxWeightKg: cell.maxWeightKg, maxVolumeM3, usedWeightKg: cell.usedWeightKg, usedVolumeM3: cell.usedVolumeM3 }); } catch (error: any) { capacityError = error?.code === 'CAPACITY_MISMATCH' ? 'CELL_CAPACITY_EXCEEDED' : 'CELL_CAPACITY_INVALID'; }
     return { cellId, facilityId: cell.facilityId, maxWeightKg: cell.maxWeightKg ?? null, maxVolumeM3: Number.isFinite(maxVolumeM3) && maxVolumeM3 > 0 ? maxVolumeM3 : null,
       usedWeightKg: cell.usedWeightKg ?? null, usedVolumeM3: cell.usedVolumeM3 ?? null, remainingWeightKg: capacity?.remainingWeightKg ?? null, remainingVolumeM3: capacity?.remainingVolumeM3 ?? null,
       stockQuantity: reconciliation.status === 'RECONCILED' || initialized ? summary.quantity : null, stockStatus: initialized || reconciliation.status === 'RECONCILED' && summary.quantity === 0 ? 'EMPTY' : reconciliation.status === 'RECONCILED' ? 'HAS_STOCK' : 'UNKNOWN', reconciliationStatus: capacity ? reconciliation.status : capacityError === 'CELL_CAPACITY_EXCEEDED' ? 'MISMATCH' : 'NOT_CONFIGURED',
       reasonCode: capacity ? reconciliation.reasonCode ?? (!canonicalVerified ? 'LEDGER_PROJECTION_NOT_RECONCILED' : !allocationsMatch ? 'RESERVATION_CELL_ALLOCATION_UNVERIFIED' : null) : capacityError,
-      projection: reconciliation.status === 'RECONCILED' ? { bySku: canonical.map((row: any) => ({ skuId: row.skuId, itemSpecifications: row.itemSpecifications.map((spec: any) => ({ itemSpecId: spec.itemSpecId, ...((spec.byCell || []).find((entry: any) => idText(entry.cellId) === String(cellId)) || {}) })).filter((spec: any) => spec.cellId) })).filter((row: any) => row.itemSpecifications.length) } : null };
+      projection: reconciliation.status === 'RECONCILED' ? { bySku: canonical.map((row: any) => ({ skuId: row.skuId, itemSpecifications: row.itemSpecifications.map((spec: any) => ({ itemSpecId: spec.itemSpecId, ...((spec.byCell || []).find((entry: any) => idText(entry.cellId) === String(cellId)) || {}) })).filter((spec: any) => spec.cellId) })).filter((row: any) => row.itemSpecifications.length) } : null,
+      diagnostics: { evidenceStatus: skuEvidenceComplete ? 'COMPLETE' : 'UNKNOWN', ledger: { status: skuEvidenceComplete ? ledgerTotals?.quantity === 0 ? 'EMPTY_VERIFIED' : 'VERIFIED' : 'UNKNOWN', quantity: ledgerTotals?.quantity ?? null,
+        expectedWeightKg: ledgerTotals?.weightKg ?? null, expectedVolumeM3: ledgerTotals?.volumeM3 ?? null, lines: skuEvidenceComplete ? ledgerLines : [],
+        movementIds: skuEvidenceComplete ? [...new Set(canonical.flatMap((row: any) => row.facilityDiagnosticEvidence?.movementIdsByCell?.[String(cellId)] ?? []))] : [] },
+        projection: { status: fullProjectionMatch ? 'MATCH' : !skuEvidenceComplete || !projectionDataValid || projectionLinesMatch ? 'UNKNOWN' : 'MISMATCH',
+          weightKg: projectionTotals?.weightKg ?? null, volumeM3: projectionTotals?.volumeM3 ?? null, lines: projectionDataValid ? projectionLines : [] },
+        counter: { weightKg: counterValid ? cell.usedWeightKg : null, volumeM3: counterValid ? cell.usedVolumeM3 : null },
+        difference: { counterMinusLedgerWeightKg: difference(cell.usedWeightKg ?? null, ledgerTotals?.weightKg ?? null, 3), counterMinusLedgerVolumeM3: difference(cell.usedVolumeM3 ?? null, ledgerTotals?.volumeM3 ?? null, 6),
+          counterMinusProjectionWeightKg: difference(cell.usedWeightKg ?? null, projectionTotals?.weightKg ?? null, 3), counterMinusProjectionVolumeM3: difference(cell.usedVolumeM3 ?? null, projectionTotals?.volumeM3 ?? null, 6) } } };
   }
 
   static async facilityDiagnostics(actor: any) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { managedItemPage, managedReadiness, scopedManagedReservation, scopedTopology, positiveNumber } from '../src/lib/managedFacilityReview.js';
 import { facilityPageVisible } from '../src/lib/facilityWorkspace.js';
+import { cellStockDiagnosticError, cellStockDiagnosticState, validateCellStockResponse } from '../src/lib/managerCellStockDiagnostic.js';
 import { assertConfirmedRequest } from '../src/api/confirmedContract.js';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -76,6 +77,7 @@ function renderPage(file, role, tab = 'inventory', state = {}) {
     '@/lib/useFacilityResource': { default: () => ({ data: null, loading: false, error: '', reload() {}, ...state }), announceReviewChange() {} },
     '@/lib/facilityReview': { objectId: value => /^[a-f\d]{24}$/.test(value || ''), recordId: value => typeof value === 'object' ? value?._id || value?.id : value },
     '@/lib/managedFacilityReview': { managedItemPage, managedReadiness, scopedManagedReservation, scopedTopology, positiveNumber },
+    '@/lib/managerCellStockDiagnostic': { cellStockDiagnosticError, cellStockDiagnosticState, validateCellStockResponse },
     '@/components/manager/ManagerUI': ui,
     '@/components/staff/QueuePagination': { default: simple('nav') },
     '@/components/facility/FacilityInventoryDetail': { default: simple('section') },
@@ -116,9 +118,20 @@ test('topology configuration rejects staff and renders manager loading and error
 test('capacity settings are manager-scoped, show diagnostics and edit rated limits only', () => {
   const pageSource = readFileSync(new URL('../src/pages/manager/WarehouseSettingsPage.jsx', import.meta.url), 'utf8');
   const apiSource = readFileSync(new URL('../src/api/facilityManagedApi.js', import.meta.url), 'utf8');
+  const diagnosticSource = readFileSync(new URL('../src/lib/managerCellStockDiagnostic.js', import.meta.url), 'utf8');
   assert.match(pageSource, /user\?\.role === 'FACILITY_MANAGER'/);
   assert.match(pageSource, /capacityDiagnostics/);
   assert.match(pageSource, /Tải trọng và đối soát theo ô/);
+  assert.match(pageSource, /Xem đối soát/);
+  assert.match(pageSource, /api\.cellStock\(cell\.cellId\)/);
+  assert.match(pageSource, /Đang tải bằng chứng đối soát/);
+  assert.match(pageSource, /cellStockDiagnosticError/);
+  assert.match(diagnosticSource, /response\?\.status === 403/);
+  assert.match(diagnosticSource, /response\?\.status === 404/);
+  assert.match(diagnosticSource, /id\(payload\.facilityId\) !== id\(facilityId\)/);
+  assert.match(pageSource, /Chưa đủ bằng chứng có thẩm quyền/);
+  assert.match(pageSource, /Ledger expected tải trọng/);
+  assert.match(pageSource, /Counter − Ledger/);
   assert.match(pageSource, /Định mức:/);
   assert.match(pageSource, /Đang dùng:/);
   assert.match(pageSource, /Chưa xác minh/);
