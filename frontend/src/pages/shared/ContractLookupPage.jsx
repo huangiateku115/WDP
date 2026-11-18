@@ -37,7 +37,10 @@ const customerRows = (customer = {}) => [
 ];
 // Contract snapshots mix self-storage fields with the Managed pricing object, so known fields
 // are rendered with labels and money formatting instead of dumping raw JSON.
-const pricingRows = (pricing = {}) => {
+// Self-storage snapshots never stored `startDate` (only `endDate`, and only once a renewal ran),
+// so the billing period falls back to the reservation this contract belongs to. A half-empty
+// "— → date" row is never printed: the row only appears when at least one real date exists.
+const pricingRows = (pricing = {}, reservation = null) => {
   const rows = [];
   const amount = pricing.amountBreakdown && typeof pricing.amountBreakdown === "object" ? pricing.amountBreakdown : pricing;
   const rule = pricing.pricingRule && typeof pricing.pricingRule === "object" ? pricing.pricingRule : null;
@@ -45,7 +48,10 @@ const pricingRows = (pricing = {}) => {
   const term = pricing.term && typeof pricing.term === "object" ? pricing.term : null;
   if (pricing.quotaM3 !== undefined && pricing.quotaM3 !== null) rows.push(["Allocated quota", `${pricing.quotaM3} m³`]);
   if (term?.value) rows.push(["Rental term", `${term.value} ${String(term.unit || "").toLowerCase()}`]);
-  if (pricing.startDate || pricing.endDate) rows.push(["Rental window", `${day(pricing.startDate)} → ${day(pricing.endDate)}`]);
+  const periodStart = pricing.startDate || reservation?.startDate;
+  const periodEnd = pricing.endDate || reservation?.endDate;
+  const period = [periodStart, periodEnd].filter(Boolean).map(day);
+  if (period.length) rows.push(["Kỳ tính giá", period.join(" → ")]);
   if (rule) rows.push(["Rate", `${money(rule.ratePerM3)} / m³${rule.version ? ` · v${rule.version}` : ""}`]);
   if (depositPolicy) rows.push(["Deposit policy", `${depositPolicy.percentage ?? "—"}% giá trị tiền thuê${depositPolicy.version ? ` · v${depositPolicy.version}` : ""}`]);
   const amounts = [
@@ -259,7 +265,7 @@ function ContractRecord({ contract }) {
       </Panel>
 
       <Panel title="Giá và thanh toán">
-        <Details values={pricingRows(pricing)} />
+        <Details values={pricingRows(pricing, reservation)} />
       </Panel>
     </>
   );

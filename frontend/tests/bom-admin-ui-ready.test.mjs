@@ -512,3 +512,16 @@ test('BOM/Admin screens only render fields the API actually returns',()=>{
   assert.match(policyPage,/label: "Danh mục được phép", render: \(r\) => r\.allowedCount/);
   assert.match(policyPage,/record\.hasEffectiveTo \?/);
 });
+
+// Self-storage pricing snapshots carry no startDate, so the contract screen must not print a
+// half-empty "— → endDate" row: it falls back to the reservation the contract belongs to.
+test('Contract pricing panel never shows a half-empty billing period',()=>{
+  const page=read('../src/pages/shared/ContractLookupPage.jsx');
+  assert.match(page,/const pricingRows = \(pricing = \{\}, reservation = null\) =>/);
+  assert.match(page,/const periodStart = pricing\.startDate \|\| reservation\?\.startDate;/);
+  assert.match(page,/const periodEnd = pricing\.endDate \|\| reservation\?\.endDate;/);
+  assert.match(page,/\[periodStart, periodEnd\]\.filter\(Boolean\)\.map\(day\)/);
+  assert.match(page,/rows\.push\(\["Kỳ tính giá", period\.join\(" → "\)\]\)/);
+  assert.doesNotMatch(page,/day\(pricing\.startDate\)/,'a missing snapshot startDate must not render an em dash');
+  assert.match(page,/pricingRows\(pricing, reservation\)/);
+});
