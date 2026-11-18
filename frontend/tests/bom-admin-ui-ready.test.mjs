@@ -423,3 +423,63 @@ test('BOM and Admin tables never wrap a status badge or an action control',()=>{
   assert.doesNotMatch(admin,/\.admin-shell \.manager-table td\{overflow-wrap:anywhere\}/);
   assert.match(admin,/\.admin-shell \.manager-table td\{overflow-wrap:break-word\}/);
 });
+
+// Regression guards for the 2026-11-18 live audit of the two workspaces.
+test('Catalog, audit and warehouse screens never fail silently',()=>{
+  // GET /managed-inventory-catalog/* rejects an empty status filter with 400, so the list must
+  // omit the parameter instead of sending status=.
+  const catalog=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  assert.doesNotMatch(catalog,/status: status === ALL \? '' : status/,'the empty status filter must not be sent');
+  assert.match(catalog,/if \(status !== ALL\) filters\.status = status;/);
+  assert.match(catalog,/if \(search\) filters\.search = search;/);
+
+  // useAsyncData flips to loading inside an effect, so the first render after choosing an
+  // account still carries data:null. Destructuring that object blanked the whole page.
+  const audit=read('../src/pages/bom/AuditLivePage.jsx');
+  assert.doesNotMatch(audit,/render=\{\(\{ (history|logs) \}\) => \(/,'audit panels must not destructure a null payload');
+  assert.equal(audit.match(/render=\{\(data\) => \(data \? \(/g)?.length,2);
+  assert.match(audit,/rows=\{data\.history\.map/);
+  assert.match(audit,/rows=\{data\.logs\.map/);
+
+  // Button asChild forwards disabled to an <a>, which browsers ignore, so the gate has to be
+  // rendered as a real disabled button instead of a dead-looking link.
+  const warehouse=read('../src/pages/shared/WarehouseStructurePage.jsx');
+  assert.doesNotMatch(warehouse,/<Button asChild disabled=\{/);
+  assert.match(warehouse,/\(zones\.data\?\.rows \|\| \[\]\)\.length\r?\n\s+\? <Button asChild><Link to=\{formHref\("racks"\)\}>Tạo kệ<\/Link><\/Button>/);
+  assert.match(warehouse,/: <Button disabled title="Hãy tạo một khu vực kho trước khi thêm kệ">Tạo kệ<\/Button>/);
+});
+
+test('BOM and Admin shells render no leftover English copy',()=>{
+  const service=read('../src/pages/admin/ServiceConsolePage.jsx');
+  // Only rendered labels matter: the file legitimately keeps English identifiers and comments.
+  for(const english of [/>\s*Assign\s*</,/>\s*Unassign\s*</,/>\s*Escalate\s*</,/Remove assignment/,/Escalate request/]){
+    assert.doesNotMatch(service,english,`ServiceConsolePage still renders English: ${english}`);
+  }
+  assert.match(service,/Phân công/);
+  assert.match(service,/Gỡ phân công/);
+  assert.match(service,/Chuyển cấp/);
+
+  const reservations=read('../src/pages/shared/ReservationsOversightPage.jsx');
+  for(const english of [/All statuses/,/Select a facility/,/Only facility managers and admins/,/Reservations are listed facility by facility\./]){
+    assert.doesNotMatch(reservations,english,`ReservationsOversightPage still renders English: ${english}`);
+  }
+  // Raw enum values were printed with underscores stripped instead of going through facilityLabel.
+  assert.doesNotMatch(reservations,/s\.replaceAll\("_", " "\)/);
+  assert.match(reservations,/\[\["", "Tất cả trạng thái"\], \.\.\.RESERVATION_STATUSES\]/);
+
+  const users=read('../src/lib/adminUsers.js');
+  assert.doesNotMatch(users,/Unable to load backend users\./);
+  assert.doesNotMatch(users,/Only Facility Managers and Facility Staff can be assigned/);
+  assert.match(users,/Không tải được danh sách người dùng\./);
+
+  assert.match(read('../src/routes/AdminRoutes.jsx'),/Trang quản trị không khả dụng/);
+  const app=read('../src/routes/AppRoutes.jsx');
+  assert.doesNotMatch(app,/Loading (administration|business) workspace…/);
+  assert.match(app,/Đang tải không gian vận hành…/);
+
+  // The shared "record unavailable" panel is mounted by both workspaces, so its way back must
+  // follow the current route instead of always pointing at the BOM dashboard.
+  const bomUi=read('../src/components/bom/BomUI.jsx');
+  assert.match(bomUi,/useLocation/);
+  assert.match(bomUi,/pathname\.startsWith\('\/admin'\) \? '\/admin\/dashboard' : '\/bom\/dashboard'/);
+});

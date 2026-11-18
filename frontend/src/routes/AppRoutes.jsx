@@ -103,8 +103,8 @@ export default function AppRoutes() {
         <Route path="payments/:reservationId" element={<PaymentPage />} />
         <Route path="handover/:reservationId" element={<HandoverPage />} />
       </Route>
-      <Route path="/admin/*" element={<RoleGate role={ROLES.ADMIN}><Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Loading administration workspace…</div>}><AdminRoutes /></Suspense></RoleGate>} />
-      <Route path="/bom/*" element={<RoleGate role={ROLES.BOM}><Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Loading business workspace…</div>}><BomRoutes /></Suspense></RoleGate>} />
+      <Route path="/admin/*" element={<RoleGate role={ROLES.ADMIN}><Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Đang tải không gian quản trị…</div>}><AdminRoutes /></Suspense></RoleGate>} />
+      <Route path="/bom/*" element={<RoleGate role={ROLES.BOM}><Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Đang tải không gian vận hành…</div>}><BomRoutes /></Suspense></RoleGate>} />
       <Route path="/staff/*" element={<Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Loading staff workspace…</div>}><StaffRoutes /></Suspense>} />
       <Route path="/manager/*" element={<Suspense fallback={<div className="p-8 text-[#176B3A]" role="status">Loading facility workspace…</div>}><ManagerRoutes /></Suspense>} />
       <Route path="*" element={<Navigate to="/" replace />} />

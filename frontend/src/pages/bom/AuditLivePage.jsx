@@ -68,10 +68,10 @@ export default function AuditLivePage() {
           <Panel title="Lịch sử đăng nhập">
             <AsyncBoundary
               state={records}
-              render={({ history }) => (
+              render={(data) => (data ? (
                 <Table
                   label="Lịch sử đăng nhập"
-                  rows={history.map((row) => ({ ...row, id: row._id }))}
+                  rows={data.history.map((row) => ({ ...row, id: row._id }))}
                   columns={[
                     { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
                     { key: "eventType", label: "Sự kiện", render: (r) => facilityLabel(r.eventType) || "—" },
@@ -82,16 +82,16 @@ export default function AuditLivePage() {
                   ]}
                   empty="Tài khoản này chưa có lần đăng nhập nào."
                 />
-              )}
+              ) : null)}
             />
           </Panel>
           <Panel title="Hành động đã thực hiện">
             <AsyncBoundary
               state={records}
-              render={({ logs }) => (
+              render={(data) => (data ? (
                 <Table
                   label="Hành động đã thực hiện"
-                  rows={logs.map((row) => ({ ...row, id: row._id }))}
+                  rows={data.logs.map((row) => ({ ...row, id: row._id }))}
                   columns={[
                     { key: "createdAt", label: "Thời điểm", render: (r) => when(r.createdAt) },
                     { key: "action", label: "Hành động", render: (r) => facilityLabel(r.action) || "—" },
@@ -101,7 +101,7 @@ export default function AuditLivePage() {
                   ]}
                   empty="Tài khoản này chưa có hành động nào được ghi nhận."
                 />
-              )}
+              ) : null)}
             />
           </Panel>
         </>

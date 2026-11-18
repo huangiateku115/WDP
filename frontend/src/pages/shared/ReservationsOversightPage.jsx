@@ -83,7 +83,7 @@ export default function ReservationsOversightPage() {
                   label="Cơ sở của đơn"
                   value={facilityId}
                   onChange={selectFacility}
-                  options={[["", "Select a facility"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
+                  options={[["", "Chọn cơ sở"], ...facilities.map((f) => [f.id, `${f.name} (${f.code})`])]}
                 />
               </Field>
               <Field label="Trạng thái">
@@ -92,7 +92,7 @@ export default function ReservationsOversightPage() {
                   value={status}
                   onChange={setStatus}
                   disabled={!facilityId}
-                  options={[["", "All statuses"], ...RESERVATION_STATUSES.map((s) => [s, s.replaceAll("_", " ")])]}
+                  options={[["", "Tất cả trạng thái"], ...RESERVATION_STATUSES]}
                 />
               </Field>
               <Field label="Tìm kiếm" hint="Mã đơn hoặc tên khách hàng.">
@@ -106,14 +106,14 @@ export default function ReservationsOversightPage() {
             </div>
             {!canReview && (
               <p className="bom-warning mt-5">
-                Only facility managers and admins can approve or reject reservations.
+                Chỉ quản lý cơ sở và quản trị viên mới được duyệt hoặc từ chối đơn đặt thuê.
               </p>
             )}
           </Panel>
 
           {!facilityId && (
             <Panel title="Chọn cơ sở">
-              <p className="text-sm text-slate-500">Reservations are listed facility by facility.</p>
+              <p className="text-sm text-slate-500">Đơn đặt thuê được liệt kê theo từng cơ sở.</p>
             </Panel>
           )}
 

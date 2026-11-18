@@ -273,31 +273,31 @@ function ServiceAdminActions({ config, row, onDone }) {
               })
               : setError(`Hãy chọn ${config.assigneeLabel.toLowerCase()} trước.`))}
         >
-          Assign
+          Phân công
         </Button>
         <Button
           variant="outline"
           disabled={!row.assigneeId}
           onClick={() => open({
-            title: "Remove assignment",
-            confirmLabel: "Unassign",
-            summary: <Details values={[["Record", row.subject || row.title], ["Currently assigned to", row.assignedTo]]} />,
+            title: "Gỡ phân công",
+            confirmLabel: "Gỡ phân công",
+            summary: <Details values={[["Bản ghi", row.subject || row.title], ["Đang phụ trách", row.assignedTo]]} />,
               execute: confirmed(() => config.unassign(row.id), "Đã gỡ phân công."),
           })}
         >
-          Unassign
+          Gỡ phân công
         </Button>
         {config.escalate && (
           <Button
             variant="outline"
             onClick={() => open({
-              title: "Escalate request",
-              confirmLabel: "Escalate",
-              summary: <Details values={[["Record", row.subject || row.title], ["Current status", row.status]]} />,
+              title: "Chuyển cấp yêu cầu",
+              confirmLabel: "Chuyển cấp",
+              summary: <Details values={[["Bản ghi", row.subject || row.title], ["Trạng thái hiện tại", row.status]]} />,
               execute: confirmed(() => config.escalate(row.id), "Đã chuyển cấp yêu cầu."),
             })}
           >
-            Escalate
+            Chuyển cấp
           </Button>
         )}
         <Button

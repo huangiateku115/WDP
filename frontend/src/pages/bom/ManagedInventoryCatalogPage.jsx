@@ -28,7 +28,13 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
 
   const list = useAsyncData(
     async ({ signal }) => {
-      const response = await api[config.list]({ search, status: status === ALL ? '' : status, page, limit: 20 }, { signal });
+      // The backend only accepts ACTIVE / INACTIVE for `status`; sending an empty string for the
+      // "all" choice is rejected with 400 (Bộ lọc trạng thái không hợp lệ), so the filter is
+      // omitted entirely instead of being sent blank.
+      const filters = { page, limit: 20 };
+      if (search) filters.search = search;
+      if (status !== ALL) filters.status = status;
+      const response = await api[config.list](filters, { signal });
       if (response.data?.success !== true || !Array.isArray(response.data.data) || !response.data.pagination) {
         throw Error('Dữ liệu danh mục trả về không hợp lệ.');
       }

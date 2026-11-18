@@ -193,9 +193,9 @@ export default function WarehouseStructurePage({ basePath = "/bom" }) {
                   <Panel
                     title="Kệ"
                     action={(
-                      <Button asChild disabled={!(zones.data?.rows || []).length}>
-                        <Link to={formHref("racks")}>Tạo kệ</Link>
-                      </Button>
+                      (zones.data?.rows || []).length
+                        ? <Button asChild><Link to={formHref("racks")}>Tạo kệ</Link></Button>
+                        : <Button disabled title="Hãy tạo một khu vực kho trước khi thêm kệ">Tạo kệ</Button>
                     )}
                   >
                     {data.truncated && <TruncatedNotice total={data.total} shown={data.rows.length} />}

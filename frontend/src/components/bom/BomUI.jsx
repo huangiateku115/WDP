@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Panel, Card, CardContent } from '@/components/manager/ManagerUI';
 import { Building2 } from 'lucide-react';
 
@@ -6,7 +6,11 @@ import { Building2 } from 'lucide-react';
 // read-only value viewer. Backend role, facility scope and audit permissions stay authoritative.
 
 export function BomUnavailable() {
-  return <Panel title="Không xem được bản ghi"><Link className="manager-link" to="/bom/dashboard">Quay lại tổng quan</Link></Panel>;
+  // The same panel is mounted by both workspaces, so the way back must follow the current
+  // route: /bom/* is BOM-only and /admin/* is ADMIN-only, and a cross-workspace link is blocked.
+  const { pathname } = useLocation();
+  const backTo = pathname.startsWith('/admin') ? '/admin/dashboard' : '/bom/dashboard';
+  return <Panel title="Không xem được bản ghi"><Link className="manager-link" to={backTo}>Quay lại tổng quan</Link></Panel>;
 }
 
 // Technical/optional fields live behind this disclosure so the main form only asks for what an
