@@ -4,127 +4,107 @@ import {
   Screen, Panel, Table, Status, OpenLink, Field, Input, Select, Details, Button, money,
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
-import { AsyncBoundary, ConfirmDialog, TruncatedNotice } from "@/components/bom/LiveBomUI";
-import { bomPricingApi, bomPolicyApi } from "@/api/bomApi";
+import { AsyncBoundary, ConfirmDialog } from "@/components/bom/LiveBomUI";
+import RuleEffectBadge from "@/components/bom/RuleEffectBadge";
+import ListPager from "@/components/bom/ListPager";
+import { bomPricingApi } from "@/api/bomApi";
 import { apiErrorMessage } from "@/lib/apiError";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
 import {
-  BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY, BOM_POLICY_TYPES,
+  BOM_SERVICE_TYPES, BOM_UNIT_SIZES, BOM_TERM_MONTHS, BOM_CURRENCY,
   bomFutureDate, isEffectiveRecord, responseData, serviceLabel,
   pricingFromDto, pricingLabel, pricingBody, pricingUpdateBody,
-  policyFromDto,
 } from "@/lib/bomMappers";
 
+// Pricing Rule console shared by /bom and /admin. Business policies are deliberately not
+// managed here: the backend exposes no policy write route and no policy type changes a
+// reservation amount today (backend/docs/POLICY_PRICING_DISCOUNT_BE_SPEC.md). The only policy
+// screen kept in the console is "Danh mục hàng hóa" (CATEGORY), which does block inbound items.
 const blankPricing = () => ({
   facilityId: "", service: "SELF_STORAGE", unitSize: "SMALL", billingMonths: 1,
   rate: "", currency: BOM_CURRENCY, effectiveFrom: bomFutureDate(1), effectiveTo: "", status: "INACTIVE",
 });
-const CONFIGS = {
-  pricing: {
-    api: bomPricingApi, root: "/bom/pricing", title: "Bảng giá", code: "P051",
-    fromDto: pricingFromDto, body: pricingBody, updateBody: pricingUpdateBody,
-    blank: blankPricing, hasService: true,
-  },
-  policy: {
-    api: bomPolicyApi, root: "/bom/policies", title: "Chính sách kinh doanh", code: "P052",
-    policyTypes: BOM_POLICY_TYPES.map(({ key }) => key),
-    fromDto: policyFromDto,
-  },
+const CONFIG = {
+  api: bomPricingApi, title: "Bảng giá", fromDto: pricingFromDto,
+  body: pricingBody, updateBody: pricingUpdateBody, blank: blankPricing, hasService: true,
 };
 
-// The same page is mounted under /bom and /admin. Config objects are memoised per
-// (kind, basePath) so they stay referentially stable for the useAsyncData dependency arrays.
-const CONFIG_ROOTS = { pricing: "/pricing", policy: "/policies" };
+// The same page is mounted under /bom and /admin, so only the route root changes.
 const configCache = new Map();
-function configFor(kind, basePath) {
-  if (!CONFIGS[kind]) return null;
-  const key = `${kind}:${basePath}`;
-  if (!configCache.has(key))
-    configCache.set(key, { ...CONFIGS[kind], root: `${basePath}${CONFIG_ROOTS[kind]}` });
-  return configCache.get(key);
+function configFor(basePath) {
+  if (!configCache.has(basePath)) configCache.set(basePath, { ...CONFIG, root: `${basePath}/pricing` });
+  return configCache.get(basePath);
 }
 
-// Bounded server-paged fetch. Results are narrowed to the configured policy types when present.
-const loadRecords = (config, signal) =>
-  fetchPaged(config.api.list, config.listParams || {}, { signal })
-    .then((page) => ({
-      ...page,
-      rows: config.policyTypes ? page.rows.filter((row) => config.policyTypes.includes(row.type)) : page.rows,
-    }));
+// Server-side query understood by the rule list (rule.validation.ts): isActive and serviceType.
+// Keeping the filters in the query is what allows the table to page without lying about totals.
+const recordQuery = ({ status, service }) => {
+  const params = {};
+  if (status) params.isActive = status === "ACTIVE" ? "true" : "false";
+  if (service) params.serviceType = service;
+  return params;
+};
 
-export default function RecordPage({ kind, mode = "list", basePath = "/bom" }) {
-  const config = configFor(kind, basePath);
-  if (!config) return <BomUnavailable />;
-  // Business policies are system-controlled: even if a route exposes new/edit later, the page
-  // refuses to render a write form, so the console can never POST a policy.
-  if (kind === "policy" && ["new", "edit"].includes(mode)) return <BomUnavailable />;
-  if (mode === "new") return <RecordForm kind={kind} config={config} mode="new" />;
-  if (mode === "edit") return <RecordForm kind={kind} config={config} mode="edit" />;
-  if (mode === "detail") return <RecordDetail kind={kind} config={config} />;
-  return <RecordList kind={kind} config={config} />;
+export default function RecordPage({ mode = "list", basePath = "/bom" }) {
+  const config = configFor(basePath);
+  if (mode === "new") return <RecordForm config={config} mode="new" />;
+  if (mode === "edit") return <RecordForm config={config} mode="edit" />;
+  if (mode === "detail") return <RecordDetail config={config} />;
+  return <RecordList config={config} />;
 }
 
-function RecordList({ kind, config }) {
-  const state = useAsyncData(
-    ({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]),
-    [kind],
-  );
+function RecordList({ config }) {
   const [status, setStatus] = useState("");
-  const [type, setType] = useState("");
   const [service, setService] = useState("");
+  // Filters are applied by the API, so a page only ships that page's rows.
+  const [page, setPage] = usePageIndex(`pricing|${status}|${service}`);
+  const state = useAsyncData(
+    ({ signal }) => Promise.all([
+      fetchPaged(config.api.list, recordQuery({ status, service }), { signal, page }),
+      loadFacilities(),
+    ]),
+    [status, service, page],
+  );
 
   return (
     <Screen
       title={config.title}
-      description={kind === "pricing"
-        ? "Giá kho riêng và đơn giá công suất lưu trữ theo từng thời gian hiệu lực."
-        : "Chính sách kinh doanh theo từng loại chính sách."}
-      action={kind === "pricing"
-        ? <Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo quy tắc giá</Link></Button>
-        : undefined}
+      description="Giá kho riêng và đơn giá công suất lưu trữ theo từng thời gian hiệu lực."
+      action={<Button asChild variant="orange"><Link to={`${config.root}/new`}>Tạo quy tắc giá</Link></Button>}
     >
       <Panel title="Bộ lọc">
         <div className="manager-filters">
           <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
-          {kind === "policy" && (
-            <Select label="Lọc theo loại chính sách" value={type} onChange={setType}
-              options={[["", "Tất cả loại chính sách"], ...BOM_POLICY_TYPES.map(({ key, label }) => [key, label])]} />
-          )}
-          {kind === "pricing" && (
-            <Select label="Lọc theo dịch vụ" value={service} onChange={setService}
-              options={[["", "Cả hai dịch vụ"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
-          )}
+          <Select label="Lọc theo dịch vụ" value={service} onChange={setService}
+            options={[["", "Cả hai dịch vụ"], ...BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])]} />
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
-        const records = recordPage.rows;
-        const rows = records.map(config.fromDto).filter((row) =>
-          (!status || row.status === status) &&
-          (kind !== "policy" || !type || row.type === type) &&
-          (kind !== "pricing" || !service || row.service === service));
+        const rows = recordPage.rows.map(config.fromDto);
         return (
-          <Panel title={config.title} subtitle={`${rows.length} / ${records.length} bản ghi`}>
-            {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={records.length} />}
+          <Panel title={config.title} subtitle={`${recordPage.total} bản ghi`}>
             <Table
               label={config.title}
               rows={rows}
-              columns={kind === "pricing" ? [
+              columns={[
                 { key: "scope", label: "Phạm vi", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{pricingLabel(r)}</OpenLink> },
                 { key: "service", label: "Dịch vụ", render: (r) => serviceLabel(r.service) },
                 { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
                 { key: "rate", label: "Đơn giá", render: (r) => `${money(r.rate)} ${r.currency}` },
                 { key: "effectiveFrom", label: "Hiệu lực từ" },
-                { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
-                { key: "revision", label: "Phiên bản" },
-              ] : [
-                { key: "name", label: "Chính sách", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-                { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
-                { key: "rule", label: "Quy tắc" },
-                { key: "effectiveFrom", label: "Hiệu lực từ" },
+                { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
                 { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
                 { key: "revision", label: "Phiên bản" },
               ]}
+            />
+            <ListPager
+              page={recordPage.pagination?.page ?? page}
+              totalPages={recordPage.pagination?.totalPages ?? 1}
+              total={recordPage.total}
+              loading={state.loading}
+              onPageChange={setPage}
             />
           </Panel>
         );
@@ -133,11 +113,11 @@ function RecordList({ kind, config }) {
   );
 }
 
-function RecordDetail({ kind, config }) {
+function RecordDetail({ config }) {
   const { id } = useParams();
   const state = useAsyncData(
     () => config.api.get(id).then(responseData).then(config.fromDto),
-    [id, kind],
+    [id],
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [capacity, setCapacity] = useState("10");
@@ -152,38 +132,29 @@ function RecordDetail({ kind, config }) {
     >
       <AsyncBoundary state={state} render={(record) => {
         const nextStatus = record.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-        const futurePricing = kind === "pricing" && record.effectiveFrom && new Date(record.effectiveFrom) > new Date();
+        const futurePricing = record.effectiveFrom && new Date(record.effectiveFrom) > new Date();
         // The API rejects status changes once a rule is effective; only a new price revision is accepted.
-        const effectiveRule = kind === "pricing" && isEffectiveRecord(record);
+        const effectiveRule = isEffectiveRecord(record);
         return (
           <>
             <Panel
-              title={kind === "pricing" ? futurePricing ? "Quy tắc giá đã lên lịch" : "Quy tắc giá đang hiệu lực" : "Chính sách hiện tại"}
-              action={kind === "pricing" ? <Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Sửa</Link></Button> : undefined}
+              title={futurePricing ? "Quy tắc giá đã lên lịch" : "Quy tắc giá đang hiệu lực"}
+              action={<Button asChild variant="outline"><Link to={`${config.root}/${id}/edit`}>Sửa</Link></Button>}
             >
-              <Details values={kind === "pricing" ? [
+              <Details values={[
                 ["Phạm vi", pricingLabel(record)],
                 ["Dịch vụ", serviceLabel(record.service)],
                 ["Kích cỡ kho riêng", record.unitSize || "—"],
                 ["Kỳ tính phí", `${record.billingMonths} tháng`],
                 ["Đơn giá", `${money(record.rate)} ${record.currency}`],
                 ["Hiệu lực từ", record.effectiveFrom],
-                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
-                ["Trạng thái", <Status value={record.status} />],
-                ["Phiên bản", record.revision],
-              ] : [
-                ["Chính sách", record.name],
-                ["Loại chính sách", record.type],
-                ["Dịch vụ", record.service ? serviceLabel(record.service) : "Mọi loại"],
-                ["Mô tả", record.description],
-                ["Quy tắc", record.rule],
-                ["Hiệu lực từ", record.effectiveFrom],
-                ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"],
+                ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+                ["Hiệu lực", <RuleEffectBadge record={record} />],
                 ["Trạng thái", <Status value={record.status} />],
                 ["Phiên bản", record.revision],
               ]} />
               {futurePricing && <p className="mt-4 text-sm text-slate-600">Bắt đầu áp dụng từ {record.effectiveFrom}.</p>}
-              {kind === "pricing" && !effectiveRule && <div className="mt-5">
+              {!effectiveRule && <div className="mt-5">
                 <Button variant="orange" onClick={() => setConfirmOpen(true)}>
                   {nextStatus === "ACTIVE" ? "Kích hoạt" : "Ngừng áp dụng"}
                 </Button>
@@ -194,7 +165,7 @@ function RecordDetail({ kind, config }) {
                 </p>
               )}
             </Panel>
-            {kind === "pricing" && record.service === "MANAGED_INVENTORY" && (
+            {record.service === "MANAGED_INVENTORY" && (
               <Panel title="Ước tính theo công suất">
                 <Field label="Công suất dự kiến (m³)">
                   <Input aria-label="Công suất dự kiến (m³)" type="number" min="0.01" step="any" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
@@ -229,7 +200,7 @@ function RecordDetail({ kind, config }) {
   );
 }
 
-function RecordForm({ kind, config, mode }) {
+function RecordForm({ config, mode }) {
   const { id } = useParams();
   const nav = useNavigate();
   const isEdit = mode === "edit";
@@ -238,7 +209,7 @@ function RecordForm({ kind, config, mode }) {
       isEdit ? config.api.get(id).then(responseData).then(config.fromDto) : Promise.resolve(null),
       loadFacilities(),
     ]),
-    [id, kind, isEdit],
+    [id, isEdit],
   );
   const [form, setForm] = useState(config.blank);
   const [pending, setPending] = useState(false);
@@ -277,7 +248,7 @@ function RecordForm({ kind, config, mode }) {
 
   return (
     <Screen
-      title={`${isEdit ? "Sửa" : "Tạo"} ${kind === "pricing" ? "bảng giá" : "chính sách"}`}
+      title={`${isEdit ? "Sửa" : "Tạo"} bảng giá`}
       description={isEdit
         ? "Đặt ngày bắt đầu áp dụng giá mới."
         : "Ngày hiệu lực phải ở tương lai."}
@@ -302,25 +273,21 @@ function RecordForm({ kind, config, mode }) {
                   <Select label="Mô hình dịch vụ" value={form.service} disabled={locked} onChange={(v) => change("service", v)} options={BOM_SERVICE_TYPES.map((s) => [s, serviceLabel(s)])} />
                 </Field>
               )}
-              {!isEdit && kind === "pricing" && form.service === "SELF_STORAGE" && (
+              {!isEdit && form.service === "SELF_STORAGE" && (
                 <Field label="Kích cỡ kho riêng">
                   <Select label="Kích cỡ kho riêng" value={form.unitSize} disabled={locked} onChange={(v) => change("unitSize", v)} options={BOM_UNIT_SIZES} />
                 </Field>
               )}
-              {kind === "pricing" && (
-                <>
-                  {!isEdit && <Field label="Kỳ thanh toán (tháng)">
-                    <Select label="Kỳ thanh toán (tháng)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
-                      options={BOM_TERM_MONTHS.map((m) => [m, `${m} tháng`])} />
-                  </Field>}
-                  <Field label={form.service === "MANAGED_INVENTORY" ? "Đơn giá mỗi m³ mỗi kỳ (VND)" : "Giá mỗi kỳ thanh toán (VND)"}>
-                    <Input aria-label="Đơn giá" type="number" min="0" step="any" required value={form.rate} onChange={(e) => change("rate", e.target.value)} />
-                  </Field>
-                  <Field label="Tiền tệ">
-                    <Input aria-label="Tiền tệ" maxLength={3} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
-                  </Field>
-                </>
-              )}
+              {!isEdit && <Field label="Kỳ thanh toán (tháng)">
+                <Select label="Kỳ thanh toán (tháng)" value={form.billingMonths} onChange={(v) => change("billingMonths", Number(v))}
+                  options={BOM_TERM_MONTHS.map((m) => [m, `${m} tháng`])} />
+              </Field>}
+              <Field label={form.service === "MANAGED_INVENTORY" ? "Đơn giá mỗi m³ mỗi kỳ (VND)" : "Giá mỗi kỳ thanh toán (VND)"}>
+                <Input aria-label="Đơn giá" type="number" min="0" step="any" required value={form.rate} onChange={(e) => change("rate", e.target.value)} />
+              </Field>
+              <Field label="Tiền tệ">
+                <Input aria-label="Tiền tệ" maxLength={3} value={form.currency} onChange={(e) => change("currency", e.target.value.toUpperCase())} />
+              </Field>
               <Field label="Hiệu lực từ" hint={locked ? "Bắt buộc chọn ngày trong tương lai — đây là ngày bắt đầu của mức giá mới." : `Chọn từ ${minDate} trở đi.`}>
                 <Input aria-label="Hiệu lực từ" type="date" min={minDate} required value={form.effectiveFrom} onChange={(e) => change("effectiveFrom", e.target.value)} />
               </Field>

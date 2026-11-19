@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { bomManagedInventoryCatalogApi as api } from '@/api/bomApi';
 import { Button, Input, Panel, Screen, Status, Table, Field, Select, Message } from '@/components/manager/ManagerUI';
+import ListPager from '@/components/bom/ListPager';
 import { AsyncBoundary, ConfirmDialog } from '@/components/bom/LiveBomUI';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { usePageIndex } from '@/lib/usePageIndex';
 import { apiErrorMessage } from '@/lib/apiError';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
 import { catalogConfig, CATALOG_KIND_KEYS } from '@/lib/managedCatalogKinds';
@@ -18,13 +20,14 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
   const [kind, setKind] = useState(CATALOG_KIND_KEYS[0]);
   const [searchDraft, setSearchDraft] = useState('');
   const [status, setStatus] = useState(ALL);
-  const [page, setPage] = useState(1);
   const [deactivating, setDeactivating] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(location.state?.catalogNotice || '');
   const config = catalogConfig(kind);
   // A free-text search that hits the API on every keystroke breaks quy ước 2, so it is debounced.
   const search = useDebouncedValue(searchDraft);
+  // The page resets to 1 whenever the kind, the search or the status filter changes.
+  const [page, setPage] = usePageIndex(`${kind}|${search}|${status}`);
 
   const list = useAsyncData(
     async ({ signal }) => {
@@ -38,7 +41,10 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
       if (response.data?.success !== true || !Array.isArray(response.data.data) || !response.data.pagination) {
         throw Error('Dữ liệu danh mục trả về không hợp lệ.');
       }
-      return { rows: response.data.data, pagination: response.data.pagination };
+      // The catalog DTO exposes `id` and never `_id`, so rows are normalised once here and the
+      // edit link plus the deactivate request keep pointing at a real record.
+      const rows = response.data.data.map((row) => ({ ...row, _id: row.id ?? row._id }));
+      return { rows, pagination: response.data.pagination };
     },
     [config, search, status, page],
   );
@@ -47,12 +53,9 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
     setKind(value);
     setSearchDraft('');
     setStatus(ALL);
-    setPage(1);
     setError('');
     setSuccess('');
   }, []);
-
-  useEffect(() => { setPage(1); }, [search, status]);
 
   async function deactivate(row) {
     setError('');
@@ -130,13 +133,13 @@ export default function ManagedInventoryCatalogPage({ basePath = '/bom/managed-i
               label={config.title}
               empty="Chưa có dữ liệu phù hợp. Tạo bản ghi đầu tiên để Customer có thể chọn."
             />
-            <div className="mt-4 flex items-center justify-between gap-3 text-sm">
-              <span>{Number(data.pagination.total || 0).toLocaleString('vi-VN')} bản ghi</span>
-              <div className="flex gap-2">
-                <Button variant="outline" disabled={page <= 1 || list.loading} onClick={() => setPage((n) => n - 1)}>Trang trước</Button>
-                <Button variant="outline" disabled={page >= Number(data.pagination.totalPages || 0) || list.loading} onClick={() => setPage((n) => n + 1)}>Trang sau</Button>
-              </div>
-            </div>
+            <ListPager
+              page={Number(data.pagination.page || page)}
+              totalPages={Number(data.pagination.totalPages || 1)}
+              total={Number(data.pagination.total || 0)}
+              loading={list.loading}
+              onPageChange={setPage}
+            />
           </>
         )} />
       </Panel>

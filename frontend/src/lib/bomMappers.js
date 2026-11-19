@@ -1,26 +1,17 @@
 // Live BOM DTO mapping between the backend API contract (WDP-Backend.postman_collection.json)
-// and the BOM view models used by the live Facility / Pricing / Policy pages.
-import { money } from "@/components/manager/ManagerUI";
+// and the BOM view models used by the live Facility / Pricing / item-category pages.
 import { facilityLabel } from "@/lib/facilityLabels";
+import { bomFutureDate, fromInstant, toInstant } from "./bomDates";
+
+export { bomFutureDate };
 
 export const BOM_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 export const BOM_UNIT_SIZES = ["SMALL", "MEDIUM", "LARGE"];
 export const BOM_TERM_MONTHS = [1, 3, 6, 12];
 export const BOM_CURRENCY = "VND";
 
-// Only policy types confirmed by the backend PolicyType enum are offered live.
-export const BOM_POLICY_TYPES = [
-  { key: "DEPOSIT", label: "Đặt cọc" },
-  { key: "CANCELLATION", label: "Hủy đơn" },
-  { key: "REFUND", label: "Hoàn tiền" },
-  { key: "OVERDUE", label: "Quá hạn" },
-  { key: "SHELF_CONSTRAINT", label: "Ràng buộc kệ" },
-];
-export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
-
 // Display labels for backend enum values rendered in the console (never show raw codes).
 export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Thuê kho riêng", MANAGED_INVENTORY: "Lưu trữ hàng hóa" };
-export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Khuyến mại", LOYALTY: "Khách hàng thân thiết", FEE_WAIVER: "Miễn phụ phí" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
 
 // Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
@@ -37,21 +28,10 @@ export function responseList(response) {
   return { rows, pagination: body?.pagination ?? null };
 }
 
-export function bomFutureDate(days = 1) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
 // A rule/policy whose effectiveFrom already passed is immutable except for a prospective
 // effectiveTo, so the edit form must not send the scope, price or config fields.
 export function isEffectiveRecord(record) {
   return Boolean(record?.effectiveFrom) && record.effectiveFrom <= new Date().toISOString().slice(0, 10);
-}
-export function toInstant(dateStr) {
-  return dateStr ? new Date(`${dateStr}T00:00:00.000Z`).toISOString() : undefined;
-}
-export function fromInstant(value) {
-  return value ? String(value).slice(0, 10) : "";
 }
 
 /* ------------------- Warehouse map, units, managed inventory ------------------- */
@@ -312,6 +292,7 @@ export function pricingFromDto(d) {
     currency: d?.currency || BOM_CURRENCY,
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
   };
@@ -350,54 +331,13 @@ export function pricingUpdateBody(form, { effective = false } = {}) {
   return body;
 }
 
-/* ------------------------------ Policies ------------------------------ */
-export function policyFromDto(d) {
-  const config = d?.config || {};
-  return {
-    id: d?._id,
-    facilityId: d?.facilityId,
-    service: d?.serviceType || "",
-    type: d?.type,
-    name: BOM_POLICY_LABELS[d?.type] || d?.type || "Chính sách",
-    description: config.description || "",
-    rule: config.rule || "",
-    effectiveFrom: fromInstant(d?.effectiveFrom),
-    effectiveTo: fromInstant(d?.effectiveTo),
-    status: d?.isActive ? "ACTIVE" : "INACTIVE",
-    revision: d?.version,
-    config,
-  };
-}
+// `effectiveTo` is stored by the backend but is absent from every read DTO today, so screens must
+// tell "open-ended" apart from "the API did not return it" instead of always printing 1 giá trị.
+const hasEffectiveTo = (d) => Boolean(d) && Object.prototype.hasOwnProperty.call(d, "effectiveTo");
 
-/* --------------------- Discounts / waivers (Policy) -------------------- */
-export const BOM_DISCOUNT_TYPES = ["DISCOUNT", "WAIVER"];
-export const BOM_DISCOUNT_KINDS = ["PROMOTIONAL", "LOYALTY", "FEE_WAIVER"];
-
-export function discountFromDto(d) {
-  const config = d?.config || {};
-  const kind = config.kind || (d?.type === "WAIVER" ? "FEE_WAIVER" : "PROMOTIONAL");
-  return {
-    id: d?._id,
-    facilityId: d?.facilityId,
-    service: d?.serviceType || "",
-    policyType: d?.type,
-    kind,
-    name: config.name || (kind === "FEE_WAIVER" ? "Fee waiver" : "Discount"),
-    valueType: config.valueType || "UNDEFINED",
-    value: config.value ?? "",
-    conditions: config.conditions || "",
-    effectiveFrom: fromInstant(d?.effectiveFrom),
-    effectiveTo: fromInstant(d?.effectiveTo),
-    status: d?.isActive ? "ACTIVE" : "INACTIVE",
-    revision: d?.version,
-    config,
-  };
-}
-export function discountValueLabel(row) {
-  if (row.valueType === "UNDEFINED") return "Chưa xác định";
-  if (row.valueType === "PERCENTAGE") return `${row.value}%`;
-  return money(row.value);
-}
+// Business policies (DEPOSIT/CANCELLATION/REFUND/OVERDUE/DISCOUNT/WAIVER/SHELF_CONSTRAINT) and
+// discounts have no console screen and no business engine, so no mapper is kept for them.
+// Only the CATEGORY policy is still surfaced (see categoryFromDto below).
 
 /* --------------------- Item categories (Policy CATEGORY) ---------------- */
 // The backend CATEGORY policy stores only { allowedCategories[], blockedCategories[] } and
@@ -420,6 +360,7 @@ export function categoryFromDto(d) {
     blockedCount: blocked.length,
     effectiveFrom: fromInstant(d?.effectiveFrom),
     effectiveTo: fromInstant(d?.effectiveTo),
+    hasEffectiveTo: hasEffectiveTo(d),
     status: d?.isActive ? "ACTIVE" : "INACTIVE",
     revision: d?.version,
     config,
@@ -432,9 +373,12 @@ export const BOM_RESERVATION_STATUSES = [
 ];
 
 export function reservationFromDto(d) {
-  const customer = d?.customerId;
-  const unit = d?.storageUnitId;
-  const facility = d?.facilityId;
+  // Two confirmed reads feed this mapper: the facility collection (populated customerId /
+  // storageUnitId / facilityId) and GET /reservations/admin-list (flat customer / storageUnit /
+  // facility objects that carry no pricing amounts).
+  const customer = d?.customerId ?? d?.customer;
+  const unit = d?.storageUnitId ?? d?.storageUnit;
+  const facility = d?.facilityId ?? d?.facility;
   return {
     id: d?._id,
     code: d?.reservationCode || "",
@@ -453,6 +397,9 @@ export function reservationFromDto(d) {
     status: d?.status || "RESERVED",
     estimatedRent: d?.estimatedRent ?? 0,
     depositAmount: d?.depositAmount ?? 0,
+    // The paged list read does not project the pricing amounts, so screens can label them as
+    // unavailable instead of printing a real-looking 0 ₫.
+    amountsKnown: Number.isFinite(d?.estimatedRent) && Number.isFinite(d?.depositAmount),
     createdAt: d?.createdAt || "",
   };
 }

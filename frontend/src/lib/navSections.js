@@ -4,7 +4,7 @@
 // other item matches with a longer path. That keeps a workspace highlighted on its own
 // child/detail routes (e.g. /bom/oversight/facilities/:id -> "Facility oversight",
 // /bom/reports/revenue -> "Reports") while still letting a more specific sibling item
-// win (e.g. /bom/policies/discounts -> "Discounts / waivers" instead of "Business policies").
+// win (e.g. /bom/policies/item-categories -> "Item categories" instead of any parent).
 //
 // The URL is the single source of truth here; location.state is never consulted, so the
 // highlight survives reloads, bookmarks and shared links.

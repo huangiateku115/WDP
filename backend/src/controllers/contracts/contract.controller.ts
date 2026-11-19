@@ -22,6 +22,8 @@ import { StorageUnitStatus } from '../../types/storage-unit.type';
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { logOperationalFailure } from '../../services/operations/operational-error.logger';
+import { NotificationService } from '../../services/notifications/notification.service';
+import { notifyManagedContractAudit } from '../../services/notifications/managed-event-notification.producer';
 
 class ContractControllerError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -40,6 +42,17 @@ async function persistContractUploadMetadata<T>(operation: string, correlationId
       correlationId, retryable: true, entityType: 'Contract', entityId: String(contractId ?? '') });
     throw error;
   }
+}
+
+async function notifyVerifiedManagedV3Contract(contract: any, reservation: any) {
+  if (!NotificationService.isManagedCustomerEventsEnabled() || reservation?.serviceType !== FacilityServiceType.MANAGED_INVENTORY ||
+      reservation?.bookingFlowVersion !== 3 || !contract?._id) return;
+  try {
+    const event = await ManagedReservationAuditModel.findOne({ reservationId: reservation._id,
+      action: ManagedReservationAction.CONTRACT_SIGNED, 'details.contractId': contract._id,
+      'details.paperEvidenceVerified': true }).sort({ createdAt: -1, _id: -1 }).lean().exec();
+    if (event) await notifyManagedContractAudit(event);
+  } catch { /* the committed contract and Reservation are recovered from their durable audit */ }
 }
 
 function assertManagedProofFacilityScope(actor: any, facilityId: any) {
@@ -302,6 +315,7 @@ export const confirmSignedPaper = async (req: Request, res: Response) => {
         throw error;
       } finally { await session.endSession(); }
       if (!committed) throw new ContractControllerError(503, 'Contract verification outcome is uncertain; reload before retry.');
+      await notifyVerifiedManagedV3Contract(committed.contract, committed.reservation);
       return res.json({ success: true, message: 'Hợp đồng đã được xác minh — sẵn sàng thực hiện thủ tục nhận kho.', data: committed });
     }
 

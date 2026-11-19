@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { Screen, Panel, Table, Field, Input, Select, Button, Message } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { pageSlice } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { apiErrorMessage } from "@/lib/apiError";
 import { notificationApi } from "@/api/notificationApi";
 import { filterNotifications } from "@/lib/facilityNotifications";
@@ -31,6 +34,9 @@ export default function NotificationsPage() {
   const types = [...new Set(rows.map((row) => row.type).filter(Boolean))].sort();
   const visible = filterNotifications(rows, { status: scope, search, from, to })
     .filter((row) => !type || row.type === type);
+  // GET /notifications/me has no paging contract, so the inbox slices the filtered list locally.
+  const [page, setPage] = usePageIndex(`${scope}|${type}|${search}|${from}|${to}`);
+  const paged = pageSlice(visible, page);
   const unread = rows.filter((row) => !row.isRead).length;
 
   async function markRead(row) {
@@ -118,7 +124,7 @@ export default function NotificationsPage() {
             <div className="mt-5">
               <Table
                 label="Thông báo"
-                rows={visible}
+                rows={paged.rows}
                 columns={[
                   { key: "title", label: "Tiêu đề", render: (r) => r.title || "Thông báo" },
                   { key: "type", label: "Loại", render: (r) => facilityLabel(r.type || "—") },
@@ -139,6 +145,14 @@ export default function NotificationsPage() {
                   },
                 ]}
                 empty="Không có thông báo phù hợp bộ lọc này."
+              />
+              <ListPager
+                page={paged.page}
+                totalPages={paged.totalPages}
+                total={paged.total}
+                loading={state.loading}
+                onPageChange={setPage}
+                unit="thông báo"
               />
             </div>
           </Panel>

@@ -29,6 +29,7 @@ export const bomPolicyApi = {
   list: (params, config) => axiosClient.get("/policies", { ...config, params }),
   get: (id) => axiosClient.get(`/policies/${encode(id)}`),
   resolve: (params) => axiosClient.get("/policies/resolve", { params }),
+
 };
 
 export const bomManagedInventoryCatalogApi = {
@@ -46,6 +47,9 @@ export const bomManagedInventoryCatalogApi = {
 
 export const bomReservationApi = {
   listByFacility: (facilityId, config) => axiosClient.get(`/reservations/facility/${encode(facilityId)}`, config),
+  // Paged collection read (facilityId/serviceType/status/reservationCode/fromDate/toDate/page/limit).
+  // ADMIN/BOM may omit facilityId to read across facilities; facility roles are scoped by the backend.
+  adminList: (params, config) => axiosClient.get('/reservations/admin-list', { ...config, params }),
   get: (id, config) => axiosClient.get(`/reservations/${encode(id)}`, config),
   managedCapacity: (facilityId, params, config) =>
     axiosClient.get(`/reservations/managed/capacity/${encode(facilityId)}`, { ...config, params }),

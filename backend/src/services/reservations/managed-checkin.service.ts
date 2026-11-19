@@ -24,6 +24,8 @@ import { CellAllocationStatus, WarehouseOperationalStatus } from '../../types/wa
 import { PaymentProvider, PaymentPurpose, PaymentStatus, PaymentApplicationStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { assertIdempotentPaymentMatch, calculateRentalPaymentBreakdown, PaymentAccountingError, transitionPaymentStatus } from '../payments/payment-accounting';
+import { NotificationService } from '../notifications/notification.service';
+import { notifyManagedContractAudit } from '../notifications/managed-event-notification.producer';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 export class ManagedCheckinError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
@@ -398,7 +400,7 @@ export class ManagedCheckinService {
 
   static async signV3Contract(contractIdInput: unknown, actor: Actor, signer: 'CUSTOMER' | 'FACILITY') {
     const contractId = id(contractIdInput, 'contractId');
-    return tx(async session => {
+    const signed = await tx(async session => {
       const contract = await ContractModel.findById(contractId).session(session).exec();
       if (!contract) fail(404, 'Managed contract not found');
       const reservation = await ReservationModel.findOne({ _id: contract.reservationId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3,
@@ -426,6 +428,18 @@ export class ManagedCheckinService {
       await audit(reservation, actor, ManagedReservationAction.CONTRACT_SIGNED, { contractId, version: active.version, contentHash: active.contentHash, signerRole: role }, session);
       return contract;
     });
+    if (signed.status === ContractStatus.SIGNED && NotificationService.isManagedCustomerEventsEnabled()) {
+      try {
+        const active = signed.contentVersions?.find(version => version.version === signed.currentContentVersion);
+        const event: any = active && await ManagedReservationAuditModel.findOne({ reservationId: signed.reservationId,
+          action: ManagedReservationAction.CONTRACT_SIGNED, 'details.contractId': signed._id,
+          'details.version': active.version, 'details.contentHash': active.contentHash,
+          'details.signerRole': { $in: [UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER] } })
+          .sort({ createdAt: -1, _id: -1 }).lean().exec();
+        if (event) await notifyManagedContractAudit(event);
+      } catch { /* preserve the committed contract result; recovery reads the durable audit event */ }
+    }
+    return signed;
   }
 
   static async signContract(contractIdInput: unknown, actor: Actor) {

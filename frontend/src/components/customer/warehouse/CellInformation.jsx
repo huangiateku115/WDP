@@ -62,6 +62,10 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
   const configuredVolume = isCapacityValue(cell.maxVolumeM3) && cell.maxVolumeM3 > 0;
   const usageKnown = cell.physicalUsageKnown === true;
   const measuredValue = (value, formatter) => usageKnown ? capacityText(value, formatter, "Chưa xác định") : "Chưa xác định";
+  const myStock = cell.myStock;
+  const myStockValue = (key, formatter) => ["LEDGER_MATCHED", "PROJECTION_MISMATCH"].includes(myStock?.status)
+    ? capacityText(myStock[key], formatter, "Chưa xác định")
+    : myStock?.status === "NO_DATA" ? "Chưa có dữ liệu tồn kho của bạn" : "Đang cần cơ sở đối soát";
 
   const fields = [
 
@@ -73,7 +77,13 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
     ["Tầng", level?.levelNumber],
 
-    ["Cell", cell.cellNumber],
+    ["Ô lưu trữ", cell.cellNumber],
+
+    ...(cell.isMine === true || cell.hasMyInventory === true ? [
+      ["Số lượng hàng của bạn (theo sổ tồn)", myStockValue("quantity", value => `${value.toLocaleString()} món`)],
+      ["Khối lượng hàng của bạn (theo sổ tồn)", myStockValue("weightKg", weightText)],
+      ["Thể tích hàng của bạn (theo sổ tồn)", myStockValue("volumeM3", volumeText)],
+    ] : []),
 
     ["Tải trọng tối đa", capacityRedacted ? null : configuredWeight ? weightText(cell.maxWeightKg) : "Chưa cấu hình"],
 
@@ -89,7 +99,7 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
     [
 
-      "Width",
+      "Chiều rộng",
 
       cell.dimensions?.widthM == null
 
@@ -101,7 +111,7 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
     [
 
-      "Depth",
+      "Chiều sâu",
 
       cell.dimensions?.depthM == null
 
@@ -113,7 +123,7 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
     [
 
-      "Usable clearance",
+      "Chiều cao sử dụng",
 
       cell.dimensions?.usableHeightM == null
 
@@ -131,12 +141,15 @@ export function CellInformation({ cell, level = {}, rack = {} }) {
 
       <div className="wm-info-heading">
 
-        <strong>{cell.code || `Cell C${cell.cellNumber}`}</strong>
+        <strong>{cell.code || `Ô ${cell.cellNumber}`}</strong>
 
         <span className="inline-flex flex-wrap items-center gap-1">
           <CellPeriodStatus cell={cell} />
           {cell.isMine === true && <span className="wm-owned-chip">Ô thuê của bạn</span>}
           {cell.hasMyInventory === true && <span className="wm-owned-chip">Hàng của bạn</span>}
+          {(cell.isMine === true || cell.hasMyInventory === true) && ["LEDGER_MATCHED", "PROJECTION_MISMATCH"].includes(cell.myStock?.status) && <span className="wm-cell-stock-chip">{cell.myStock.quantity} món · {weightText(cell.myStock.weightKg)} theo sổ tồn</span>}
+          {(cell.isMine === true || cell.hasMyInventory === true) && cell.myStock?.status === "PROJECTION_MISMATCH" && <span className="wm-cell-warning-chip">Sổ tồn đã đọc; cơ sở cần kiểm tra bảng tổng hợp.</span>}
+          {(cell.isMine === true || cell.hasMyInventory === true) && cell.myStock?.status === "UNKNOWN" && <span className="wm-cell-warning-chip">Tồn kho cần đối soát</span>}
         </span>
 
       </div>
@@ -290,7 +303,7 @@ export default function WarehouseCells({
 
   return (
 
-    <section className="wm-cell-area" aria-label="Rack levels and cells">
+    <section className="wm-cell-area" aria-label="Tầng kệ và ô lưu trữ">
 
       <div className="wm-section-heading">
 
@@ -314,7 +327,7 @@ export default function WarehouseCells({
 
       {!levels.some((l) => l.cells.length) && (
 
-        <p>No cells are configured for this rack.</p>
+        <p>Kệ này chưa được cấu hình ô lưu trữ.</p>
 
       )}
 
@@ -388,7 +401,7 @@ export default function WarehouseCells({
 
                       aria-pressed={selected?.cell?._id === cell._id}
 
-                      aria-label={`Xem ${cell.code || `Ô C${cell.cellNumber}`}, tầng ${level.levelNumber}, ${statusLabels[status] || statusLabels.UNKNOWN}`}
+                      aria-label={`Xem ${cell.code || `Ô ${cell.cellNumber}`}, tầng ${level.levelNumber}, ${statusLabels[status] || statusLabels.UNKNOWN}`}
 
                       aria-describedby={
 
@@ -452,13 +465,15 @@ export default function WarehouseCells({
 
                       </span>
 
-                      <CellPeriodStatus cell={cell} />
-
-                      {cell.isMine === true && <span className="wm-owned-chip">Ô thuê của bạn</span>}
-
-                      {cell.hasMyInventory === true && <span className="wm-owned-chip">Hàng của bạn</span>}
-
-                      {picked && <span>Trong giỏ thuê</span>}
+                      <span className="wm-cell-badges">
+                        <CellPeriodStatus cell={cell} />
+                        {cell.isMine === true && <span className="wm-owned-chip">Ô thuê của bạn</span>}
+                        {cell.hasMyInventory === true && <span className="wm-owned-chip">Hàng của bạn</span>}
+                        {(cell.isMine === true || cell.hasMyInventory === true) && ["LEDGER_MATCHED", "PROJECTION_MISMATCH"].includes(cell.myStock?.status) && <span className="wm-cell-stock-chip">{cell.myStock.quantity} món · {weightText(cell.myStock.weightKg)}</span>}
+                        {(cell.isMine === true || cell.hasMyInventory === true) && cell.myStock?.status === "PROJECTION_MISMATCH" && <span className="wm-cell-warning-chip">Cần kiểm tra số liệu tổng hợp</span>}
+                        {(cell.isMine === true || cell.hasMyInventory === true) && cell.myStock?.status === "UNKNOWN" && <span className="wm-cell-warning-chip">Tồn kho cần đối soát</span>}
+                        {picked && <span className="wm-picked-chip">Đã chọn thuê</span>}
+                      </span>
 
 
                     </button>
@@ -524,7 +539,7 @@ export default function WarehouseCells({
 
             {!cells.length && level.cells.length > 0 && (
 
-              <p className="wm-muted">No loaded cells match this search.</p>
+              <p className="wm-muted">Không có ô lưu trữ phù hợp với nội dung tìm kiếm.</p>
 
             )}
 
@@ -536,11 +551,11 @@ export default function WarehouseCells({
 
       {statusFilter && <div className="wm-cell-filter-summary" role="status">
 
-        <span>Showing status: {statusFilter}. Other Cells are muted.</span>
+        <span>Đang lọc theo trạng thái: {statusLabels[statusFilter] || "Chưa xác định"}. Các ô khác được làm mờ.</span>
 
-        <button type="button" className="wm-clear-status-filter" onClick={onClearStatusFilter}>Clear filter</button>
+        <button type="button" className="wm-clear-status-filter" onClick={onClearStatusFilter}>Xóa bộ lọc</button>
 
-        {!levels.some(level => level.cells.some(c => cellPeriodStatus(c) === statusFilter && (!q || context.includes(q) || String(c.code || `C${c.cellNumber}`).toLowerCase().includes(q)))) && <p>No Cells match this status in the current Rack.</p>}
+        {!levels.some(level => level.cells.some(c => cellPeriodStatus(c) === statusFilter && (!q || context.includes(q) || String(c.code || `C${c.cellNumber}`).toLowerCase().includes(q)))) && <p>Không có ô lưu trữ nào trong kệ này khớp với trạng thái đã chọn.</p>}
 
       </div>}
 

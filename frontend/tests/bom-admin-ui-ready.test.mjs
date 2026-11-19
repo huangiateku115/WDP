@@ -137,12 +137,14 @@ test('Managed reservations expose no unsupported console actions',()=>{
   assert.doesNotMatch(roles,/canMockPayReservations/);
 });
 
-test('Policy and discount write mappers stay deleted while read mappers remain',()=>{
+test('Policy and discount mappers stay deleted while the category read mapper remains',()=>{
   const mappers=read('../src/lib/bomMappers.js');
-  for(const dead of ['policyBody','policyUpdateBody','discountBody','discountUpdateBody','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','BOM_DISCOUNT_VALUE_TYPES','contractFromDto']){
+  // Business policies and discounts were removed from the console: no engine reads them, so
+  // every policy/discount mapper (and the policy create form) is gone for good.
+  for(const dead of ['policyUpdateBody','policyBody','policyBlank','policyCloseBody','policyFromDto','policyRuleLabel','BOM_POLICY_TYPES','BOM_POLICY_LABELS','discountBody','discountUpdateBody','discountFromDto','discountValueLabel','BOM_DISCOUNT_TYPES','BOM_DISCOUNT_KINDS','BOM_DISCOUNT_KIND_LABELS','BOM_DISCOUNT_VALUE_TYPES','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','contractFromDto']){
     assert.doesNotMatch(mappers,new RegExp(`${dead}\\b`));
   }
-  for(const alive of ['policyFromDto','discountFromDto','discountValueLabel','categoryFromDto','pricingBody','pricingUpdateBody']){
+  for(const alive of ['categoryFromDto','pricingBody','pricingUpdateBody']){
     assert.match(mappers,new RegExp(`${alive}\\b`));
   }
   const reportSources=read('../src/lib/reportSources.js');
@@ -482,4 +484,64 @@ test('BOM and Admin shells render no leftover English copy',()=>{
   const bomUi=read('../src/components/bom/BomUI.jsx');
   assert.match(bomUi,/useLocation/);
   assert.match(bomUi,/pathname\.startsWith\('\/admin'\) \? '\/admin\/dashboard' : '\/bom\/dashboard'/);
+});
+
+// Regression guards for the 2026-11-18 DTO audit: no screen may render a field the API never returns.
+test('BOM/Admin screens only render fields the API actually returns',()=>{
+  // The catalog DTO exposes `id`; every row is normalised so Sửa/Ngừng dùng stop targeting undefined.
+  const catalog=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  assert.match(catalog,/response\.data\.data\.map\(\(row\) => \(\{ \.\.\.row, _id: row\.id \?\? row\._id \}\)\)/);
+
+  // GET /reservations/:id has no rejectReason/allocatedCapacity/expiresAt.
+  const reservation=read('../src/pages/shared/ReservationDetailPage.jsx');
+  assert.match(reservation,/const rejectionOf = \(reservation\) =>/);
+  assert.match(reservation,/\["Lý do từ chối", rejectionOf\(reservation\) \|\| "—"\]/);
+  assert.doesNotMatch(reservation,/reservation\.rejectReason/,'rejectReason is not part of the reservation DTO');
+  assert.doesNotMatch(reservation,/reservation\.allocatedCapacity/,'allocatedCapacity is not part of the reservation DTO');
+  assert.doesNotMatch(reservation,/reservation\.expiresAt/,'expiresAt is not part of the reservation DTO');
+
+  // The old policy `config.rule` presentation was removed with the business-policy screen.
+  const mappers=read('../src/lib/bomMappers.js');
+  assert.doesNotMatch(mappers,/policyRuleLabel/);
+  assert.match(mappers,/const hasEffectiveTo = \(d\) =>/);
+  assert.match(mappers,/hasEffectiveTo: hasEffectiveTo\(d\)/);
+
+  // The CATEGORY policy has no acceptance flag/description/notes.
+  const policyPage=read('../src/pages/bom/PolicyRecordsPage.jsx');
+  assert.doesNotMatch(policyPage,/allowedStatus/,'allowedStatus is not part of the policy DTO');
+  assert.doesNotMatch(policyPage,/handlingNotes|restrictions/,'those fields are not part of the policy DTO');
+  assert.match(policyPage,/label: "Danh mục được phép", render: \(r\) => r\.allowedCount/);
+  assert.match(policyPage,/record\.hasEffectiveTo \?/);
+});
+
+// Self-storage pricing snapshots carry no startDate, so the contract screen must not print a
+// half-empty "— → endDate" row: it falls back to the reservation the contract belongs to.
+test('Contract pricing panel never shows a half-empty billing period',()=>{
+  const page=read('../src/pages/shared/ContractLookupPage.jsx');
+  assert.match(page,/const pricingRows = \(pricing = \{\}, reservation = null\) =>/);
+  assert.match(page,/const periodStart = pricing\.startDate \|\| reservation\?\.startDate;/);
+  assert.match(page,/const periodEnd = pricing\.endDate \|\| reservation\?\.endDate;/);
+  assert.match(page,/\[periodStart, periodEnd\]\.filter\(Boolean\)\.map\(day\)/);
+  assert.match(page,/rows\.push\(\["Kỳ tính giá", period\.join\(" → "\)\]\)/);
+  assert.doesNotMatch(page,/day\(pricing\.startDate\)/,'a missing snapshot startDate must not render an em dash');
+  assert.match(page,/pricingRows\(pricing, reservation\)/);
+});
+
+// The catalogue screen is shared by BOM and Admin and pages with the BOM/Admin pager, so its
+// guard lives here instead of inside the Customer SKU suite.
+test('Catalog screen keeps its Vietnamese labels, pager and shared routes',()=>{
+  const page=read('../src/pages/bom/ManagedInventoryCatalogPage.jsx');
+  const pager=read('../src/components/bom/ListPager.jsx');
+  const api=read('../src/api/bomApi.js');
+  for(const routes of [read('../src/routes/AdminRoutes.jsx'),read('../src/routes/BomRoutes.jsx')]){
+    assert.match(routes,/managed-inventory-catalog/);
+  }
+  assert.match(page,/Tìm theo mã hoặc tên/);
+  assert.match(page,/Ngừng sử dụng/);
+  assert.match(page,/ListPager/);
+  assert.match(page,/Chưa có dữ liệu phù hợp/);
+  assert.match(pager,/Trang trước/);
+  assert.match(pager,/Trang sau/);
+  assert.match(api,/managed-inventory-catalog\/categories/);
+  assert.match(api,/managed-inventory-catalog\/quantity-units/);
 });

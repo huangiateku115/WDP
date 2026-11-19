@@ -206,7 +206,10 @@ export function assertConfirmedRequest(config) {
         /^warehouse-zones(\/[^/]+)?$/.test(path) ||
         /^racks(\/[^/]+)?$/.test(path) ||
         /^rack-cells(\/[^/]+)?$/.test(path) ||
+        /^reservations\/admin-list$/.test(path) ||
         /^reservations\/managed\/capacity\/[^/]+$/.test(path) ||
+        /^audit\/logs$/.test(path) ||
+        /^audit\/(admin|bom)\/subjects$/.test(path) ||
         /^audit\/(admin|bom)\/(login-history|audit-logs)\/[^/]+$/.test(
           path,
         ))) ||

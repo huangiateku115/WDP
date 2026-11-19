@@ -17,6 +17,7 @@ const Cell = require('../dist/models/warehouse-map/warehouse-cell.model').defaul
 const CellAllocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
 const InventoryItem = require('../dist/models/inventory-items/inventory-item.model').default;
 const ItemMovement = require('../dist/models/inventory-items/item-movement.model').default;
+const { ManagedCellStockReadService } = require('../dist/services/inventory-items/managed-cell-stock-read.service');
 const { WarehouseMapService: service } = require('../dist/services/warehouse-map/warehouse-map.service');
 const {
   parseRackCreate, parseCellUpdate, parseList, WarehouseMapError,
@@ -231,7 +232,7 @@ test('a new customer can browse the public map without physical usage or shared 
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
 });
 
-test('customer map preserves own allocation boolean but redacts Cell stock and legacy currentCellId membership', async t => {
+test('customer map preserves own allocation status, redacts shared counters, and ignores legacy Cell fallback', async t => {
   const own = actor('CUSTOMER'), cells = [cell(1, 1, { dimensions: { widthM: .5, depthM: .6, usableHeightM: .4 }, usedWeightKg: 40, usedVolumeM3: .03 }).toObject()];
   t.mock.method(Facility, 'findOne', () => new Query(facility()));
   t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
@@ -240,12 +241,12 @@ test('customer map preserves own allocation boolean but redacts Cell stock and l
   t.mock.method(Rack, 'findOne', () => new Query(rack()));
   t.mock.method(Cell, 'find', () => new Query(cells));
   t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: cells[0]._id, customerId: userId, status: 'OCCUPIED' }]));
-  t.mock.method(InventoryItem, 'find', () => { assert.fail('Customer map must not infer V4 inventory membership from legacy currentCellId'); });
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
   const range = { startDate: '2030-01-01T00:00:00.000Z', endDate: '2030-02-01T00:00:00.000Z' };
   const detail = await service.rackDetailMap(rackId, own, range);
   const result = detail.levels[3].cells[0];
-  assert.equal(result.bookingStatus, 'UNKNOWN');
-  assert.equal(result.displayStatus, 'UNKNOWN');
+  assert.equal(result.bookingStatus, 'OCCUPIED');
+  assert.equal(result.displayStatus, 'OCCUPIED');
   assert.equal(result.isMine, true);
   assert.equal(Object.hasOwn(result, 'hasMyInventory'), false);
   assert.equal(Object.hasOwn(result, 'usedWeightKg'), false);
@@ -256,6 +257,74 @@ test('customer map preserves own allocation boolean but redacts Cell stock and l
   assert.equal(result.bookingReasonCode, 'CELL_UNAVAILABLE');
   assert.equal(JSON.stringify(detail).includes(String(userId)), false);
   assert.equal(JSON.stringify(detail).includes('customerId'), false);
+});
+
+test('customer map shows only own replayed V3 quantity and physical totals on owned Cells', async t => {
+  const own = actor('CUSTOMER'), ownCell = cell(1, 1).toObject(), otherCell = cell(1, 2).toObject();
+  const skuId = oid('507f1f77bcf86cd799439099');
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'find', () => new Query([zone().toObject()]));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([ownCell, otherCell]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: ownCell._id, customerId: userId, status: 'OCCUPIED' }]));
+  t.mock.method(InventoryItem, 'find', filter => new Query(filter.inventorySchemaVersion === 3 ? [{ _id: skuId }] : []));
+  t.mock.method(ManagedCellStockReadService, 'skuStock', async (id, scopedActor) => {
+    assert.equal(String(id), String(skuId));
+    assert.equal(String(scopedActor._id), String(userId));
+    return { ledgerStatus: 'REPLAYED', ledgerReplayStatus: 'VERIFIED', ledgerByCell: [{ cellId: ownCell._id, quantityOnHand: 3, weightKg: 12.5, volumeM3: 0.024 }] };
+  });
+  const detail = await service.rackDetailMap(rackId, own);
+  const cells = detail.levels[3].cells;
+  const mine = cells.find(row => String(row._id) === String(ownCell._id));
+  const other = cells.find(row => String(row._id) === String(otherCell._id));
+  assert.deepEqual(mine.myStock, { status: 'LEDGER_MATCHED', quantity: 3, weightKg: 12.5, volumeM3: 0.024 });
+  assert.equal(mine.hasMyInventory, true);
+  assert.equal(Object.hasOwn(other, 'myStock'), false);
+  assert.equal(Object.hasOwn(mine, 'usedWeightKg'), false, 'shared Cell counters stay private');
+  assert.equal(JSON.stringify(detail).includes(String(userId)), false);
+});
+
+test('customer map still shows canonical ledger weight when only the stock projection is stale', async t => {
+  const own = actor('CUSTOMER'), ownCell = cell(1, 1).toObject();
+  const skuId = oid('507f1f77bcf86cd799439099');
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([ownCell]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([{ cellId: ownCell._id, customerId: userId, status: 'OCCUPIED' }]));
+  t.mock.method(InventoryItem, 'find', filter => new Query(filter.inventorySchemaVersion === 3 ? [{ _id: skuId }] : []));
+  t.mock.method(ManagedCellStockReadService, 'skuStock', async () => ({
+    ledgerStatus: 'UNKNOWN', ledgerReplayStatus: 'VERIFIED',
+    ledgerByCell: [{ cellId: ownCell._id, quantityOnHand: 2, weightKg: 7, volumeM3: 0.00972 }],
+    projectionEvidenceStatus: 'AVAILABLE', projectionByCell: [{ cellId: ownCell._id, quantityOnHand: 1, weightKg: 7, volumeM3: 0.00972 }],
+  }));
+  const detail = await service.rackDetailMap(rackId, own);
+  const result = detail.levels[3].cells[0];
+  assert.deepEqual(result.myStock, { status: 'PROJECTION_MISMATCH', quantity: 2, weightKg: 7, volumeM3: 0.00972 });
+  assert.equal(result.hasMyInventory, true);
+  assert.equal(Object.hasOwn(result, 'usedWeightKg'), false);
+});
+
+test('an unrelated unreplayable owned SKU does not hide verified stock on another Cell', async t => {
+  const own = actor('CUSTOMER'), verifiedCell = cell(1, 1).toObject(), unknownCell = cell(1, 2).toObject();
+  const verifiedSku = oid('507f1f77bcf86cd799439098'), unknownSku = oid('507f1f77bcf86cd799439099');
+  t.mock.method(Facility, 'findOne', () => new Query(facility()));
+  t.mock.method(Zone, 'findOne', () => new Query(zone()));
+  t.mock.method(Rack, 'findOne', () => new Query(rack()));
+  t.mock.method(Cell, 'find', () => Object.assign(new Query([verifiedCell, unknownCell]), { sort() { return this; } }));
+  t.mock.method(CellAllocation, 'find', () => new Query([
+    { cellId: verifiedCell._id, customerId: userId, status: 'OCCUPIED' },
+    { cellId: unknownCell._id, customerId: userId, status: 'OCCUPIED' },
+  ]));
+  t.mock.method(InventoryItem, 'find', filter => new Query(filter.inventorySchemaVersion === 3 ? [{ _id: verifiedSku }, { _id: unknownSku }] : []));
+  t.mock.method(ManagedCellStockReadService, 'skuStock', async skuId => String(skuId) === String(verifiedSku)
+    ? { ledgerStatus: 'REPLAYED', ledgerReplayStatus: 'VERIFIED', ledgerByCell: [{ cellId: verifiedCell._id, quantityOnHand: 1, weightKg: 20, volumeM3: 0.008 }] }
+    : { ledgerStatus: 'UNKNOWN', ledgerReplayStatus: 'UNKNOWN', evidenceCellIds: [String(unknownCell._id)] });
+  const detail = await service.rackDetailMap(rackId, own);
+  const byId = new Map(detail.levels[3].cells.map(row => [String(row._id), row]));
+  assert.deepEqual(byId.get(String(verifiedCell._id)).myStock, { status: 'LEDGER_MATCHED', quantity: 1, weightKg: 20, volumeM3: 0.008 });
+  assert.deepEqual(byId.get(String(unknownCell._id)).myStock, { status: 'UNKNOWN', quantity: null, weightKg: null, volumeM3: null });
 });
 
 test('legacy Cell with missing physical counters stays unavailable and does not expose shared values', async t => {

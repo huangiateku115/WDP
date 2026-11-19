@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Screen, Panel, OpenLink, Button, Field, Input, Select, Table, money } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/bom/ListPager";
 import { Kpis } from "@/components/bom/BomUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { loadFacilities, facilityName } from "@/lib/bomApiData";
 import { serviceLabel } from "@/lib/bomMappers";
 import { apiErrorMessage } from "@/lib/apiError";
@@ -191,9 +193,11 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
   const [sortOrder, setSortOrder] = useState("desc");
   const [exporting, setExporting] = useState("");
   const [exportError, setExportError] = useState("");
+  // The ranking endpoint is paged (page/limit), so the table walks it page by page.
+  const [page, setPage] = usePageIndex(`${from}|${to}|${sortBy}|${sortOrder}`);
   const ranking = useAsyncData(
-    ({ signal }) => loadFacilityRanking({ from, to, sortBy, sortOrder, signal }),
-    [from, to, sortBy, sortOrder],
+    ({ signal }) => loadFacilityRanking({ from, to, sortBy, sortOrder, page, signal }),
+    [from, to, sortBy, sortOrder, page],
   );
 
   async function runExport(format) {
@@ -219,9 +223,9 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
       <AsyncBoundary state={ranking} render={(data) => (
         <>
           <Kpis items={[
-            ["Cơ sở", data.items.length, "Trong phạm vi được xem"],
-            ["Đơn đặt thuê", data.items.reduce((sum, row) => sum + row.reservations, 0), `${from} → ${to}`],
-            ["Đơn đã thanh toán", data.items.reduce((sum, row) => sum + row.paidReservations, 0), "Giao dịch đã xác minh"],
+            ["Cơ sở", data.total, "Trong phạm vi được xem"],
+            ["Đơn đặt thuê", data.items.reduce((sum, row) => sum + row.reservations, 0), `${from} → ${to} · trang hiện tại`],
+            ["Đơn đã thanh toán", data.items.reduce((sum, row) => sum + row.paidReservations, 0), "Giao dịch đã xác minh · trang hiện tại"],
             ["Đã thu", money(data.items.reduce((sum, row) => sum + row.collected, 0)), "Tổng theo bảng bên dưới"],
           ]} />
           <Panel title="Bộ lọc">
@@ -249,7 +253,7 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
             </div>
             {exportError && <p role="alert" className="bom-error mt-4">{exportError}</p>}
           </Panel>
-          <Panel title="Bảng xếp hạng" subtitle={`${data.items.length} cơ sở`}>
+          <Panel title="Bảng xếp hạng" subtitle={`${data.total} cơ sở`}>
             <Table
               label="Xếp hạng cơ sở"
               rows={data.items}
@@ -262,6 +266,14 @@ export function FacilityRankingPage({ basePath = "/bom" }) {
                 { key: "collected", label: "Đã thu", render: (r) => money(r.collected) },
               ]}
               empty="Chưa có dữ liệu cho khoảng thời gian này."
+            />
+            <ListPager
+              page={data.page}
+              totalPages={data.totalPages}
+              total={data.total}
+              loading={ranking.loading}
+              onPageChange={setPage}
+              unit="cơ sở"
             />
           </Panel>
         </>
