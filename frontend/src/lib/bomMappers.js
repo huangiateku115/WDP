@@ -1,30 +1,17 @@
 // Live BOM DTO mapping between the backend API contract (WDP-Backend.postman_collection.json)
-// and the BOM view models used by the live Facility / Pricing / Policy pages.
-import { money } from "@/components/manager/ManagerUI";
+// and the BOM view models used by the live Facility / Pricing / item-category pages.
 import { facilityLabel } from "@/lib/facilityLabels";
 import { bomFutureDate, fromInstant, toInstant } from "./bomDates";
 
 export { bomFutureDate };
-export { BOM_POLICY_FORM_TYPES, POLICY_DESCRIPTION_TYPES, policyBlank, policyBody, policyCloseBody, policyConfig } from "./bomPolicyForm";
 
 export const BOM_SERVICE_TYPES = ["SELF_STORAGE", "MANAGED_INVENTORY"];
 export const BOM_UNIT_SIZES = ["SMALL", "MEDIUM", "LARGE"];
 export const BOM_TERM_MONTHS = [1, 3, 6, 12];
 export const BOM_CURRENCY = "VND";
 
-// Only policy types confirmed by the backend PolicyType enum are offered live.
-export const BOM_POLICY_TYPES = [
-  { key: "DEPOSIT", label: "Đặt cọc" },
-  { key: "CANCELLATION", label: "Hủy đơn" },
-  { key: "REFUND", label: "Hoàn tiền" },
-  { key: "OVERDUE", label: "Quá hạn" },
-  { key: "SHELF_CONSTRAINT", label: "Ràng buộc kệ" },
-];
-export const BOM_POLICY_LABELS = Object.fromEntries(BOM_POLICY_TYPES.map(({ key, label }) => [key, label]));
-
 // Display labels for backend enum values rendered in the console (never show raw codes).
 export const BOM_SERVICE_LABELS = { SELF_STORAGE: "Thuê kho riêng", MANAGED_INVENTORY: "Lưu trữ hàng hóa" };
-export const BOM_DISCOUNT_KIND_LABELS = { PROMOTIONAL: "Khuyến mại", LOYALTY: "Khách hàng thân thiết", FEE_WAIVER: "Miễn phụ phí" };
 export const serviceLabel = (value) => BOM_SERVICE_LABELS[value] || String(value || "").replaceAll("_", " ") || "—";
 
 // Resource photography is an ordered list of absolute HTTP(S) URLs on the backend
@@ -344,75 +331,13 @@ export function pricingUpdateBody(form, { effective = false } = {}) {
   return body;
 }
 
-/* ------------------------------ Policies ------------------------------ */
-// The backend keeps a policy rule inside `config` (amount/currency, calculation/percentage or
-// allowedCategories/blockedCategories); it never returns a `config.rule` string, so the console
-// summarises the fields the document really carries instead of leaving the column blank.
-function policyRuleLabel(config) {
-  if (!config || typeof config !== "object") return "";
-  if (Array.isArray(config.allowedCategories) || Array.isArray(config.blockedCategories)) {
-    return `${(config.allowedCategories || []).length} danh mục được phép · ${(config.blockedCategories || []).length} danh mục bị chặn`;
-  }
-  if (config.calculation === "PERCENTAGE" && Number.isFinite(Number(config.percentage))) return `${config.percentage}%`;
-  if (Number.isFinite(Number(config.amount))) return money(Number(config.amount));
-  return "";
-}
-
 // `effectiveTo` is stored by the backend but is absent from every read DTO today, so screens must
 // tell "open-ended" apart from "the API did not return it" instead of always printing 1 giá trị.
 const hasEffectiveTo = (d) => Boolean(d) && Object.prototype.hasOwnProperty.call(d, "effectiveTo");
 
-export function policyFromDto(d) {
-  const config = d?.config || {};
-  return {
-    id: d?._id,
-    facilityId: d?.facilityId,
-    service: d?.serviceType || "",
-    type: d?.type,
-    name: BOM_POLICY_LABELS[d?.type] || d?.type || "Chính sách",
-    description: config.description || "",
-    rule: typeof config.rule === "string" && config.rule ? config.rule : policyRuleLabel(config),
-    effectiveFrom: fromInstant(d?.effectiveFrom),
-    effectiveTo: fromInstant(d?.effectiveTo),
-    hasEffectiveTo: hasEffectiveTo(d),
-    status: d?.isActive ? "ACTIVE" : "INACTIVE",
-    revision: d?.version,
-    config,
-  };
-}
-
-/* --------------------------- Policy create form -------------------------- */
-// Implemented in ./bomPolicyForm.js (dependency-free) and re-exported at the top of this module.
-
-/* --------------------- Discounts / waivers (Policy) -------------------- */
-export const BOM_DISCOUNT_TYPES = ["DISCOUNT", "WAIVER"];
-export const BOM_DISCOUNT_KINDS = ["PROMOTIONAL", "LOYALTY", "FEE_WAIVER"];
-export function discountFromDto(d) {
-  const config = d?.config || {};
-  const kind = config.kind || (d?.type === "WAIVER" ? "FEE_WAIVER" : "PROMOTIONAL");
-  return {
-    id: d?._id,
-    facilityId: d?.facilityId,
-    service: d?.serviceType || "",
-    policyType: d?.type,
-    kind,
-    name: config.name || (kind === "FEE_WAIVER" ? "Fee waiver" : "Discount"),
-    valueType: config.valueType || "UNDEFINED",
-    value: config.value ?? "",
-    conditions: config.conditions || "",
-    effectiveFrom: fromInstant(d?.effectiveFrom),
-    effectiveTo: fromInstant(d?.effectiveTo),
-    hasEffectiveTo: hasEffectiveTo(d),
-    status: d?.isActive ? "ACTIVE" : "INACTIVE",
-    revision: d?.version,
-    config,
-  };
-}
-export function discountValueLabel(row) {
-  if (row.valueType === "UNDEFINED") return "Chưa xác định";
-  if (row.valueType === "PERCENTAGE") return `${row.value}%`;
-  return money(row.value);
-}
+// Business policies (DEPOSIT/CANCELLATION/REFUND/OVERDUE/DISCOUNT/WAIVER/SHELF_CONSTRAINT) and
+// discounts have no console screen and no business engine, so no mapper is kept for them.
+// Only the CATEGORY policy is still surfaced (see categoryFromDto below).
 
 /* --------------------- Item categories (Policy CATEGORY) ---------------- */
 // The backend CATEGORY policy stores only { allowedCategories[], blockedCategories[] } and

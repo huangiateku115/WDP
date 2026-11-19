@@ -137,14 +137,14 @@ test('Managed reservations expose no unsupported console actions',()=>{
   assert.doesNotMatch(roles,/canMockPayReservations/);
 });
 
-test('Policy and discount write mappers stay deleted while read mappers remain',()=>{
+test('Policy and discount mappers stay deleted while the category read mapper remains',()=>{
   const mappers=read('../src/lib/bomMappers.js');
-  // A policy is created once and only then closed: its config is never rewritten through a
-  // partial update mapper, and discounts/categories have no write mapper at all.
-  for(const dead of ['policyUpdateBody','discountBody','discountUpdateBody','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','BOM_DISCOUNT_VALUE_TYPES','contractFromDto']){
+  // Business policies and discounts were removed from the console: no engine reads them, so
+  // every policy/discount mapper (and the policy create form) is gone for good.
+  for(const dead of ['policyUpdateBody','policyBody','policyBlank','policyCloseBody','policyFromDto','policyRuleLabel','BOM_POLICY_TYPES','BOM_POLICY_LABELS','discountBody','discountUpdateBody','discountFromDto','discountValueLabel','BOM_DISCOUNT_TYPES','BOM_DISCOUNT_KINDS','BOM_DISCOUNT_KIND_LABELS','BOM_DISCOUNT_VALUE_TYPES','categoryBody','categoryUpdateBody','splitCategoryInput','BOM_CATEGORY_TYPES','contractFromDto']){
     assert.doesNotMatch(mappers,new RegExp(`${dead}\\b`));
   }
-  for(const alive of ['policyFromDto','discountFromDto','discountValueLabel','categoryFromDto','pricingBody','pricingUpdateBody','policyBody']){
+  for(const alive of ['categoryFromDto','pricingBody','pricingUpdateBody']){
     assert.match(mappers,new RegExp(`${alive}\\b`));
   }
   const reportSources=read('../src/lib/reportSources.js');
@@ -500,10 +500,9 @@ test('BOM/Admin screens only render fields the API actually returns',()=>{
   assert.doesNotMatch(reservation,/reservation\.allocatedCapacity/,'allocatedCapacity is not part of the reservation DTO');
   assert.doesNotMatch(reservation,/reservation\.expiresAt/,'expiresAt is not part of the reservation DTO');
 
-  // Policies keep their rule in `config`; the old `config.rule` string never existed.
+  // The old policy `config.rule` presentation was removed with the business-policy screen.
   const mappers=read('../src/lib/bomMappers.js');
-  assert.match(mappers,/function policyRuleLabel\(config\)/);
-  assert.match(mappers,/rule: typeof config\.rule === "string" && config\.rule \? config\.rule : policyRuleLabel\(config\)/);
+  assert.doesNotMatch(mappers,/policyRuleLabel/);
   assert.match(mappers,/const hasEffectiveTo = \(d\) =>/);
   assert.match(mappers,/hasEffectiveTo: hasEffectiveTo\(d\)/);
 

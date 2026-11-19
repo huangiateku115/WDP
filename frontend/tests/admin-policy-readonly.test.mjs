@@ -34,36 +34,32 @@ test('Pricing Rule create sends the PER_M3 basis required by Managed Inventory',
   assert.match(createBody,/if \(form\.service === "MANAGED_INVENTORY"\) body\.billingBasis = "PER_M3";/);
 });
 
-test('Admin and BOM Policy pages expose read-only routes and omit mutation controls',()=>{
+test('Admin and BOM keep only the read-only item-category policy screen',()=>{
   const adminRoutes=readFileSync(new URL('../src/routes/AdminRoutes.jsx',import.meta.url),'utf8');
   const bomRoutes=readFileSync(new URL('../src/routes/BomRoutes.jsx',import.meta.url),'utf8');
   for(const routes of [adminRoutes,bomRoutes]){
-    assert.match(routes,/path="policies"/);
-    assert.match(routes,/path="policies\/:id"/);
-    assert.match(routes,/path="policies\/discounts"/);
-    assert.match(routes,/path="policies\/item-categories"/);
-    // The create route exists, but RecordPage refuses to render it until the backend accepts
-    // POST /policies (lib/bomCapabilities.policyWrite). Config is never editable.
-    assert.match(routes,/path="policies\/new"/);
-    assert.doesNotMatch(routes,/path="policies\/(discounts|item-categories)\/new"/);
-    assert.doesNotMatch(routes,/path="policies(?:\/discounts|\/item-categories)?\/:id\/edit"/);
     assert.match(routes,/path="pricing\/new"/);
     assert.match(routes,/path="pricing\/:id\/edit"/);
+    assert.match(routes,/path="policies\/item-categories"/);
+    assert.match(routes,/path="policies\/item-categories\/:id"/);
+    // Business policies and discounts left the console: no engine reads their config.
+    assert.doesNotMatch(routes,/path="policies"/);
+    assert.doesNotMatch(routes,/path="policies\/new"/);
+    assert.doesNotMatch(routes,/path="policies\/:id"/);
+    assert.doesNotMatch(routes,/path="policies\/discounts/);
+    assert.doesNotMatch(routes,/path="policies\/item-categories\/:id\/edit"/);
   }
   const generic=readFileSync(new URL('../src/pages/bom/RecordPage.jsx',import.meta.url),'utf8');
   const policyPages=readFileSync(new URL('../src/pages/bom/PolicyRecordsPage.jsx',import.meta.url),'utf8');
   assert.match(generic,/Quy tắc giá đã lên lịch/);
   assert.match(generic,/new Date\(record\.effectiveFrom\) > new Date\(\)/);
   assert.match(generic,/Bắt đầu áp dụng từ \{record\.effectiveFrom\}/);
-  // Writes stay behind the capability flag: editing is refused for good (config is immutable)
-  // and the create form renders only when lib/bomCapabilities.policyWrite is on.
-  assert.match(generic,/kind === "policy" && mode === "edit"/);
-  assert.match(generic,/mode === "new" && !bomCapability\("policyWrite"\)/);
-  assert.match(generic,/bomCapability\("policyWrite"\)/);
-  assert.match(generic,/kind === "pricing" \? <Button/);
+  // RecordPage is the pricing console only: no policy branch and no inert write control remains.
+  assert.doesNotMatch(generic,/kind === "policy"/);
+  assert.doesNotMatch(generic,/bomCapability|policyWrite|POLICY_WRITE_REASON|PendingAction/);
   // An effective rule cannot be toggled: the status button is only rendered for future rules.
-  assert.match(generic,/kind === "pricing" && !effectiveRule/);
-  assert.match(generic,/const effectiveRule = kind === "pricing" && isEffectiveRecord\(record\)/);
-  assert.doesNotMatch(policyPages,/bomPolicyApi\.(create|update|setActive)/);
-  assert.doesNotMatch(policyPages,/>\s*(Create|Edit|Activate|Deactivate)/);
+  assert.match(generic,/const effectiveRule = isEffectiveRecord\(record\)/);
+  assert.match(generic,/!effectiveRule && <div className="mt-5">/);
+  assert.doesNotMatch(policyPages,/bomPolicyApi\.(create|update|setActive|close)/);
+  assert.doesNotMatch(policyPages,/discountFromDto|discountValueLabel|BOM_DISCOUNT|valueType/);
 });

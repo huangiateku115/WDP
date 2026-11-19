@@ -15,7 +15,7 @@ for (const [workspace, file, prefix] of [
 ]) {
   test(`${workspace} sidebar highlights exactly one section per route`, () => {
     const paths = navPathsOf(read(file), prefix);
-    assert.ok(paths.length >= 19, `${workspace} sidebar entries parsed (${paths.length})`);
+    assert.ok(paths.length >= 17, `${workspace} sidebar entries parsed (${paths.length})`);
     for (const to of paths) {
       // The item must stay active on its own child/detail routes, and no sibling may also match.
       for (const pathname of [to, `${to}/000000000000000000000000`, `${to}/new`]) {
@@ -24,21 +24,15 @@ for (const [workspace, file, prefix] of [
     }
   });
 
-  test(`${workspace} policy sub-pages never highlight the parent as well`, () => {
+  test(`${workspace} keeps only the item-category policy screen`, () => {
     const paths = navPathsOf(read(file), prefix);
-    const parent = paths.find((path) => path.endsWith("/policies"));
-    const discounts = paths.find((path) => path.endsWith("/policies/discounts"));
     const categories = paths.find((path) => path.endsWith("/policies/item-categories"));
-    assert.ok(parent && discounts && categories, `${workspace} exposes the policy family`);
-    for (const [pathname, expected] of [
-      [parent, parent],
-      [`${parent}/68a`, parent],
-      [discounts, discounts],
-      [`${discounts}/68a`, discounts],
-      [categories, categories],
-      [`${categories}/68a`, categories],
-    ]) {
-      assert.equal(activeSection(pathname, paths), expected);
+    assert.ok(categories, `${workspace} exposes the item-category policy screen`);
+    // Business policies and discounts were removed from the console: no engine reads them.
+    assert.equal(paths.some((path) => path.endsWith("/policies")), false, `${workspace} hides business policies`);
+    assert.equal(paths.some((path) => path.endsWith("/policies/discounts")), false, `${workspace} hides discounts`);
+    for (const pathname of [categories, `${categories}/68a`]) {
+      assert.equal(activeSection(pathname, paths), categories);
     }
   });
 }
