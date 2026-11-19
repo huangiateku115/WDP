@@ -32,7 +32,7 @@ export default function InventoryRequestDetailScreen() {
     </Card>
     {!!saved && <RequestDraftNotice message={saved.sourceFingerprint === fingerprint ? 'Có bản nháp hủy trong phiên; trạng thái yêu cầu gốc giữ nguyên.' : 'Bản nháp hủy không còn khớp dữ liệu nguồn; không xác nhận lại.'}/>}{!!message && <RequestDraftNotice message={message}/>}
     <RequestConfirmation visible={!!modal} title="Xem trước hủy — chưa gửi lên hệ thống" onCancel={() => setModal(null)} onConfirm={cancel}>
-      <AppText>{context.item.name} · {request.reference}</AppText><AppText>{quantityText(request.quantity, request.unit)} · phiên bản mẫu {request.version}</AppText><AppText>Lưu bản nháp hủy không giải phóng số giữ hoặc xác nhận hủy của Backend.</AppText>
+      <AppText>{context.item.name} · {request.reference}</AppText><AppText>{quantityText(request.quantity, request.unit)}</AppText><AppText>Bản nháp không thay đổi yêu cầu hiện tại hoặc số lượng hàng đang được giữ.</AppText>
     </RequestConfirmation>
   </>}<Button label="Trở về màn hình trước" variant="quiet" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/inventory')}/></Screen>;
 }

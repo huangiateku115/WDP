@@ -18,12 +18,12 @@ type Props={
 };
 type Kind=ReturnType<typeof managedCellState>['kind'];
 const statuses:Record<Kind,{label:string;background:string;ink:string}>={
-  AVAILABLE:{label:'Khả dụng',background:colors.mint,ink:colors.deep},
-  RESERVED:{label:'Đã giữ chỗ',background:colors.orangeTint,ink:colors.orangeText},
+  AVAILABLE:{label:'Còn chỗ',background:colors.mint,ink:colors.deep},
+  RESERVED:{label:'Đã được đặt',background:colors.orangeTint,ink:colors.orangeText},
   OCCUPIED:{label:'Đang sử dụng',background:colors.dangerTint,ink:colors.danger},
   MAINTENANCE:{label:'Bảo trì',background:'#fff8d6',ink:'#735600'},
-  BLOCKED:{label:'Đã khóa',background:'#e8ebf3',ink:'#364563'},
-  UNKNOWN:{label:'Chưa xác minh',background:colors.soft,ink:colors.muted},
+  BLOCKED:{label:'Tạm thời chưa thể đặt ô này',background:'#e8ebf3',ink:'#364563'},
+  UNKNOWN:{label:'Chưa có thông tin',background:colors.soft,ink:colors.muted},
 };
 const zoomSteps=[{width:76,label:'80%'},{width:96,label:'100%'},{width:120,label:'125%'},{width:144,label:'150%'}];
 
@@ -48,7 +48,7 @@ export function WarehouseRack2D({levels,layout,levelIndex,hasPeriod,rackAvailabl
       <AppText variant="caption" style={{color:tone.ink,textAlign:'center'}}>{tone.label}</AppText>
       {selected&&<AppText variant="caption" style={styles.picked}>✓ Đã chọn</AppText>}
       {inspected&&<AppText variant="caption" style={styles.picked}>Đang xem</AppText>}
-      {(cell.maxVolumeM3!=null||cell.maxWeightKg!==undefined||cell.physicalUsageKnown===true)&&<View style={styles.tileMetrics}>
+      {cell.capacityDisclosure!=='REDACTED'&&(cell.maxVolumeM3!=null||cell.maxWeightKg!==undefined||cell.physicalUsageKnown===true)&&<View style={styles.tileMetrics}>
         {cell.maxVolumeM3!=null&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>Tối đa {cell.maxVolumeM3} m³</AppText>}
         {cell.maxWeightKg!==undefined&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>{cell.maxWeightKg} kg</AppText>}
         {cell.physicalUsageKnown===true&&(cell.usedVolumeM3!==undefined||cell.usedWeightKg!==undefined)&&<AppText variant="caption" numberOfLines={1} style={{color:tone.ink}}>

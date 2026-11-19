@@ -1,4 +1,4 @@
-import {mapV3Movements,mapV3Stock} from './contracts/managedV3Ledger';
+import {mapV3CustomerStock,mapV3Movements} from './contracts/managedV3Ledger';
 import {z} from 'zod';
 import axios from 'axios';
 import {Platform} from 'react-native';
@@ -13,6 +13,7 @@ import {mapMarkOneRead, mapNotifications} from './contracts/communications';
 import {rentalEndDate,termKey} from '../domain/liveBooking';
 import {isTodayOrFutureVietnamDate} from '../domain/vietnamDate';
 import {accountUpdate,profileUpdate} from './contracts/profile';
+import {managedHandoverVerified} from '../domain/managedV3RentalProgress';
 
 const liveUnitDto=unitDto.extend({status:z.unknown()});
 const id = (value: string) => objectId.parse(value);
@@ -123,6 +124,12 @@ export const mobileRepo = {
     if(!r)throw new MobileInputError('Không tìm thấy đơn thuê này trong tài khoản của bạn.');
     return r;
   },
+  async managedRental(reservationId:string,owner:string,signal?:AbortSignal) {
+    const target=id(reservationId);
+    const r=mapReservation(await wire('GET','/reservations/managed/'+target,{signal}),owner);
+    if(r._id!==target||r.serviceType!=='MANAGED_INVENTORY')throw new MobileInputError('Không thể xác định đơn thuê liên quan.');
+    return r;
+  },
   async contract(r:ReservationDto,owner:string,signal?:AbortSignal) {
     try {
       const c=mapContract(await wire('GET','/contracts/reservation/'+id(r._id),{signal}),owner,r.serviceType).contract;
@@ -215,10 +222,29 @@ export const mobileRepo = {
     if(result.purpose!==purpose) throw new MobileInputError('Loại giao dịch không khớp.');
     return result;
   },
-  async inventory(owner:string,page=1,signal?:AbortSignal) {
-    const result=readPage(itemDto,await wire('GET','/inventory-items/me',{params:{page,limit:20},signal}));
+  async inventory(owner:string,page=1,signal?:AbortSignal,limit=20) {
+    const result=readPage(itemDto,await wire('GET','/inventory-items/me',{params:{page,limit},signal}));
+    if(result.pagination.page!==page||result.pagination.limit!==limit)throw new MobileInputError('Trang danh mục hàng hóa không khớp.');
     result.items.forEach(item=>assertOwner(item,owner));
     return result;
+  },
+  async inventoryForReservation(owner:string,reservationId:string,signal?:AbortSignal,expectedFacilityId?:string) {
+    const target=id(reservationId),r=await mobileRepo.managedRental(target,owner,signal);
+    if(r.serviceType!=='MANAGED_INVENTORY'||r.bookingFlowVersion!==3||!managedHandoverVerified(r))
+      throw new MobileInputError('Chỉ xem danh mục của đơn Managed V3 đã được cơ sở bàn giao.');
+    const reservationFacilityId=refId(r.facilityId);
+    if(expectedFacilityId&&id(expectedFacilityId)!==reservationFacilityId)
+      throw new MobileInputError('Cơ sở không khớp với đơn thuê đang xem.');
+    const first=await mobileRepo.inventory(owner,1,signal,100);
+    const pages=first.pagination.totalPages>1?await Promise.all(Array.from({length:first.pagination.totalPages-1},(_,index)=>
+      mobileRepo.inventory(owner,index+2,signal,100))):[];
+    const all=[first,...pages];
+    if(all.some((page,index)=>page.pagination.page!==index+1||page.pagination.total!==first.pagination.total||
+      page.pagination.totalPages!==first.pagination.totalPages))throw new MobileInputError('Chưa xác minh được toàn bộ danh mục hàng hóa.');
+    const items=all.flatMap(page=>page.items).filter(item=>refId(item.managedReservationId)===target);
+    if(items.some(item=>refId(item.facilityId)!==reservationFacilityId))
+      throw new MobileInputError('Mặt hàng không thuộc cơ sở của đơn thuê này.');
+    return {reservation:r,items,pagination:{page:1,limit:100,total:items.length,totalPages:1}};
   },
   async item(itemId:string,owner:string,signal?:AbortSignal) {
     const item=mapItem(await wire('GET','/inventory-items/'+id(itemId),{signal}),owner);
@@ -247,7 +273,7 @@ export const mobileRepo = {
   async inventoryStock(item:ReturnType<typeof mapItem>,owner:string,signal?:AbortSignal) {
     if(await mobileRepo.inventoryLedgerVersion(item,owner,signal)==='V3'){
       if(item.inventorySchemaVersion!==3)throw new MobileInputError('SKU không khớp schema kho V3.');
-      return {kind:'V3' as const,stock:mapV3Stock(await wire('GET','/inventory-items/'+id(item._id)+'/v3/stock',{signal}),item,owner)};
+      return {kind:'V3' as const,stock:mapV3CustomerStock(await wire('GET','/inventory-items/'+id(item._id)+'/v3/stock',{signal}),item,owner)};
     }
     if(item.inventorySchemaVersion===3)throw new MobileInputError('SKU V3 không thể dùng sổ tồn kho legacy.');
     return {kind:'LEGACY' as const,stock:await mobileRepo.stock(item,owner,signal)};

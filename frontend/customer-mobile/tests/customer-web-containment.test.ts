@@ -14,7 +14,7 @@ function compile(file:string,mocks:Record<string,unknown>){
 const pass=({children}:any)=>children;
 const UI=Object.fromEntries(['Button','Card','CardContent','Details','Message','BackendScreen','LoadState','Link','Steps','Checkbox'].map(x=>[x,pass]));
 function all(tree:any,predicate:(node:any)=>boolean):any[]{if(!tree||typeof tree!=='object')return [];const own=predicate(tree)?[tree]:[];return own.concat([tree.props?.children].flat(Infinity).flatMap(x=>all(x,predicate)));}
-function hooks(){const values:any[]=[],refs:any[]=[];let cursor=0;return {values,render<T>(run:()=>T){cursor=0;return run();},api:{useState:(initial:any)=>{const i=cursor++;if(!(i in values))values[i]=initial;return [values[i],(v:any)=>values[i]=typeof v==='function'?v(values[i]):v];},useRef:(initial:any)=>{const i=cursor++;return refs[i]??={current:initial};},useEffect:()=>{}}};}
+function hooks(){const values:any[]=[],refs:any[]=[];let cursor=0;return {values,render<T>(run:()=>T){cursor=0;return run();},api:{useState:(initial:any)=>{const i=cursor++;if(!(i in values))values[i]=initial;return [values[i],(v:any)=>values[i]=typeof v==='function'?v(values[i]):v];},useRef:(initial:any)=>{const i=cursor++;return refs[i]??={current:initial};},useMemo:(factory:()=>unknown)=>{cursor++;return factory();},useEffect:()=>{}}};}
 const uid='a'.repeat(24),rid='b'.repeat(24),iid='c'.repeat(24),fid='d'.repeat(24);
 const policy=compile('components/customer/inventory/customerInventoryPolicy.js',{});
 const registration=compile('lib/inventoryRegistration.js',{});
@@ -39,10 +39,10 @@ test.each(['CUSTOMER','FACILITY_STAFF','FACILITY_MANAGER'])('Managed contract si
   }else expect(sign.props.disabled).toBe(false);
 });
 
-test('Inventory409 refreshes both contexts without resetting the Customer form or retrying create',async()=>{
- const h=hooks(),retry=jest.fn(),contextRetry=jest.fn();let reads=0;
+test('Inventory409 refreshes the rental resource without resetting the Customer form or retrying create',async()=>{
+ const h=hooks(),retry=jest.fn();
  const rental={_id:rid,facilityId:fid,serviceType:'MANAGED_INVENTORY',status:'ACTIVE',bookingFlowVersion:3,startDate:'2020-01-01T00:00:00Z',endDate:'2099-01-01T00:00:00Z',allocatedCapacity:1,_facility:{name:'Facility'}};
- const payload={managedReservationId:rid,itemCode:'TEST',name:'Customer input',category:'box',quantity:1,quantityUnit:'box',unitWeightKg:1,widthM:1,depthM:1,heightM:1,description:'keep me',images:'',preferredCellId:''};
+ const payload={reservationId:rid,itemCode:'TEST',name:'Customer input',categoryId:iid,originalCategoryId:'',description:'keep me',images:''};
  const create=jest.fn(async()=>{throw {response:{status:409,data:{message:'Closure pending'}}};});
  const Component=compile('components/customer/inventory/InventoryItemForm.jsx',{
    react:h.api,'react-router-dom':{useNavigate:()=>jest.fn(),useSearchParams:()=>[new URLSearchParams()]},
@@ -50,12 +50,12 @@ test('Inventory409 refreshes both contexts without resetting the Customer form o
    './managedInventoryContext':{...policy,managedInventoryReservation:async()=>rental,verifiedPreferredCells:async()=>[]},
    '@/lib/authSession':{getAccessToken:()=> 'fixture'},'@/lib/inventoryRegistration':registration,
    './InventoryBackendUI':{inventoryApi:{create},inventoryRentals:async()=>[rental],inventoryRegistrationRentals:async()=>[rental],
-     useInventoryBackend:()=>{const i=reads++%3;return i===0?{data:[rental],retry}:i===1?{data:rental,loading:false,retry:contextRetry}:{data:[],retry:jest.fn()};}},
+     useInventoryBackend:()=>({data:[rental],loading:false,retry})},
    '@/components/common/CustomerScreen':{Field:pass},'@/components/ui/card':UI,'@/components/ui/button':UI,'../InventoryFormUI':UI,
  }).default;
- const render=()=>h.render(()=>{reads=0;return Component({});});render();
+ const render=()=>h.render(()=>Component({}));render();
  // Form state is the final useState before resource hooks (four booleans plus error then form).
- const index=h.values.findIndex(v=>v&&typeof v==='object'&&Object.hasOwn(v,'managedReservationId'));expect(index).toBeGreaterThan(-1);h.values[index]=payload;
+ const index=h.values.findIndex(v=>v&&typeof v==='object'&&Object.hasOwn(v,'reservationId')&&Object.hasOwn(v,'itemCode'));expect(index).toBeGreaterThan(-1);h.values[index]=payload;
  const form=all(render(),n=>n.type==='form')[0];await form.props.onSubmit({preventDefault(){}});
- expect(create).toHaveBeenCalledTimes(1);expect(retry).toHaveBeenCalled();expect(contextRetry).toHaveBeenCalled();expect(h.values[index]).toEqual(payload);
+ expect(create).toHaveBeenCalledTimes(1);expect(retry).toHaveBeenCalledTimes(1);expect(h.values[index]).toEqual(payload);
 });

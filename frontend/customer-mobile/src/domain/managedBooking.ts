@@ -89,7 +89,7 @@ export function cellEligibility(f: ManagedFacility, z: ManagedZone, r: ManagedRa
   const usage = c.physicalUsage;
   if (!usage || ![usage.volumeM3, usage.weightKg].every(n => Number.isFinite(n) && n >= 0)) return result('UNKNOWN', 'Chưa xác nhận dữ liệu sử dụng vật lý; không coi là bằng không.');
   if (usage.volumeM3 !== 0 || usage.weightKg !== 0) return result('UNKNOWN', 'Dữ liệu sử dụng vật lý xung đột với trạng thái trống.');
-  return result('AVAILABLE', 'Đủ điều kiện theo fixture của kỳ thuê đã chọn.', true);
+  return result('AVAILABLE', 'Đủ điều kiện theo dữ liệu minh họa của kỳ thuê đã chọn.', true);
 }
 export function illustrativeMonthlyPrice(capacity: number | null, rate: number | null | undefined) {
   if (capacity === null || !positive(capacity) || typeof rate !== 'number' || !Number.isSafeInteger(rate) || rate <= 0) return null;

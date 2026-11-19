@@ -5,14 +5,15 @@ import {z} from 'zod';
 import {apiBase} from '../api/client';
 import {objectId} from '../api/contracts/core';
 import {managedCreateBody,selfBody,utc} from '../api/contracts/booking';
-const visitBody=z.object({reservationId:objectId,purpose:z.enum(['INBOUND','OUTBOUND','RELOCATION','INSPECTION']),
-  startsAt:z.string().datetime({offset:true}),endsAt:z.string().datetime({offset:true}),note:z.string().max(500).optional()}).strict();
+const visitBody=z.union([z.object({facilityId:objectId,startsAt:z.string().datetime({offset:true}),endsAt:z.string().datetime({offset:true}),note:z.string().max(500).optional()}).strict(),
+  z.object({reservationId:objectId,purpose:z.enum(['INBOUND','OUTBOUND','RELOCATION','INSPECTION']),startsAt:z.string().datetime({offset:true}),endsAt:z.string().datetime({offset:true}),note:z.string().max(500).optional()}).strict()]);
+const visitAmendBody=z.object({startsAt:z.string().datetime({offset:true}),endsAt:z.string().datetime({offset:true}),note:z.string().max(500).optional()}).strict();
 
-const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$/i),resourceId:objectId.optional(),visitRevision:z.number().int().nonnegative().optional(),inboundBody:z.record(z.string(),z.unknown()).optional(),bookingBody:selfBody.optional(),visitBody:visitBody.optional(),priceReview:z.object({quotedAmount:z.number().finite().nonnegative(),authoritativeAmount:z.number().finite().nonnegative(),accepted:z.boolean()}).optional(),managedBooking: z.object({body:managedCreateBody,endDate:utc,quotedAmount:z.number().finite().nonnegative().optional()}).optional()});
+const attemptSchema = z.object({key:z.string().regex(/^wdp-mobile-[a-f0-9-]{36}$/i),resourceId:objectId.optional(),visitRevision:z.number().int().nonnegative().optional(),inboundBody:z.record(z.string(),z.unknown()).optional(),inboundCommitted:z.boolean().optional(),bookingBody:selfBody.optional(),visitBody:visitBody.optional(),visitAmendBody:visitAmendBody.optional(),priceReview:z.object({quotedAmount:z.number().finite().nonnegative(),authoritativeAmount:z.number().finite().nonnegative(),accepted:z.boolean()}).optional(),managedBooking: z.object({body:managedCreateBody,endDate:utc,quotedAmount:z.number().finite().nonnegative().optional()}).optional()});
 type Attempt=z.infer<typeof attemptSchema>;
 const claiming=new Set<string>();
 
-export async function journal(scope:'managed-v3-inbound'|'managed-v3-full-rent'|'managed-v3-booking'|'managed-v3-visit-create'|'managed-v3-visit-amend'|'managed-v3-price-consent'|'booking'|'deposit'|'balance'|'full-rent'|'renewal-request'|'renewal-payment',owner:string,identity:string) {
+export async function journal(scope:'managed-v3-inbound'|'managed-v3-outbound'|'managed-v3-relocation'|'managed-v3-full-rent'|'managed-v3-booking'|'managed-v3-visit-create'|'managed-v3-visit-amend'|'managed-v3-price-consent'|'booking'|'deposit'|'balance'|'full-rent'|'renewal-request'|'renewal-payment',owner:string,identity:string) {
   const hash=await digestStringAsync(CryptoDigestAlgorithm.SHA256,JSON.stringify([apiBase,objectId.parse(owner),scope,identity]));
   const key='wdp.mobile.attempt.'+hash;
   const store={

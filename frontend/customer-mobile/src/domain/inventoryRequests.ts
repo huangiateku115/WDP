@@ -52,7 +52,7 @@ export function requestEligibility(context: RequestContext, kind: RequestKind) {
     if (!stock.balance) return {eligible: false, reason: 'Chưa có dữ liệu tồn kho đã xác minh; không thể chuẩn bị yêu cầu xuất.'};
     if (stock.balance.available === 0) return {eligible: false, reason: 'Số lượng có thể xuất đã xác minh bằng 0; không thể yêu cầu số dương.'};
   }
-  return {eligible: true, reason: 'Chỉ đủ điều kiện thử giao diện theo dữ liệu mẫu; chưa xác minh Backend.'};
+  return {eligible: true, reason: 'Chỉ đủ điều kiện chuẩn bị bản nháp theo dữ liệu minh họa; chưa xác minh thực tế.'};
 }
 export function requestActionEligibility(context: RequestContext, request: InventoryRequest | undefined, intent: RequestIntent, kind: RequestKind) {
   const base = requestEligibility(context, kind);

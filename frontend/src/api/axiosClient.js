@@ -6,7 +6,7 @@ const axiosClient = axios.create({
   baseURL: apiBaseURL(
     import.meta.env.VITE_API_BASE_URL || "https://wdp-m4ns.onrender.com/api/v1",
   ),
-  timeout: 15000,
+  timeout: 150000,
   headers: { "Content-Type": "application/json" },
 });
 

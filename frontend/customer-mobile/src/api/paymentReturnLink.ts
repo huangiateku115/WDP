@@ -2,7 +2,8 @@ const objectIdPattern=/^[a-f\d]{24}$/i;
 
 export function nativePaymentReturnPath(reservationId:unknown,paymentId:unknown,serviceType:unknown,cancel=false){
   if(typeof reservationId!=='string'||!objectIdPattern.test(reservationId)||
-     typeof paymentId!=='string'||!objectIdPattern.test(paymentId)||serviceType!=='SELF_STORAGE')return null;
+     typeof paymentId!=='string'||!objectIdPattern.test(paymentId)||
+     (serviceType!=='SELF_STORAGE'&&serviceType!=='MANAGED_INVENTORY'))return null;
   const params=new URLSearchParams({reservationId,paymentId,serviceType});
   if(cancel)params.set('cancel','true');
   return `/payments/return?${params.toString()}` as const;

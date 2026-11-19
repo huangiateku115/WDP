@@ -60,13 +60,13 @@ function RequestEditor({context, kind, request, requestId, fingerprint, rows, ba
   return <RequestWorkspace testID={'screen-' + kind.toLowerCase() + '-requests'} back={back} rows={rows} onOpen={open} footer={<Button label={intent === 'AMEND' ? 'Xem trước điều chỉnh yêu cầu' : kind === 'INBOUND' ? 'Xem trước yêu cầu nhập thêm' : 'Xem trước yêu cầu xuất kho'} disabled={!isValid || isSubmitting || !!duplicate} loading={isSubmitting} onPress={handleSubmit(values => {setMessage(''); setPending({values, fingerprint, version: request?.version});})}/>} header={<>
     <RequestItemContext context={context} kind={kind}/>
     <Card><AppText variant="card">{intent === 'AMEND' ? 'Bản nháp điều chỉnh ' + request?.reference : kind === 'INBOUND' ? 'Chuẩn bị đợt nhập thêm' : 'Chuẩn bị xuất một phần hoặc toàn bộ'}</AppText>
-      {request && <AppText>Phiên bản mẫu hiện tại: {request.version}. Cần kiểm tra lại trước khi lưu; không có thao tác cập nhật Backend.</AppText>}
+      {request && <AppText>Thông tin yêu cầu đã thay đổi. Vui lòng kiểm tra lại trước khi lưu.</AppText>}
       {saved && <AppText variant="caption" style={ui.muted}>Đã khôi phục bản nháp tương thích trong bộ nhớ phiên.</AppText>}
       {field('quantity', kind === 'INBOUND' ? 'Số lượng nhập thêm' : 'Số lượng yêu cầu xuất')}
       <AppText>Đơn vị cố định: {context.item.unit}</AppText>
       {kind === 'OUTBOUND' && <AppText variant="caption" style={ui.muted}>Tối đa {quantityText(stock?.available ?? null, context.item.unit)} theo số dư mẫu đã kiểm tra; không theo số lượng đăng ký.</AppText>}
       {kind === 'INBOUND' && <>{field('widthM', 'Chiều rộng đơn vị nhập (m)')}{field('depthM', 'Chiều sâu đơn vị nhập (m)')}{field('heightM', 'Chiều cao đơn vị nhập (m)')}{field('weightKg', 'Khối lượng đơn vị nhập (kg)')}<AppText variant="caption" style={ui.muted}>Số đo khai báo dương, tối đa 3 chữ số thập phân. Không phải phê duyệt dung tích hay vị trí đặt hàng.</AppText></>}
-      {field('note', 'Ghi chú minh họa (tùy chọn)')}<AppText variant="caption" style={ui.muted}>Ghi chú chỉ là dữ liệu thiết kế; chưa xác nhận trường gửi lên Backend.</AppText>
+      {field('note', 'Ghi chú (không bắt buộc)')}<AppText variant="caption" style={ui.muted}>Ghi chú này chỉ được lưu trong bản xem thử.</AppText>
     </Card>
     {duplicate && <AppText>Bản xem trước hiện tại đã được lưu trong phiên. Thay đổi nội dung để chuẩn bị bản nháp khác.</AppText>}
     {!!message && <RequestDraftNotice message={message}/>}

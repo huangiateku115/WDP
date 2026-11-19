@@ -65,7 +65,7 @@ export const managedPayment={
   async checkout(r:ReservationDto,owner:string,key:string){
     const path=managedPaymentPath(r,owner);
     if(!managedPaymentEligible(r))throw new MobileInputError('Đơn thuê chưa đủ điều kiện thanh toán.');
-    const response=await wire('POST',path+'payos',{key,body:{purpose:'FULL_RENT'}});
+    const response=await wire('POST',path+'payos',{key,body:{purpose:'FULL_RENT'},clientPlatform:'MOBILE'});
     z.object({outcome:z.enum(['CREATED','REPLAYED'])}).parse(response);
     return mapPayment(response,r._id);
   },

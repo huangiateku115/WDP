@@ -12,7 +12,7 @@ const mockReplace=jest.fn(),mockBack=jest.fn(),mockPush=jest.fn(),mockCreate=jes
 const mockSlot={startsAt:'2099-07-02T02:00:00.000Z',endsAt:'2099-07-02T03:00:00.000Z'};
 const mockReservation={_id:mockReservationId,customerId:mockOwner,facilityId:mockFacilityId,reservationCode:'MIR-TEST',serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:'2025-01-01T00:00:00.000Z',endDate:'2099-12-31T00:00:00.000Z'};
 const mockFacility={_id:mockFacilityId,name:'Kho kiểm thử'};
-const mockCreatedVisit={_id:mockVisitId,reservationId:mockReservationId,customerId:mockOwner,facilityId:mockFacilityId,purpose:'INBOUND',...mockSlot,note:'',revision:1,status:'SCHEDULED'};
+const mockCreatedVisit={_id:mockVisitId,reservationId:mockReservationId,customerId:mockOwner,facilityId:mockFacilityId,purpose:'WAREHOUSE_VISIT',...mockSlot,note:'',revision:1,status:'SCHEDULED'};
 let mockRows:typeof mockCreatedVisit[]=[];
 let mockAttempt:unknown=null;
 let mockResolveCreate:((value:typeof mockCreatedVisit)=>void)|undefined;
@@ -23,9 +23,9 @@ jest.mock('../src/state/useLiveSession',()=>{
   const hook=(selector:(value:ReturnType<typeof current>)=>unknown)=>selector(current());
   return {useLiveSession:Object.assign(hook,{getState:current})};
 });
-jest.mock('../src/components/liveUI',()=>({useResource:(key:string)=>({
+jest.mock('../src/components/liveUI',()=>({useScreenActive:()=>true,useResource:(key:string)=>({
   data:key===mockOwner+':'+mockReservationId?mockReservation:key===mockFacilityId?mockFacility:key.includes(':visit-create-attempt')?mockAttempt:
-    key.includes(':availability:')?{timeZone:'Asia/Ho_Chi_Minh',slotDurationMinutes:60,capacityBasis:'STAFF',staffAssignmentRequired:true,slots:[mockSlot]}:
+    key.includes(':availability:')?{timeZone:'Asia/Ho_Chi_Minh',slotDurationMinutes:60,capacityBasis:'STAFF',staffAssignmentRequired:true,reservationScopeAvailable:true,slots:[mockSlot]}:
     key.includes(':activity-visits:')?mockRows:key.includes(':activity-sessions:')?[]:null,
   loading:false,error:undefined,httpStatus:undefined,reload:jest.fn(),
 }),ResourceState:()=>null}));

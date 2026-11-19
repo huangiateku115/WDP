@@ -22,7 +22,7 @@ export function ContractSignatureStatus({signature, currentVersion}: {signature:
 }
 export function ContractProgressCard({document}: {document: ContractDocument}) {
   const progress = signatureProgress(document);
-  return <Card><AppText variant="card">Tiến độ hai bên · phiên bản {document.version}</AppText><AppText accessibilityRole={progress.state === 'INVALID' ? 'alert' : undefined}>{progress.reason}</AppText>{document.legacyReadOnly && <Chip label="Tài liệu lịch sử · chỉ xem" tone="neutral"/>}<AppText variant="caption" style={ui.muted}>Đối chiếu phiên bản và tham chiếu nội dung trong fixture, không phải kiểm tra chữ ký số hoặc chứng thư xác thực.</AppText></Card>;
+  return <Card><AppText variant="card">Tiến độ ký hợp đồng</AppText><AppText accessibilityRole={progress.state === 'INVALID' ? 'alert' : undefined}>{progress.reason}</AppText>{document.legacyReadOnly && <Chip label="Tài liệu lịch sử · chỉ xem" tone="neutral"/>}<AppText variant="caption" style={ui.muted}>Thông tin trong chế độ xem thử không thay thế chữ ký hoặc xác nhận của cơ sở.</AppText></Card>;
 }
 export function FinancialScenarioPicker({scenarios, selected, onSelect}: {scenarios: readonly RentalDocumentScenario[]; selected: string; onSelect: (id: string) => void}) {
   const [expanded, setExpanded] = useState(false);

@@ -22,13 +22,13 @@ beforeEach(()=>{jest.clearAllMocks();mockLaunchLibrary.mockResolvedValue({cancel
 
 it('previews the chosen image before upload and preserves SKU fields',async()=>{
   await render(<ManagedSkuEditor r={rental} onSaved={jest.fn()}/>);
-  await fireEvent.changeText(screen.getByLabelText('Mã SKU'),'BOX-01');
-  await fireEvent.changeText(screen.getByLabelText('Tên SKU'),'Thùng giấy');
+  await fireEvent.changeText(screen.getByLabelText('Mã hàng'),'BOX-01');
+  await fireEvent.changeText(screen.getByLabelText('Tên hàng hóa'),'Thùng giấy');
   await fireEvent.press(screen.getByRole('button',{name:'Chọn từ thư viện'}));
   await waitFor(()=>expect(screen.getByText('Xem trước ảnh')).toBeTruthy());
   expect(mockUpload).not.toHaveBeenCalled();
-  expect(screen.getByLabelText('Mã SKU').props.value).toBe('BOX-01');
-  expect(screen.getByLabelText('Tên SKU').props.value).toBe('Thùng giấy');
+  expect(screen.getByLabelText('Mã hàng').props.value).toBe('BOX-01');
+  expect(screen.getByLabelText('Tên hàng hóa').props.value).toBe('Thùng giấy');
   await fireEvent.press(screen.getByRole('button',{name:'Tải ảnh lên'}));
   await waitFor(()=>expect(mockUpload).toHaveBeenCalledWith('3'.repeat(24),asset));
   expect(await screen.findByText('Gỡ ảnh')).toBeTruthy();
@@ -43,5 +43,5 @@ it('keeps the preview and shows a clear error if the upload is rejected',async()
   await fireEvent.press(screen.getByRole('button',{name:'Tải ảnh lên'}));
   expect(await screen.findByText('Không kết nối được máy chủ.')).toBeTruthy();
   expect(screen.getByText('Xem trước ảnh')).toBeTruthy();
-  expect(screen.getByRole('button',{name:'Lưu SKU'}).props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByRole('button',{name:'Lưu hàng hóa'}).props.accessibilityState.disabled).toBe(true);
 });

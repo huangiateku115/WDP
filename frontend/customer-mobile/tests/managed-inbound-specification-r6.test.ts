@@ -47,11 +47,18 @@ it('uses dedicated create/edit routes and replaces the inline inbound form with 
   expect(inbound).not.toContain('<ManagedInboundPreviewCard');
 });
 
-it('keeps inbound operation guards and renders resolved Cell labels instead of raw ObjectIds',()=>{
+it('keeps inbound operation guards, renders resolved Cell labels and removes internal API notes from customer UI',()=>{
   const inbound=fs.readFileSync(path.resolve(__dirname,'../src/components/ManagedInboundPreviewCard.tsx'),'utf8');
   const api=fs.readFileSync(path.resolve(__dirname,'../src/api/managedInboundPreview.ts'),'utf8');
-  expect(inbound).toContain('Cell không xác định');
-  expect(inbound).toContain('HTTP 410 (STOCK_WORKFLOW_NOT_AVAILABLE)');
+  expect(inbound).toContain('Cell đã chọn');
+  expect(inbound).not.toContain('HTTP 410 (STOCK_WORKFLOW_NOT_AVAILABLE)');
+  expect(inbound).toContain('COMMITTED_AND_READBACK_VERIFIED');
+  expect(inbound).toContain('COMMITTED_READBACK_PENDING');
+  expect(inbound).toContain('autoRecoveryAttempt.current===saved.key');
+  expect(inbound).toContain('void reconcile(true)');
+  expect(inbound).toContain('if(!retry){');
+  expect(inbound).toContain('Phiếu nhập đang được kiểm tra. Vui lòng không gửi lại để tránh trùng hàng.');
+  expect(inbound).not.toContain('khóa idempotency để khôi phục an toàn');
   expect(api).toContain("await wire('POST',path+'inbound/preview'");
   expect(api).toContain("await wire('POST',path+'inbound',{body,key})");
 });

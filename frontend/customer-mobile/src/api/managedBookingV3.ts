@@ -7,6 +7,7 @@ import type {ManagedQuote,ManagedRange} from './managedInventory';
 
 export type ManagedCreateBody=z.infer<typeof managedCreateBody>;
 type V3Quote=Extract<ManagedQuote,{bookingFlowVersion:3}>;
+export function managedBookingProfileEligible(profile:{verificationStatus:string}|null|undefined){return profile?.verificationStatus==='VERIFIED';}
 const policyDto=z.object({
   versionId:z.string().min(1).max(120),version:z.string().min(1),status:z.literal('PUBLISHED'),
   services:z.array(z.string()).refine(values=>values.includes('MANAGED_INVENTORY')),

@@ -2,7 +2,7 @@ import {eligibleInboundCells,buildUnifiedInboundRequest,managedInboundPreview} f
 import {managedReservationReads,mapManagedAccessRows} from '../src/api/managedReservationReads';
 import {managedSkuEligible,saveManagedSku} from '../src/api/managedSkuV3';
 import {apiClient,configureApiSession} from '../src/api/client';
-import {createManagedBooking,managedBookingPolicy,managedCreationPriceReview,managedPriceNeedsAcceptance,sameManagedQuote} from '../src/api/managedBookingV3';
+import {createManagedBooking,managedBookingPolicy,managedBookingProfileEligible,managedCreationPriceReview,managedPriceNeedsAcceptance,sameManagedQuote} from '../src/api/managedBookingV3';
 import {managedCheckoutAction,managedPayment,managedPaymentApplied} from '../src/api/managedPaymentV3';
 import {mapManagedQuote} from '../src/api/contracts/booking';
 
@@ -31,6 +31,13 @@ test('reads published Managed Terms, never Self Storage Terms',async()=>{
     }}};
   };
   await expect(managedBookingPolicy()).resolves.toMatchObject({versionId:'FIXTURE@1'});
+});
+
+test('Managed Reservation creation requires the Backend verified Customer profile state',()=>{
+  expect(managedBookingProfileEligible({verificationStatus:'VERIFIED'})).toBe(true);
+  expect(managedBookingProfileEligible({verificationStatus:'PENDING'})).toBe(false);
+  expect(managedBookingProfileEligible({verificationStatus:'UNVERIFIED'})).toBe(false);
+  expect(managedBookingProfileEligible(undefined)).toBe(false);
 });
 
 test('replays the exact booking payload with the same key and verifies allocated Cells',async()=>{
@@ -67,10 +74,10 @@ test('server-created Managed rent difference requires explicit local consent bef
   expect(managedPriceNeedsAcceptance({...review!,accepted:true})).toBe(false);
 });
 
-test('Managed checkout uses FULL_RENT with the Web callback default and verifies settlement',async()=>{
+test('Managed checkout uses FULL_RENT with the native Mobile return channel and verifies settlement',async()=>{
   apiClient.defaults.adapter=async config=>{
     expect(config.url).toBe('/reservations/managed/'+id+'/payments/payos');
-    expect(config.headers.get('X-WDP-Payment-Client')).toBeUndefined();
+    expect(config.headers.get('X-WDP-Payment-Client')).toBe('MOBILE');
     expect(config.headers.get('Idempotency-Key')).toBe('fixture-payment-key');
     expect(JSON.parse(config.data)).toEqual({purpose:'FULL_RENT'});
     return {config,status:201,statusText:'OK',headers:{},data:{success:true,outcome:'CREATED',data:payment}};
@@ -88,6 +95,45 @@ test('unknown payment blocks new keys while an unbound attempt can replay the sa
   expect(managedCheckoutAction([],{})).toBe('RECOVER');
   expect(managedCheckoutAction([],{resourceId:paymentId})).toBe('BLOCKED');
   expect(managedCheckoutAction([{...payment,status:'FAILED',checkoutStatus:'FAILED',retryAllowed:true}],{resourceId:paymentId})).toBe('RETRY');
+});
+
+test('Managed history follows every cursor and keeps only payments for this reservation',async()=>{
+  const calls:string[]=[];
+  apiClient.defaults.adapter=async config=>{
+    calls.push(String(config.params?.cursor??'first'));
+    const item=calls.length===1?{...payment,createdAt:'2026-11-01T00:00:00.000Z'}:
+      {...payment,id:cellId,createdAt:'2026-10-01T00:00:00.000Z'};
+    return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{items:[item],nextCursor:calls.length===1?'next_page':null}}};
+  };
+  await expect(managedPayment.history(rental,owner)).resolves.toMatchObject([{id:paymentId,createdAt:'2026-11-01T00:00:00.000Z'},{id:cellId}]);
+  expect(calls).toEqual(['first','next_page']);
+});
+
+test('Managed payment detail is fetched through its reservation-scoped Backend route',async()=>{
+  apiClient.defaults.adapter=async config=>{
+    expect(config.method).toBe('get');
+    expect(config.url).toBe('/reservations/managed/'+id+'/payments/'+paymentId);
+    return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{...payment,orderCode:123456}}};
+  };
+  await expect(managedPayment.status(rental,paymentId,owner)).resolves.toMatchObject({id:paymentId,reservationId:id,purpose:'FULL_RENT',orderCode:123456});
+  await expect(managedPayment.status(rental,paymentId,cellId)).rejects.toThrow();
+});
+
+test('Managed return reconciliation uses the V3 route and validates reservation, purpose, and payment identity',async()=>{
+  let responsePayment={...payment,status:'SUCCEEDED' as const,providerSettlementStatus:'VERIFIED' as const,applicationStatus:'APPLIED' as const,checkoutStatus:'READY' as const};
+  apiClient.defaults.adapter=async config=>{
+    expect(config.method).toBe('post');
+    expect(config.url).toBe('/reservations/managed/'+id+'/payments/'+paymentId+'/reconcile');
+    expect(JSON.parse(config.data)).toEqual({});
+    return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:responsePayment}};
+  };
+  await expect(managedPayment.reconcile(rental,paymentId,owner)).resolves.toMatchObject({
+    id:paymentId,purpose:'FULL_RENT',reservationId:id,status:'SUCCEEDED',
+    providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED',
+  });
+  await expect(managedPayment.reconcile(rental,paymentId,cellId)).rejects.toThrow();
+  responsePayment={...responsePayment,purpose:'RENEWAL' as never};
+  await expect(managedPayment.reconcile(rental,paymentId,owner)).rejects.toThrow();
 });
 
 test('access records reject foreign owners or facilities and closure is read-only',async()=>{
@@ -126,7 +172,7 @@ test('SKU registration sends only metadata after verifying eligible V3 reservati
 
 test('unified inbound uses the current V3 context, numeric allocations and revision proof',async()=>{
   const now=Date.now(),start=new Date(now-60_000).toISOString(),end=new Date(now+3_600_000).toISOString();
-  const r={...rental,status:'ACTIVE' as const,startDate:start,endDate:end};
+  const r={...rental,status:'ACTIVE' as const,startDate:start,endDate:end,allocatedCellIds:[cellId]};
   const item={_id:cellId,managedReservationId:id,facilityId,customerId:owner,inventorySchemaVersion:3 as const,
     itemCode:'SKU-BOX',name:'Box',category:'Boxes',status:'ACTIVE' as const,revision:4,currentCellId:null};
   const specId='6'.repeat(24),unitId='7'.repeat(24);
@@ -141,7 +187,7 @@ test('unified inbound uses the current V3 context, numeric allocations and revis
   apiClient.defaults.adapter=async config=>{
     if(config.method==='get'){
       expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound/context');
-      return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{skuId:cellId,reservationId:id,facilityId,
+      return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{skuId:cellId,reservationId:id,facilityId,allocatedCellIds:[cellId],
         skuRevision:4,apiVersion:3,specifications:[{_id:specId,itemSpecId:specId,skuId:cellId,code:'BOX-S',name:'Small box',
           quantityUnitId:unitId,quantityUnit:'box',quantityUnitCode:'BOX',dimensionsM:{widthM:0.2,depthM:0.3,heightM:0.1},
           unitWeightKg:1,unitVolumeM3:0.006,revision:3,status:'ACTIVE'}]}}};
@@ -206,7 +252,7 @@ test('unified inbound confirm and committed lookup use one key and schema v4 ADD
       expect(config.url).toBe('/inventory-items/'+cellId+'/v3/inbound');
       expect(config.headers.get('Idempotency-Key')).toBe(key);
       expect(JSON.parse(config.data)).toEqual(body);
-      return {config,status:201,statusText:'OK',headers:{},data:{success:true}};
+      return {config,status:201,statusText:'OK',headers:{},data:{success:true,data:{status:'COMMITTED',replayed:false,movementId:paymentId,quantity:1}}};
     }
     expect(config.params).toEqual({key});
     return {config,status:200,statusText:'OK',headers:{},data:{success:true,data:{status:'COMMITTED',movement:{

@@ -13,8 +13,17 @@ export function Screen({children,safeTop=true,testID,footer,onRefresh,refreshing
 export function Card({children,style,testID}:PropsWithChildren<{style?:StyleProp<ViewStyle>;testID?:string}>){return <View testID={testID} style={[s.card,style]}>{children}</View>;}
 export function Button({label,onPress,variant='primary',disabled=false,loading=false,testID,icon}:{label:string;onPress:()=>void;variant?:'primary'|'orange'|'outline'|'quiet'|'danger';disabled?:boolean;loading?:boolean;testID?:string;icon?:ComponentProps<typeof Icon>['name']}){
   const filled=variant==='primary'||variant==='orange';
-  const labelColor=variant==='orange'?colors.text:filled?colors.white:variant==='danger'?colors.danger:colors.primary;
-  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||loading,busy:loading}} disabled={disabled||loading} onPress={onPress} style={({pressed})=>[s.button,{backgroundColor:variant==='primary'?colors.primary:variant==='orange'?colors.orange:variant==='outline'?colors.soft:variant==='danger'?colors.dangerTint:'transparent',borderColor:variant==='outline'?colors.line:'transparent',opacity:disabled ? .45 : pressed ? .8 : 1}]}>{loading?<ActivityIndicator color={labelColor}/>:icon?<Icon name={icon} size={19} color={labelColor}/>:null}<AppText variant="medium" style={{color:labelColor,textAlign:'center',flexShrink:1}}>{label}</AppText></Pressable>;
+  const labelColor=disabled||loading?colors.inactive:variant==='orange'?colors.text:filled?colors.white:variant==='danger'?colors.danger:colors.primary;
+  const background=disabled||loading?colors.surface:variant==='primary'?colors.primary:variant==='orange'?colors.orange:variant==='outline'?colors.card:variant==='danger'?colors.dangerTint:'transparent';
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||loading,busy:loading}} disabled={disabled||loading} onPress={onPress} style={({pressed})=>[s.button,{backgroundColor:background,borderColor:variant==='outline'||disabled||loading?colors.line:variant==='danger'?colors.dangerTint:'transparent',opacity:pressed&&!disabled&&!loading?.76:1}]}>{loading?<ActivityIndicator color={labelColor}/>:icon?<Icon name={icon} size={19} color={labelColor}/>:null}<AppText variant="medium" style={{color:labelColor,textAlign:'center',flexShrink:1}}>{label}</AppText></Pressable>;
+}
+export function NavigationRow({label,description,icon='arrow-forward-outline',onPress,disabled=false,testID}:{label:string;description?:string;icon?:ComponentProps<typeof Icon>['name'];onPress:()=>void;disabled?:boolean;testID?:string}){
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled}} disabled={disabled} onPress={onPress}
+    style={({pressed})=>[s.navigationRow,disabled&&s.navigationDisabled,pressed&&!disabled&&s.navigationPressed]}>
+    <Icon name={icon} size={20} color={disabled?colors.inactive:colors.primary}/>
+    <View style={{flex:1,minWidth:0,gap:2}}><AppText variant="medium" style={{color:disabled?colors.inactive:colors.primary}}>{label}</AppText>{!!description&&<AppText variant="caption" style={{color:colors.muted}}>{description}</AppText>}</View>
+    <Icon name="chevron-forward-outline" size={20} color={disabled?colors.inactive:colors.muted}/>
+  </Pressable>;
 }
 export function Input({label,error,style,onFocus,onBlur,...props}:TextInputProps&{label:string;error?:string}){
   const [focused,setFocused]=useState(false);
@@ -29,7 +38,7 @@ export function Input({label,error,style,onFocus,onBlur,...props}:TextInputProps
 export function SectionTitle({title,action,onPress}:{title:string;action?:string;onPress?:()=>void}){return <View style={s.sectionTitle}><AppText variant="card" style={{flex:1}}>{title}</AppText>{!!action&&onPress&&<Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onPress} style={{minHeight:44,justifyContent:'center',paddingLeft:12}}><AppText variant="label" style={{color:colors.primary}}>{action} →</AppText></Pressable>}</View>;}
 export function Chip({label,tone='green'}:{label:string;tone?:'green'|'orange'|'neutral'|'danger'}){return <View style={[s.chip,{backgroundColor:tone==='orange'?colors.orangeTint:tone==='neutral'?colors.surface:tone==='danger'?colors.dangerTint:colors.mint}]}><AppText variant="label" style={{color:tone==='orange'?colors.orangeText:tone==='neutral'?colors.muted:tone==='danger'?colors.danger:colors.primary}}>{label}</AppText></View>;}
 export function Filter({label,selected,onPress}:{label:string;selected:boolean;onPress:()=>void}){return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{selected}} onPress={onPress} style={[s.filter,selected&&s.filterActive]}><AppText variant="label" style={{color:selected?colors.white:colors.muted}}>{label}</AppText></Pressable>;}
-export function FixtureNotice(){return <View style={s.fixture}><Icon name="flask-outline" size={14}/><AppText variant="caption" style={{color:colors.primary,flex:1}}>Bản mẫu ngoại tuyến · Không kết nối tài khoản hoặc giao dịch thật</AppText></View>;}
+export function FixtureNotice(){return <View style={s.fixture}><Icon name="information-circle-outline" size={14}/><AppText variant="caption" style={{color:colors.primary,flex:1}}>Dữ liệu minh họa · Chưa thể đặt kho hoặc thanh toán tại đây</AppText></View>;}
 export function StateCard({kind='empty',title,description,onRetry}:{kind?:'loading'|'empty'|'error';title:string;description?:string;onRetry?:()=>void}){
   return <Card style={s.state}>
     <View style={[s.stateIcon,kind==='error'&&s.errorIcon]}>
@@ -45,6 +54,8 @@ const s=StyleSheet.create({
   flex:{flex:1},screen:{flex:1,backgroundColor:colors.background},content:{padding:spacing.page,paddingBottom:32,gap:16,width:'100%',maxWidth:720,alignSelf:'center'},
   card:{backgroundColor:colors.card,borderRadius:radius.lg,borderWidth:1,borderColor:colors.line,padding:spacing.lg,gap:12,...elevation},
   button:{minHeight:48,paddingHorizontal:16,paddingVertical:12,borderWidth:1,borderRadius:radius.md,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8},
+  navigationRow:{minHeight:52,paddingHorizontal:12,paddingVertical:9,borderWidth:1,borderColor:colors.line,borderRadius:radius.md,backgroundColor:colors.card,flexDirection:'row',alignItems:'center',gap:11},
+  navigationDisabled:{backgroundColor:colors.surface},navigationPressed:{backgroundColor:colors.surfaceHigh,borderColor:colors.primary},
   field:{gap:6},inputFocused:{borderColor:colors.primary,backgroundColor:colors.card},inputDisabled:{opacity:.65},
   input:{minHeight:52,borderWidth:1,borderColor:colors.line,borderRadius:radius.md,backgroundColor:colors.soft,paddingHorizontal:14,paddingVertical:12,color:colors.text,fontFamily:fonts.regular,fontSize:15},
   sectionTitle:{flexDirection:'row',alignItems:'center',gap:8},chip:{alignSelf:'flex-start',paddingHorizontal:10,paddingVertical:5,borderRadius:radius.pill},

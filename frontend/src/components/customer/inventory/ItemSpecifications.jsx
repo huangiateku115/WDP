@@ -1,24 +1,433 @@
-import {useCallback,useEffect,useMemo,useState} from 'react';
-import {inventoryApi} from '@/api/inventoryApi';
-import {inventoryId,inventoryError} from '@/lib/inventoryRegistration';
-import {itemSpecificationPayload} from '@/lib/itemSpecificationForm';
-import InventoryImagePicker from './InventoryImagePicker';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { inventoryApi } from "@/api/inventoryApi";
+import { inventoryId, inventoryError } from "@/lib/inventoryRegistration";
+import { itemSpecificationPayload } from "@/lib/itemSpecificationForm";
+import InventoryImagePicker from "./InventoryImagePicker";
 
-const blank={code:'',name:'',quantityUnitId:'',unitWeightKg:'',widthCm:'',depthCm:'',heightCm:'',description:'',images:[]};
-export default function ItemSpecifications({sku,readOnly=false,onChanged}){
-  const skuId=inventoryId(sku),reservationId=inventoryId(sku?.reservationId||sku?.managedReservationId);
-  const [rows,setRows]=useState([]),[units,setUnits]=useState([]),[form,setForm]=useState(blank),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[catalogLoading,setCatalogLoading]=useState(true),[imagesReady,setImagesReady]=useState(true),[retry,setRetry]=useState(0);
-  const load=useCallback(async()=>{try{const response=await inventoryApi.specifications(skuId);if(response.data?.success!==true||!Array.isArray(response.data.data))throw Error('Danh sách quy cách mặt hàng không hợp lệ.');setRows(response.data.data);}catch(e){setError(e.response?inventoryError(e):e.message||'Không tải được quy cách mặt hàng.');}},[skuId]);
-  useEffect(()=>{void load();},[load]);
-  useEffect(()=>{let active=true;setCatalogLoading(true);inventoryApi.quantityUnits().then(r=>{if(r.data?.success!==true||!Array.isArray(r.data.data))throw Error('Phản hồi đơn vị tính không hợp lệ.');if(active)setUnits(r.data.data);}).catch(e=>{if(active){setUnits([]);setError(inventoryError(e));}}).finally(()=>{if(active)setCatalogLoading(false);});return()=>{active=false;};},[retry]);
-  const unitOptions=useMemo(()=>{const options=[...units];if(editing?.quantityUnitId&&!options.some(unit=>inventoryId(unit)===inventoryId(editing.quantityUnitId)))options.push({_id:inventoryId(editing.quantityUnitId),name:editing.quantityUnit,isActive:false});return options;},[units,editing]);
-  const reset=()=>{setForm(blank);setEditing(null);setImagesReady(true);};
-  const edit=row=>{setEditing(row);setForm({code:row.code,name:row.name,quantityUnitId:inventoryId(row.quantityUnitId)||'',unitWeightKg:String(row.unitWeightKg),widthCm:String(row.dimensionsM.widthM*100),depthCm:String(row.dimensionsM.depthM*100),heightCm:String(row.dimensionsM.heightM*100),description:row.description||'',images:Array.isArray(row.images)?row.images:[]});setError('');setNotice('');};
-  const save=async event=>{event.preventDefault();if(busy||!imagesReady)return;setBusy(true);setError('');setNotice('');try{const payload=itemSpecificationPayload(form);if(editing&&payload.quantityUnitId===inventoryId(editing.quantityUnitId))delete payload.quantityUnitId;const response=editing?await inventoryApi.updateSpecification(skuId,inventoryId(editing),payload,editing.revision):await inventoryApi.createSpecification(skuId,payload);if(response.data?.success!==true)throw Error('Máy chủ chưa xác nhận quy cách mặt hàng.');setNotice(editing?'Đã cập nhật quy cách.':'Đã thêm quy cách vào SKU.');reset();await load();onChanged?.();}catch(e){setError(e.response?inventoryError(e):e.message||'Không lưu được quy cách mặt hàng.');}finally{setBusy(false);}};
-  const remove=async row=>{if(busy)return;if(!window.confirm('Ngừng sử dụng quy cách này? Lịch sử sẽ được giữ lại.'))return;setBusy(true);setError('');setNotice('');try{const response=await inventoryApi.deleteSpecification(skuId,inventoryId(row),row.revision);if(response.data?.success!==true)throw Error('Máy chủ chưa xác nhận thay đổi.');setNotice('Đã ngừng sử dụng quy cách; lịch sử vẫn được giữ.');await load();}catch(e){setError(e.response?inventoryError(e):e.message||'Không cập nhật được quy cách.');}finally{setBusy(false);}};
-  return <section className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-slate-950">Quy cách mặt hàng</h2>{readOnly&&<span className="rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-800">Chỉ xem</span>}</div>
-    {rows.length===0?<p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">SKU này chưa có quy cách mặt hàng.</p>:<div className="grid gap-4 lg:grid-cols-2">{rows.map(row=><article key={inventoryId(row)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{row.code} · {row.name}</p><p className="mt-2 text-sm text-slate-600">Kích thước {Object.values(row.dimensionsM).map(value=>(value*100).toLocaleString('vi-VN')).join(' × ')} cm</p><p className="text-sm text-slate-600">{row.unitWeightKg.toLocaleString('vi-VN')} kg · {row.unitVolumeM3.toLocaleString('vi-VN')} m³ · đơn vị {row.quantityUnit}</p>{row.description&&<p className="mt-2 text-sm text-slate-700">{row.description}</p>}</div><span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">{row.status==='ACTIVE'?'Đang dùng':'Ngừng dùng'}</span></div>{row.images?.length>0&&<div className="mt-3 flex flex-wrap gap-2">{row.images.map((url,index)=><img key={`${url}-${index}`} src={url} alt={`${row.name} ${index+1}`} className="h-16 w-16 rounded-lg border border-slate-200 object-cover" loading="lazy"/>)}</div>}<div className="mt-4 flex gap-2 border-t border-slate-100 pt-3"><button type="button" disabled={readOnly||busy||row.status!=='ACTIVE'} onClick={()=>edit(row)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Sửa</button><button type="button" disabled={readOnly||busy||row.status!=='ACTIVE'} onClick={()=>void remove(row)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm text-rose-800 hover:bg-rose-50">Ngừng sử dụng</button></div></article>)}</div>}
-    {!readOnly&&<form onSubmit={save} className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2"><h3 className="font-semibold text-slate-900 sm:col-span-2">{editing?'Sửa quy cách':'Thêm quy cách'}</h3><label className="text-sm">Mã loại hàng<input required maxLength={48} value={form.code} onChange={e=>setForm({...form,code:e.target.value})} disabled={busy||!!editing} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"/></label><label className="text-sm">Tên loại hàng<input required maxLength={160} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} disabled={busy} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"/></label><label className="text-sm">Đơn vị tính<select required value={form.quantityUnitId} onChange={e=>setForm({...form,quantityUnitId:e.target.value})} disabled={busy||catalogLoading||(!units.length&&!editing)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"><option value="">{catalogLoading?'Đang tải đơn vị…':'Chọn đơn vị tính'}</option>{unitOptions.map(unit=><option key={inventoryId(unit)} value={inventoryId(unit)} disabled={unit.isActive===false}>{unit.name}{unit.isActive===false?' (đã ngừng sử dụng)':''}</option>)}</select>{!catalogLoading&&!units.length&&<span className="mt-1 block text-amber-800">Chưa có đơn vị tính. Vui lòng liên hệ quản trị viên. <button type="button" className="underline" onClick={()=>setRetry(n=>n+1)}>Thử tải lại</button></span>}</label><label className="text-sm">Khối lượng mỗi món (kg)<input type="number" min="0.000001" step="any" required value={form.unitWeightKg} onChange={e=>setForm({...form,unitWeightKg:e.target.value})} disabled={busy} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"/></label>{[['widthCm','Rộng (cm)'],['depthCm','Sâu (cm)'],['heightCm','Cao (cm)']].map(([key,label])=><label key={key} className="text-sm">{label}<input type="number" min="0.0001" step="any" required value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})} disabled={busy} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"/></label>)}<label className="text-sm sm:col-span-2">Mô tả<textarea maxLength={2000} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} disabled={busy} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"/></label><div className="sm:col-span-2"><label className="mb-2 block text-sm font-medium">Hình ảnh riêng của loại hàng</label><InventoryImagePicker key={`${skuId}:${inventoryId(editing)||'new'}`} reservationId={reservationId} value={form.images} disabled={busy||!reservationId} onChange={images=>setForm({...form,images})} onReady={setImagesReady}/></div><div className="flex gap-2 sm:col-span-2"><button type="submit" disabled={busy||catalogLoading||!imagesReady||(!units.length&&!editing)} className="rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white">{busy?'Đang lưu…':editing?'Lưu thay đổi':'Thêm vào SKU'}</button>{editing&&<button type="button" disabled={busy} onClick={reset} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm">Hủy sửa</button>}</div></form>}
-    {error&&<p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}{notice&&<p role="status" className="rounded-lg bg-emerald-100 p-3 text-sm text-emerald-900">{notice}</p>}
-  </section>;
+const blank = {
+  code: "",
+  name: "",
+  quantityUnitId: "",
+  unitWeightKg: "",
+  widthCm: "",
+  depthCm: "",
+  heightCm: "",
+  description: "",
+  images: [],
+};
+export default function ItemSpecifications({
+  sku,
+  readOnly = false,
+  onChanged,
+}) {
+  const skuId = inventoryId(sku),
+    reservationId = inventoryId(
+      sku?.reservationId || sku?.managedReservationId,
+    );
+  const [rows, setRows] = useState([]),
+    [units, setUnits] = useState([]),
+    [form, setForm] = useState(blank),
+    [editing, setEditing] = useState(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [catalogLoading, setCatalogLoading] = useState(true),
+    [imagesReady, setImagesReady] = useState(true),
+    [retry, setRetry] = useState(0);
+  const load = useCallback(async () => {
+    try {
+      const response = await inventoryApi.specifications(skuId);
+      if (response.data?.success !== true || !Array.isArray(response.data.data))
+        throw Error("Danh sách quy cách mặt hàng không hợp lệ.");
+      setRows(response.data.data);
+    } catch (e) {
+      setError(
+        e.response
+          ? inventoryError(e)
+          : e.message || "Không tải được quy cách mặt hàng.",
+      );
+    }
+  }, [skuId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    let active = true;
+    setCatalogLoading(true);
+    inventoryApi
+      .quantityUnits()
+      .then((r) => {
+        if (r.data?.success !== true || !Array.isArray(r.data.data))
+          throw Error("Phản hồi đơn vị tính không hợp lệ.");
+        if (active) setUnits(r.data.data);
+      })
+      .catch((e) => {
+        if (active) {
+          setUnits([]);
+          setError(inventoryError(e));
+        }
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [retry]);
+  const unitOptions = useMemo(() => {
+    const options = [...units];
+    if (
+      editing?.quantityUnitId &&
+      !options.some(
+        (unit) => inventoryId(unit) === inventoryId(editing.quantityUnitId),
+      )
+    )
+      options.push({
+        _id: inventoryId(editing.quantityUnitId),
+        name: editing.quantityUnit,
+        isActive: false,
+      });
+    return options;
+  }, [units, editing]);
+  const reset = () => {
+    setForm(blank);
+    setEditing(null);
+    setImagesReady(true);
+  };
+  const edit = (row) => {
+    setEditing(row);
+    setForm({
+      code: row.code,
+      name: row.name,
+      quantityUnitId: inventoryId(row.quantityUnitId) || "",
+      unitWeightKg: String(row.unitWeightKg),
+      widthCm: String(row.dimensionsM.widthM * 100),
+      depthCm: String(row.dimensionsM.depthM * 100),
+      heightCm: String(row.dimensionsM.heightM * 100),
+      description: row.description || "",
+      images: Array.isArray(row.images) ? row.images : [],
+    });
+    setError("");
+    setNotice("");
+  };
+  const save = async (event) => {
+    event.preventDefault();
+    if (busy || !imagesReady) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const payload = itemSpecificationPayload(form);
+      if (
+        editing &&
+        payload.quantityUnitId === inventoryId(editing.quantityUnitId)
+      )
+        delete payload.quantityUnitId;
+      const response = editing
+        ? await inventoryApi.updateSpecification(
+            skuId,
+            inventoryId(editing),
+            payload,
+            editing.revision,
+          )
+        : await inventoryApi.createSpecification(skuId, payload);
+      if (response.data?.success !== true)
+        throw Error("Máy chủ chưa xác nhận quy cách mặt hàng.");
+      setNotice(
+        editing ? "Đã cập nhật quy cách." : "Đã thêm quy cách vào SKU.",
+      );
+      reset();
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(
+        e.response
+          ? inventoryError(e)
+          : e.message || "Không lưu được quy cách mặt hàng.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (row) => {
+    if (busy) return;
+    if (!window.confirm("Ngừng sử dụng quy cách này? Lịch sử sẽ được giữ lại."))
+      return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await inventoryApi.deleteSpecification(
+        skuId,
+        inventoryId(row),
+        row.revision,
+      );
+      if (response.data?.success !== true)
+        throw Error("Máy chủ chưa xác nhận thay đổi.");
+      setNotice("Đã ngừng sử dụng quy cách; lịch sử vẫn được giữ.");
+      await load();
+    } catch (e) {
+      setError(
+        e.response
+          ? inventoryError(e)
+          : e.message || "Không cập nhật được quy cách.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold text-slate-950">Quy cách mặt hàng</h2>
+        {readOnly && (
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-800">
+            Chỉ xem
+          </span>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          SKU này chưa có quy cách mặt hàng.
+        </p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {rows.map((row) => (
+            <article
+              key={inventoryId(row)}
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    {row.code} · {row.name}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Kích thước{" "}
+                    {Object.values(row.dimensionsM)
+                      .map((value) => (value * 100).toLocaleString("vi-VN"))
+                      .join(" × ")}{" "}
+                    cm
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {row.unitWeightKg.toLocaleString("vi-VN")} kg ·{" "}
+                    {row.unitVolumeM3.toLocaleString("vi-VN")} m³ · đơn vị{" "}
+                    {row.quantityUnit}
+                  </p>
+                  {row.description && (
+                    <p className="mt-2 text-sm text-slate-700">
+                      {row.description}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                  {row.status === "ACTIVE" ? "Đang dùng" : "Ngừng dùng"}
+                </span>
+              </div>
+              {row.images?.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {row.images.map((url, index) => (
+                    <img
+                      key={`${url}-${index}`}
+                      src={url}
+                      alt={`${row.name} ${index + 1}`}
+                      className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
+                      loading="lazy"
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  disabled={readOnly || busy || row.status !== "ACTIVE"}
+                  onClick={() => edit(row)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                >
+                  Sửa
+                </button>
+                <button
+                  type="button"
+                  disabled={readOnly || busy || row.status !== "ACTIVE"}
+                  onClick={() => void remove(row)}
+                  className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm text-rose-800 hover:bg-rose-50"
+                >
+                  Ngừng sử dụng
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {!readOnly && (
+        <form
+          onSubmit={save}
+          className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2"
+        >
+          <h3 className="font-semibold text-slate-900 sm:col-span-2">
+            {editing ? "Sửa quy cách" : "Thêm quy cách"}
+          </h3>
+          <label className="text-sm">
+            Mã loại hàng
+            <input
+              required
+              maxLength={48}
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              disabled={busy || !!editing}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+            />
+          </label>
+          <label className="text-sm">
+            Tên loại hàng
+            <input
+              required
+              maxLength={160}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+            />
+          </label>
+          <label className="text-sm">
+            Đơn vị tính
+            <select
+              required
+              value={form.quantityUnitId}
+              onChange={(e) =>
+                setForm({ ...form, quantityUnitId: e.target.value })
+              }
+              disabled={busy || catalogLoading || (!units.length && !editing)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+            >
+              <option value="">
+                {catalogLoading ? "Đang tải đơn vị…" : "Chọn đơn vị tính"}
+              </option>
+              {unitOptions.map((unit) => (
+                <option
+                  key={inventoryId(unit)}
+                  value={inventoryId(unit)}
+                  disabled={unit.isActive === false}
+                >
+                  {unit.name}
+                  {unit.isActive === false ? " (đã ngừng sử dụng)" : ""}
+                </option>
+              ))}
+            </select>
+            {!catalogLoading && !units.length && (
+              <span className="mt-1 block text-amber-800">
+                Chưa có đơn vị tính. Vui lòng liên hệ quản trị viên.{" "}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => setRetry((n) => n + 1)}
+                >
+                  Thử tải lại
+                </button>
+              </span>
+            )}
+          </label>
+          <label className="text-sm">
+            Khối lượng mỗi món (kg)
+            <input
+              type="number"
+              min="0.000001"
+              step="any"
+              required
+              value={form.unitWeightKg}
+              onChange={(e) =>
+                setForm({ ...form, unitWeightKg: e.target.value })
+              }
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+            />
+          </label>
+          {[
+            ["widthCm", "Rộng (cm)"],
+            ["depthCm", "Sâu (cm)"],
+            ["heightCm", "Cao (cm)"],
+          ].map(([key, label]) => (
+            <label key={key} className="text-sm">
+              {label}
+              <input
+                type="number"
+                min="0.0001"
+                step="any"
+                required
+                value={form[key]}
+                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                disabled={busy}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+              />
+            </label>
+          ))}
+          <label className="text-sm sm:col-span-2">
+            Mô tả
+            <textarea
+              maxLength={2000}
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2"
+            />
+          </label>
+          <div className="sm:col-span-2">
+            <label className="mb-2 block text-sm font-medium">
+              Hình ảnh riêng của loại hàng
+            </label>
+            <InventoryImagePicker
+              key={`${skuId}:${inventoryId(editing) || "new"}`}
+              reservationId={reservationId}
+              value={form.images}
+              disabled={busy || !reservationId}
+              onChange={(images) => setForm({ ...form, images })}
+              onReady={setImagesReady}
+            />
+          </div>
+          <div className="flex gap-2 sm:col-span-2">
+            <button
+              type="submit"
+              disabled={
+                busy ||
+                catalogLoading ||
+                !imagesReady ||
+                (!units.length && !editing)
+              }
+              className="rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              {busy ? "Đang lưu…" : editing ? "Lưu thay đổi" : "Thêm vào SKU"}
+            </button>
+            {editing && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={reset}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm"
+              >
+                Hủy sửa
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
+        >
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p
+          role="status"
+          className="rounded-lg bg-emerald-100 p-3 text-sm text-emerald-900"
+        >
+          {notice}
+        </p>
+      )}
+    </section>
+  );
 }

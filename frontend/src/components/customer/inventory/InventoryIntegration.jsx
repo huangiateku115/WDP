@@ -1,5 +1,5 @@
-import {CustomerImagePreview} from '../CustomerMediaUI';
-import LoadState from '../CustomerResourceState';
+import { CustomerImagePreview } from "../CustomerMediaUI";
+import LoadState from "../CustomerResourceState";
 import InventoryStatus from "./InventoryStatus";
 import { useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
@@ -72,14 +72,27 @@ function InventoryImages({ item }) {
           </button>
         ))}
       </div>
-      {active&&<CustomerImagePreview images={images} selectedUrl={active} onClose={()=>setActive(null)}/>}
+      {active && (
+        <CustomerImagePreview
+          images={images}
+          selectedUrl={active}
+          onClose={() => setActive(null)}
+        />
+      )}
     </>
   );
 }
 export function InventoryListIntegration() {
-  const location = useLocation(), params = new URLSearchParams(location.search),
-    operation = params.get('operation'), accessSessionId = params.get('accessSessionId'), reservationFilter = params.get('reservationId'),
-    operationLabel = ({ INBOUND: 'nhập kho', OUTBOUND: 'xuất kho', RELOCATION: 'chuyển vị trí' })[operation],
+  const location = useLocation(),
+    params = new URLSearchParams(location.search),
+    operation = params.get("operation"),
+    accessSessionId = params.get("accessSessionId"),
+    reservationFilter = params.get("reservationId"),
+    operationLabel = {
+      INBOUND: "nhập kho",
+      OUTBOUND: "xuất kho",
+      RELOCATION: "chuyển vị trí",
+    }[operation],
     [page, setPage] = useState(1),
     resource = useInventoryBackend(
       (config) =>
@@ -90,6 +103,7 @@ export function InventoryListIntegration() {
     );
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title="Hàng hóa của tôi"
       description="Danh sách hàng hóa bạn đã đăng ký cho kho quản lý."
       action={
@@ -98,56 +112,80 @@ export function InventoryListIntegration() {
         </Button>
       }
     >
-      {accessSessionId && operationLabel && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Bạn đang chọn thao tác {operationLabel} trong Access Session đã cấp. Hãy mở mặt hàng thuộc đúng Reservation để tiếp tục; Backend sẽ kiểm tra lại quyền và Cell khi xem trước/xác nhận.</p>}
+      {accessSessionId && operationLabel && (
+        <p
+          role="status"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"
+        >
+          Bạn đã chọn thao tác {operationLabel} trong lượt đến kho. Hãy mở mặt
+          hàng thuộc đúng đơn thuê để tiếp tục; quyền và vị trí sẽ được kiểm tra
+          trước khi xác nhận.
+        </p>
+      )}
       <LoadState resource={resource} />
-      {(resource.data?.items || []).filter(item => !reservationFilter || inventoryId(item.managedReservationId) === reservationFilter).length === 0 && (
+      {(resource.data?.items || []).filter(
+        (item) =>
+          !reservationFilter ||
+          inventoryId(item.managedReservationId) === reservationFilter,
+      ).length === 0 && (
         <Card>
           <CardContent>
-            <h2 className="text-xl font-bold">{reservationFilter ? 'Không có mặt hàng thuộc Reservation này' : 'Chưa có mặt hàng nào được đăng ký'}</h2>
+            <h2 className="text-xl font-bold">
+              {reservationFilter
+                ? "Không có mặt hàng thuộc đơn thuê này"
+                : "Chưa có mặt hàng nào được đăng ký"}
+            </h2>
             <p className="mt-3">
-              Đăng ký hàng trong một đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng ký vẫn được lưu khi đơn thuê kết thúc.
+              Đăng ký hàng trong đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng
+              ký vẫn được lưu khi đơn thuê kết thúc.
             </p>
           </CardContent>
         </Card>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
-        {(resource.data?.items || []).filter(item => !reservationFilter || inventoryId(item.managedReservationId) === reservationFilter).map((item) => (
-          <Card key={inventoryId(item)}>
-            <CardContent>
-              <h2 className="text-xl font-bold">{item.name}</h2>
-              <p className="mt-2 font-semibold text-brand">{item.itemCode}</p>
-              <div className="mt-4">
-                <InventoryStatus status={item.status} />
-                <Details
-                  values={[
-                    ["Danh mục", item.category],
-                    ["Vai trò", "SKU · nhóm hàng"],
-                    [
-                      "Đơn thuê kho quản lý",
-                      item.managedReservationId?.reservationCode || "Đơn thuê đã liên kết",
-                    ],
-                    [
-                      "Facility",
-                      typeof item.facilityId === "object"
-                        ? item.facilityId.name || "Cơ sở đã liên kết"
-                        : "Cơ sở đã liên kết",
-                    ],
-                    ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
-                    [
-                      "Vị trí lưu kho",
-                      "Mở chi tiết để xem vị trí tồn kho",
-                    ],
-                  ]}
-                />
-              </div>
-              <Button asChild variant="outline" className="mt-5">
-                <Link to={`/portal/inventory/${inventoryId(item)}${accessSessionId ? `?accessSessionId=${encodeURIComponent(accessSessionId)}&operation=${encodeURIComponent(operation || '')}` : ''}`}>
-                  Xem mặt hàng
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+        {(resource.data?.items || [])
+          .filter(
+            (item) =>
+              !reservationFilter ||
+              inventoryId(item.managedReservationId) === reservationFilter,
+          )
+          .map((item) => (
+            <Card key={inventoryId(item)}>
+              <CardContent>
+                <h2 className="text-xl font-bold">{item.name}</h2>
+                <p className="mt-2 font-semibold text-brand">{item.itemCode}</p>
+                <div className="mt-4">
+                  <InventoryStatus status={item.status} />
+                  <Details
+                    values={[
+                      ["Danh mục", item.category],
+                      ["Phân loại", item.category || "Hàng hóa"],
+                      [
+                        "Đơn thuê kho quản lý",
+                        item.managedReservationId?.reservationCode ||
+                          "Đơn thuê đã liên kết",
+                      ],
+                      [
+                        "Cơ sở",
+                        typeof item.facilityId === "object"
+                          ? item.facilityId.name || "Cơ sở đã liên kết"
+                          : "Cơ sở đã liên kết",
+                      ],
+                      ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
+                      ["Vị trí lưu kho", "Mở chi tiết để xem vị trí tồn kho"],
+                    ]}
+                  />
+                </div>
+                <Button asChild variant="outline" className="mt-5">
+                  <Link
+                    to={`/portal/inventory/${inventoryId(item)}${accessSessionId ? `?accessSessionId=${encodeURIComponent(accessSessionId)}&operation=${encodeURIComponent(operation || "")}` : ""}`}
+                  >
+                    Xem mặt hàng
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
       </div>
       {resource.data && (
         <div className="flex flex-wrap items-center gap-3">
@@ -160,7 +198,7 @@ export function InventoryListIntegration() {
           </Button>
           <span>
             Trang {resource.data.pagination.page} ·{" "}
-            {resource.data.pagination.total.toLocaleString('vi-VN')} mặt hàng
+            {resource.data.pagination.total.toLocaleString("vi-VN")} mặt hàng
           </span>
           <Button
             variant="outline"
@@ -183,6 +221,7 @@ export function InventoryRegisterIntegration() {
   const session = useAuthSession();
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title="Đăng ký mặt hàng"
       description="Đăng ký SKU cho đơn thuê kho quản lý."
       action={
@@ -198,9 +237,15 @@ export function InventoryRegisterIntegration() {
 export function InventoryDetailIntegration() {
   const { id } = useParams(),
     session = useAuthSession();
-  return <Detail key={`${session.accessToken}:${id}`} id={id} />;
+  return (
+    <Detail
+      key={`${session.accessToken}:${id}`}
+      id={id}
+      customerId={session.user?.id}
+    />
+  );
 }
-function Detail({ id }) {
+function Detail({ id, customerId }) {
   const [editing, setEditing] = useState(false),
     location = useLocation(),
     resource = useInventoryBackend(
@@ -226,23 +271,52 @@ function Detail({ id }) {
     [!!resource.data, resource.data?.updatedAt],
   );
   const item = resource.data,
-    query = new URLSearchParams(location.search), initialSessionId = query.get('accessSessionId') || '',
+    query = new URLSearchParams(location.search),
+    initialSessionId = query.get("accessSessionId") || "",
     rental = rentals.data?.find(
       (r) => inventoryId(r) === inventoryId(item?.managedReservationId),
     ),
     editable = editableInventory(item, rental);
   const stock = useInventoryBackend(
-    () => item?.inventorySchemaVersion === 3
-      ? managedInventoryV3Api.cellStock(inventoryId(item)).then(response => response.data?.data || null)
-      : Promise.resolve(null),
+    () =>
+      item?.inventorySchemaVersion === 3
+        ? managedInventoryV3Api
+            .cellStock(inventoryId(item))
+            .then((response) => response.data?.data || null)
+        : Promise.resolve(null),
     [inventoryId(item), item?.inventorySchemaVersion, item?.updatedAt],
   );
-  const ownedStockCells = item?.inventorySchemaVersion === 3 && stock.data?.ledgerReplayStatus === "VERIFIED"
-    ? (stock.data.ledgerByCell || []).filter(row => Number(row.quantityOnHand) > 0).map(row => inventoryId(row.cellId)).filter(Boolean)
-    : [];
+  const ownedStockCells =
+    item?.inventorySchemaVersion === 3 &&
+    stock.data?.ledgerReplayStatus === "VERIFIED"
+      ? (stock.data.ledgerByCell || [])
+          .filter((row) => Number(row.quantityOnHand) > 0)
+          .map((row) => inventoryId(row.cellId))
+          .filter(Boolean)
+      : [];
   const cellLabels = useInventoryBackend(
-    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId, ...ownedStockCells], config) : Promise.resolve({}),
-    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || []), JSON.stringify(ownedStockCells)],
+    (config) =>
+      rental && item
+        ? inventoryCellLabels(
+            rental,
+            [
+              ...(rental.allocatedCellIds || []),
+              item.preferredCellId,
+              item.currentCellId,
+              ...ownedStockCells,
+            ],
+            config,
+            customerId,
+          )
+        : Promise.resolve({}),
+    [
+      inventoryId(rental),
+      inventoryId(item?.preferredCellId),
+      inventoryId(item?.currentCellId),
+      JSON.stringify(rental?.allocatedCellIds || []),
+      JSON.stringify(ownedStockCells),
+      inventoryId(customerId),
+    ],
   );
   const refresh = () => {
     setEditing(false);
@@ -250,21 +324,27 @@ function Detail({ id }) {
     rentals.retry();
     stock.retry();
   };
-  const locationValue = item?.inventorySchemaVersion !== 3
-    ? "Chưa xác minh vị trí tồn kho"
-    : stock.loading
-      ? "Đang tải vị trí tồn kho…"
-      : stock.error
-        ? "Không tải được vị trí tồn kho"
-        : stock.data?.ledgerReplayStatus !== "VERIFIED"
-        ? "Vị trí tồn kho đang được đối soát"
-        : ownedStockCells.length
-          ? cellLabels.loading
-            ? "Đang tải mã ô lưu kho…"
-            : ownedStockCells.map(cellId => cellLabels.data?.[cellId]).filter(Boolean).join("; ") || `Đã ghi nhận tại ${ownedStockCells.length} ô kệ`
-          : "Chưa ghi nhận tồn thực tế";
+  const locationValue =
+    item?.inventorySchemaVersion !== 3
+      ? "Chưa xác minh vị trí tồn kho"
+      : stock.loading
+        ? "Đang tải vị trí tồn kho…"
+        : stock.error
+          ? "Không tải được vị trí tồn kho"
+          : stock.data?.ledgerReplayStatus !== "VERIFIED"
+            ? "Vị trí tồn kho đang được đối soát"
+            : ownedStockCells.length
+              ? cellLabels.loading
+                ? "Đang tải mã ô lưu kho…"
+                : ownedStockCells
+                    .map((cellId) => cellLabels.data?.[cellId])
+                    .filter(Boolean)
+                    .join("; ") ||
+                  `Đã ghi nhận tại ${ownedStockCells.length} ô kệ`
+              : "Chưa ghi nhận tồn thực tế";
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title={item?.name || "Mặt hàng"}
       description="Thông tin SKU, quy cách và vị trí lưu kho thực tế."
       action={
@@ -278,7 +358,7 @@ function Detail({ id }) {
         <>
           {location.state?.inventoryCreated && (
             <p role="status" className="soft-panel p-4">
-            Đã đăng ký mặt hàng. Hàng chưa được xếp vào vị trí lưu kho.
+              Đã đăng ký mặt hàng. Hàng chưa được xếp vào vị trí lưu kho.
             </p>
           )}
           <Card>
@@ -288,65 +368,78 @@ function Detail({ id }) {
                 <InventoryStatus status={item.status} />
               </div>
               <div className="inventory-detail-layout">
-              <div className="inventory-detail-metadata mt-5">
-                <Details
-                  values={[
-                    ["Tên mặt hàng", item.name],
-                    ["Danh mục", item.category],
-                    ["Vai trò", "SKU · nhóm hàng"],
-                    [
-                      "Đơn thuê Managed",
-                      rental?.reservationCode || "Thông tin đơn thuê đã liên kết",
-                    ],
-                    [
-                      "Cơ sở",
-                      rental?._facility?.name || "Cơ sở đã liên kết",
-                    ],
-                    [
-                      "Vị trí lưu kho",
-                      locationValue,
-                    ],
-                    ["Mô tả", item.description],
-                    ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
-                    ["Cập nhật lần cuối", formatInventoryDateTime(item.updatedAt)],
-                  ].filter(([, value]) => value != null)}
+                <div className="inventory-detail-metadata mt-5">
+                  <Details
+                    values={[
+                      ["Tên mặt hàng", item.name],
+                      ["Danh mục", item.category],
+                      ["Phân loại", item.category || "Hàng hóa"],
+                      [
+                        "Đơn thuê Managed",
+                        rental?.reservationCode ||
+                          "Thông tin đơn thuê đã liên kết",
+                      ],
+                      ["Cơ sở", rental?._facility?.name || "Cơ sở đã liên kết"],
+                      ["Vị trí lưu kho", locationValue],
+                      ["Mô tả", item.description],
+                      ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
+                      [
+                        "Cập nhật lần cuối",
+                        formatInventoryDateTime(item.updatedAt),
+                      ],
+                    ].filter(([, value]) => value != null)}
+                  />
+                </div>
+                <InventoryImages
+                  key={JSON.stringify(item.images)}
+                  item={item}
                 />
-              </div>
-              <InventoryImages key={JSON.stringify(item.images)} item={item}/>
               </div>
             </CardContent>
           </Card>
           <LoadState resource={rentals} />
-          <div className="inventory-actions flex flex-wrap gap-3" role="group" aria-label="Item actions">
+          <div
+            className="inventory-actions flex flex-wrap gap-3"
+            role="group"
+            aria-label="Thao tác với mặt hàng"
+          >
             <div className="inventory-action-group flex flex-wrap gap-2">
-            <Button variant="outline" onClick={refresh}>
-              Làm mới thông tin
-            </Button>
-            <Button asChild variant="outline">
-              <Link to={`/portal/inventory/${id}/history`}>
-                Xem lịch sử nhập/xuất
-              </Link>
-            </Button>
+              <Button variant="outline" onClick={refresh}>
+                Làm mới thông tin
+              </Button>
+              <Button asChild variant="outline">
+                <Link to={`/portal/inventory/${id}/history`}>
+                  Xem lịch sử hàng hóa
+                </Link>
+              </Button>
             </div>
             <div className="inventory-action-group flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link
-                to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}
-              >
-                Xem đơn thuê Managed
-              </Link>
-            </Button>
-            {editable && !editing && (
-              <Button variant="orange" onClick={() => setEditing(true)}>
-                Chỉnh sửa mặt hàng
+              <Button asChild variant="outline">
+                <Link
+                  to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}
+                >
+                  Xem đơn thuê kho quản lý
+                </Link>
               </Button>
-            )}
-            <Button asChild variant="outline"><Link to={`/portal/warehouse-map/${inventoryId(item.facilityId)}`}>Xem sơ đồ kho</Link></Button>
+              {editable && !editing && (
+                <Button variant="orange" onClick={() => setEditing(true)}>
+                  Chỉnh sửa mặt hàng
+                </Button>
+              )}
+              <Button asChild variant="outline">
+                <Link
+                  to={`/portal/warehouse-map/${inventoryId(item.facilityId)}`}
+                >
+                  Xem sơ đồ kho
+                </Link>
+              </Button>
             </div>
           </div>
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">
-              Chỉ có thể chỉnh sửa mặt hàng đã đăng ký nhưng chưa được xếp vào kho, khi đơn thuê V3 sẵn sàng nhận kho hoặc đang hoạt động trong kỳ thuê. Lịch sử đăng ký vẫn được giữ.
+              Chỉ có thể chỉnh sửa mặt hàng đã đăng ký nhưng chưa được xếp vào
+              kho, khi đơn thuê đã sẵn sàng nhận hàng hoặc đang hoạt động trong
+              kỳ thuê. Lịch sử đăng ký vẫn được giữ.
             </p>
           )}
           {editing && editable && (
@@ -356,11 +449,45 @@ function Detail({ id }) {
               onSaved={refresh}
             />
           )}
-          {item.inventorySchemaVersion===3&&<ItemSpecifications sku={item} readOnly={!editable} onChanged={refresh}/>}
-          {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
-          {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
-          {item.inventorySchemaVersion===3&&<ManagedSelfRelocationV3 item={item} rental={rental} onRefresh={refresh} initialSessionId={initialSessionId}/>}
-          {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Thao tác tồn kho cho dữ liệu lịch sử được giữ ở chế độ tra cứu trong khi SKU V3 dùng luồng nhập kho hợp nhất.</p>}
+          {item.inventorySchemaVersion === 3 && (
+            <ItemSpecifications
+              sku={item}
+              readOnly={!editable}
+              onChanged={refresh}
+            />
+          )}
+          {item.inventorySchemaVersion === 3 && (
+            <ManagedUnifiedSelfInbound
+              item={item}
+              rental={rental}
+              cellLabels={cellLabels.data || {}}
+              onRefresh={refresh}
+              initialSessionId={initialSessionId}
+            />
+          )}
+          {item.inventorySchemaVersion === 3 && (
+            <ManagedSelfOutboundV3
+              item={item}
+              rental={rental}
+              cellLabels={cellLabels.data || {}}
+              onRefresh={refresh}
+              initialSessionId={initialSessionId}
+            />
+          )}
+          {item.inventorySchemaVersion === 3 && (
+            <ManagedSelfRelocationV3
+              item={item}
+              rental={rental}
+              onRefresh={refresh}
+              initialSessionId={initialSessionId}
+            />
+          )}
+          {item.inventorySchemaVersion !== 3 && (
+            <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+              Mặt hàng này hiện chỉ hỗ trợ xem thông tin. Các thao tác nhập kho
+              dành cho mặt hàng mới.
+            </p>
+          )}
         </>
       )}
     </CustomerScreen>

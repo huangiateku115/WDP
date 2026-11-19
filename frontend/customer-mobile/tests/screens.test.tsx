@@ -20,7 +20,7 @@ test.each([
   [DashboardScreen,'screen-home'],[ExploreScreen,'screen-explore'],[RentalsScreen,'screen-rentals'],
   [InventoryScreen,'screen-inventory'],[ProfileScreen,'screen-profile'],[LoginScreen,'screen-login'],
 ] as const)('native screen renders with fixtures: %s',async (Component,id)=>{
-  await render(<Component/>);expect(screen.getByTestId(id)).toBeTruthy();expect(screen.getByText(/Bản mẫu ngoại tuyến/)).toBeTruthy();
+  await render(<Component/>);expect(screen.getByTestId(id)).toBeTruthy();expect(screen.getByText(/Dữ liệu minh họa/)).toBeTruthy();
 });
 test('explore search and service filter show real fixture matches and empty state',async ()=>{
   await render(<ExploreScreen/>);await fireEvent.changeText(screen.getByLabelText('Tìm cơ sở'),'khong co co so');
@@ -42,19 +42,19 @@ test('detail action uses stack params and back returns to previous screen',async
 });
 test('missing fixture detail is safe and offers native back action',async ()=>{
   mockParams={kind:'item',id:'does-not-exist'};await render(<PreviewDetailScreen/>);
-  expect(screen.getByText('Không tìm thấy dữ liệu mẫu')).toBeTruthy();
-  await fireEvent.press(screen.getByRole('button',{name:'Trở về màn hình trước'}));expect(mockBack).toHaveBeenCalled();
+  expect(screen.getByText('Không tìm thấy thông tin hàng hóa')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button',{name:'Quay lại'}));expect(mockBack).toHaveBeenCalled();
 });
 test('missing fixture collections and customer do not crash the five tabs',async ()=>{
   useCustomerStore.setState({fixtures:{customer:null,facilities:[],rentals:[],items:[]}});
   for(const Component of [DashboardScreen,ExploreScreen,RentalsScreen,InventoryScreen,ProfileScreen]){const view=await render(<Component/>);expect(view.toJSON()).toBeTruthy();await view.unmount();}
 });
 test('login validates before entering local demo; no real credentials are verified',async()=>{
-  await render(<LoginScreen/>);await fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
+  await render(<LoginScreen/>);await fireEvent.press(screen.getByRole('button',{name:'Mở bản minh họa'}));
   await waitFor(()=>expect(screen.getByText('Mật khẩu mẫu cần ít nhất 8 ký tự.')).toBeTruthy());
   expect(useCustomerStore.getState().demoSession).toBe(false);
-  await fireEvent.changeText(screen.getByLabelText('Mật khẩu bản mẫu'),'VaultDemo123!');
-  await fireEvent.press(screen.getByRole('button',{name:'Đăng nhập bản mẫu'}));
+  await fireEvent.changeText(screen.getByLabelText('Mật khẩu minh họa'),'VaultDemo123!');
+  await fireEvent.press(screen.getByRole('button',{name:'Mở bản minh họa'}));
   await waitFor(()=>expect(useCustomerStore.getState().demoSession).toBe(true));
   expect(mockReplace).toHaveBeenCalledWith('/(tabs)');
 });

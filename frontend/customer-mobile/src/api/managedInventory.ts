@@ -9,7 +9,8 @@ export type ManagedRange={startDate:string;endDate:string};
 const interval=z.object({startDate:utc,endDate:utc});
 const dims=z.object({widthM:positive,depthM:positive,usableHeightM:positive.optional()});
 const cellSchema=z.object({_id:objectId,code:z.string().min(1),cellNumber:whole.min(1).nullish().catch(undefined),dimensions:dims,
-  operationalStatus:z.string().optional(),periodStatus:z.string().optional(),displayStatus:z.string().optional(),isBookable:z.boolean().optional(),
+  operationalStatus:z.string().optional(),bookingStatus:z.string().optional(),periodStatus:z.string().optional(),displayStatus:z.string().optional(),isBookable:z.boolean().optional(),
+  capacityDisclosure:z.string().optional(),bookingReasonCode:z.string().nullish(),
   physicalUsageKnown:z.boolean().optional(),isMine:z.boolean().optional(),hasMyInventory:z.boolean().optional(),
   maxWeightKg:nonnegative.optional(),maxVolumeM3:positive.nullish(),usedWeightKg:nonnegative.optional(),usedVolumeM3:nonnegative.optional()});
 const rackSchema=z.object({rack:z.object({_id:objectId,zoneId:objectId,facilityId:objectId,rackCode:z.string().min(1),
@@ -20,6 +21,7 @@ const priceRule=z.object({facilityId:objectId,serviceType:z.literal('MANAGED_INV
 const capacitySchema=z.object({facilityId:objectId,interval,availableCapacityM3:nonnegative,sellableCapacityM3:nonnegative});
 
 export type ManagedCell=z.infer<typeof cellSchema>;
+export type ManagedCellLocation={cellId:string;cellCode:string;rackCode:string;levelNumber:number|null;cellNumber:number|null};
 export type ManagedRackLevel=z.infer<typeof rackSchema>['levels'][number];
 export type ManagedTerm=z.infer<typeof term>;
 export type ManagedQuote=ReturnType<typeof mapManagedQuote>;
@@ -83,20 +85,25 @@ export const managedInventory={
     return detail;
   },
   async cellLabels(facilityId:string,cellIds:string[],signal?:AbortSignal){
-    const wanted=new Set(cellIds.map(id)),labels:Record<string,string>={};
-    if(!wanted.size)return labels;
+    const locations=await managedInventory.cellLocations(facilityId,cellIds,signal),labels:Record<string,string>={};
+    for(const [cellId,location] of Object.entries(locations))labels[cellId]=`${location.cellCode} · ${location.rackCode} · Tầng ${location.levelNumber??'—'}`;
+    return labels;
+  },
+  async cellLocations(facilityId:string,cellIds:string[],signal?:AbortSignal){
+    const wanted=new Set(cellIds.map(id)),locations:Record<string,ManagedCellLocation>={};
+    if(!wanted.size)return locations;
     const map=await managedInventory.map(facilityId,undefined,signal);
     for(const zone of map.zones){
       for(const aisle of zone.aisles){
         for(const rack of aisle.racks){
           const detail=await managedInventory.rack(facilityId,zone._id,rack._id,undefined,signal);
-          for(const cell of detail.levels.flatMap(level=>level.cells))if(wanted.has(cell._id))
-            labels[cell._id]=`${cell.code} · ${rack.rackCode} · Tầng ${detail.levels.find(level=>level.cells.some(row=>row._id===cell._id))?.levelNumber??'—'}`;
-          if(Object.keys(labels).length===wanted.size)return labels;
+          for(const level of detail.levels)for(const cell of level.cells)if(wanted.has(cell._id))
+            locations[cell._id]={cellId:cell._id,cellCode:cell.code,rackCode:rack.rackCode,levelNumber:level.levelNumber??null,cellNumber:cell.cellNumber??null};
+          if(Object.keys(locations).length===wanted.size)return locations;
         }
       }
     }
-    return labels;
+    return locations;
   },
   async capacity(facilityId:string,range:ManagedRange,signal?:AbortSignal){
     const result=readData(capacitySchema,await wire('GET','/reservations/managed/capacity/'+id(facilityId),{params:range,signal}));

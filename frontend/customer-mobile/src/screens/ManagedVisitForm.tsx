@@ -17,9 +17,6 @@ import {colors} from '../theme/tokens';
 import {publishVisitSuccessFeedback} from '../state/visitSuccessFeedback';
 import {showToast} from '../state/toastStore';
 
-const purposes=['INBOUND','OUTBOUND','RELOCATION','INSPECTION'] as const;
-type Purpose=typeof purposes[number];
-const purposeLabel:Record<Purpose,string>={INBOUND:'Nhập hàng',OUTBOUND:'Xuất hàng',RELOCATION:'Chuyển vị trí',INSPECTION:'Kiểm tra hàng'};
 const dateParts=(date:Date,timeZone='Asia/Ho_Chi_Minh')=>{
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
   const value=(type:Intl.DateTimeFormatPartTypes)=>parts.find(part=>part.type===type)?.value??'';
@@ -52,7 +49,7 @@ export function ManagedVisitForm(){
   const facility=useResource(r?refId(r.facilityId):'',signal=>r?managedInventory.facility(refId(r.facilityId),signal):Promise.resolve(null));
   const visits=useResource(visitId&&r?owner+':visits:'+r._id:'',signal=>visitId&&r?managedReservationReads.visits(r,owner,signal):Promise.resolve(null));
   const visit=visits.data?.find(row=>row._id===visitId);
-  const [purpose,setPurpose]=useState<Purpose>('INBOUND'),[date,setDate]=useState(todayVietnam),[note,setNote]=useState(''),[selectedSlot,setSelectedSlot]=useState('');
+  const [date,setDate]=useState(todayVietnam),[note,setNote]=useState(''),[selectedSlot,setSelectedSlot]=useState('');
   const [pending,setPending]=useState(false),[checking,setChecking]=useState(false),[checkedNoMatch,setCheckedNoMatch]=useState(false),[sameKeyRetryAllowed,setSameKeyRetryAllowed]=useState(true),[unknownCreate,setUnknownCreate]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState(false);
   const busy=useRef(false),hydrated=useRef(false);
   const checkingBusy=useRef(false);
@@ -61,13 +58,14 @@ export function ManagedVisitForm(){
   const amendAttempt=useResource(visitId?scope+':'+visitId:'',()=>visitId?journal('managed-v3-visit-amend',owner,visitId).then(store=>store.read()):Promise.resolve(null));
   useEffect(()=>{
     if(!visit||hydrated.current)return;
-    hydrated.current=true;setPurpose(visit.purpose);setDate(dateParts(new Date(visit.startsAt)));setNote(visit.note??'');setSelectedSlot(visit.startsAt);
+    hydrated.current=true;setDate(dateParts(new Date(visit.startsAt)));setNote(visit.note??'');setSelectedSlot(visit.startsAt);
   },[visit]);
   const validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&date>=todayVietnam();
-  const availability=useResource(r&&validDate?scope+':availability:'+date:'',signal=>r&&validDate?managedReservationReads.visitAvailability(r,owner,date,signal):Promise.resolve(null));
+  const eligible=!!r&&r.serviceType==='MANAGED_INVENTORY'&&r.bookingFlowVersion===3&&r.status==='ACTIVE'&&Date.parse(r.startDate)<=Date.now()&&Date.parse(r.endDate)>Date.now();
+  const availability=useResource(r&&eligible&&validDate?scope+':availability:'+refId(r.facilityId)+':'+date:'',signal=>r&&eligible&&validDate
+    ?managedReservationReads.visitAvailability(r,owner,date,signal):Promise.resolve(null));
   const slots=availability.data?.slots??[];
   const slotSelected=slots.find(row=>row.startsAt===selectedSlot&&todaySlot(row.startsAt));
-  const eligible=!!r&&r.serviceType==='MANAGED_INVENTORY'&&r.bookingFlowVersion===3&&['CHECKIN_READY','ACTIVE'].includes(r.status)&&Date.parse(r.endDate)>Date.now();
   const savedAttempt=visitId?amendAttempt.data:createAttempt.data;
   const loading=reservation.loading||facility.loading||(!!visitId&&visits.loading);
 
@@ -86,8 +84,10 @@ export function ManagedVisitForm(){
       const store=await journal('managed-v3-visit-create',owner,r._id),saved=await store.read();
       if(!saved?.visitBody){setError('Không tìm thấy yêu cầu đã lưu để kiểm tra trạng thái.');return;}
       const rows=await managedReservationReads.visits(r,owner);
-      const match=rows.find(row=>row.reservationId===saved.visitBody?.reservationId&&row.purpose===saved.visitBody?.purpose&&
-        row.startsAt===saved.visitBody?.startsAt&&row.endsAt===saved.visitBody?.endsAt&&row.status==='SCHEDULED');
+      const expectedPurpose='facilityId' in saved.visitBody?'WAREHOUSE_VISIT':saved.visitBody.purpose;
+      const match=rows.find(row=>row.facilityId===facility.data?._id&&row.purpose===expectedPurpose&&
+        row.startsAt===saved.visitBody?.startsAt&&row.endsAt===saved.visitBody?.endsAt&&row.status==='SCHEDULED'&&
+        (!('note' in (saved.visitBody??{}))||row.note===(saved.visitBody as {note?:string}).note));
       if(match){await confirmCreate(match,store);return;}
       setCheckedNoMatch(allowSameKeyRetry);setError(allowSameKeyRetry?'Chưa tìm thấy lịch khớp. Yêu cầu cũ vẫn được giữ nguyên; không tạo yêu cầu mới.':'Chưa tìm thấy lịch khớp và yêu cầu trước đã xung đột. Giữ nguyên yêu cầu để tránh tạo lịch trùng và liên hệ hỗ trợ.');
     }catch(cause){setError(`Chưa xác định được kết quả. ${apiIssue(cause)} Không gửi lịch mới.`);}
@@ -105,11 +105,11 @@ export function ManagedVisitForm(){
         if(!recover){
           if(saved)throw new Error('Đang có yêu cầu sửa lịch chưa rõ kết quả. Hãy khôi phục đúng yêu cầu đã lưu.');
           if(!slotSelected)throw new Error('Chọn khung giờ còn hiệu lực do cơ sở cung cấp.');
-          saved={...newAttempt(),resourceId:visit._id,visitRevision:visit.revision,visitBody:{reservationId:r._id,purpose,startsAt:slotSelected.startsAt,endsAt:slotSelected.endsAt,...(note.trim()?{note:note.trim()}:{})}};
-          if(!await store.claim(saved))throw new Error('Yêu cầu sửa lịch đang được xử lý.');
+          const attempt={...newAttempt(),resourceId:visit._id,visitRevision:visit.revision,visitAmendBody:{startsAt:slotSelected.startsAt,endsAt:slotSelected.endsAt,...(note.trim()?{note:note.trim()}:{})}};
+          if(!await store.claim(attempt))throw new Error('Yêu cầu sửa lịch đang được xử lý.');saved=attempt;
         }
-        if(!saved?.visitBody||saved.resourceId!==visit._id||saved.visitRevision===undefined)throw new Error('Không thể xác minh yêu cầu sửa lịch đã lưu.');
-        const {reservationId:_,...body}=saved.visitBody;
+        if((!saved?.visitAmendBody&&!saved?.visitBody)||saved.resourceId!==visit._id||saved.visitRevision===undefined)throw new Error('Không thể xác minh yêu cầu sửa lịch đã lưu.');
+        const body=saved.visitAmendBody??('reservationId' in saved.visitBody!?(({reservationId:_,purpose:__,...rest})=>rest)(saved.visitBody):saved.visitBody);
         const updated=await managedReservationReads.amendVisit(r,owner,{...visit,revision:saved.visitRevision},body,saved.key);
         await store.clear();setSuccess(true);showToast('Đã cập nhật lịch đến kho');router.back();
       }else{
@@ -117,8 +117,8 @@ export function ManagedVisitForm(){
         if(!recover){
           if(saved)throw new Error('Đang có yêu cầu đặt lịch chưa rõ kết quả. Hãy khôi phục yêu cầu đã lưu.');
           if(!slotSelected)throw new Error('Chọn một khung giờ còn hiệu lực do cơ sở cung cấp.');
-          const visitBody={reservationId:r._id,purpose,startsAt:slotSelected.startsAt,endsAt:slotSelected.endsAt,...(note.trim()?{note:note.trim()}:{})};
-          saved={...newAttempt(),visitBody};if(!await store.claim(saved))throw new Error('Yêu cầu đặt lịch đang được xử lý.');
+          const visitBody={facilityId:refId(r.facilityId),startsAt:slotSelected.startsAt,endsAt:slotSelected.endsAt,...(note.trim()?{note:note.trim()}:{})};
+          const attempt={...newAttempt(),visitBody};if(!await store.claim(attempt))throw new Error('Yêu cầu đặt lịch đang được xử lý.');saved=attempt;
         }
         if(!saved?.visitBody)throw new Error('Không có yêu cầu đặt lịch để khôi phục.');
         createRequestStarted=true;
@@ -148,20 +148,20 @@ export function ManagedVisitForm(){
       }
     }finally{busy.current=false;if(useLiveSession.getState().user?._id===owner)setPending(false);}
   }
-  const footer=pending?<View style={styles.pendingFooter}><ActivityIndicator color={colors.primary}/><AppText variant="medium">{checking?'Đang kiểm tra trạng thái lịch...':visitId?'Đang lưu lịch...':'Đang đặt lịch...'}</AppText></View>:<Button label={visitId?'Lưu thay đổi lịch':'Xác nhận đặt lịch'} disabled={!eligible||!slotSelected||!!savedAttempt||unknownCreate||success||loading||availability.loading||!!availability.error} onPress={()=>void submit(false)}/>;
+  const scopeAvailable=availability.data?.reservationScopeAvailable!==false;
+  const footer=pending?<View style={styles.pendingFooter}><ActivityIndicator color={colors.primary}/><AppText variant="medium">{checking?'Đang kiểm tra trạng thái lịch...':visitId?'Đang lưu lịch...':'Đang đặt lịch...'}</AppText></View>:<Button label={visitId?'Lưu thay đổi lịch':'Xác nhận đặt lịch'} disabled={!eligible||!slotSelected||!scopeAvailable||!!savedAttempt||unknownCreate||success||loading||availability.loading||!!availability.error} onPress={()=>void submit(false)}/>;
   if(loading)return <Screen footer={<Button label="Đang tải" loading disabled onPress={()=>{}}/>}><ScreenHeading title={visitId?'Sửa lịch đến kho':'Đặt lịch đến kho'}/><ResourceState {...reservation}/><ResourceState {...facility}/>{visitId&&<ResourceState {...visits}/>}</Screen>;
   if(!r||!facility.data)return <Screen><ScreenHeading title="Đặt lịch đến kho"/><ResourceState {...reservation}/><ResourceState {...facility}/><Button label="Quay lại" variant="outline" onPress={()=>router.back()}/></Screen>;
-  if(!eligible)return <Screen><ScreenHeading title="Đặt lịch đến kho"/><Card><AppText accessibilityRole="alert">Reservation chưa đủ điều kiện đặt lịch theo trạng thái hiện tại.</AppText><AppText>{r.reservationCode}</AppText></Card><Button label="Quay lại đơn thuê" variant="outline" onPress={()=>router.back()}/></Screen>;
+  if(!eligible)return <Screen><ScreenHeading title="Đặt lịch đến kho"/><Card><AppText accessibilityRole="alert">Đơn thuê chưa đủ điều kiện đặt lịch vào thời điểm này.</AppText><AppText>{r.reservationCode}</AppText></Card><Button label="Quay lại đơn thuê" variant="outline" onPress={()=>router.back()}/></Screen>;
   if(visitId&&!visit)return <Screen><ScreenHeading title="Sửa lịch đến kho"/><ResourceState {...visits}/><Button label="Quay lại" variant="outline" onPress={()=>router.back()}/></Screen>;
   if(visitId&&visit&&visit.status!=='SCHEDULED')return <Screen><ScreenHeading title="Sửa lịch đến kho"/><Card><AppText>Lịch này không còn ở trạng thái có thể chỉnh sửa.</AppText></Card><Button label="Quay lại" variant="outline" onPress={()=>router.back()}/></Screen>;
   return <Screen testID="managed-visit-form" footer={footer}>
-    <ScreenHeading title={visitId?'Sửa lịch đến kho':'Đặt lịch đến kho'} eyebrow="KHO KÝ GỬI" subtitle="Chọn ngày, mục đích và khung giờ được cơ sở mở."/>
-    <Card><AppText variant="medium">{facility.data.name}</AppText><AppText>Mã đơn thuê · {r.reservationCode}</AppText></Card>
-    <Card><AppText variant="card">Mục đích đến kho</AppText><View style={styles.grid}>{purposes.map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:purpose===value,disabled:pending}} disabled={pending} onPress={()=>{setPurpose(value);setSelectedSlot('');}} style={[styles.purpose, purpose===value&&styles.selected]}><AppText variant="medium" style={{color:purpose===value?colors.white:colors.primary}}>{purposeLabel[value]}</AppText></Pressable>)}</View></Card>
+    <ScreenHeading title={visitId?'Sửa lịch đến kho':'Đặt lịch đến kho'} eyebrow="KHO KÝ GỬI" subtitle="Chọn ngày và khung giờ được cơ sở mở. Phiên thao tác kho chỉ được cấp sau khi nhân viên check-in."/>
+    <Card><AppText variant="medium">{facility.data.name}</AppText><AppText>Mã đơn thuê · {r.reservationCode}</AppText><AppText variant="caption">Lịch đến kho sẽ được gắn với đơn thuê đang hoạt động phù hợp tại cơ sở này.</AppText></Card>
     <Card><AppText variant="card">Ngày đến kho</AppText><ManagedVisitDatePicker value={date} disabled={pending} onChange={next=>{setDate(next);setSelectedSlot('');}}/><AppText variant="caption" style={{color:colors.muted}}>Chọn ngày và khung giờ đến kho.</AppText>
       {!visitId&&(createAttempt.data||unknownCreate)&&<Card><AppText accessibilityRole="alert">Lần gửi trước chưa rõ kết quả. Hãy kiểm tra danh sách lịch trước khi gửi lại.</AppText><Button label={checking?'Đang kiểm tra trạng thái...':'Kiểm tra trạng thái lịch'} variant="outline" loading={checking} onPress={()=>void reconcileCreateAttempt()}/>{checkedNoMatch&&sameKeyRetryAllowed&&<Button label="Gửi lại đúng yêu cầu đã lưu" variant="quiet" disabled={checking} onPress={()=>void submit(true)}/>}</Card>}
       {visitId&&amendAttempt.data&&<Card><AppText accessibilityRole="alert">Lần sửa trước chưa rõ kết quả. Hãy khôi phục đúng yêu cầu.</AppText><Button label="Khôi phục yêu cầu sửa đã lưu" variant="outline" loading={pending} onPress={()=>void submit(true)}/></Card>}
-      <AppText variant="card">Khung giờ còn được phép</AppText>{availability.loading?<ResourceState {...availability}/>:availability.error?<ResourceState {...availability}/>:!availability.data?<AppText>Chọn ngày để tải các khung giờ từ cơ sở.</AppText>:slots.length===0?<AppText>Ngày này không có khung giờ khả dụng.</AppText>:<>
+      <AppText variant="card">Khung giờ còn trống</AppText>{availability.loading?<ResourceState {...availability}/>:availability.error?<ResourceState {...availability}/>:!availability.data?<AppText>Chọn ngày để xem khung giờ tại cơ sở.</AppText>:availability.data.reservationScopeAvailable===false?<AppText accessibilityRole="alert">Chưa có đơn thuê phù hợp còn hiệu lực tại cơ sở này.</AppText>:slots.length===0?<AppText>Ngày này không có khung giờ khả dụng.</AppText>:<>
         {slots.length===1&&<AppText variant="caption" style={{color:colors.orangeText}}>Ngày này chỉ còn một khung giờ.</AppText>}
         <View style={styles.grid}>{slots.map(slot=>{const available=todaySlot(slot.startsAt);const selected=selectedSlot===slot.startsAt;return <Pressable key={slot.startsAt} accessibilityRole="button" accessibilityLabel={`${displayTime.format(new Date(slot.startsAt))}${available?'':' không khả dụng'}`} accessibilityState={{selected,disabled:!available||pending}} disabled={!available||pending} onPress={()=>setSelectedSlot(slot.startsAt)} style={[styles.slot,selected&&styles.selected,!available&&styles.unavailable]}><AppText variant="medium" style={{color:selected?colors.white:available?colors.primary:colors.inactive}}>{displayTime.format(new Date(slot.startsAt))}</AppText><AppText variant="caption" style={{color:selected?'#e6f4ec':available?colors.muted:colors.inactive}}>{available?'Còn chỗ':'Không khả dụng'}</AppText></Pressable>;})}</View>
       </>}
@@ -172,4 +172,4 @@ export function ManagedVisitForm(){
   </Screen>;
 }
 
-const styles=StyleSheet.create({grid:{flexDirection:'row',flexWrap:'wrap',gap:10},purpose:{width:'48%',minHeight:54,padding:12,borderRadius:12,borderWidth:1,borderColor:colors.line,backgroundColor:colors.soft,alignItems:'center',justifyContent:'center'},slot:{width:'48%',minHeight:66,padding:10,borderRadius:12,borderWidth:1,borderColor:colors.line,backgroundColor:colors.soft,alignItems:'center',justifyContent:'center',gap:2},selected:{backgroundColor:colors.primary,borderColor:colors.primary},unavailable:{opacity:.5,backgroundColor:colors.surface},pendingFooter:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10}});
+const styles=StyleSheet.create({grid:{flexDirection:'row',flexWrap:'wrap',gap:10},slot:{width:'48%',minHeight:66,padding:10,borderRadius:12,borderWidth:1,borderColor:colors.line,backgroundColor:colors.soft,alignItems:'center',justifyContent:'center',gap:2},selected:{backgroundColor:colors.primary,borderColor:colors.primary},unavailable:{opacity:.5,backgroundColor:colors.surface},pendingFooter:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10}});

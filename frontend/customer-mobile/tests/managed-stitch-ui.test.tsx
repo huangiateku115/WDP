@@ -25,8 +25,21 @@ test('2D cell tile shows Backend capacity/status and omits unsupported telemetry
     inspectedId="" selectedIds={new Set()} onInspect={jest.fn()}/>);
 
   expect(screen.getByText('MI-R1-L1-C1')).toBeTruthy();
-  expect(screen.getByRole('button',{name:'MI-R1-L1-C1, Khả dụng trong kỳ thuê'})).toBeTruthy();
+  expect(screen.getByRole('button',{name:'MI-R1-L1-C1, Còn chỗ trong kỳ thuê'})).toBeTruthy();
   expect(screen.getByText('Tối đa 1.25 m³')).toBeTruthy();
   expect(screen.getByText('320 kg')).toBeTruthy();
   expect(screen.queryByText(/°C|IoT|cảm biến/i)).toBeNull();
+});
+
+test('redacted Cell capacity does not hide confirmed availability or expose utilization fields',async()=>{
+  const cell={_id:'c'.repeat(24),code:'MI-R2-L3-C1',cellNumber:1,
+    dimensions:{widthM:1,depthM:0.8,usableHeightM:1.2},operationalStatus:'AVAILABLE',periodStatus:'AVAILABLE',
+    isBookable:true,capacityDisclosure:'REDACTED',physicalUsageKnown:true,usedWeightKg:500,usedVolumeM3:7,maxWeightKg:320,maxVolumeM3:1.25};
+  const levels=[{levelNumber:3,cells:[cell]}] as ManagedRackLevel[];
+  const layout=warehouseRackLayout(levels,1);
+  await render(<WarehouseRack2D levels={levels} layout={layout} levelIndex={0} hasPeriod rackAvailable
+    inspectedId="" selectedIds={new Set()} onInspect={jest.fn()}/>);
+
+  expect(screen.getByRole('button',{name:'MI-R2-L3-C1, Còn chỗ trong kỳ thuê'})).toBeTruthy();
+  expect(screen.queryByText(/Tối đa|kg|Đang dùng/)).toBeNull();
 });

@@ -12,6 +12,9 @@ import ManagedReservationAuditModel from '../../models/reservations/managed-rese
 import { ManagedReservationAction } from '../../types/managed-reservation-audit.type';
 import { ContractStatus } from '../../types/contract.type';
 import { managedSigningDeadline } from '../../utils/managed-signing-deadline';
+import NotificationModel from '../../models/notifications/notification.model';
+import { NotificationMethod, NotificationType } from '../../types/notification.type';
+import { selfStorageSigningDeadline } from '../../utils/self-storage-signing-deadline';
 import { FacilityServiceType } from '../../types/facility.type';
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { ReservationStatus } from '../../types/reservation.type';
@@ -167,8 +170,11 @@ function customerPaymentUrls(payment: any, channel: 'WEB' | 'MOBILE' = 'WEB'): {
   }
   const params = new URLSearchParams({ reservationId, paymentId: id(payment?._id), serviceType: payment?.serviceType });
   if (channel === 'MOBILE') {
-    if (payment?.serviceType !== FacilityServiceType.SELF_STORAGE) {
-      throw new PayosPaymentError(400, 'MOBILE_PAYMENT_UNSUPPORTED', 'Native PayOS return is supported only for Self Storage');
+    const selfStorage = payment?.serviceType === FacilityServiceType.SELF_STORAGE;
+    const managedFullRent = payment?.serviceType === FacilityServiceType.MANAGED_INVENTORY &&
+      payment?.purpose === PaymentPurpose.FULL_RENT;
+    if (!selfStorage && !managedFullRent) {
+      throw new PayosPaymentError(400, 'MOBILE_PAYMENT_UNSUPPORTED', 'Native PayOS return is supported only for Self Storage and Managed V3 Full Rent');
     }
     // Fixed to the registered Expo scheme. Never accept a redirect URL from a client.
     const callback = new URL(`vaultspace-customer://payments/return?${params}`);
@@ -1484,10 +1490,11 @@ export class PayosPaymentService {
             await currentPayment.save({ session }); result = { reconciled: true, paymentId: currentPayment._id }; return;
           }
           // Managed V3 uses the immutable rental start date and an exclusive local
-          // midnight deadline. Self Storage keeps its previously configured deadline.
+          // midnight deadline. Self Storage uses the existing three-day window from
+          // verified payment unless an authoritative deadline is already stored.
           const signingDeadline = managed
             ? (reservation.signingDeadline ?? managedSigningDeadline(reservation.startDate))
-            : reservation.signingDeadline;
+            : (reservation.signingDeadline ?? selfStorageSigningDeadline(time));
           const locked = await Reservations.findOneAndUpdate({
             _id: reservation._id,
             customerId: reservation.customerId,
@@ -1665,6 +1672,16 @@ export class PayosPaymentService {
         currentPayment.applicationStatus = PaymentApplicationStatus.APPLIED;
         delete currentPayment.reconciliationReason;
         await currentPayment.save({ session });
+        if (currentPayment.purpose === PaymentPurpose.FULL_RENT) {
+          await NotificationModel.create([{
+            userId: reservation.customerId,
+            type: NotificationType.PAYMENT_CONFIRMED,
+            title: 'Đã xác nhận thanh toán',
+            content: `Khoản thanh toán cho đơn ${reservation.reservationCode} đã được xác nhận. Mở chi tiết đơn thuê để xem bước tiếp theo.`,
+            isRead: false,
+            sentVia: [NotificationMethod.IN_APP],
+          }], { session });
+        }
         result = { applied: true, paymentId: currentPayment._id };
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       if (!result) throw new PayosPaymentError(503, 'WEBHOOK_OUTCOME_UNKNOWN', 'Webhook processing outcome is uncertain');

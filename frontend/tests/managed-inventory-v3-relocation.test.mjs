@@ -41,7 +41,8 @@ test('Customer UI requires an active checked-in RELOCATION scope, preview, attes
   assert.match(component, /sourceReservationId/);
   assert.match(component, /destinationReservationId/);
   assert.match(component, /reservationCode/);
-  assert.match(component, /Reservation Managed V3 đang hoạt động thuộc bạn tại cùng cơ sở/);
+  assert.match(component, /các đơn thuê kho quản lý đang hoạt động tại cùng cơ sở/);
+  assert.doesNotMatch(component, /Reservation Managed V3 đang hoạt động thuộc bạn tại cùng cơ sở/);
   assert.match(component, /minimumDestinationRemainingDays/);
   assert.match(component, /disabled=\{!cell\.canReceiveRelocation\}/);
   assert.match(component, /managedInventoryV3RelocationApi\.preview/);
@@ -56,7 +57,7 @@ test('Customer UI requires an active checked-in RELOCATION scope, preview, attes
   assert.match(component, /Theo số lượng trong lô/);
   assert.match(component, /Món nguyên vẹn/);
   assert.doesNotMatch(component, /spec\?\.instances\?\.length \? 'INSTANCE' : 'LOT'/);
-  assert.match(component, /Lượt đến kho tự bao phủ các Reservation đủ điều kiện tại thời điểm đặt lịch/);
+  assert.match(component, /Lượt đến kho sẽ áp dụng cho các đơn thuê đủ điều kiện tại thời điểm đặt lịch/);
   assert.match(integration, /ManagedSelfRelocationV3 item=\{item\} rental=\{rental\}/);
 });
 
