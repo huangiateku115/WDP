@@ -8,6 +8,22 @@ export const statisticsReports = [
  ['customers','Khách hàng','Phân tích'],['service-mix','Cơ cấu dịch vụ','Phân tích'],['unit-demand','Nhu cầu kho','Phân tích'],['rental-trends','Xu hướng thuê','Phân tích'],['facilities-ranking','Chỉ số theo cơ sở','Phân tích'],
 ];
 export const snapshotReports=['storage-capacity','managed-capacity'];
+// Only chart mutually exclusive counts as a whole; customers and lifecycle
+// counters can overlap and must not be represented as pie slices.
+export function reportChart(report,data){
+ const records=(source,label,metric)=>Array.isArray(source)?source.map(row=>({label:statisticLabel(String(row[label]??'Chưa xác định')),value:row[metric]})):null;
+ let type='bar',title='',rows=null,unit='';
+ if(report==='overview'){type='pie';title='Cơ cấu đơn theo dịch vụ';rows=data.reservationByService&&Object.entries(data.reservationByService).map(([label,value])=>({label:statisticLabel(label),value}));}
+ if(report==='service-mix'){type='pie';title='Cơ cấu đơn theo dịch vụ';rows=records(data.items,'serviceType','reservationCount');}
+ if(report==='storage-capacity'){type='pie';title='Tình trạng kho riêng';rows=['occupiedUnits','reservedUnits','availableUnits','maintenanceUnits','unavailableUnits'].map(key=>({label:statisticLabel(key),value:data[key]}));}
+ if(report==='revenue'){title='Tiền đã thu theo dịch vụ';rows=records(data.collectedByService,'serviceType','collectedAmount');unit='đ';}
+ if(report==='financial-analytics'){title='Tiền đã thu theo dịch vụ';rows=records(data.collectedByService,'serviceType','amount');unit='đ';}
+ if(report==='unit-demand'){title='Nhu cầu theo kích thước kho';rows=records(data.items,'unitType','paidRentalCount');}
+ if(report==='managed-operations'){title='Số lần nhập xuất và di chuyển';rows=records(data.operationsByAction,'action','operationCount');}
+ if(!rows?.length)return null;
+ if(rows.some(row=>typeof row.value!=='number'||!Number.isFinite(row.value)||row.value<0))return {type,title,unit,rows:[],unknown:true};
+ return {type,title,unit,rows,unknown:false};
+}
 export const exportReports=['facilities-kpi','revenue','financial-analytics','managed-operations','storage-capacity','managed-capacity','reservations','contracts-lifecycle','incidents'];
 const dateFields=['fromDate','toDate'];
 const compatibility={

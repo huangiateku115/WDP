@@ -47,6 +47,7 @@ test('Staff and Manager layouts render Vietnamese navigation without missing hel
  for(const [layout,role] of [['StaffLayout','FACILITY_STAFF'],['ManagerLayout','FACILITY_MANAGER']]){
   const simple=tag=>props=>React.createElement(tag,null,props.children);
   const mocks={
+   '@/lib/useAssignedFacility':{default:()=>({facility:{name:'Cơ sở Hồ Chí Minh 1',code:'HCM-01'},loading:false})},
    '@/lib/facilityLabels':{facilityLabel},
    '@/lib/facilityWorkspace':{facilityHome:role=>'/'+role+'/reservations',facilityPageVisible:()=>true},
    '@/components/common/RoleWorkspaceOutlet':{default:()=>React.createElement('div',null,'Nội dung')},
