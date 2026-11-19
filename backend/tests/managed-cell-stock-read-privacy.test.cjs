@@ -17,7 +17,7 @@ const Movement = require('../dist/models/inventory-items/item-movement.model').d
 const Allocation = require('../dist/models/warehouse-map/cell-allocation.model').default;
 const Reservation = require('../dist/models/reservations/reservation.model').default;
 const InventoryItem = require('../dist/models/inventory-items/inventory-item.model').default;
-const { ManagedCellStockReadService } = require('../dist/services/inventory-items/managed-cell-stock-read.service');
+const { ManagedCellStockReadService, sameCellDiagnosticLines } = require('../dist/services/inventory-items/managed-cell-stock-read.service');
 
 class Query {
   constructor(value) { this.value = value; }
@@ -93,4 +93,54 @@ test('Facility Staff cannot read cross-customer raw Cell diagnostics', async t =
     ManagedCellStockReadService.cellStock(String(source._id), staff),
     error => error.code === 'FORBIDDEN' && error.status === 403,
   );
+});
+
+test('Facility Manager cannot read Cell diagnostics outside the assigned Facility', async t => {
+  const source = cell(1);
+  t.mock.method(Cell, 'findOne', () => new Query(source));
+  const managerFromAnotherFacility = { ...manager, assignedFacilityId: new Types.ObjectId('507f1f77bcf86cd799439099') };
+  await assert.rejects(
+    ManagedCellStockReadService.cellStock(String(source._id), managerFromAnotherFacility),
+    error => error.code === 'CELL_NOT_FOUND' && error.status === 404,
+  );
+});
+
+test('Cell diagnostics keep expected values UNKNOWN when a Movement has no SKU scope', async t => {
+  const source = cell(1, 4);
+  t.mock.method(Cell, 'findOne', () => new Query(source));
+  t.mock.method(Stock, 'find', () => new Query([]));
+  t.mock.method(Instance, 'find', () => new Query([]));
+  t.mock.method(Movement, 'find', () => new Query([{ _id: new Types.ObjectId(), facilityId: source.facilityId, schemaVersion: 4, sourceCellId: source._id }]));
+  t.mock.method(Allocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await ManagedCellStockReadService.cellStock(String(source._id), manager);
+  assert.equal(result.diagnostics.evidenceStatus, 'UNKNOWN');
+  assert.equal(result.diagnostics.ledger.expectedWeightKg, null);
+  assert.equal(result.diagnostics.projection.weightKg, null);
+  assert.equal(result.diagnostics.difference.counterMinusLedgerWeightKg, null);
+});
+
+test('Cell diagnostics report verified ledger-versus-counter differences without writing stock', async t => {
+  const source = cell(1, 4);
+  t.mock.method(Cell, 'findOne', () => new Query(source));
+  t.mock.method(Stock, 'find', () => new Query([]));
+  t.mock.method(Instance, 'find', () => new Query([]));
+  t.mock.method(Movement, 'find', () => new Query([]));
+  t.mock.method(Allocation, 'find', () => new Query([]));
+  t.mock.method(InventoryItem, 'find', () => new Query([]));
+  const result = await ManagedCellStockReadService.cellStock(String(source._id), manager);
+  assert.equal(result.diagnostics.evidenceStatus, 'COMPLETE');
+  assert.equal(result.diagnostics.ledger.status, 'EMPTY_VERIFIED');
+  assert.equal(result.diagnostics.ledger.expectedWeightKg, 0);
+  assert.equal(result.diagnostics.projection.weightKg, 0);
+  assert.equal(result.diagnostics.difference.counterMinusLedgerWeightKg, 4);
+  assert.equal(result.reconciliationStatus, 'MISMATCH');
+});
+
+test('Cell diagnostic compares batch evidence and preserves per-Cell PhysicalUnit load semantics', () => {
+  const batch = { kind: 'BATCH', itemSpecId: 'spec-1', receiptId: 'receipt-1', reservationId: 'reservation-1', quantity: 2, weightKg: 7, volumeM3: 0.01 };
+  assert.equal(sameCellDiagnosticLines([batch], [{ ...batch }]), true);
+  assert.equal(sameCellDiagnosticLines([batch], [{ ...batch, weightKg: 8 }]), false);
+  const unit = { kind: 'PHYSICAL_UNIT', itemSpecId: 'spec-2', receiptId: 'receipt-2', itemInstanceId: 'unit-1', reservationId: 'reservation-1', quantity: 1, weightKg: 3, volumeM3: 0.02 };
+  assert.equal(sameCellDiagnosticLines([unit], [{ ...unit, quantity: 0 }]), true, 'a multi-Cell unit is not counted again per footprint Cell');
 });

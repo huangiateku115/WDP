@@ -304,8 +304,9 @@ for (const [name, service, model, make] of [['pricing', pricingService, Price, p
     const s = store(t);
     const a = await service.create(make(), admin);
     assert.equal(String((await service.get(String(a._id), { role: 'CUSTOMER' }))._id), String(a._id));
+    assert.equal((await service.get(String(a._id), admin)).effectiveTo, null);
     const result = await service.list({ facilityId, isActive: 'true', page: '1', limit: '1', ...(name === 'pricing' ? { unitSize: 'SMALL', termValue: '2', termUnit: 'MONTH' } : { type: 'DEPOSIT' }) }, admin);
-    assert.equal(result.data.length, 1); assert.deepEqual(result.pagination, { page: 1, limit: 1, total: 1, totalPages: 1 });
+    assert.equal(result.data.length, 1); assert.equal(result.data[0].effectiveTo, null); assert.deepEqual(result.pagination, { page: 1, limit: 1, total: 1, totalPages: 1 });
     assert.equal((await service.list({ page: '2', limit: '1' }, admin)).data.length, 0);
     for (const input of [{ page: '0' }, { limit: '101' }, { isActive: 'yes' }, { facilityId: 'bad' }, { $where: 'x' }])
       await assert.rejects(service.list(input, admin), status(400));
@@ -365,7 +366,9 @@ test('route table preserves Pricing Rule writes and exposes Policy read routes o
   const historical = new Policy({ ...policy(), isActive: true, version: 1 });
   state.rows.get(Policy).push(historical);
   assert.equal(String((await policyService.get(String(historical._id), admin))._id), String(historical._id));
-  assert.equal((await policyService.list({ facilityId, type: 'DEPOSIT' }, admin)).data.length, 1);
+  assert.equal((await policyService.get(String(historical._id), admin)).effectiveTo, null);
+  const policyList = await policyService.list({ facilityId, type: 'DEPOSIT' }, admin);
+  assert.equal(policyList.data.length, 1); assert.equal(policyList.data[0].effectiveTo, null);
   assert.equal(String((await policyService.resolve({ facilityId, type: 'DEPOSIT', at: from }, admin))._id), String(historical._id));
 });
 test('CATEGORY policy readers keep the approved strict allow/block schema and Managed Inventory scope', async t => {

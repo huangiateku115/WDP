@@ -7,6 +7,7 @@ import * as ManagedReservationController from '../controllers/reservations/manag
 import * as ManagedCheckinController from '../controllers/reservations/managed-checkin.controller';
 import * as PayosPaymentController from '../controllers/payments/payos-payment.controller';
 import { uploadProofMiddleware } from '../middlewares/upload.middleware';
+import { listReservationsForAdmin } from '../controllers/reservations/admin-reservation-list.controller';
 
 const router = Router();
 
@@ -87,6 +88,7 @@ router.post('/:id/extension-contracts/:extensionId/reject', requireRole(staffAnd
 router.post('/:id/extension-contracts/:extensionId/cancel', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN]), ReservationController.cancelExtensionRequest);
 
 // View Reservation Detail (Customer xem đơn của mình, Staff/Admin/BOM xem toàn bộ)
+router.get('/admin-list', requireRole([UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF]), listReservationsForAdmin);
 router.get('/:id', requireRole([UserRole.CUSTOMER, UserRole.FACILITY_STAFF, UserRole.FACILITY_MANAGER, UserRole.ADMIN, UserRole.BOM]), ReservationController.getReservationById);
 
 // Facility Staff & Manager Routes

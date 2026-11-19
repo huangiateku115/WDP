@@ -14,6 +14,7 @@ const ReservationModel = require('../dist/models/reservations/reservation.model'
 const ContractModel = require('../dist/models/contracts/contract.model').default;
 const StorageUnitModel = require('../dist/models/storage-units/storage-unit.model').default;
 const PricingRuleModel = require('../dist/models/pricing-policy/pricing-rule.model').default;
+const { ReservationService } = require('../dist/services/reservations/reservation.service');
 const AccessLogModel = require('../dist/models/access/access-log.model').default;
 
 const ReservationController = require('../dist/controllers/reservations/reservation.controller');
@@ -422,6 +423,7 @@ test('Phase 5.2: Báo giá gia hạn (Renew Quote) tính đúng tiền = monthly
     facilityId,
     storageUnitId: unitId,
     status: ReservationStatus.ACTIVE,
+    paperContractProofUrl: 'https://example.test/signed-contract.pdf',
     pricingPolicyId,
     startDate: new Date('2026-11-11T00:00:00Z'),
     endDate: currentEndDate,
@@ -430,9 +432,12 @@ test('Phase 5.2: Báo giá gia hạn (Renew Quote) tính đúng tiền = monthly
   };
 
   t.mock.method(ReservationModel, 'findById', async () => reservationDoc);
-  t.mock.method(PricingRuleModel, 'findOne', () => ({
+  t.mock.method(PricingRuleModel, 'findOne', filter => {
+    assert.equal(filter['term.value'], 2);
+    assert.equal(filter['term.unit'], 'MONTH');
+    return ({
     exec: async () => ({ _id: pricingPolicyId, price: 1000000 })
-  }));
+  }); });
   t.mock.method(PricingRuleModel, 'findById', () => ({
     exec: async () => ({ price: 1000000, version: 1, currency: 'VND', effectiveFrom: new Date('2020-01-01'), isActive: true })
   }));
@@ -513,7 +518,6 @@ test('Phase 5.2: Legacy Renew bị khóa và không thay đổi endDate, Contrac
     statusHistory: [],
     save: async function () { return this; }
   };
-
   t.mock.method(ReservationModel, 'findById', async () => reservationDoc);
   let updatedContractSnapshotEndDate = null;
   t.mock.method(ContractModel, 'findOneAndUpdate', (filter, update) => ({

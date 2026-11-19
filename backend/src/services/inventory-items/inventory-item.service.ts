@@ -30,6 +30,9 @@ import { InboundConfirmationInput, InventoryItemError, OutboundConfirmationInput
 import { validateCategoryPolicyConfig } from '../pricing-policy/rule.validation';
 import { calculateRentalPaymentBreakdown } from '../payments/payment-accounting';
 import { ManagedInventoryImageService } from '../upload/managed-inventory-image.service';
+import { ManagedCellStockReadService } from './managed-cell-stock-read.service';
+import ManagedInventoryCategoryModel from '../../models/inventory-items/managed-inventory-category.model';
+import { ManagedV4StockBatchReadService } from './managed-v4-stock-batch-read.service';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 const managementReaders = [UserRole.ADMIN, UserRole.BOM, UserRole.FACILITY_MANAGER, UserRole.FACILITY_STAFF];
@@ -133,6 +136,30 @@ function dto(item: IInventoryItem, includeCustomer = false) {
     images: item.images ?? [],
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
+  };
+}
+
+export function mapManagedV3InventoryDetail(result: Record<string, any>, category: Record<string, any> | null, canonical: Record<string, any>) {
+  const verified = ['REPLAYED', 'NOT_REQUIRED'].includes(canonical.ledgerStatus) && canonical.reconciliationStatus !== 'MISMATCH';
+  const quantities = new Map<string, { quantityUnitId: string | null; quantityUnit: string | null; quantity: number }>();
+  for (const spec of canonical.itemSpecifications ?? []) {
+    if (!verified || spec.quantityOnHand === null) continue;
+    const quantityUnitId = spec.quantityUnitId == null ? null : String(spec.quantityUnitId);
+    const key = quantityUnitId ?? `unknown:${String(spec.itemSpecId)}`;
+    const row = quantities.get(key) ?? { quantityUnitId, quantityUnit: spec.quantityUnit ?? null, quantity: 0 };
+    row.quantity += spec.quantityOnHand;
+    quantities.set(key, row);
+  }
+  const quantityByUnit = verified ? [...quantities.values()] : [];
+  return { ...result,
+    categoryId: result.categoryId,
+    categoryCode: category?.code ?? null,
+    categoryInfo: category ? { id: category._id, code: category.code, name: category.name } : null,
+    stock: { totalQuantity: verified && quantityByUnit.length <= 1 && (!quantityByUnit.length || quantityByUnit[0]?.quantityUnitId != null) ? quantityByUnit[0]?.quantity ?? 0 : null, quantityByUnit,
+      totalWeightKg: verified ? canonical.totalWeightKg : null, totalVolumeM3: verified ? canonical.totalVolumeM3 : null,
+      byCell: verified ? canonical.byCell : null, itemSpecifications: canonical.itemSpecifications,
+      reconciliationStatus: canonical.reconciliationStatus, dataCompleteness: verified ? 'COMPLETE' : 'INCOMPLETE',
+      ...(verified ? {} : { unavailableReason: canonical.reasonCode ?? 'STOCK_NOT_RECONCILED' }) },
   };
 }
 
@@ -760,7 +787,24 @@ export class InventoryItemService {
         InventoryItemModel.find(filter).sort({ createdAt: -1, _id: -1 }).skip((parsed.page - 1) * parsed.limit).limit(parsed.limit).lean().exec(),
         InventoryItemModel.countDocuments(filter).exec(),
       ]);
-      return { data: items.map(item => dto(item as IInventoryItem, true)), pagination: { page: parsed.page, limit: parsed.limit, total, totalPages: Math.ceil(total / parsed.limit) } };
+      const v3Items = items.filter(item => item.inventorySchemaVersion === 3);
+      const stockBySku = await ManagedV4StockBatchReadService.summarize(v3Items, actor);
+      const categoryIds = [...new Set(v3Items.map(item => String(item.categoryId ?? '')).filter(value => /^[a-f\d]{24}$/i.test(value)))];
+      const categoryRows = categoryIds.length ? await ManagedInventoryCategoryModel.find({ _id: { $in: categoryIds.map(value => new Types.ObjectId(value)) } })
+        .select('_id code name').limit(categoryIds.length + 1).lean().exec() : [];
+      if (categoryRows.length > categoryIds.length) throw new InventoryItemError(503, 'Inventory category evidence exceeded the page bound');
+      const categories = new Map(categoryRows.map(category => [String(category._id), category]));
+      const data = items.map(item => {
+        const result: any = dto(item as IInventoryItem, true);
+        if (item.inventorySchemaVersion !== 3) return result;
+        const category: any = categories.get(String(item.categoryId));
+        const categoryId = item.categoryId;
+        return { ...result, categoryId, categoryCode: category?.code ?? null,
+          categoryInfo: category ? { id: category._id, code: category.code, name: category.name } : null,
+          stock: stockBySku.get(String(item._id)) ?? { totalQuantity: null, quantityByUnit: [], totalWeightKg: null, totalVolumeM3: null,
+            ledgerStatus: 'UNKNOWN', reconciliationStatus: 'UNKNOWN', dataCompleteness: 'INCOMPLETE', unavailableReason: 'STOCK_EVIDENCE_UNAVAILABLE' } };
+      });
+      return { data, pagination: { page: parsed.page, limit: parsed.limit, total, totalPages: Math.ceil(total / parsed.limit) } };
     });
   }
 
@@ -769,7 +813,16 @@ export class InventoryItemService {
     return execute(async () => {
       const item = await loadItem(itemId);
       await assertItemReadAccess(item, actor);
-      return dto(item, actor.role !== UserRole.CUSTOMER);
+      const result: any = dto(item, actor.role !== UserRole.CUSTOMER);
+      if (item.inventorySchemaVersion === 3) {
+        const [canonical, category]: [any, any] = await Promise.all([
+          ManagedCellStockReadService.skuStock(String(item._id), actor),
+          ManagedInventoryCategoryModel.findById(item.categoryId).select('_id code name').lean().exec(),
+        ]);
+        result.categoryId = item.categoryId;
+        return mapManagedV3InventoryDetail(result, category, canonical);
+      }
+      return result;
     });
   }
 

@@ -77,6 +77,25 @@ test('successful upload persists a server-scoped UNATTACHED record and same-key 
  assert.equal(first.uploadId.toString(),replay.uploadId.toString());assert.equal(record.status,'UNATTACHED');assert.equal(createCount,1);assert.equal(cloudinaryCount,1);
 });
 
+test('verified Cloudinary upload logs metadata persistence failure and preserves service error contract',async t=>{
+ const previous=process.env.NODE_ENV;process.env.NODE_ENV='development';t.after(()=>{process.env.NODE_ENV=previous;});
+ const bytes=await sharp({create:{width:4,height:3,channels:3,background:'#654321'}}).png().toBuffer();
+ const item={_id:itemId,status:'PENDING_INBOUND',managedReservationId:new mongoose.Types.ObjectId()};
+ const reservation={_id:item.managedReservationId};const upload={_id:new mongoose.Types.ObjectId(),itemId,folder:`wdp/managed-receiving/${facilityId}/${itemId}`,generatedPublicId:'offline-public-id'};
+ t.mock.method(Item,'findOne',()=>new Query(item));
+ t.mock.method(Reservation,'findOne',()=>new Query(reservation));
+ t.mock.method(Upload,'findOne',()=>new Query(null));
+ t.mock.method(Upload,'create',async()=>[upload]);
+ t.mock.method(Upload,'findOneAndUpdate',()=>({session(){return this;},exec(){return Promise.reject(Object.assign(new Error('private database details SECRET_TEST_TOKEN'),{code:'ETIMEDOUT'}));}}));
+ t.mock.method(Upload,'updateOne',()=>new Query({modifiedCount:1}));
+ t.mock.method(CloudinaryService,'uploadInventoryImage',async()=>({secureUrl:'https://res.cloudinary.com/demo/receiving.png',publicId:'wdp/managed-receiving/offline',width:4,height:3,format:'png'}));
+ let line;t.mock.method(console,'error',value=>{line=value;});
+ const file={buffer:bytes,size:bytes.length,mimetype:'image/png'},actor={_id:staffId,role:'FACILITY_STAFF',assignedFacilityId:facilityId};
+ await assert.rejects(service.upload(itemId.toString(),file,'evidence-key-metadata',actor),error=>error.status===502);
+ const event=JSON.parse(line);assert.equal(event.stage,'metadata_persistence');assert.equal(event.operation,'upload.receiving_evidence');
+ assert.ok(event.correlationId);assert.equal(line.includes('SECRET_TEST_TOKEN'),false);assert.equal(line.includes('private database details'),false);
+});
+
 test('cleanup selects only expired unattached uploads and never schedules ATTACHED snapshots',async t=>{
  const filters=[];
  t.mock.method(Upload,'findOneAndUpdate',filter=>{filters.push(filter);return new Query(null);});
