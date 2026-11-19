@@ -9,10 +9,26 @@ const PAGE_LIMIT = 100;
 // Hard bound on sequential page round-trips so a large collection never stalls the client.
 const MAX_PAGES = 3;
 const FACILITIES_TTL_MS = 30000;
+// Page size used when a screen renders its own pager and asks the backend for ONE page.
+export const PAGE_SIZE = 20;
 
-// Bounded server-side paging: fetches at most MAX_PAGES pages and flattens the rows.
+// Two modes, both server-side:
+//   • `page` given → a real paged read: one request for that page, `pagination` returned untouched
+//     so the screen can render previous/next. This is the mode every paged list should use.
+//   • `page` omitted → the legacy bounded read: at most MAX_PAGES pages flattened, with
+//     `truncated` telling the screen that narrowing the filters is required.
 // `list` is an API list method accepting (params, config) (config carries the abort signal).
-export async function fetchPaged(list, params = {}, { signal, maxPages = MAX_PAGES } = {}) {
+export async function fetchPaged(list, params = {}, { signal, maxPages = MAX_PAGES, page, pageSize = PAGE_SIZE } = {}) {
+  if (page !== undefined) {
+    const single = responseList(await list({ page, limit: pageSize, ...params }, { signal }));
+    const pagination = single.pagination ?? null;
+    return {
+      rows: single.rows,
+      total: pagination?.total ?? single.rows.length,
+      truncated: false,
+      pagination: pagination ?? { page, limit: pageSize, total: single.rows.length, totalPages: 1 },
+    };
+  }
   const first = responseList(await list({ page: 1, limit: PAGE_LIMIT, ...params }, { signal }));
   let rows = first.rows;
   const totalPages = first.pagination?.totalPages || 1;
@@ -20,7 +36,7 @@ export async function fetchPaged(list, params = {}, { signal, maxPages = MAX_PAG
   for (let page = 2; page <= pages; page += 1) {
     rows = rows.concat(responseList(await list({ page, limit: PAGE_LIMIT, ...params }, { signal })).rows);
   }
-  return { rows, total: first.pagination?.total ?? rows.length, truncated: totalPages > pages };
+  return { rows, total: first.pagination?.total ?? rows.length, truncated: totalPages > pages, pagination: first.pagination ?? null };
 }
 
 // Facilities are shared across the BOM pages, so cache them briefly and de-duplicate
@@ -109,22 +125,22 @@ export async function loadWarehouseStructure(facilityId, { signal } = {}) {
   }
 }
 
-export async function loadFacilityUnits(facilityId, { signal, ...params } = {}) {
+export async function loadFacilityUnits(facilityId, { signal, page, pageSize, ...params } = {}) {
   const list = (query, config) => bomUnitApi.listByFacility(facilityId, query, config);
-  const { rows, total, truncated } = await fetchPaged(list, params, { signal });
-  return { rows: rows.map(unitFromDto), total, truncated };
+  const { rows, total, truncated, pagination } = await fetchPaged(list, params, { signal, page, pageSize });
+  return { rows: rows.map(unitFromDto), total, truncated, pagination };
 }
 
-export async function loadFacilityInventory(facilityId, { signal, ...params } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, { facilityId, ...params }, { signal });
-  return { rows: rows.map(inventoryItemFromDto), total, truncated };
+export async function loadFacilityInventory(facilityId, { signal, page, pageSize, ...params } = {}) {
+  const { rows, total, truncated, pagination } = await fetchPaged(bomInventoryApi.list, { facilityId, ...params }, { signal, page, pageSize });
+  return { rows: rows.map(inventoryItemFromDto), total, truncated, pagination };
 }
 
 // Cross-facility inventory read. The list endpoint accepts facilityId/customerId/category/
-// status/search plus page+limit, so the console filters server-side and bounds the paging.
-export async function loadInventoryItems(params = {}, { signal } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomInventoryApi.list, params, { signal });
-  return { rows: rows.map(inventoryItemFromDto), total, truncated };
+// status/search plus page+limit, so the console filters server-side and pages what it reads.
+export async function loadInventoryItems(params = {}, { signal, page, pageSize } = {}) {
+  const { rows, total, truncated, pagination } = await fetchPaged(bomInventoryApi.list, params, { signal, page, pageSize });
+  return { rows: rows.map(inventoryItemFromDto), total, truncated, pagination };
 }
 
 export async function loadInventoryItem(id, { signal } = {}) {
@@ -146,6 +162,18 @@ export async function loadFacilityReservations(facilityId, { signal } = {}) {
 // with the failed scopes surfaced so the page can label incomplete counts.
 export async function loadFacilityReservationsAll(facilityId, { signal } = {}) {
   return facilityReservations(facilityId, { signal });
+}
+
+// Paged collection read (GET /reservations/admin-list). It is the only reservation list that
+// accepts page/limit, so consoles browse one page at a time instead of downloading a whole
+// facility history. Facility roles are scoped to their assignment by the backend itself.
+export async function loadAdminReservations(params = {}, { signal, page, pageSize = PAGE_SIZE } = {}) {
+  const query = { ...params };
+  if (page !== undefined) { query.page = page; query.limit = pageSize; }
+  const body = (await bomReservationApi.adminList(query, { signal }))?.data?.data;
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const pagination = body?.pagination ?? null;
+  return { rows: items.map((row) => reservationFromDto(row)), total: pagination?.total ?? items.length, pagination };
 }
 
 // A contract can only be discovered through its reservation with the current backend surface.
@@ -174,17 +202,17 @@ export async function loadManagedCapacity(facilityId, { startDate, endDate, sign
 // narrows the query to ACTIVE MANAGED_INVENTORY facilities only. Each endpoint also
 // validates the facility, so a non-managed facility answers 409 instead of an empty list.
 
-export async function loadZones(facilityId, { signal } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.zones, { facilityId }, { signal });
-  return { rows: rows.map(zoneFromDto), total, truncated };
+export async function loadZones(facilityId, { signal, page, pageSize } = {}) {
+  const { rows, total, truncated, pagination } = await fetchPaged(bomWarehouseApi.zones, { facilityId }, { signal, page, pageSize });
+  return { rows: rows.map(zoneFromDto), total, truncated, pagination };
 }
 
-export async function loadRacks(facilityId, { signal } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.racks, { facilityId }, { signal });
-  return { rows: rows.map(rackFromDto), total, truncated };
+export async function loadRacks(facilityId, { signal, page, pageSize } = {}) {
+  const { rows, total, truncated, pagination } = await fetchPaged(bomWarehouseApi.racks, { facilityId }, { signal, page, pageSize });
+  return { rows: rows.map(rackFromDto), total, truncated, pagination };
 }
 
-export async function loadCells(facilityId, rackId, { signal } = {}) {
-  const { rows, total, truncated } = await fetchPaged(bomWarehouseApi.cells, { facilityId, rackId }, { signal });
-  return { rows: rows.map(cellFromDto), total, truncated };
+export async function loadCells(facilityId, rackId, { signal, page, pageSize } = {}) {
+  const { rows, total, truncated, pagination } = await fetchPaged(bomWarehouseApi.cells, { facilityId, rackId }, { signal, page, pageSize });
+  return { rows: rows.map(cellFromDto), total, truncated, pagination };
 }

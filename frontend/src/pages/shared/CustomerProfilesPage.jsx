@@ -5,6 +5,9 @@ import {
 } from "@/components/manager/ManagerUI";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { pageSlice } from "@/lib/pageSlice";
+import { usePageIndex } from "@/lib/usePageIndex";
+import ListPager from "@/components/bom/ListPager";
 import { apiErrorMessage } from "@/lib/apiError";
 import customerProfileApi from "@/api/customerProfileApi";
 
@@ -44,6 +47,8 @@ function CustomerList({ basePath }) {
   const state = useAsyncData(({ signal }) => customerProfileApi.list({ signal }).then(unwrapList), []);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  // GET /customers returns every profile (no page/limit contract), so the table pages locally.
+  const [page, setPage] = usePageIndex(`${status}|${search}`);
 
   return (
     <Screen
@@ -65,11 +70,12 @@ function CustomerList({ basePath }) {
         const rows = profiles.map(toRow).filter((row) =>
           (!status || row.status === status) &&
           (!search || `${row.name} ${row.email} ${row.phone} ${row.identityCard}`.toLowerCase().includes(search.toLowerCase())));
+        const paged = pageSlice(rows, page);
         return (
           <Panel title="Hồ sơ khách hàng" subtitle={`${rows.length} / ${profiles.length} hồ sơ`}>
             <Table
               label="Hồ sơ khách hàng"
-              rows={rows}
+              rows={paged.rows}
               columns={[
                 { key: "name", label: "Customer", render: (r) => <OpenLink to={`${basePath}/${r.id}`}>{r.name}</OpenLink> },
                 { key: "email", label: "Email" },
@@ -79,6 +85,14 @@ function CustomerList({ basePath }) {
                 { key: "verifiedAt", label: "Verified at" },
               ]}
               empty="Không có hồ sơ khách hàng nào."
+            />
+            <ListPager
+              page={paged.page}
+              totalPages={paged.totalPages}
+              total={paged.total}
+              loading={state.loading}
+              onPageChange={setPage}
+              unit="hồ sơ"
             />
           </Panel>
         );

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Screen, Panel, Table, Status, Field, Select, Input, Button } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary, TruncatedNotice, ConfirmDialog } from "@/components/bom/LiveBomUI";
 import { Kpis } from "@/components/bom/BomUI";
 import { ResourceThumb } from "@/components/bom/ResourceImages";
 import { UnitStatusDialog } from "@/components/bom/StorageUnitDialogs";
 import { useAsyncData } from "@/lib/useAsyncData";
+import { usePageIndex } from "@/lib/usePageIndex";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { loadFacilities, loadFacilityUnits } from "@/lib/bomApiData";
 import { bomUnitApi } from "@/api/bomApi";
@@ -30,12 +32,14 @@ export default function StorageUnitsPage({ basePath = "/bom/units" }) {
   const debouncedSearch = useDebouncedValue(search);
   const [statusDialog, setStatusDialog] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  // The endpoint is paged, so the table pages server-side and resets when a filter changes.
+  const [page, setPage] = usePageIndex(`${facilityId}|${status}|${size}|${debouncedSearch}`);
 
   const units = useAsyncData(
     ({ signal }) => (facilityId
-      ? loadFacilityUnits(facilityId, { signal, ...wc({ status, size, search: debouncedSearch.trim() }) })
+      ? loadFacilityUnits(facilityId, { signal, page, ...wc({ status, size, search: debouncedSearch.trim() }) })
       : Promise.resolve(null)),
-    [facilityId, status, size, debouncedSearch],
+    [facilityId, status, size, debouncedSearch, page],
   );
 
   function selectFacility(id) {
@@ -73,8 +77,8 @@ export default function StorageUnitsPage({ basePath = "/bom/units" }) {
             <Kpis items={[
               ["Cơ sở", selectable.length, "Cơ sở có dịch vụ Thuê kho riêng"],
               ["Số kho đã tải", units.data?.total ?? "—", "Theo bộ lọc hiện tại"],
-              ["Sẵn sàng", countBy(rows, "status", "AVAILABLE"), "Có thể cho thuê"],
-              ["Tổng thể tích đã đăng ký", m3(sumBy(rows, "volumeM3")), "Tính từ kích thước kho"],
+              ["Sẵn sàng", countBy(rows, "status", "AVAILABLE"), "Trong trang đang xem"],
+              ["Tổng thể tích đã đăng ký", m3(sumBy(rows, "volumeM3")), "Trong trang đang xem"],
             ]} />
 
             <Panel
@@ -132,7 +136,7 @@ export default function StorageUnitsPage({ basePath = "/bom/units" }) {
               <AsyncBoundary state={units} render={(data) => (data ? (
                 <Panel
                   title="Danh sách kho"
-                  subtitle={`${data.total} kho · ${countBy(data.rows, "status", "AVAILABLE")} đang sẵn sàng`}
+                  subtitle={`${data.total} kho · ${countBy(data.rows, "status", "AVAILABLE")} sẵn sàng ở trang này`}
                   action={canWrite
                     ? <Button asChild><Link to={`${basePath}/new/${encodeURIComponent(facilityId)}`}>Tạo kho</Link></Button>
                     : <Button disabled>Tạo kho</Button>}
@@ -177,6 +181,14 @@ export default function StorageUnitsPage({ basePath = "/bom/units" }) {
                       empty="Không có kho phù hợp bộ lọc hiện tại."
                     />
                   </div>
+                  <ListPager
+                    page={data.pagination?.page ?? page}
+                    totalPages={data.pagination?.totalPages ?? 1}
+                    total={data.total}
+                    loading={units.loading}
+                    onPageChange={setPage}
+                    unit="kho"
+                  />
                 </Panel>
               ) : null)} />
             )}

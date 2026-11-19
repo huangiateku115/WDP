@@ -5,80 +5,50 @@ import {
 } from "@/components/manager/ManagerUI";
 import { BomUnavailable } from "@/components/bom/BomUI";
 import { AsyncBoundary, TruncatedNotice } from "@/components/bom/LiveBomUI";
+import RuleEffectBadge from "@/components/bom/RuleEffectBadge";
 import { bomPolicyApi } from "@/api/bomApi";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { loadFacilities, facilityName, fetchPaged } from "@/lib/bomApiData";
-import {
-  BOM_DISCOUNT_KINDS, BOM_DISCOUNT_TYPES, BOM_DISCOUNT_KIND_LABELS,
-  responseData, discountFromDto, discountValueLabel, categoryFromDto,
-} from "@/lib/bomMappers";
+import { responseData, categoryFromDto } from "@/lib/bomMappers";
 
-// Policy records remain visible for operational readers and history, but are system-controlled.
-const CONFIGS = {
-  discount: {
-    title: "Giảm giá và miễn giảm", policyTypes: BOM_DISCOUNT_TYPES, listParams: {}, fromDto: discountFromDto,
-  },
-  category: {
-    title: "Danh mục hàng hóa", policyTypes: ["CATEGORY"], listParams: { type: "CATEGORY" }, fromDto: categoryFromDto,
-  },
-};
-const CONFIG_ROOTS = { discount: "/policies/discounts", category: "/policies/item-categories" };
-const configCache = new Map();
-function configFor(kind, basePath) {
-  if (!CONFIGS[kind]) return null;
-  const key = `${kind}:${basePath}`;
-  if (!configCache.has(key)) configCache.set(key, { ...CONFIGS[kind], root: `${basePath}${CONFIG_ROOTS[kind]}` });
-  return configCache.get(key);
-}
-const loadRecords = (config, signal) => fetchPaged(bomPolicyApi.list, config.listParams, { signal })
-  .then((page) => ({ ...page, rows: page.rows.filter((row) => config.policyTypes.includes(row.type)) }));
+// Item categories are the only policy screen kept in the BOM/Admin console. The effective
+// CATEGORY policy really blocks inbound items (inventory-items/assertCategoryPolicyDecision),
+// which is why it stays visible even though the backend only exposes read endpoints here.
+// Every other policy type (deposit, cancellation, refund, overdue, shelf constraint, promotional
+// and loyalty discounts) was removed from the console: no policy changes a reservation amount
+// today. See backend/docs/POLICY_PRICING_DISCOUNT_BE_SPEC.md.
+const TITLE = "Danh mục hàng hóa";
+const loadRecords = (signal) => fetchPaged(bomPolicyApi.list, { type: "CATEGORY" }, { signal });
 
-export default function PolicyRecordsPage({ kind, mode = "list", basePath = "/bom" }) {
-  const config = configFor(kind, basePath);
-  if (!config) return <BomUnavailable />;
-  if (mode === "detail") return <RecordDetail kind={kind} config={config} />;
-  return <RecordList kind={kind} config={config} />;
+export default function PolicyRecordsPage({ mode = "list", basePath = "/bom" }) {
+  const root = `${basePath}/policies/item-categories`;
+  if (mode === "detail") return <RecordDetail root={root} />;
+  return <RecordList root={root} />;
 }
 
-function RecordList({ kind, config }) {
-  const state = useAsyncData(({ signal }) => Promise.all([loadRecords(config, signal), loadFacilities()]), [kind]);
+function RecordList({ root }) {
+  const state = useAsyncData(({ signal }) => Promise.all([loadRecords(signal), loadFacilities()]), [root]);
   const [status, setStatus] = useState("");
-  const [filter, setFilter] = useState("");
-  // Discounts are narrowed by kind client-side; CATEGORY policies only need the status filter.
-  const typeFilter = kind === "discount"
-    ? [["", "Tất cả hình thức giảm giá"], ...BOM_DISCOUNT_KINDS.map((k) => [k, BOM_DISCOUNT_KIND_LABELS[k] || k])]
-    : null;
 
   return (
-    <Screen title={config.title}
-      description={kind === "discount"
-        ? "Chính sách khuyến mại, khách hàng thân thiết và miễn phụ phí."
-        : "Chính sách danh mục hàng hóa lưu trữ."}>
+    <Screen title={TITLE} description="Chính sách danh mục hàng hóa lưu trữ.">
       <Panel title="Bộ lọc">
         <div className="manager-filters">
           <Select label="Lọc theo trạng thái" value={status} onChange={setStatus} options={[["", "Tất cả trạng thái"], "ACTIVE", "INACTIVE"]} />
-          {typeFilter && <Select label="Lọc theo hình thức" value={filter} onChange={setFilter} options={typeFilter} />}
         </div>
       </Panel>
       <AsyncBoundary state={state} render={([recordPage, facilities]) => {
-        const rows = recordPage.rows.map(config.fromDto).filter((row) =>
-          (!status || row.status === status) &&
-          (!filter || (kind === "discount" ? row.kind === filter : row.allowedStatus === filter)));
-        return <Panel title={config.title} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
+        const rows = recordPage.rows.map(categoryFromDto).filter((row) => !status || row.status === status);
+        return <Panel title={TITLE} subtitle={`${rows.length} / ${recordPage.rows.length} bản ghi`}>
           {recordPage.truncated && <TruncatedNotice total={recordPage.total} shown={recordPage.rows.length} />}
-          <Table label={config.title} rows={rows} columns={kind === "discount" ? [
-            { key: "name", label: "Tên giảm giá", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-            { key: "kind", label: "Hình thức", render: (r) => BOM_DISCOUNT_KIND_LABELS[r.kind] || r.kind.replaceAll("_", " ") },
-            { key: "value", label: "Giá trị", render: (r) => discountValueLabel(r) },
+          <Table label={TITLE} rows={rows} columns={[
+            { key: "name", label: "Danh mục", render: (r) => <OpenLink to={`${root}/${r.id}`}>{r.name}</OpenLink> },
+            // The CATEGORY policy exposes only the allowed/blocked lists; there is no acceptance flag.
+            { key: "allowedCount", label: "Danh mục được phép", render: (r) => r.allowedCount },
+            { key: "blockedCount", label: "Danh mục bị chặn", render: (r) => r.blockedCount },
             { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
             { key: "effectiveFrom", label: "Hiệu lực từ" },
-            { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
-            { key: "revision", label: "Phiên bản" },
-          ] : [
-            { key: "name", label: "Danh mục", render: (r) => <OpenLink to={`${config.root}/${r.id}`}>{r.name}</OpenLink> },
-            { key: "acceptance", label: "Chấp nhận", render: (r) => <Status value={r.allowedStatus} /> },
-            { key: "facility", label: "Cơ sở", render: (r) => facilityName(facilities, r.facilityId) },
-            { key: "effectiveFrom", label: "Hiệu lực từ" },
+            { key: "phase", label: "Hiệu lực", render: (r) => <RuleEffectBadge record={r} /> },
             { key: "status", label: "Trạng thái", render: (r) => <Status value={r.status} /> },
             { key: "revision", label: "Phiên bản" },
           ]} />
@@ -88,23 +58,20 @@ function RecordList({ kind, config }) {
   );
 }
 
-function RecordDetail({ kind, config }) {
+function RecordDetail({ root }) {
   const { id } = useParams();
-  const state = useAsyncData(() => bomPolicyApi.get(id).then(responseData).then(config.fromDto), [id, kind]);
+  const state = useAsyncData(() => bomPolicyApi.get(id).then(responseData).then(categoryFromDto), [id]);
   if (!state.loading && state.error && /not found|unavailable|404/i.test(state.error)) return <BomUnavailable />;
-  return <Screen title="Chi tiết chính sách" description={config.title}
-    action={<Button asChild variant="outline"><Link to={config.root}>Quay lại danh sách</Link></Button>}>
+  return <Screen title="Chi tiết chính sách" description={TITLE}
+    action={<Button asChild variant="outline"><Link to={root}>Quay lại danh sách</Link></Button>}>
     <AsyncBoundary state={state} render={(record) => <Panel title="Chính sách hiện tại">
-      <Details values={kind === "discount" ? [
-        ["Tên giảm giá", record.name],
-        ["Hình thức", BOM_DISCOUNT_KIND_LABELS[record.kind] || record.kind.replaceAll("_", " ")],
-        ["Loại chính sách", record.policyType],
-        ["Giá trị", discountValueLabel(record)], ["Điều kiện áp dụng", record.conditions], ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
-      ] : [
-        ["Danh mục", record.name], ["Chấp nhận", <Status value={record.allowedStatus} />], ["Mô tả", record.description],
-        ["Ghi chú xử lý", record.handlingNotes], ["Ràng buộc", record.restrictions], ["Hiệu lực từ", record.effectiveFrom],
-        ["Hiệu lực đến", record.effectiveTo || "Không thời hạn"], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
+      {/* The CATEGORY policy only carries the two category lists; the DTO has no description,
+          handling note, restriction or acceptance flag, so those rows are not rendered. */}
+      <Details values={[
+        ["Danh mục", record.name], ["Danh mục được phép", record.allowedCount], ["Danh mục bị chặn", record.blockedCount],
+        ["Hiệu lực từ", record.effectiveFrom],
+        ["Hiệu lực đến", record.hasEffectiveTo ? (record.effectiveTo || "Không thời hạn") : "—"],
+        ["Hiệu lực", <RuleEffectBadge record={record} />], ["Trạng thái", <Status value={record.status} />], ["Phiên bản", record.revision],
       ]} />
     </Panel>} />
   </Screen>;

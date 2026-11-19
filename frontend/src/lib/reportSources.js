@@ -136,7 +136,13 @@ export async function loadFacilityRanking({ from, to, facilityId, sortBy = "coll
     customers: row.uniqueCustomers ?? 0,
     collected: row.collectedAmount ?? 0,
   }));
-  return { items, total: body.total ?? items.length, page: body.page ?? page, limit: body.limit ?? limit };
+  return {
+    items,
+    total: body.total ?? items.length,
+    page: body.page ?? page,
+    limit: body.limit ?? limit,
+    totalPages: body.totalPages ?? Math.max(1, Math.ceil((body.total ?? items.length) / (body.limit ?? limit))),
+  };
 }
 
 // Rental trends: GET /statistics/rental-trends?granularity=day|week|month

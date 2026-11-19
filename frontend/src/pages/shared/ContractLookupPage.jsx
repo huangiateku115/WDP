@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Screen, Panel, Table, Details, Field, Input, Select, Status, Button, Message, money } from "@/components/manager/ManagerUI";
+import ListPager from "@/components/bom/ListPager";
 import { AsyncBoundary } from "@/components/bom/LiveBomUI";
 import { useAsyncData } from "@/lib/useAsyncData";
 import { useAuthSession } from "@/lib/authSession";
-import { loadFacilities, loadFacilityReservations, loadContractForReservation } from "@/lib/bomApiData";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { usePageIndex } from "@/lib/usePageIndex";
+import { loadAdminReservations, loadFacilities, loadContractForReservation } from "@/lib/bomApiData";
 import { apiErrorMessage } from "@/lib/apiError";
 import contractApi from "@/api/contractApi";
 import { serviceLabel } from "@/lib/bomMappers";
@@ -12,8 +15,8 @@ import { serviceLabel } from "@/lib/bomMappers";
 // Shared contract workspace for BOM and Admin.
 // The backend exposes no contract collection, only GET /contracts/:id and
 // GET /contracts/reservation/:reservationId. A contract is therefore discovered through one of
-// the facility reservations and opened on its own detail route; the page never fans out one
-// contract request per reservation and never asks the user to type an ObjectId.
+// the facility reservations (paged, GET /reservations/admin-list) and opened on its own detail
+// route; the page never fans out one contract request per reservation.
 const RESERVATION_STATUSES = ["RESERVED", "DEPOSIT_PAID", "CHECKIN_READY", "CONTRACTED", "PAID", "ACTIVE", "OVERDUE", "CHECKED_OUT", "CLOSED", "CANCELLED"];
 const unwrap = (response) => response?.data?.data ?? null;
 const day = (value) => (value ? String(value).slice(0, 10) : "—");
@@ -37,7 +40,10 @@ const customerRows = (customer = {}) => [
 ];
 // Contract snapshots mix self-storage fields with the Managed pricing object, so known fields
 // are rendered with labels and money formatting instead of dumping raw JSON.
-const pricingRows = (pricing = {}) => {
+// Self-storage snapshots never stored `startDate` (only `endDate`, and only once a renewal ran),
+// so the billing period falls back to the reservation this contract belongs to. A half-empty
+// "— → date" row is never printed: the row only appears when at least one real date exists.
+const pricingRows = (pricing = {}, reservation = null) => {
   const rows = [];
   const amount = pricing.amountBreakdown && typeof pricing.amountBreakdown === "object" ? pricing.amountBreakdown : pricing;
   const rule = pricing.pricingRule && typeof pricing.pricingRule === "object" ? pricing.pricingRule : null;
@@ -45,7 +51,10 @@ const pricingRows = (pricing = {}) => {
   const term = pricing.term && typeof pricing.term === "object" ? pricing.term : null;
   if (pricing.quotaM3 !== undefined && pricing.quotaM3 !== null) rows.push(["Allocated quota", `${pricing.quotaM3} m³`]);
   if (term?.value) rows.push(["Rental term", `${term.value} ${String(term.unit || "").toLowerCase()}`]);
-  if (pricing.startDate || pricing.endDate) rows.push(["Rental window", `${day(pricing.startDate)} → ${day(pricing.endDate)}`]);
+  const periodStart = pricing.startDate || reservation?.startDate;
+  const periodEnd = pricing.endDate || reservation?.endDate;
+  const period = [periodStart, periodEnd].filter(Boolean).map(day);
+  if (period.length) rows.push(["Kỳ tính giá", period.join(" → ")]);
   if (rule) rows.push(["Rate", `${money(rule.ratePerM3)} / m³${rule.version ? ` · v${rule.version}` : ""}`]);
   if (depositPolicy) rows.push(["Deposit policy", `${depositPolicy.percentage ?? "—"}% giá trị tiền thuê${depositPolicy.version ? ` · v${depositPolicy.version}` : ""}`]);
   const amounts = [
@@ -97,18 +106,21 @@ function ContractList({ basePath }) {
   const [opening, setOpening] = useState("");
   const [feedback, setFeedback] = useState({});
 
-  // One collection request per selected facility. The contract is resolved only for the
-  // reservation the user opens, so there is no per-row contract request and no N+1 fan-out.
-  const reservations = useAsyncData(
-    ({ signal }) => (facilityId ? loadFacilityReservations(facilityId, { signal }) : Promise.resolve([])),
-    [facilityId],
-  );
-  const rows = (reservations.data || []).filter((row) => {
-    if (status && row.status !== status) return false;
-    const needle = search.trim().toLowerCase();
-    if (!needle) return true;
-    return String(row.code || "").toLowerCase().includes(needle) || String(row.customerName || "").toLowerCase().includes(needle);
-  });
+  // One paged collection request for the selected facility; the contract is resolved only for
+  // the reservation the user opens, so there is no per-row contract request and no N+1 fan-out.
+  const debouncedSearch = useDebouncedValue(search);
+  const [page, setPage] = usePageIndex(`${facilityId}|${status}|${debouncedSearch}`);
+  const reservations = useAsyncData(({ signal }) => (facilityId
+    ? loadAdminReservations({
+        facilityId,
+        ...(status ? { status } : {}),
+        ...(debouncedSearch.trim() ? { reservationCode: debouncedSearch.trim() } : {}),
+      }, { signal, page })
+    : Promise.resolve(null)),
+  [facilityId, status, debouncedSearch, page]);
+  const rows = reservations.data?.rows || [];
+  const pagination = reservations.data?.pagination ?? null;
+  const total = reservations.data?.total ?? 0;
 
   function selectFacility(id) {
     setFacilityId(id);
@@ -139,7 +151,7 @@ function ContractList({ basePath }) {
     >
       <Panel
         title="Tìm hợp đồng qua đơn đặt thuê"
-        subtitle={facilityId ? `${rows.length} / ${(reservations.data || []).length} đơn` : "Chọn một cơ sở để tải danh sách đơn."}
+        subtitle={facilityId ? `${total} đơn theo bộ lọc hiện tại` : "Chọn một cơ sở để tải danh sách đơn."}
       >
         <div className="manager-filters">
           {!facilityScoped && (
@@ -161,7 +173,7 @@ function ContractList({ basePath }) {
               options={[["", "Tất cả trạng thái"], ...RESERVATION_STATUSES.map((value) => [value, value.replaceAll("_", " ")])]}
             />
           </Field>
-          <Field label="Tìm kiếm" hint="Mã đơn hoặc tên khách hàng.">
+          <Field label="Tìm kiếm" hint="Mã đơn đặt thuê.">
             <Input
               aria-label="Tìm hợp đồng theo đơn"
               value={search}
@@ -177,28 +189,38 @@ function ContractList({ basePath }) {
           <p className="text-sm text-slate-500">Hãy chọn cơ sở trước. Hợp đồng được mở theo từng đơn đặt thuê.</p>
         ) : (
           <AsyncBoundary state={reservations} render={() => (
-            <Table
-              label="Đơn đặt thuê"
-              rows={rows}
-              columns={[
-                { key: "code", label: "Reservation", render: (row) => row.code || row.id },
-                { key: "customer", label: "Customer", render: (row) => row.customerName },
-                // reservationFromDto exposes the service model as `service`; `serviceType` is kept
-                // as a fallback for raw backend rows.
-                { key: "service", label: "Service", render: (row) => serviceLabel(row.service || row.serviceType) },
-                { key: "window", label: "Rental window", render: (row) => `${day(row.startDate)} → ${day(row.endDate)}` },
-                { key: "status", label: "Reservation status", render: (row) => <Status value={row.status} /> },
-                {
-                  key: "contract", label: "Contract",
-                  render: (row) => (
-                    <Button variant="outline" size="sm" disabled={opening === row.id} onClick={() => openContract(row.id)}>
-                      {opening === row.id ? "Đang mở…" : "Mở hợp đồng"}
-                    </Button>
-                  ),
-                },
-              ]}
-              empty="Không có đơn phù hợp bộ lọc hiện tại."
-            />
+            <>
+              <Table
+                label="Đơn đặt thuê"
+                rows={rows}
+                columns={[
+                  { key: "code", label: "Reservation", render: (row) => row.code || row.id },
+                  { key: "customer", label: "Customer", render: (row) => row.customerName },
+                  // reservationFromDto exposes the service model as `service`; `serviceType` is kept
+                  // as a fallback for raw backend rows.
+                  { key: "service", label: "Service", render: (row) => serviceLabel(row.service || row.serviceType) },
+                  { key: "window", label: "Rental window", render: (row) => `${day(row.startDate)} → ${day(row.endDate)}` },
+                  { key: "status", label: "Reservation status", render: (row) => <Status value={row.status} /> },
+                  {
+                    key: "contract", label: "Contract",
+                    render: (row) => (
+                      <Button variant="outline" size="sm" disabled={opening === row.id} onClick={() => openContract(row.id)}>
+                        {opening === row.id ? "Đang mở…" : "Mở hợp đồng"}
+                      </Button>
+                    ),
+                  },
+                ]}
+                empty="Không có đơn phù hợp bộ lọc hiện tại."
+              />
+              <ListPager
+                page={pagination?.page ?? page}
+                totalPages={pagination?.totalPages ?? 1}
+                total={total}
+                loading={reservations.loading}
+                onPageChange={setPage}
+                unit="đơn"
+              />
+            </>
           )} />
         )}
       </Panel>
@@ -259,7 +281,7 @@ function ContractRecord({ contract }) {
       </Panel>
 
       <Panel title="Giá và thanh toán">
-        <Details values={pricingRows(pricing)} />
+        <Details values={pricingRows(pricing, reservation)} />
       </Panel>
     </>
   );
