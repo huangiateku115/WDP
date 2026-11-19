@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
+const { ManagedCheckinService } = require('../dist/services/reservations/managed-checkin.service');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -28,11 +29,12 @@ try {
   ({ ContractStatus } = require('../src/types/contract.type'));
   Controller = require('../src/controllers/payments/payos-payment.controller');
 }
+const { NotificationService } = require('../dist/services/notifications/notification.service');
 
 const oid = () => new mongoose.Types.ObjectId();
 const DEPOSIT_QR = '00020101021229370016A0000006770101110113006688123456785204581253037045802VN6304ABCD';
 const BALANCE_QR = '00020101021229370016A0000006770101110113006688123456795204581253037045802VN6304ABCE';
-function query(value) { return { session() { return this; }, exec: async () => value }; }
+function query(value) { return { session() { return this; }, lean() { return this; }, exec: async () => value }; }
 function session() { return { withTransaction: async work => work(), endSession: async () => {} }; }
 function response() { return { statusCode: 200, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } }; }
 function baseReservation(status = ReservationStatus.CONTRACTED) {
@@ -1502,6 +1504,14 @@ test('verified Managed V3 Deposit promotes every HOLD and records DEPOSIT_PAID o
 
 test('verified Managed V3 FULL_RENT applies once, promotes held Cells and leaves rental awaiting contract', async t => {
   const { reservation, payment, rows, writes, apply } = managedDepositFixture(t, undefined, PaymentPurpose.FULL_RENT);
+  const notifications = [];
+  let notificationPersists = true;
+  t.mock.method(ReservationPaymentModel, 'findById', id => query(String(id) === String(payment._id) ? payment : null));
+  t.mock.method(ReservationModel, 'findById', id => query(String(id) === String(reservation._id) ? reservation : null));
+  t.mock.method(ManagedCheckinService, 'createV3ContractForVerifiedPayment', async () => ({ _id: oid() }));
+  t.mock.method(NotificationService, 'notifyManagedFullPaymentVerified', async (...args) => {
+    notifications.push(args); return notificationPersists;
+  });
   assert.deepEqual(await apply(), { success: true, duplicate: false, reconciled: false });
   assert.equal(reservation.status, ReservationStatus.PAID);
   assert.equal(reservation.fullPaymentId, payment._id);
@@ -1509,6 +1519,15 @@ test('verified Managed V3 FULL_RENT applies once, promotes held Cells and leaves
   assert.equal(payment.applicationStatus, PaymentApplicationStatus.APPLIED);
   assert.ok(rows.every(row => row.status === 'RESERVED' && row.holdExpiresAt === undefined));
   assert.equal((await apply()).duplicate, true);
+  assert.equal(notifications.length, 2, 'a durable duplicate webhook retries the idempotent notification producer');
+  assert.equal(notifications[0][0], reservation);
+  assert.equal(notifications[0][1], payment);
+  notificationPersists = false;
+  const delayedNotification = await apply();
+  assert.deepEqual(delayedNotification, { success: true, duplicate: true, reconciled: false },
+    'post-commit notification failure must not change the successful payment acknowledgement');
+  assert.equal(payment.applicationStatus, PaymentApplicationStatus.APPLIED, 'notification retry failure must not roll back payment');
+  assert.equal(notifications.length, 3, 'a later signed duplicate callback can retry post-commit notification persistence');
   assert.deepEqual(writes, { reservation: 1, allocation: 1 });
   assert.equal(payment.providerCaptures.length, 1);
 });

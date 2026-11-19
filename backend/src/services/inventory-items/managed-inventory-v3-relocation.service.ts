@@ -21,6 +21,8 @@ import { ReservationStatus } from '../../types/reservation.type';
 import { ItemMovementType } from '../../types/item-movement.type';
 import { ManagedAccessPurpose, ManagedAccessSessionStatus, ManagedAccessVisitPurpose } from '../../types/managed-access.type';
 import { UserRole } from '../../types/user.type';
+import { NotificationService } from '../notifications/notification.service';
+import { notifyManagedRelocationMovement } from '../notifications/managed-event-notification.producer';
 
 type Actor = { _id: Types.ObjectId; role: UserRole };
 type Plain = Record<string, any>;
@@ -332,8 +334,9 @@ export class ManagedInventoryV3RelocationService {
     const ownerSku = await ownedSkuForHistory(skuIdObject, actor); const replay = await findReplay(ownerSku._id, actor, key, payloadHash); if (replay) return replay;
     if (ifMatch(etag) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'If-Match và tồn kho trong phiếu không cùng phiên bản.');
     if (candidate.customerAttestation !== 'CONFIRMED') fail(422, 'CUSTOMER_ATTESTATION_REQUIRED', 'Hãy xác nhận rằng bạn đã thực hiện thao tác chuyển hàng tại kho.');
+    let committed: any;
     try {
-      return await withTransaction(async session => {
+      committed = await withTransaction(async session => {
         const scope = await lockedScope(skuIdObject, candidate, actor, session), allCellIds = [...new Set([...scope.plan.sourceCellIds, ...scope.plan.destinationCellIds])].map(value => new Types.ObjectId(value));
         validateRelocationDestinationRunway(candidate, id(scope.reservation._id), scope.reservations);
         try { await assertManagedAccessSessionScope({ sessionId: candidate.accessSessionId, customerId: actor._id, reservationId: scope.reservation._id,
@@ -417,6 +420,9 @@ export class ManagedInventoryV3RelocationService {
       if (transactionUnavailable(error)) fail(503, 'TRANSACTIONS_UNAVAILABLE', 'MongoDB hiện tại không hỗ trợ transaction; phiếu chuyển chưa được ghi.');
       throw error;
     }
+    if (committed?.status === 'COMMITTED' && committed.replayed !== true && committed.movement &&
+        NotificationService.isManagedCustomerEventsEnabled()) await notifyManagedRelocationMovement(committed.movement);
+    return committed;
   }
   static async operation(skuId: unknown, keyInput: unknown, actor: Actor) {
     const sku = await ownedSkuForHistory(skuId, actor), key = requestKey(keyInput), result = await findReplay(sku._id, actor, key);

@@ -17,9 +17,44 @@ import { ACCESS_SESSION_MAX_DURATION_MINUTES, IManagedAccessSession, IManagedAcc
 import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatus, ProviderSettlementStatus } from '../../types/payment.type';
 import { accessSessionCoversReservations, isAccessSessionAllowed, sessionExpiry, sessionIsCurrent } from './managed-access-policy';
 import { isManagedVisitDateBookable, managedVisitDateRange, managedVisitSlots, MANAGED_VISIT_MAX_DAYS_AHEAD } from './managed-visit-schedule';
+import { NotificationService } from '../notifications/notification.service';
+import { NotificationRecipientResolver } from '../notifications/notification-recipient-resolver.service';
+import { NotificationType } from '../../types/notification.type';
 
 type Actor = Pick<IUser, '_id' | 'role' | 'assignedFacilityId'>;
 export class ManagedAccessError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
+export async function notifyVisitTransition(visit: any, type: NotificationType, eventIdentity: string, statusLabel: string,
+  schedule?: { startsAt?: Date | string; endsAt?: Date | string }): Promise<boolean> {
+  try {
+    if (!NotificationService.isManagedCustomerEventsEnabled()) return false;
+    if (!visit?._id || !visit?.customerId || !visit?.facilityId || !visit?.reservationId) return false;
+    const reservation: any = await ReservationModel.findOne({ _id: visit.reservationId, customerId: visit.customerId,
+      facilityId: visit.facilityId, serviceType: FacilityServiceType.MANAGED_INVENTORY, bookingFlowVersion: 3 }).select('_id customerId').lean().exec();
+    if (!reservation) return false;
+    const userId = await NotificationRecipientResolver.resolveReservationCustomer(reservation);
+    if (!userId) return false;
+    const facility: any = await FacilityModel.findById(visit.facilityId).select('name').lean().exec();
+    const start = new Date(schedule?.startsAt ?? visit.startsAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    return NotificationService.notifyManagedCustomerEvent({ userId, type,
+      title: `${statusLabel} lịch đến kho`,
+      content: `${facility?.name || 'Cơ sở Managed Inventory'} · ${start}. Mã lịch: ${String(visit._id)}.`,
+      facilityId: String(visit.facilityId), relatedEntityId: String(visit._id), eventIdentity });
+  } catch { return false; /* notification failure must never change the committed access operation */ }
+}
+export async function notifySessionTransition(session: any, type: NotificationType, eventIdentity: string, statusLabel: string): Promise<boolean> {
+  try {
+    if (!NotificationService.isManagedCustomerEventsEnabled()) return false;
+    if (!session?._id || !session?.customerId || !session?.facilityId) return false;
+    const userId = await NotificationRecipientResolver.resolveReservationCustomer({ customerId: session.customerId });
+    if (!userId) return false;
+    const facility: any = await FacilityModel.findById(session.facilityId).select('name').lean().exec();
+    const until = session.expiresAt ? new Date(session.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '';
+    return NotificationService.notifyManagedCustomerEvent({ userId, type,
+      title: statusLabel,
+      content: `${facility?.name || 'Cơ sở Managed Inventory'}${until ? ` · Phiên có hiệu lực đến ${until}` : ''}. Tham chiếu: ${String(session._id)}.`,
+      facilityId: String(session.facilityId), relatedEntityId: String(session._id), eventIdentity });
+  } catch { return false; /* notification failure must never change the committed access operation */ }
+}
 function fail(status: number, code: string, message: string): never { throw new ManagedAccessError(status, code, message); }
 const asId = (v: unknown, name: string) => { if (typeof v !== 'string' || !/^[a-f\d]{24}$/i.test(v)) fail(400, 'INVALID_INPUT', `${name} không hợp lệ.`); return new Types.ObjectId(v); };
 const reqKey = (v: unknown) => { if (typeof v !== 'string' || !/^[\w.:/-]{8,160}$/.test(v)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Cần Idempotency-Key hợp lệ (8–160 ký tự).'); return v; };
@@ -37,15 +72,27 @@ function audit(action: string, actor: Actor, at: Date, details?: Record<string, 
 function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 async function markMissedVisits(filter: Record<string, unknown>, now: Date, limit = 500) {
   const rows = await VisitModel.find({ ...filter, status: VS.SCHEDULED, endsAt: { $lte: now } })
-    .select('_id').sort({ endsAt: 1, _id: 1 }).limit(limit).lean().exec();
+    .select('_id revision').sort({ endsAt: 1, _id: 1 }).limit(limit).lean().exec();
   if (!rows.length) return 0;
   const result = await VisitModel.bulkWrite(rows.map(row => ({ updateOne: {
     filter: { _id: row._id, status: VS.SCHEDULED, endsAt: { $lte: now } },
     update: { $set: { status: VS.MISSED }, $inc: { revision: 1 }, $push: { audit: {
       action: 'VISIT_MARKED_MISSED', actorRole: 'SYSTEM', at: now,
-      details: { reason: 'Scheduled window ended without Staff check-in' },
+      details: { reason: 'Scheduled window ended without Staff check-in', eventRevision: Number(row.revision ?? 0) + 1 },
     } } },
   } })), { ordered: false });
+  if (NotificationService.isManagedCustomerEventsEnabled()) {
+    try {
+      const persisted = await VisitModel.find({ _id: { $in: rows.map(row => row._id) }, status: VS.MISSED,
+        'audit.action': 'VISIT_MARKED_MISSED' }).lean().exec();
+      for (const visit of persisted) {
+        const event = [...(visit.audit ?? [])].reverse().find((entry: any) => entry.action === 'VISIT_MARKED_MISSED');
+        const revision = Number(event?.details?.eventRevision ?? visit.revision);
+        if (Number.isSafeInteger(revision) && revision >= 0) await notifyVisitTransition(visit, NotificationType.MANAGED_VISIT_NO_SHOW,
+          `VISIT:${visit._id}:REV:${revision}:NO_SHOW`, 'Đã ghi nhận vắng mặt');
+      }
+    } catch { /* a missed Visit remains persisted; the bounded Visit recovery can retry its event */ }
+  }
   return result.modifiedCount;
 }
 function windowInput(input: Record<string, unknown>, now: Date) {
@@ -297,7 +344,8 @@ export class ManagedAccessService {
           scopedReservationIds,
           purpose: ManagedAccessVisitPurpose.WAREHOUSE_VISIT, ...window, ...(typeof input.note === 'string' ? { note: input.note.trim() } : {}), idempotencyKey: key,
           requestHash, revision: 0, assignmentHistory: [],
-          audit: [audit('VISIT_CREATED', actor, now, { visitType: ManagedAccessVisitPurpose.WAREHOUSE_VISIT, scopedReservationIds: scopedReservationIds.map(String), allowedCellIds: scopedCells.map(String) })] }], { session });
+          audit: [audit('VISIT_CREATED', actor, now, { eventRevision: 0, startsAt: window.startsAt.toISOString(), endsAt: window.endsAt.toISOString(),
+            visitType: ManagedAccessVisitPurpose.WAREHOUSE_VISIT, scopedReservationIds: scopedReservationIds.map(String), allowedCellIds: scopedCells.map(String) })] }], { session });
         created = rows[0];
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
     } catch (error: any) {
@@ -308,6 +356,7 @@ export class ManagedAccessService {
       return raced;
     } finally { await session.endSession(); }
     if (!created) fail(503, 'VISIT_CREATE_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả tạo lịch. Hãy tải lại lịch trước khi gửi lại.');
+    await notifyVisitTransition(created, NotificationType.MANAGED_VISIT_CREATED, `VISIT:${created._id}:REV:${created.revision}:CREATED`, 'Đã tạo');
     return created;
   }
   static async myVisits(actor: Actor) {
@@ -385,7 +434,8 @@ export class ManagedAccessService {
         }
         latest.revision += 1;
         latest.audit.push(audit('VISIT_AMENDED', actor, now, { idempotencyKey: key, requestHash,
-          previousAssignmentCleared: !!oldStaff && scheduleChanged, scheduleChanged }));
+          previousAssignmentCleared: !!oldStaff && scheduleChanged, scheduleChanged, eventRevision: latest.revision,
+          startsAt: window.startsAt.toISOString(), endsAt: window.endsAt.toISOString() }));
         amended = await latest.save({ session: dbSession });
       }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
     } catch (error: any) {
@@ -395,12 +445,19 @@ export class ManagedAccessService {
       const committed = (persisted?.audit ?? []).find((entry: ManagedAccessAudit) => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
       if (committed) {
         if (committed.details?.requestHash !== requestHash) fail(409, 'IDEMPOTENCY_CONFLICT', 'Idempotency-Key đã được dùng với nội dung sửa lịch khác.');
-        return persisted;
+        if (persisted) {
+          if (committed.details?.scheduleChanged) await notifyVisitTransition(persisted, NotificationType.MANAGED_VISIT_RESCHEDULED,
+            `VISIT:${persisted._id}:REV:${committed.details.eventRevision ?? persisted.revision}:RESCHEDULED`, 'Đã đổi');
+          return persisted;
+        }
       }
       if (error?.hasErrorLabel?.('UnknownTransactionCommitResult')) fail(503, 'VISIT_AMEND_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả sửa lịch. Hãy tải lại lịch trước khi thử lại cùng yêu cầu.');
       throw error;
     } finally { await dbSession.endSession(); }
     if (!amended) fail(503, 'VISIT_AMEND_OUTCOME_UNKNOWN', 'Chưa xác minh được kết quả sửa lịch. Hãy tải lại lịch trước khi thử lại cùng yêu cầu.');
+    const amendment = [...(amended.audit ?? [])].reverse().find((entry: any) => entry.action === 'VISIT_AMENDED' && entry.details?.idempotencyKey === key);
+    if (amendment?.details?.scheduleChanged) await notifyVisitTransition(amended, NotificationType.MANAGED_VISIT_RESCHEDULED,
+      `VISIT:${amended._id}:REV:${amendment.details.eventRevision ?? amended.revision}:RESCHEDULED`, 'Đã đổi');
     return amended;
   }
   static async cancelVisit(visitId: unknown, actor: Actor, expectedRevision: unknown) {
@@ -409,9 +466,13 @@ export class ManagedAccessService {
     const id = asId(visitId, 'visitId'), now = new Date(), revision = Number(expectedRevision);
     await markMissedVisits({ _id: id, customerId: actor._id }, now, 1);
     const cancelled = await VisitModel.findOneAndUpdate({ _id: id, customerId: actor._id, status: VS.SCHEDULED, revision, endsAt: { $gt: new Date() } },
-      { $set: { status: VS.CANCELLED }, $inc: { revision: 1 }, $push: { audit: audit('VISIT_CANCELLED', actor, now) } },
+      { $set: { status: VS.CANCELLED }, $inc: { revision: 1 }, $push: { audit: audit('VISIT_CANCELLED', actor, now, { eventRevision: revision + 1 }) } },
       { returnDocument: 'after', runValidators: true }).exec();
-    if (cancelled) return cancelled;
+    if (cancelled) {
+      await notifyVisitTransition(cancelled, NotificationType.MANAGED_VISIT_CANCELLED,
+        `VISIT:${cancelled._id}:REV:${cancelled.revision}:CANCELLED`, 'Đã hủy');
+      return cancelled;
+    }
     await markMissedVisits({ _id: id, customerId: actor._id }, new Date(), 1);
     const current = await VisitModel.findOne({ _id: id, customerId: actor._id }).select('status revision').lean().exec();
     if (!current) fail(404, 'VISIT_NOT_FOUND', 'Không tìm thấy lịch đến kho.');
@@ -615,7 +676,8 @@ export class ManagedAccessService {
         if (expiresAt <= activationAt) fail(409, 'SESSION_WINDOW_EXPIRED', 'Thời hạn Rental hoặc Visit đã kết thúc; không thể cấp Session.');
         const presenceAttestation = { identityVerified: true, customerPresent: true, safetyReviewed: true, notes: (input.safetyNotes as string).trim(), actorId: actor._id, recordedAt: activationAt, method: 'MANUAL_STAFF_ATTESTATION' as const };
         currentVisit.status = VS.CHECKED_IN; currentVisit.scopedReservationIds = scopedReservationIds; currentVisit.checkedInAt = activationAt; currentVisit.checkedInByStaffId = actor._id; currentVisit.presenceAttestation = presenceAttestation; currentVisit.revision += 1;
-        currentVisit.audit.push(audit('CUSTOMER_CHECKED_IN', actor, activationAt, { presenceMethod: presenceAttestation.method, reservationId: String(reservation._id), scopedReservationIds: scopedReservationIds.map(String) })); await currentVisit.save({ session: dbSession });
+        currentVisit.audit.push(audit('CUSTOMER_CHECKED_IN', actor, activationAt, { eventRevision: currentVisit.revision,
+          presenceMethod: presenceAttestation.method, reservationId: String(reservation._id), scopedReservationIds: scopedReservationIds.map(String) })); await currentVisit.save({ session: dbSession });
         const [created] = await SessionModel.create([{ visitId: currentVisit._id, reservationId: reservation._id, scopedReservationIds, customerId: reservation.customerId, facilityId: reservation.facilityId, assignedStaffId: actor._id,
           allowedCellIds: cells, allowedPurposes: [ManagedAccessPurpose.INBOUND, ManagedAccessPurpose.OUTBOUND, ManagedAccessPurpose.RELOCATION], startedAt: activationAt, expiresAt, status: SS.ACTIVE, revision: 0, checkInIdempotencyKey: key, checkInRequestHash: requestHash,
           audit: [audit('SESSION_ACTIVATED', actor, activationAt, { expiresAt: expiresAt.toISOString(), durationMinutes: (expiresAt.getTime() - activationAt.getTime()) / 60_000,
@@ -624,6 +686,14 @@ export class ManagedAccessService {
     } catch (error: any) { if (error?.code === 11000) fail(409, 'CONCURRENT_CHECKIN', 'Một check-in khác đã tạo Session; tải lại để xem trạng thái.'); throw error; }
     finally { await dbSession.endSession(); }
     if (!result) fail(500, 'SESSION_CREATION_FAILED', 'Không thể kích hoạt Access Session.');
+    if (!replay) {
+      const persistedVisit = await VisitModel.findById(id).exec();
+      const checkinAudit = [...(persistedVisit?.audit ?? [])].reverse().find((entry: any) => entry.action === 'CUSTOMER_CHECKED_IN');
+      await notifyVisitTransition(persistedVisit, NotificationType.MANAGED_VISIT_CHECKED_IN,
+        `VISIT:${id}:REV:${checkinAudit?.details?.eventRevision ?? persistedVisit?.revision}:CHECKED_IN`, 'Đã check-in');
+      await notifySessionTransition(result, NotificationType.MANAGED_ACCESS_SESSION_ISSUED,
+        `SESSION:${result._id}:ISSUED`, 'Phiên truy cập đã được cấp');
+    }
     return { visit: await VisitModel.findById(id).exec(), session: result, replay };
   }
   static async customerSessions(actor: Actor) { requireRole(actor, [UserRole.CUSTOMER]); const now = new Date(); return SessionModel.find({ customerId: actor._id, status: SS.ACTIVE }).sort({ startedAt: -1 }).lean().then(rows => rows.map(row => ({ ...row, status: new Date(row.expiresAt) <= now ? SS.EXPIRED : row.status }))); }
@@ -644,7 +714,7 @@ export class ManagedAccessService {
     if (!Number.isSafeInteger(Number(expectedRevision))) fail(428, 'IF_MATCH_REQUIRED', 'Cần revision hiện tại trong If-Match.');
     if (revoke && (typeof input.reason !== 'string' || input.reason.trim().length < 3 || input.reason.length > 500)) fail(400, 'INVALID_INPUT', 'Cần lý do thu hồi từ 3 đến 500 ký tự.');
     if (!actor.assignedFacilityId) fail(403, 'FACILITY_SCOPE_DENIED', 'Chưa được phân công Facility.');
-    const now = new Date(), dbSession = await mongoose.startSession(); let result;
+    const now = new Date(), dbSession = await mongoose.startSession(); let result: any;
     try {
       await dbSession.withTransaction(async () => {
         const filter: Record<string, unknown> = { _id: asId(sessionId, 'sessionId'), facilityId: actor.assignedFacilityId, status: SS.ACTIVE, revision: Number(expectedRevision) };
@@ -663,7 +733,15 @@ export class ManagedAccessService {
         result = ended;
       });
     } finally { await dbSession.endSession(); }
-    if (!result) fail(500, 'SESSION_END_FAILED', 'Không thể kết thúc Access Session.'); return result;
+    if (!result) fail(500, 'SESSION_END_FAILED', 'Không thể kết thúc Access Session.');
+    if (revoke) await notifySessionTransition(result, NotificationType.MANAGED_ACCESS_SESSION_REVOKED,
+      `SESSION:${result._id}:REV:${result.revision}:REVOKED`, 'Phiên truy cập đã bị thu hồi');
+    else {
+      const completed = await VisitModel.findById(result.visitId).exec();
+      if (completed) await notifyVisitTransition(completed, NotificationType.MANAGED_VISIT_COMPLETED,
+        `VISIT:${completed._id}:REV:${completed.revision}:COMPLETED`, 'Lượt đến kho đã hoàn tất');
+    }
+    return result;
   }
 }
 

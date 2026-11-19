@@ -5,6 +5,8 @@ import WarehouseRackModel from '../../models/warehouse-map/warehouse-rack.model'
 import WarehouseZoneModel from '../../models/warehouse-map/warehouse-zone.model';
 import CellAllocationModel from '../../models/warehouse-map/cell-allocation.model';
 import ItemMovementModel from '../../models/inventory-items/item-movement.model';
+import InventoryItemModel from '../../models/inventory-items/inventory-item.model';
+import { ManagedCellStockReadService } from '../inventory-items/managed-cell-stock-read.service';
 import { CellAllocationStatus } from '../../types/warehouse-map.type';
 import { FacilityServiceType, FacilityStatus } from '../../types/facility.type';
 import { IWarehouseCell, IWarehouseRack, IWarehouseZone, RackDimensions, UtilizationStatus, WarehouseOperationalStatus, WarehouseUsageSnapshot } from '../../types/warehouse-map.type';
@@ -204,7 +206,8 @@ function parseBookingRange(value: unknown, actor: Actor) {
 
 async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { startDate: Date; endDate: Date }) {
   const rows = new Map<string, any[]>();
-  if (!cells.length) return { rows, myInventoryCells: new Set<string>(), movementHistoryCells: new Set<string>() };
+  const myStockByCell = new Map<string, { status: 'LEDGER_MATCHED' | 'PROJECTION_MISMATCH' | 'UNKNOWN' | 'NO_DATA'; quantity: number | null; weightKg: number | null; volumeM3: number | null }>();
+  if (!cells.length) return { rows, myInventoryCells: new Set<string>(), movementHistoryCells: new Set<string>(), myStockByCell };
   const ids = cells.map(cell => cell._id);
   const now = new Date();
   const current = { startDate: { $lte: now }, endDate: { $gt: now } };
@@ -229,13 +232,85 @@ async function cellBookingData(cells: IWarehouseCell[], actor: Actor, range?: { 
       if (cellId) movementHistoryCells.add(String(cellId));
     }
   }
-  // V4 ownership/highlighting is intentionally added in Phase 6.4 from
-  // ManagedCellStock/ManagedItemInstance. Never infer Customer ownership from
-  // the legacy InventoryItem.currentCellId field here.
-  return { rows, myInventoryCells: new Set<string>(), movementHistoryCells };
+  const myInventoryCells = new Set<string>();
+  if (actor?.role === UserRole.CUSTOMER && actor._id) {
+    const facilityId = cells[0]!.facilityId;
+    const customerSkus: any[] = await InventoryItemModel.find({ customerId: actor._id, facilityId, inventorySchemaVersion: 3, deletedAt: { $exists: false } })
+      .select('_id').sort({ _id: 1 }).limit(101).lean().exec();
+    const legacyRows: any[] = await InventoryItemModel.find({ customerId: actor._id, facilityId, inventorySchemaVersion: { $ne: 3 }, currentCellId: { $in: ids }, status: 'IN_STORAGE', deletedAt: { $exists: false } } as any)
+      .select('currentCellId').limit(1001).lean().exec();
+    let replayEvidenceComplete = customerSkus.length <= 100 && legacyRows.length <= 1000;
+    const unknownCells = new Set<string>();
+    const projectionMismatchCells = new Set<string>();
+    const totals = new Map<string, { quantity: number; weightKg: number; volumeM3: number }>();
+    for (const legacy of legacyRows) {
+      if (legacy.currentCellId) {
+        const key = String(legacy.currentCellId);
+        myInventoryCells.add(key);
+        unknownCells.add(key);
+      }
+    }
+    if (customerSkus.length > 100 || legacyRows.length > 1000) replayEvidenceComplete = false;
+    if (customerSkus.length <= 100) {
+      for (const sku of customerSkus) {
+        try {
+          const stock = await ManagedCellStockReadService.skuStock(String(sku._id), { _id: actor._id, role: UserRole.CUSTOMER });
+          if (!['VERIFIED', 'EMPTY_VERIFIED'].includes(stock.ledgerReplayStatus)) {
+            replayEvidenceComplete = false;
+            for (const cellId of [...(stock.evidenceCellIds ?? []), ...(stock.projectionByCell ?? []).map((row: any) => String(row.cellId))]) {
+              if (ids.some(id => String(id) === String(cellId))) unknownCells.add(String(cellId));
+            }
+            continue;
+          }
+          if (stock.ledgerStatus !== 'REPLAYED') {
+            for (const row of [...(stock.ledgerByCell ?? []), ...(stock.projectionByCell ?? [])]) {
+              const cellId = String(row.cellId);
+              if (ids.some(id => String(id) === cellId)) projectionMismatchCells.add(cellId);
+            }
+          }
+          for (const row of stock.ledgerByCell ?? []) {
+            const cellId = String(row.cellId);
+            if (!ids.some(id => String(id) === cellId)) continue;
+            const quantity = row.quantityOnHand, weightKg = row.weightKg, volumeM3 = row.volumeM3;
+            if (!Number.isSafeInteger(quantity) || quantity < 0 || !Number.isFinite(weightKg) || weightKg < 0 || !Number.isFinite(volumeM3) || volumeM3 < 0) {
+              replayEvidenceComplete = false;
+              unknownCells.add(cellId);
+              continue;
+            }
+            const total = totals.get(cellId) ?? { quantity: 0, weightKg: 0, volumeM3: 0 };
+            total.quantity += quantity;
+            total.weightKg = Math.round((total.weightKg + weightKg + Number.EPSILON) * 1000) / 1000;
+            total.volumeM3 = Math.round((total.volumeM3 + volumeM3 + Number.EPSILON) * 1_000_000) / 1_000_000;
+            if (!Number.isSafeInteger(total.quantity) || !Number.isFinite(total.weightKg) || !Number.isFinite(total.volumeM3)) {
+              replayEvidenceComplete = false;
+              unknownCells.add(cellId);
+              continue;
+            }
+            totals.set(cellId, total);
+            if (quantity > 0 || weightKg > 0 || volumeM3 > 0) {
+              myInventoryCells.add(cellId);
+            }
+          }
+        } catch {
+          replayEvidenceComplete = false;
+        }
+      }
+    }
+    for (const cell of cells) {
+      const key = String(cell._id), total = totals.get(key);
+      const status = unknownCells.has(key) ? 'UNKNOWN'
+        : projectionMismatchCells.has(key) ? 'PROJECTION_MISMATCH'
+          : total ? 'LEDGER_MATCHED'
+            : customerSkus.length && replayEvidenceComplete ? 'LEDGER_MATCHED' : 'NO_DATA';
+      myStockByCell.set(key, status === 'LEDGER_MATCHED' || status === 'PROJECTION_MISMATCH'
+        ? { status, quantity: total?.quantity ?? 0, weightKg: total?.weightKg ?? 0, volumeM3: total?.volumeM3 ?? 0 }
+        : { status, quantity: null, weightKg: null, volumeM3: null });
+    }
+  }
+  return { rows, myInventoryCells, movementHistoryCells, myStockByCell };
 }
 
-function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true, hasMovementHistory = false) {
+function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory: boolean, actor: Actor, range?: { startDate: Date; endDate: Date }, rackAvailable = true, hasMovementHistory = false, myStock?: { status: 'LEDGER_MATCHED' | 'PROJECTION_MISMATCH' | 'UNKNOWN' | 'NO_DATA'; quantity: number | null; weightKg: number | null; volumeM3: number | null }) {
   const physicalUsageKnown = typeof cell.usedWeightKg === 'number' && Number.isFinite(cell.usedWeightKg) && cell.usedWeightKg >= 0 &&
     typeof cell.usedVolumeM3 === 'number' && Number.isFinite(cell.usedVolumeM3) && cell.usedVolumeM3 >= 0;
   const usedWeightKg = Number(cell.usedWeightKg ?? 0), usedVolumeM3 = Number(cell.usedVolumeM3 ?? 0);
@@ -292,6 +367,8 @@ function cellBookingDto(cell: IWarehouseCell, allocations: any[], hasMyInventory
       isBookable,
       bookingReasonCode: isBookable ? null : 'CELL_UNAVAILABLE',
       isMine,
+      ...(hasMyInventory ? { hasMyInventory: true } : {}),
+      ...(isMine || hasMyInventory ? { myStock: myStock ?? { status: 'NO_DATA', quantity: null, weightKg: null, volumeM3: null } } : {}),
       capacityDisclosure: 'REDACTED',
     };
   }
@@ -739,7 +816,7 @@ export class WarehouseMapService {
             const ratedCapacityKg = rack.levelCount * rack.maxWeightKgPerLevel;
             const allocatableCapacityKg = rackCells.reduce((sum, cell) => sum + cell.maxWeightKg, 0);
             const usage = await usageForRack(rack as IWarehouseRack, rackCells);
-            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())));
+            const statuses = rackCells.map(cell => cellBookingDto(cell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString()), bookingData.myStockByCell.get(cell._id.toString())));
             const customer = actor?.role === UserRole.CUSTOMER;
             return {
               _id: rack._id,
@@ -823,7 +900,7 @@ export class WarehouseMapService {
             dimensions: cell.dimensions,
             operationalStatus: cell.operationalStatus,
             ...(customer ? {} : { utilizationStatus: utilizationStatus(Number(cell.usedWeightKg ?? 0), cell.maxWeightKg) }),
-            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString())),
+            ...cellBookingDto(cell as IWarehouseCell, bookingData.rows.get(cell._id.toString()) ?? [], bookingData.myInventoryCells.has(cell._id.toString()), actor, range, rack.operationalStatus === WarehouseOperationalStatus.AVAILABLE, bookingData.movementHistoryCells.has(cell._id.toString()), bookingData.myStockByCell.get(cell._id.toString())),
           })),
         });
       }

@@ -19,7 +19,7 @@ async function start(): Promise<void> {
       void checkSigningSla().catch((err) => console.error('[Cron] checkSigningSla error:', err?.message || err));
       void checkRentalExpiration().catch((err) => console.error('[Cron] checkRentalExpiration error:', err?.message || err));
     },
-    { timezone: 'Asia/Ho_Chi_Minh' }
+    { timezone: 'Asia/Ho_Chi_Minh', noOverlap: true }
   );
   const managedVisitMissedTimer = setInterval(() => {
     void ManagedAccessService.reconcileMissedVisits().catch(() => console.error('Managed access missed-visit reconciliation will retry on the next interval'));

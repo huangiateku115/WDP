@@ -295,12 +295,12 @@ test('Staff check-in creates one server-timed Session and includes newly eligibl
 test('Staff check-in rejects a primary Reservation already covered as another ACTIVE Session secondary scope',async t=>{
  const now=Date.now(),facilityId=oid(3),staffId=oid(35),customerId=oid(1),reservationId=oid(36),priorReservationId=oid(37),cellId=oid(4),visitId=oid(38);
  const visit={_id:visitId,customerId,facilityId,reservationId,purpose:'INBOUND',startsAt:new Date(now-60000),endsAt:new Date(now+3600000),status:'SCHEDULED',revision:0,assignedStaffId:staffId,audit:[],save:async function(){return this;}};
- const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(39),allocatedCellIds:[cellId]};
+ const reservation={_id:reservationId,customerId,facilityId,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,status:'ACTIVE',startDate:new Date(now-86400000),endDate:new Date(now+30*86400000),handoverAt:new Date(now-60000),handoverByStaffId:staffId,rentalPaymentFlow:'FULL_UPFRONT_V1',fullPaymentId:oid(39),allocatedCellIds:[cellId]};
  const content={reservationId:String(reservationId)},contentHash=createHash('sha256').update(JSON.stringify(content)).digest('hex');
  const contract={signedProofPublicId:'proof',verifiedAt:new Date(now-60000),currentContentVersion:1,contentVersions:[{version:1,content,contentHash}],signatures:[{version:1,contentHash,signerRole:'CUSTOMER'},{version:1,contentHash,signerRole:'FACILITY_STAFF'}]};
  const existing={_id:oid(40),reservationId:priorReservationId,scopedReservationIds:[priorReservationId,reservationId],status:'ACTIVE',expiresAt:new Date(now+60000)};let overlapFilter,created=0;
  t.mock.method(Visit,'findById',()=>new Query(visit));t.mock.method(Visit,'findOne',()=>new Query(visit));
- t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));
+ t.mock.method(Reservation,'findOne',()=>new Query(reservation));t.mock.method(Reservation,'findOneAndUpdate',()=>new Query(reservation));t.mock.method(Reservation,'findById',()=>new Query(reservation));t.mock.method(Reservation,'find',()=>new Query([reservation]));
  t.mock.method(Payment,'findOne',()=>new Query({_id:reservation.fullPaymentId}));t.mock.method(Payment,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Contract,'findOne',()=>new Query(contract));t.mock.method(Contract,'updateOne',()=>new Query({matchedCount:1}));
  t.mock.method(Facility,'updateOne',()=>new Query({matchedCount:1}));t.mock.method(User,'findOneAndUpdate',()=>new Query({_id:staffId}));

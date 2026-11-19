@@ -84,8 +84,23 @@ test('redacted public-map capacity does not look unconfigured or expose physical
   assert.doesNotMatch(html, /100 kg|30 kg|70 kg|0\.5 m³|0\.108 m³|0\.392 m³|Chưa cấu hình|MISMATCH|RECONCILED|CELL_UNAVAILABLE/);
   assert.doesNotMatch(html, /undefined|NaN|Infinity/);
   const cellCard = renderCells(detail([redactedCell]));
-  assert.match(cellCard, /Thông số tải trọng được ẩn trên bản đồ khách hàng/);
-  assert.doesNotMatch(cellCard, /Chưa cấu hình tải trọng|undefined|NaN|Infinity/);
+  assert.doesNotMatch(cellCard, /100 kg|30 kg|70 kg|0\.5 m³|0\.108 m³|0\.392 m³|Chưa cấu hình|undefined|NaN|Infinity/);
+});
+
+test('owned Cell displays only the Customer own replayed quantity and physical totals', () => {
+  const owned = cell({ isMine: true, capacityDisclosure: 'REDACTED', myStock: { status: 'LEDGER_MATCHED', quantity: 3, weightKg: 12.5, volumeM3: 0.024 } });
+  const info = renderInformation(owned);
+  assert.match(info, /Số lượng hàng của bạn \(theo sổ tồn\)[\s\S]*?<dd>3 món<\/dd>/);
+  assert.match(info, /Khối lượng hàng của bạn \(theo sổ tồn\)[\s\S]*?<dd>12\.5 kg<\/dd>/);
+  assert.match(info, /Thể tích hàng của bạn \(theo sổ tồn\)[\s\S]*?<dd>0\.024 m³<\/dd>/);
+  const card = renderCells(detail([owned]));
+  assert.match(card, /3 món · 12\.5 kg theo sổ tồn/);
+  const projectionMismatch = renderInformation(cell({ isMine: true, capacityDisclosure: 'REDACTED', myStock: { status: 'PROJECTION_MISMATCH', quantity: 2, weightKg: 7, volumeM3: 0.00972 } }));
+  assert.match(projectionMismatch, /2 món/);
+  assert.match(projectionMismatch, /7 kg/);
+  assert.match(projectionMismatch, /cơ sở cần đối soát projection/);
+  const notOwned = renderInformation(cell({ capacityDisclosure: 'REDACTED', myStock: { status: 'LEDGER_MATCHED', quantity: 3, weightKg: 12.5, volumeM3: 0.024 } }));
+  assert.doesNotMatch(notOwned, /12\.5 kg|3 món/);
 });
 
 test('WarehouseCells renders multiple racks and nested Cell rows with different booking states', () => {

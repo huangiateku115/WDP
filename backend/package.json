@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "notifications:recover-managed-v3": "node dist/scripts/recover-managed-full-payment-notifications.js",
     "test:statistics-offline": "npm run build && node --test tests/statistics*.test.cjs tests/payment-accounting.test.cjs",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",

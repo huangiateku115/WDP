@@ -21,6 +21,7 @@ import { ItemMovementType } from '../../types/item-movement.type';
 import { UserRole } from '../../types/user.type';
 import { ManagedAccessPurpose, ManagedAccessSessionStatus, ManagedAccessVisitPurpose } from '../../types/managed-access.type';
 import { ItemSpecificationStatus } from '../../types/item-specification.type';
+import { notifyManagedOutboundMovement } from '../notifications/managed-event-notification.producer';
 
 const Item: any = InventoryItemModelRaw, Movement: any = ItemMovementModelRaw;
 const Cell: any = CellModelRaw, Rack: any = RackModelRaw, AccessSession: any = ManagedAccessSessionModelRaw;
@@ -442,8 +443,9 @@ export class ManagedInventoryV3OutboundService {
     const replay = await findDirectReplay(skuIdObject, actor, requestKey, requestHash);
     if (replay) return replay;
     if (version(ifMatchInput) !== candidate.skuRevision) fail(412, 'STALE_SKU_REVISION', 'If-Match và revision trong payload không khớp.');
+    let committed: any;
     try {
-      return await withTransaction(async session => {
+      committed = await withTransaction(async session => {
         const scope = await loadDirectCandidateState(skuIdObject, candidate, actor, session);
         const sourceCellIds = scope.plan.sourceCellIds.map(value => new Types.ObjectId(value));
         try { await assertManagedAccessSessionScope({ sessionId: candidate.accessSessionId, customerId: actor._id, reservationId: scope.reservation._id,
@@ -517,6 +519,11 @@ export class ManagedInventoryV3OutboundService {
       if (checkTransactionUnavailable(error)) fail(503, 'TRANSACTIONS_UNAVAILABLE', 'MongoDB hiện tại không hỗ trợ transaction; xuất kho chưa được ghi.');
       throw error;
     }
+    if (committed?.status === 'COMMITTED' && committed.replayed !== true && committed.stock?.reconciliationStatus === 'RECONCILED') {
+      const remainingQuantity = (committed.stock.itemSpecifications ?? []).reduce((sum: number, row: Plain) => sum + Number(row.quantityOnHand ?? 0), 0);
+      await notifyManagedOutboundMovement(committed.movement, remainingQuantity);
+    }
+    return committed;
   }
 
   static async operation(skuId: unknown, rawKey: unknown, actor: Actor) {

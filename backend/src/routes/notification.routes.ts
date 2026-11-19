@@ -5,6 +5,7 @@ import { requireAuth } from '../middlewares/auth/requireAuth';
 const router = Router();
 router.use(requireAuth);
 
+router.get('/me/unread-count', NotificationController.getUnreadCount);
 router.get('/me', NotificationController.getMyNotifications);
 router.patch('/:id/read', NotificationController.markAsRead);
 
