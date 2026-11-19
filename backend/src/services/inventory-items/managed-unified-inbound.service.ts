@@ -18,6 +18,8 @@ import Reservation from '../../models/reservations/reservation.model';
 import Contract from '../../models/contracts/contract.model';
 import AccessSession from '../../models/access/managed-access-session.model';
 import { assertManagedAccessSessionScope, ManagedAccessError } from '../access/managed-access.service';
+import { NotificationService } from '../notifications/notification.service';
+import { notifyManagedInboundMovement } from '../notifications/managed-event-notification.producer';
 import { aggregateCellStock, nextManagedStockLedgerRevision, placementsHaveCellAllocations, replayManagedStockMovementsBySku } from './managed-cell-stock.domain';
 import { assertUnifiedInboundCapacity, classifyLegacyStockImpact, measurementSnapshot, normalizeUnifiedInbound, selectManagedSkuReplayScope } from './managed-unified-inbound.domain';
 import { FacilityServiceType } from '../../types/facility.type';
@@ -346,6 +348,12 @@ export class ManagedUnifiedInboundService {
       throw error;
     } finally { await dbSession.endSession(); }
     if (!result) fail(500, 'INBOUND_COMMIT_UNKNOWN', 'Chưa xác định được kết quả xác nhận nhập kho. Hãy đối soát theo Idempotency-Key.');
+    if (result.status === 'COMMITTED' && result.replayed !== true && result.movementId && NotificationService.isManagedCustomerEventsEnabled()) {
+      try {
+        const movement = await r.Movement.findById(result.movementId).lean().exec();
+        if (movement) await notifyManagedInboundMovement(movement);
+      } catch { /* do not change the committed inbound result; recovery reads the immutable Movement */ }
+    }
     return result;
   }
 

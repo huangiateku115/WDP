@@ -10,7 +10,6 @@ import {
   inventoryId,
   editableInventory,
   httpImage,
-  eligibleInventoryRental,
 } from "@/lib/inventoryRegistration";
 import { CustomerScreen } from "@/components/common/CustomerScreen";
 import {
@@ -33,6 +32,7 @@ import ManagedSelfOutboundV3 from "./ManagedSelfOutboundV3";
 import ManagedSelfRelocationV3 from "./ManagedSelfRelocationV3";
 import { inventoryCellLabels } from "./managedInventoryContext";
 import { formatInventoryDateTime } from "./inventoryUiFormat";
+import { managedInventoryV3Api } from "@/api/managedInventoryV3Api";
 
 function InventoryImages({ item }) {
   const [active, setActive] = useState(null),
@@ -76,8 +76,6 @@ function InventoryImages({ item }) {
     </>
   );
 }
-const notice =
-  "Thông tin đăng ký mặt hàng · Ô kệ ưu tiên chỉ là đề xuất. Đăng ký hoặc xem trước không xếp hàng vào kho, không nhận hàng và không làm thay đổi sức chứa.";
 export function InventoryListIntegration() {
   const location = useLocation(), params = new URLSearchParams(location.search),
     operation = params.get('operation'), accessSessionId = params.get('accessSessionId'), reservationFilter = params.get('reservationId'),
@@ -94,7 +92,6 @@ export function InventoryListIntegration() {
     <CustomerScreen
       title="Hàng hóa của tôi"
       description="Danh sách hàng hóa bạn đã đăng ký cho kho quản lý."
-      notice={notice}
       action={
         <Button asChild variant="orange">
           <Link to="/portal/inventory/register">Đăng ký mặt hàng</Link>
@@ -138,7 +135,7 @@ export function InventoryListIntegration() {
                     ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],
                     [
                       "Vị trí lưu kho",
-                      "Chưa ghi nhận tồn thực tế",
+                      "Mở chi tiết để xem vị trí tồn kho",
                     ],
                   ]}
                 />
@@ -187,8 +184,7 @@ export function InventoryRegisterIntegration() {
   return (
     <CustomerScreen
       title="Đăng ký mặt hàng"
-      description="Khai báo mặt hàng cho một đơn thuê kho quản lý V3 đủ điều kiện. Bước này chỉ lưu thông tin, chưa ghi nhận hàng trong kho."
-      notice={notice}
+      description="Đăng ký SKU cho đơn thuê kho quản lý."
       action={
         <Button asChild variant="outline">
           <Link to="/portal/inventory">Hàng hóa của tôi</Link>
@@ -234,24 +230,43 @@ function Detail({ id }) {
     rental = rentals.data?.find(
       (r) => inventoryId(r) === inventoryId(item?.managedReservationId),
     ),
-    editable = editableInventory(item, rental),
-    eligible =
-      eligibleInventoryRental(rental) &&
-      inventoryId(rental.facilityId) === inventoryId(item?.facilityId);
+    editable = editableInventory(item, rental);
+  const stock = useInventoryBackend(
+    () => item?.inventorySchemaVersion === 3
+      ? managedInventoryV3Api.cellStock(inventoryId(item)).then(response => response.data?.data || null)
+      : Promise.resolve(null),
+    [inventoryId(item), item?.inventorySchemaVersion, item?.updatedAt],
+  );
+  const ownedStockCells = item?.inventorySchemaVersion === 3 && stock.data?.ledgerReplayStatus === "VERIFIED"
+    ? (stock.data.ledgerByCell || []).filter(row => Number(row.quantityOnHand) > 0).map(row => inventoryId(row.cellId)).filter(Boolean)
+    : [];
   const cellLabels = useInventoryBackend(
-    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId], config) : Promise.resolve({}),
-    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || [])],
+    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId, ...ownedStockCells], config) : Promise.resolve({}),
+    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || []), JSON.stringify(ownedStockCells)],
   );
   const refresh = () => {
     setEditing(false);
     resource.retry();
     rentals.retry();
+    stock.retry();
   };
+  const locationValue = item?.inventorySchemaVersion !== 3
+    ? "Chưa xác minh vị trí tồn kho"
+    : stock.loading
+      ? "Đang tải vị trí tồn kho…"
+      : stock.error
+        ? "Không tải được vị trí tồn kho"
+        : stock.data?.ledgerReplayStatus !== "VERIFIED"
+        ? "Vị trí tồn kho đang được đối soát"
+        : ownedStockCells.length
+          ? cellLabels.loading
+            ? "Đang tải mã ô lưu kho…"
+            : ownedStockCells.map(cellId => cellLabels.data?.[cellId]).filter(Boolean).join("; ") || `Đã ghi nhận tại ${ownedStockCells.length} ô kệ`
+          : "Chưa ghi nhận tồn thực tế";
   return (
     <CustomerScreen
       title={item?.name || "Mặt hàng"}
-      description="Thông tin đăng ký và vị trí lưu kho dự kiến của mặt hàng."
-      notice={notice}
+      description="Thông tin SKU, quy cách và vị trí lưu kho thực tế."
       action={
         <Button asChild variant="outline">
           <Link to="/portal/inventory">Hàng hóa của tôi</Link>
@@ -289,7 +304,7 @@ function Detail({ id }) {
                     ],
                     [
                       "Vị trí lưu kho",
-                      "Chưa ghi nhận tồn thực tế",
+                      locationValue,
                     ],
                     ["Mô tả", item.description],
                     ["Ngày đăng ký", formatInventoryDateTime(item.createdAt)],

@@ -98,25 +98,27 @@ function RackInformation({ data, facilityId, itemId }) {
   if (itemId) contextQuery.set("inventoryItem", itemId);
   const { rack, capacity } = data,
     capacityRedacted = capacity?.disclosure === "REDACTED",
+    utilizationLabels = { EMPTY: "Chưa sử dụng", PARTIAL: "Đang sử dụng", NEAR_FULL: "Gần đầy", FULL: "Đã đầy", UNKNOWN: "Chưa xác minh" },
+    capacitySourceLabels = { WAREHOUSE_CELL_COUNTERS: "Bộ đếm dung lượng của các ô" },
     fields = [
-      ["Zone", rack.zoneCode],
-      ["Aisle", rack.aisleCode],
-      ["Width", measurementText(rack.dimensions?.widthM)],
-      ["Depth", measurementText(rack.dimensions?.depthM)],
-      ["Nominal height", measurementText(rack.dimensions?.heightM)],
-      ["Orientation", rack.orientation == null ? null : `${rack.orientation}°`],
-      ["Rated capacity", capacityRedacted ? null : weightText(capacity.ratedCapacityKg)],
-      ["Allocatable capacity", capacityRedacted ? null : weightText(capacity.allocatableCapacityKg)],
-      ["Returned levels", data.levels.length],
-      ["Returned cells", data.levels.reduce((n, l) => n + l.cells.length, 0)],
+      ["Khu vực", rack.zoneCode],
+      ["Lối đi", rack.aisleCode],
+      ["Chiều rộng", measurementText(rack.dimensions?.widthM)],
+      ["Chiều sâu", measurementText(rack.dimensions?.depthM)],
+      ["Chiều cao danh nghĩa", measurementText(rack.dimensions?.heightM)],
+      ["Hướng đặt kệ", rack.orientation == null ? null : `${rack.orientation}°`],
+      ["Tải trọng thiết kế", capacityRedacted ? null : weightText(capacity.ratedCapacityKg)],
+      ["Tải trọng có thể phân bổ", capacityRedacted ? null : weightText(capacity.allocatableCapacityKg)],
+      ["Số tầng", data.levels.length],
+      ["Số ô lưu trữ", data.levels.reduce((n, l) => n + l.cells.length, 0)],
       [
-        "Physical used weight",
+        "Khối lượng đang sử dụng",
         capacityRedacted || capacity.usedWeightKg == null
           ? null
           : weightText(capacity.usedWeightKg),
       ],
-      ["Weight utilization", capacityRedacted ? null : capacity.utilizationStatus],
-      ["Source", capacityRedacted ? null : capacity.source],
+      ["Mức sử dụng tải trọng", capacityRedacted ? null : utilizationLabels[capacity.utilizationStatus] || "Chưa xác minh"],
+      ["Nguồn số liệu", capacityRedacted ? null : capacitySourceLabels[capacity.source] || "Chưa xác định"],
     ];
   return (
     <>
@@ -134,16 +136,11 @@ function RackInformation({ data, facilityId, itemId }) {
             </div>
           ))}
       </dl>
-      <p className="wm-baseline-note">
-        {capacityRedacted
-          ? "Thông tin tải trọng dùng chung chỉ dành cho nhân viên cơ sở."
-          : "Nominal rack height is not measured usable cell clearance. Usage is returned from warehouse counters; rental allocation is separate."}
-      </p>
       <Link
         className="wm-inline-link"
         to={`/portal/warehouse-map/${facilityId}/racks/${rack._id}${contextQuery.size ? `?${contextQuery}` : ""}`}
       >
-        Xem chi tiết kệ
+        Mở trang chi tiết kệ
       </Link>
     </>
   );
@@ -167,14 +164,14 @@ const ZonePlane = memo(function ZonePlane({
     <section
       ref={zoneRef}
       className={`wm-zone ${active ? "is-active" : ""}`}
-      aria-label={`Zone ${zone.code}`}
+      aria-label={`Khu vực ${zone.code}`}
     >
       <div className="wm-zone-heading">
-        <h3><button type="button" onClick={() => onSelectZone(zone._id)} aria-label={`Open zone ${zone.code}`}>{zone.code}</button></h3>
+        <h3><button type="button" onClick={() => onSelectZone(zone._id)} aria-label={`Mở khu vực ${zone.code}`}>{zone.code}</button></h3>
         <span>{zone.name}</span>
       </div>
       {!racks.length ? (
-        <p className="wm-muted">No racks are available in this zone yet.</p>
+        <p className="wm-muted">Khu vực này chưa có kệ.</p>
       ) : (
         <div
           className="wm-rack-grid"
@@ -187,14 +184,14 @@ const ZonePlane = memo(function ZonePlane({
             <div
               className="wm-aisle-group"
               role="group"
-              aria-label={`Aisle ${aisle.aisleCode}`}
+              aria-label={`Lối đi ${aisle.aisleCode}`}
               key={aisle.aisleCode}
             >
               {aisle.racks.map((rack) => (
                 <button
                   type="button"
                   key={rack._id}
-                  aria-label={`Select rack ${rack.rackCode}, aisle ${aisle.aisleCode}`}
+                  aria-label={`Chọn kệ ${rack.rackCode}, lối đi ${aisle.aisleCode}`}
                   aria-pressed={rackId === rack._id}
                   data-rack-id={rack._id}
                   className={`wm-rack ${rackId === rack._id ? "is-selected" : ""}`}
@@ -213,7 +210,7 @@ const ZonePlane = memo(function ZonePlane({
                   </span>
                   <strong>{rack.rackCode}</strong>
                   <WarehouseStatus status={rack.operationalStatus} />
-                  <small>Aisle {aisle.aisleCode}</small>
+                  <small>Lối đi {aisle.aisleCode}</small>
                 </button>
               ))}
             </div>
@@ -472,7 +469,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
       try {
         await document.exitFullscreen();
       } catch {
-        setFullscreenError("Unable to exit fullscreen. Use Escape.");
+        setFullscreenError("Không thể thoát chế độ toàn màn hình. Hãy nhấn phím Esc.");
       }
       return;
     }
@@ -486,7 +483,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
     } catch {
       setExpanded(true);
       setFullscreenError(
-        "Browser fullscreen is unavailable. Expanded dashboard view is enabled.",
+        "Trình duyệt không hỗ trợ toàn màn hình. Đã mở rộng khu vực bản đồ.",
       );
     }
   }
@@ -548,12 +545,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           <h1>Sơ đồ kho trực quan</h1>
           <p className="wm-facility">{facility.data?.name || facilityId}</p>
           {facility.loading && (
-            <small role="status">Loading facility context…</small>
+            <small role="status">Đang tải thông tin cơ sở…</small>
           )}
           {facility.error && (
             <small role="status">
-              Facility name unavailable. Map access is checked separately by the
-              backend.
+              Chưa tải được tên cơ sở. Quyền xem bản đồ vẫn do hệ thống xác minh.
             </small>
           )}
         </div>
@@ -724,18 +720,11 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                 "BLOCKED",
                 "MAINTENANCE",
               ].map((status) => (
-                <button type="button" key={status} className="wm-status-filter" aria-label={`Filter Cells: ${status}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>
+                <button type="button" key={status} className="wm-status-filter" aria-label={`Lọc ô lưu trữ theo trạng thái ${status}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>
                   <WarehouseStatus status={status} />
                 </button>
               ))}
               {statusFilter && <button type="button" className="wm-clear-status-filter" onClick={() => setStatusFilter('')}>Xóa bộ lọc</button>}
-              <p className="wm-muted">
-                Đã chọn = ô trong giỏ thuê. Ô của bạn không đồng nghĩa có thể đặt thuê lại.
-              </p>
-              <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                <span className="wm-owned-chip">Ô thuê của bạn</span>
-                Nhãn này được xác định từ phân bổ thuê do Backend trả về.
-              </p>
             </div>
             <div className="wm-inventory-context-slot"><InventoryMapContext controller={inventory} /></div>
           </div>
@@ -745,17 +734,13 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           aria-label="Sơ đồ kho"
         >
           <div className="wm-section-heading">
-            <h2>
-              <MapIcon size={16} />
-              {view === 'floorplan' ? 'Sơ đồ kho' : `Cấu trúc kệ — ${activeZone?.code || 'Rack'}`}
-            </h2>
             {view === 'floorplan' ? <span>Chọn kệ để xem các ô lưu trữ</span> : <Button className="wm-button" variant="outline" onClick={() => { setView('floorplan'); setDrawer(false); }}>← Trở về sơ đồ</Button>}
           </div>
           <div hidden={view !== "floorplan"} className="wm-floorplan-view">
             <ResourceState resource={map} />
             {map.data && !allRacks.length && (
               <p className="wm-map-empty">
-                No warehouse layout is available for this facility yet.
+                Cơ sở này chưa có sơ đồ kho.
               </p>
             )}
             {map.data && allRacks.length > 0 && (
@@ -764,7 +749,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                   className="wm-map-viewport"
                   ref={viewport}
                   role="region"
-                  aria-label="Interactive warehouse map"
+                  aria-label="Sơ đồ kho tương tác"
                   tabIndex={0}
                   onPointerDown={(e) => {
                     if (
@@ -836,7 +821,7 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           </div>
           {view === 'rack-detail' && <div className="wm-drilldown-content" ref={centralScroll}>
             <ResourceState resource={map} />
-            {!map.error && activeZone && zoneRacks.length !== 1 && <div className="wm-rack-picker"><p>{zoneRacks.length ? 'Choose a Rack in this Zone.' : 'No racks are available in this zone yet.'}</p>{zoneRacks.map(rack => <Button key={rack._id} type="button" className="wm-button" variant="outline" aria-pressed={rackId === rack._id} onClick={() => selectRack(rack._id)}>{rack.rackCode}</Button>)}</div>}
+            {!map.error && activeZone && zoneRacks.length !== 1 && <div className="wm-rack-picker"><p>{zoneRacks.length ? 'Chọn kệ trong khu vực này:' : 'Khu vực này chưa có kệ.'}</p>{zoneRacks.map(rack => <Button key={rack._id} type="button" className="wm-button" variant="outline" aria-pressed={rackId === rack._id} onClick={() => selectRack(rack._id)}>{rack.rackCode}</Button>)}</div>}
             {rackId && (
               <div className="wm-selected-rack wm-cells-v4">
                 <div className="wm-rack-inline-state">
@@ -845,9 +830,14 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                 {!map.error && !detail.loading && detail.data?.rack._id === rackId && (
                   <>
                     <details className="wm-context-details">
-                      <summary>Chi tiết kệ · {detail.data.rack.rackCode}</summary>
+                      <summary><span className="wm-context-summary-copy"><strong>Chi tiết kệ · {detail.data.rack.rackCode}</strong><small>Thông số kệ, sức chứa và bố trí ô</small></span><span className="wm-context-summary-hint">Mở / thu gọn</span></summary>
                       <RackInformation data={detail.data} facilityId={facilityId} itemId={inventory.itemId} />
                     </details>
+                    {cell ? <details className="wm-context-details wm-cell-context-details">
+                      <summary><span className="wm-context-summary-copy"><strong>Chi tiết ô · {cell.cell.code || `Ô ${cell.cell.cellNumber}`}</strong><small>Thông số, sức chứa và tồn kho được phép xem</small></span><span className="wm-context-summary-hint">Mở / thu gọn</span></summary>
+                      <CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack} />
+                      <InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack} />
+                    </details> : <section className="wm-cell-detail-empty" aria-live="polite"><strong>Chi tiết ô lưu trữ</strong><p>Chọn một ô trên sơ đồ bên dưới để xem thông tin chi tiết.</p></section>}
                     <WarehouseCells
                       key={`${rackId}:${updated?.getTime() || 0}`}
                       data={detail.data}
@@ -858,11 +848,6 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
                       booking={booking}
                       onSelect={setCell}
                     />
-                    {cell && <details className="wm-context-details wm-cell-context-details">
-                      <summary>Chi tiết ô · {cell.cell.code || `C${cell.cell.cellNumber}`}</summary>
-                      <CellInformation cell={cell.cell} level={cell.level} rack={detail.data.rack} />
-                      <InventoryCellPreference controller={inventory} cell={cell.cell} rack={detail.data.rack} />
-                    </details>}
                   </>
                 )}
               </div>
@@ -959,14 +944,14 @@ function Dashboard({ facilityId, map, initialRackId, token }) {
           <section
             role="dialog"
             aria-modal="false"
-            aria-label="Selected structure details"
+            aria-label="Chi tiết cấu trúc đã chọn"
             className="warehouse-detail-drawer"
           >
             <Button
               className="wm-drawer-close"
               variant="outline"
               size="icon"
-              aria-label="Close details"
+              aria-label="Đóng phần chi tiết"
               onClick={() => setDrawer(false)}
             >
               <X size={18} />

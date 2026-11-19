@@ -17,6 +17,7 @@ import { PaymentApplicationStatus, PaymentProvider, PaymentPurpose, PaymentStatu
 import { ReservationStatus } from '../../types/reservation.type';
 import { calculateRentalPaymentBreakdown, roundVndAmount } from './payment-accounting';
 import { EmailService } from '../email/email.service';
+import { NotificationService } from '../notifications/notification.service';
 import { PAYOS_LIVE_TEST_AMOUNT, resolvePayosLiveTestMode } from '../../config/payos-mock-mode';
 
 const PAYOS_INTENT_PREFIX = 'PAYOS-SS-';
@@ -1682,6 +1683,33 @@ export class PayosPaymentService {
             await EmailService.sendRentalPaidEmail(updatedRes, payment.amount);
           }
         })().catch(() => {});
+      }
+      if ((result.applied || result.duplicate) && payment.serviceType === FacilityServiceType.MANAGED_INVENTORY &&
+          payment.purpose === PaymentPurpose.FULL_RENT) {
+        // Notification delivery is a post-commit side effect and never changes the payment acknowledgement.
+        try {
+          const [durablePayment, durableReservation] = await Promise.all([
+            Payments.findById(payment._id).lean().exec(),
+            Reservations.findById(payment.reservationId).lean().exec(),
+          ]);
+          if (durablePayment?.status === PaymentStatus.SUCCEEDED &&
+              durablePayment.providerSettlementStatus === ProviderSettlementStatus.VERIFIED &&
+              durablePayment.applicationStatus === PaymentApplicationStatus.APPLIED &&
+              durableReservation?.serviceType === FacilityServiceType.MANAGED_INVENTORY &&
+              durableReservation.bookingFlowVersion === 3 && durableReservation.status === ReservationStatus.PAID &&
+              String(durableReservation.fullPaymentId) === String(durablePayment._id)) {
+            const notificationPersisted = await NotificationService.notifyManagedFullPaymentVerified(
+              durableReservation, durablePayment, event.eventHash,
+            );
+            if (!notificationPersisted) {
+              logWebhookDiagnostic('POST_COMMIT_NOTIFICATION', 'DEFERRED_TO_RECOVERY', payment,
+                { serviceType: payment.serviceType, purpose: payment.purpose });
+            }
+          }
+        } catch {
+          logWebhookDiagnostic('POST_COMMIT_NOTIFICATION', 'DEFERRED_TO_RECOVERY', payment,
+            { serviceType: payment.serviceType, purpose: payment.purpose });
+        }
       }
       return { success: true, duplicate: result.duplicate === true, reconciled: result.reconciled === true };
     } catch (error: any) {

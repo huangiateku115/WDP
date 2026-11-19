@@ -518,7 +518,7 @@ body:has(.warehouse-dashboard) {
 .warehouse-dashboard .wm-zone-sidebar {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
   min-height: 0;
   padding: 12px;
   overflow: hidden;
@@ -1044,8 +1044,8 @@ body:has(.warehouse-dashboard) {
   align-items: stretch;
   gap: 7px;
   min-width: 0;
-  min-height: 202px;
-  height: 202px;
+  min-height: 0;
+  height: 100%;
   padding: 0;
   margin: 0;
   border: 0;
@@ -1061,20 +1061,20 @@ body:has(.warehouse-dashboard) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 0 0 126px;
-  gap: 7px;
+  flex: 1 0 auto;
+  gap: 9px;
   width: 100%;
   min-width: 0;
   min-height: 126px;
-  max-height: 126px;
-  padding: 10px 8px;
+  max-height: none;
+  padding: 12px 10px;
   border: 1px solid #8fbc9f;
   border-radius: 10px;
   background: #dff1e4;
   color: #16452d;
   text-align: center;
   box-shadow: 0 3px 8px rgba(23, 82, 49, 0.06);
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
@@ -1096,6 +1096,46 @@ body:has(.warehouse-dashboard) {
   font-weight: 850;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+.warehouse-dashboard .wm-cell-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+}
+.warehouse-dashboard .wm-cell-badges .wm-status {
+  max-width: 100%;
+  white-space: normal;
+}
+.warehouse-dashboard .wm-cell-stock-chip,
+.warehouse-dashboard .wm-cell-warning-chip,
+.warehouse-dashboard .wm-picked-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid #c8d8ce;
+  border-radius: 999px;
+  background: #f7fbf8;
+  color: #365844;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.warehouse-dashboard .wm-cell-warning-chip {
+  border-color: #e8c994;
+  background: #fff8e9;
+  color: #865315;
+}
+.warehouse-dashboard .wm-picked-chip {
+  border-color: #8dc6a0;
+  background: #e4f5e9;
+  color: #175d38;
 }
 .warehouse-dashboard .wm-cell-choice .wm-cell > small {
   margin: 0;
@@ -1785,25 +1825,86 @@ body:has(.warehouse-dashboard) {
 /* Map-first workspace layout, contextual details and persistent booking form. */
 .warehouse-dashboard .wm-context-details {
   margin: 0 0 12px;
-  padding: 0 14px 12px;
-  border: 1px solid #b7d2bf;
-  border-radius: 11px;
-  background: #f8fcf9;
+  padding: 0 16px 14px;
+  border: 1px solid #a9cbb4;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff, #f4faf5);
+  box-shadow: 0 3px 10px rgba(23, 82, 49, 0.06);
 }
 .warehouse-dashboard .wm-context-details summary {
-  min-height: 42px;
+  min-height: 68px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 14px;
   color: #175a39;
   font-weight: 800;
   cursor: pointer;
+  list-style: none;
+}
+.warehouse-dashboard .wm-context-details summary::-webkit-details-marker {
+  display: none;
+}
+.warehouse-dashboard .wm-context-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.warehouse-dashboard .wm-context-summary-copy strong {
+  overflow-wrap: anywhere;
+}
+.warehouse-dashboard .wm-context-summary-copy small {
+  color: #5c7463;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.warehouse-dashboard .wm-context-summary-hint {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid #c4d9ca;
+  border-radius: 999px;
+  background: #f4faf5;
+  color: #286143;
+  font-size: 10px;
+  font-weight: 750;
+}
+.warehouse-dashboard .wm-context-summary-hint::after {
+  content: "⌄";
+  display: inline-block;
+  font-size: 15px;
+  line-height: 10px;
+  transition: transform 0.16s ease;
 }
 .warehouse-dashboard .wm-context-details[open] summary {
   margin-bottom: 8px;
   border-bottom: 1px solid #d1e4d7;
 }
+.warehouse-dashboard .wm-context-details[open] .wm-context-summary-hint::after {
+  transform: rotate(180deg);
+}
 .warehouse-dashboard .wm-cell-context-details {
   margin-top: 12px;
+}
+.warehouse-dashboard .wm-cell-detail-empty {
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border: 1px dashed #a9cbb4;
+  border-radius: 14px;
+  background: #f8fcf9;
+  color: #175a39;
+}
+.warehouse-dashboard .wm-cell-detail-empty strong {
+  font-size: 13px;
+}
+.warehouse-dashboard .wm-cell-detail-empty p {
+  margin-top: 4px;
+  color: #5c7463;
+  font-size: 11px;
 }
 .warehouse-dashboard .wm-booking-hero.is-collapsed {
   min-height: 56px;

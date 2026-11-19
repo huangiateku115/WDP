@@ -162,6 +162,49 @@ export class ManagedCellStockReadService {
     const initialized = canonicalScopeMatches && movements.length === 0 && stocks.length === 0 && instances.every((row: any) => row.status === 'REMOVED') && legacySku?.quantity == null && legacySku?.currentCellId == null;
     const reconciled = reconcileManagedV4SkuEvidence({ skuId, movements, stocks, instances, specifications, canonicalScopeMatches, initialized });
     const { replay, replayMatchesProjection, ledgerStatus, reasonCode, historyBounded, legacyMovement, canonicalRows, canonicalInstances, summary } = reconciled;
+    let ledgerReplayStatus: 'VERIFIED' | 'EMPTY_VERIFIED' | 'UNKNOWN' = initialized ? 'EMPTY_VERIFIED' : 'UNKNOWN';
+    let ledgerByCell: any[] = [];
+    if (!initialized && replay && canonicalScopeMatches && historyBounded && !legacyMovement) {
+      try {
+        const replayByCell = aggregateCellStock(replay.lots, replay.instances);
+        ledgerByCell = [...replayByCell.entries()].map(([cellId, value]: [string, any]) => ({
+          cellId, quantityOnHand: value.quantityOnHand, weightKg: value.weightKg, volumeM3: value.volumeM3,
+        }));
+        ledgerReplayStatus = 'VERIFIED';
+      } catch {
+        ledgerReplayStatus = 'UNKNOWN';
+        ledgerByCell = [];
+      }
+    }
+    let projectionEvidenceStatus: 'AVAILABLE' | 'UNKNOWN' | 'INVALID' = canonicalScopeMatches && historyBounded ? 'AVAILABLE' : 'UNKNOWN';
+    let projectionByCell: any[] = [];
+    if (projectionEvidenceStatus === 'AVAILABLE') {
+      try {
+        const projection = aggregateCellStock(stocks, instances);
+        projectionByCell = [...projection.entries()].map(([cellId, value]: [string, any]) => ({
+          cellId, quantityOnHand: value.quantityOnHand, weightKg: value.weightKg, volumeM3: value.volumeM3,
+        }));
+      } catch {
+        projectionEvidenceStatus = 'INVALID';
+      }
+    }
+    const evidenceCellIds = new Set<string>();
+    const addEvidenceCell = (value: any) => { if (value) evidenceCellIds.add(idText(value)); };
+    for (const row of stocks) {
+      if (idText(row.skuId) === idText(skuId) && idText(row.customerId) === idText(sku.customerId) && idText(row.facilityId) === idText(sku.facilityId)) addEvidenceCell(row.cellId);
+    }
+    for (const row of instances) {
+      if (idText(row.skuId) === idText(skuId) && idText(row.customerId) === idText(sku.customerId) && idText(row.facilityId) === idText(sku.facilityId)) {
+        for (const allocation of row.allocations ?? []) addEvidenceCell(allocation.cellId);
+      }
+    }
+    for (const movement of movements) {
+      if (idText(movement.itemId) !== idText(skuId) || idText(movement.customerId) !== idText(sku.customerId) || idText(movement.facilityId) !== idText(sku.facilityId)) continue;
+      for (const line of [...(movement.stockEffect?.source ?? []), ...(movement.stockEffect?.destination ?? []),
+        ...(movement.v3Effect?.source ?? []), ...(movement.v3Effect?.destination ?? [])]) addEvidenceCell(line.cellId);
+      addEvidenceCell(movement.sourceCellId);
+      addEvidenceCell(movement.destinationCellId);
+    }
     const byReservation = replayMatchesProjection ? [...new Set([...canonicalRows.map((row: any) => idText(row.reservationId)), ...canonicalInstances.filter((row: any) => row.status === 'PLACED').map((row: any) => idText(row.reservationId))])].map(resId => ({
       reservationId: resId, reservationCode: reservationRows.find((row: any) => idText(row._id) === resId)?.reservationCode ?? null,
       quantityOnHand: canonicalRows.filter((row: any) => idText(row.reservationId) === resId).reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) + canonicalInstances.filter((row: any) => row.status === 'PLACED' && idText(row.reservationId) === resId).length,
@@ -228,6 +271,7 @@ export class ManagedCellStockReadService {
     }
     const result = { skuId, reservationId: sku.reservationId ?? sku.managedReservationId, facilityId: sku.facilityId, byReservation,
       ledgerStatus, reconciliationStatus: reconciled.reconciliationStatus, reasonCode,
+      ledgerReplayStatus, ledgerByCell, projectionEvidenceStatus, projectionByCell, evidenceCellIds: [...evidenceCellIds],
       totalQuantity: initialized ? 0 : replayMatchesProjection ? summary.byCell.size === 0 ? 0 : [...summary.byCell.values()].reduce((sum: number, row: any) => sum + row.quantityOnHand, 0) : null,
       totalWeightKg: reconciled.totalWeightKg,
       totalVolumeM3: reconciled.totalVolumeM3,
