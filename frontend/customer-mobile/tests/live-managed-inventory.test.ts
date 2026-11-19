@@ -3,7 +3,7 @@ import {apiClient,configureApiSession} from '../src/api/client';
 import {managedInventory,type ManagedCell} from '../src/api/managedInventory';
 import {mobileRepo} from '../src/api/mobileRepository';
 import {warehouseRackLayout} from '../src/domain/warehouseRackLayout';
-import {managedCellState} from '../src/domain/managedCellSelection';
+import {managedCellState,managedCellVolume,toggleManagedCellChoice} from '../src/domain/managedCellSelection';
 
 const [facilityId,zoneId,rackId,cellId,other,owner,reservationId]='1234567'.split('').map(value=>value.repeat(24)) as [string,string,string,string,string,string,string];
 const startDate='2099-01-31T00:00:00.000Z',endDate='2099-02-28T00:00:00.000Z';
@@ -78,10 +78,51 @@ test('period precedence and verified bookability fail closed for unknown, occupi
   expect(managedCellState(cell,true,true).selectable).toBe(true);
   expect(managedCellState(cell,false,true).selectable).toBe(false);
   for(const delta of [{periodStatus:'RESERVED',isMine:true},{periodStatus:'OCCUPIED'},{operationalStatus:'MAINTENANCE'},
-    {operationalStatus:'BLOCKED'},{periodStatus:undefined},{isBookable:undefined},{physicalUsageKnown:false},{usedVolumeM3:.02},{maxVolumeM3:null}]){
+    {operationalStatus:'BLOCKED'},{periodStatus:undefined},{isBookable:undefined}]){
     expect(managedCellState({...cell,...delta},true,true).selectable).toBe(false);
   }
   expect(managedCellState(cell,true,false).selectable).toBe(false);
+});
+
+test('Backend-confirmed availability remains visible with redacted or unknown utilization, while booking requires a period and quote dimensions',()=>{
+  const redacted={...cell,capacityDisclosure:'REDACTED',physicalUsageKnown:undefined,usedVolumeM3:undefined,usedWeightKg:undefined,maxVolumeM3:undefined,maxWeightKg:undefined};
+  expect(managedCellState(redacted,true,true)).toMatchObject({kind:'AVAILABLE',label:'Còn chỗ trong kỳ thuê',selectable:true});
+  expect(managedCellState(redacted,false,true)).toMatchObject({kind:'AVAILABLE',selectable:false});
+  expect(managedCellVolume(redacted)).toBeCloseTo(.24);
+  expect(managedCellState({...redacted,periodStatus:'UNKNOWN'},true,true).kind).toBe('UNKNOWN');
+  expect(managedCellState({...redacted,isBookable:false},true,true).kind).toBe('UNKNOWN');
+  expect(managedCellState({...redacted,isMine:true},true,true).kind).toBe('AVAILABLE');
+  expect(managedCellState({...redacted,dimensions:{widthM:.6,depthM:.4}},true,true)).toMatchObject({kind:'AVAILABLE',selectable:false});
+});
+
+test.each([
+  ['AVAILABLE',{periodStatus:'AVAILABLE',isBookable:true},'AVAILABLE'],
+  ['RESERVED',{periodStatus:'RESERVED',isBookable:false},'RESERVED'],
+  ['OCCUPIED',{periodStatus:'OCCUPIED',isBookable:false},'OCCUPIED'],
+  ['MAINTENANCE',{operationalStatus:'MAINTENANCE'},'MAINTENANCE'],
+  ['LOCKED',{operationalStatus:'LOCKED'},'BLOCKED'],
+  ['overlap',{periodStatus:'RESERVED'},'RESERVED'],
+  ['unknown availability',{periodStatus:'UNKNOWN',isBookable:true},'UNKNOWN'],
+])('%s uses only the authoritative Backend state',(_name,delta,expected)=>{
+  expect(managedCellState({...cell,...delta},true,true).kind).toBe(expected);
+});
+
+test('multi-Cell selection stays unique and capped independently of customer ownership annotations',()=>{
+  const first={id:cellId,code:'A',maxVolumeM3:.24,zoneName:'Z',rackCode:'R',levelNumber:1};
+  const second={...first,id:other,code:'B'};
+  const selection=toggleManagedCellChoice(toggleManagedCellChoice([],first),second);
+  expect(selection.map(row=>row.id)).toEqual([cellId,other]);
+  expect(toggleManagedCellChoice(selection,first).map(row=>row.id)).toEqual([other]);
+  expect(toggleManagedCellChoice([first],second,1)).toEqual([first]);
+});
+
+test('customer redaction metadata survives parsing and does not expose any returned utilization values',async()=>{
+  fixture(()=>env({rack,requestedInterval:range,levels:[{levelNumber:1,cells:[{...cell,capacityDisclosure:'REDACTED',maxVolumeM3:99,
+    maxWeightKg:999,usedVolumeM3:10,usedWeightKg:500,physicalUsageKnown:true}]}]}));
+  const result=await managedInventory.rack(facilityId,zoneId,rackId,range);
+  const parsed=result.levels[0]!.cells[0]!;
+  expect(parsed.capacityDisclosure).toBe('REDACTED');
+  expect(managedCellState(parsed,true,true)).toMatchObject({kind:'AVAILABLE',selectable:true});
 });
 
 test('only the V2 quote is accepted; mismatched interval, insufficient capacity and V1 are rejected',async()=>{

@@ -92,6 +92,7 @@ export function InventoryListIntegration() {
     );
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title="Hàng hóa của tôi"
       description="Danh sách hàng hóa bạn đã đăng ký cho kho quản lý."
       notice={notice}
@@ -101,14 +102,14 @@ export function InventoryListIntegration() {
         </Button>
       }
     >
-      {accessSessionId && operationLabel && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Bạn đang chọn thao tác {operationLabel} trong Access Session đã cấp. Hãy mở mặt hàng thuộc đúng Reservation để tiếp tục; Backend sẽ kiểm tra lại quyền và Cell khi xem trước/xác nhận.</p>}
+      {accessSessionId && operationLabel && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Bạn đã chọn thao tác {operationLabel} trong lượt đến kho. Hãy mở mặt hàng thuộc đúng đơn thuê để tiếp tục; quyền và vị trí sẽ được kiểm tra trước khi xác nhận.</p>}
       <LoadState resource={resource} />
       {(resource.data?.items || []).filter(item => !reservationFilter || inventoryId(item.managedReservationId) === reservationFilter).length === 0 && (
         <Card>
           <CardContent>
-            <h2 className="text-xl font-bold">{reservationFilter ? 'Không có mặt hàng thuộc Reservation này' : 'Chưa có mặt hàng nào được đăng ký'}</h2>
+            <h2 className="text-xl font-bold">{reservationFilter ? 'Không có mặt hàng thuộc đơn thuê này' : 'Chưa có mặt hàng nào được đăng ký'}</h2>
             <p className="mt-3">
-              Đăng ký hàng trong một đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng ký vẫn được lưu khi đơn thuê kết thúc.
+              Đăng ký hàng trong đơn thuê kho quản lý còn hiệu lực. Lịch sử đăng ký vẫn được lưu khi đơn thuê kết thúc.
             </p>
           </CardContent>
         </Card>
@@ -124,13 +125,13 @@ export function InventoryListIntegration() {
                 <Details
                   values={[
                     ["Danh mục", item.category],
-                    ["Vai trò", "SKU · nhóm hàng"],
+                    ["Phân loại", item.category || "Hàng hóa"],
                     [
                       "Đơn thuê kho quản lý",
                       item.managedReservationId?.reservationCode || "Đơn thuê đã liên kết",
                     ],
                     [
-                      "Facility",
+                      "Cơ sở",
                       typeof item.facilityId === "object"
                         ? item.facilityId.name || "Cơ sở đã liên kết"
                         : "Cơ sở đã liên kết",
@@ -186,6 +187,7 @@ export function InventoryRegisterIntegration() {
   const session = useAuthSession();
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title="Đăng ký mặt hàng"
       description="Khai báo mặt hàng cho một đơn thuê kho quản lý V3 đủ điều kiện. Bước này chỉ lưu thông tin, chưa ghi nhận hàng trong kho."
       notice={notice}
@@ -202,9 +204,9 @@ export function InventoryRegisterIntegration() {
 export function InventoryDetailIntegration() {
   const { id } = useParams(),
     session = useAuthSession();
-  return <Detail key={`${session.accessToken}:${id}`} id={id} />;
+  return <Detail key={`${session.accessToken}:${id}`} id={id} customerId={session.user?.id} />;
 }
-function Detail({ id }) {
+function Detail({ id, customerId }) {
   const [editing, setEditing] = useState(false),
     location = useLocation(),
     resource = useInventoryBackend(
@@ -239,8 +241,8 @@ function Detail({ id }) {
       eligibleInventoryRental(rental) &&
       inventoryId(rental.facilityId) === inventoryId(item?.facilityId);
   const cellLabels = useInventoryBackend(
-    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId], config) : Promise.resolve({}),
-    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || [])],
+    (config) => rental && item ? inventoryCellLabels(rental, [...(rental.allocatedCellIds || []), item.preferredCellId, item.currentCellId], config, customerId) : Promise.resolve({}),
+    [inventoryId(rental), inventoryId(item?.preferredCellId), inventoryId(item?.currentCellId), JSON.stringify(rental?.allocatedCellIds || []), inventoryId(customerId)],
   );
   const refresh = () => {
     setEditing(false);
@@ -249,6 +251,7 @@ function Detail({ id }) {
   };
   return (
     <CustomerScreen
+      eyebrow="HÀNG HÓA CỦA TÔI"
       title={item?.name || "Mặt hàng"}
       description="Thông tin đăng ký và vị trí lưu kho dự kiến của mặt hàng."
       notice={notice}
@@ -278,7 +281,7 @@ function Detail({ id }) {
                   values={[
                     ["Tên mặt hàng", item.name],
                     ["Danh mục", item.category],
-                    ["Vai trò", "SKU · nhóm hàng"],
+                    ["Phân loại", item.category || "Hàng hóa"],
                     [
                       "Đơn thuê Managed",
                       rental?.reservationCode || "Thông tin đơn thuê đã liên kết",
@@ -302,14 +305,14 @@ function Detail({ id }) {
             </CardContent>
           </Card>
           <LoadState resource={rentals} />
-          <div className="inventory-actions flex flex-wrap gap-3" role="group" aria-label="Item actions">
+          <div className="inventory-actions flex flex-wrap gap-3" role="group" aria-label="Thao tác với mặt hàng">
             <div className="inventory-action-group flex flex-wrap gap-2">
             <Button variant="outline" onClick={refresh}>
               Làm mới thông tin
             </Button>
             <Button asChild variant="outline">
               <Link to={`/portal/inventory/${id}/history`}>
-                Xem lịch sử nhập/xuất
+                Xem lịch sử hàng hóa
               </Link>
             </Button>
             </div>
@@ -318,7 +321,7 @@ function Detail({ id }) {
               <Link
                 to={`/portal/reservations/${inventoryId(item.managedReservationId)}`}
               >
-                Xem đơn thuê Managed
+                Xem đơn thuê kho quản lý
               </Link>
             </Button>
             {editable && !editing && (
@@ -331,7 +334,7 @@ function Detail({ id }) {
           </div>
           {!editable && !rentals.loading && (
             <p className="text-sm text-orange-700">
-              Chỉ có thể chỉnh sửa mặt hàng đã đăng ký nhưng chưa được xếp vào kho, khi đơn thuê V3 sẵn sàng nhận kho hoặc đang hoạt động trong kỳ thuê. Lịch sử đăng ký vẫn được giữ.
+              Chỉ có thể chỉnh sửa mặt hàng đã đăng ký nhưng chưa được xếp vào kho, khi đơn thuê đã sẵn sàng nhận hàng hoặc đang hoạt động trong kỳ thuê. Lịch sử đăng ký vẫn được giữ.
             </p>
           )}
           {editing && editable && (
@@ -345,7 +348,7 @@ function Detail({ id }) {
           {item.inventorySchemaVersion===3&&<ManagedUnifiedSelfInbound item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
           {item.inventorySchemaVersion===3&&<ManagedSelfOutboundV3 item={item} rental={rental} cellLabels={cellLabels.data||{}} onRefresh={refresh} initialSessionId={initialSessionId}/>}
           {item.inventorySchemaVersion===3&&<ManagedSelfRelocationV3 item={item} rental={rental} onRefresh={refresh} initialSessionId={initialSessionId}/>}
-          {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Thao tác tồn kho cho dữ liệu lịch sử được giữ ở chế độ tra cứu trong khi SKU V3 dùng luồng nhập kho hợp nhất.</p>}
+          {item.inventorySchemaVersion!==3&&<p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Mặt hàng này hiện chỉ hỗ trợ xem thông tin. Các thao tác nhập kho dành cho mặt hàng mới.</p>}
         </>
       )}
     </CustomerScreen>

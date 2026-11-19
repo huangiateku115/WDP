@@ -30,7 +30,7 @@ export function SupportRequestCard({request, onOpen}: {request: CustomerSupportR
 }
 export function SupportMessageBubble({message}: {message: SupportMessage}) {
   const own = message.author === 'CUSTOMER_DEMO';
-  return <Card style={{backgroundColor: own ? colors.mint : colors.card, marginLeft: own ? 16 : 0, marginRight: own ? 0 : 16}}><AppText variant="label">{own ? 'Khách hàng · mẫu' : 'Hỗ trợ khách hàng · phản hồi dựng sẵn'}</AppText><AppText>{message.body || 'Chưa có nội dung mẫu.'}</AppText><AppText variant="caption" style={ui.muted}>{movementTime(message.at)}</AppText></Card>;
+  return <Card style={{backgroundColor: own ? colors.mint : colors.card, marginLeft: own ? 16 : 0, marginRight: own ? 0 : 16}}><AppText variant="label">{own ? 'Khách hàng · mẫu' : 'Hỗ trợ khách hàng · minh họa'}</AppText><AppText>{message.body || 'Chưa có nội dung minh họa.'}</AppText><AppText variant="caption" style={ui.muted}>{movementTime(message.at)}</AppText></Card>;
 }
 export function CareDraftDialog({visible, onKeep, onDiscard, mode = 'unsaved'}: {visible: boolean; onKeep: () => void; onDiscard: () => void; mode?: 'unsaved' | 'remove' | 'stale'}) {
   const title = mode === 'unsaved' ? 'Rời biểu mẫu chưa lưu?' : mode === 'stale' ? 'Bỏ bản nháp hỗ trợ cũ?' : 'Xóa bản nháp hỗ trợ trong phiên?';

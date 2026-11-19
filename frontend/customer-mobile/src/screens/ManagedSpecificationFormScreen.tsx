@@ -33,7 +33,7 @@ export function ManagedSpecificationFormScreen(){
     if(!/^[A-Z0-9][A-Z0-9_-]{0,47}$/.test(code)){setError('Mã loại hàng phải dài 1–48 ký tự, bắt đầu bằng chữ hoặc số; chỉ dùng chữ, số, gạch ngang hoặc gạch dưới.');return;}
     if(!name||name.length>160){setError('Tên loại hàng là bắt buộc và tối đa 160 ký tự.');return;}
     if(values.description.trim().length>2000){setError('Mô tả tối đa 2.000 ký tự.');return;}
-    if(!units.data?.some(unit=>unit._id===values.unit)){setError('Hãy chọn đơn vị tính đang hoạt động do Backend cung cấp.');return;}
+    if(!units.data?.some(unit=>unit._id===values.unit)){setError('Hãy chọn một đơn vị tính còn sử dụng được.');return;}
     if(numbers.some(value=>!Number.isFinite(value)||value<=0)){setError('Khối lượng và ba kích thước phải là số dương hợp lệ.');return;}
     lock.current=true;setPending(true);setError('');
     try{
@@ -46,14 +46,14 @@ export function ManagedSpecificationFormScreen(){
     finally{lock.current=false;setPending(false);}
   }
   const canSave=!!item.data&&item.data.inventorySchemaVersion===3&&item.data.status==='ACTIVE'&&!!values.unit&&!units.loading&&!units.error&&!!units.data?.some(row=>row._id===values.unit);
-  return <LiveScreen title={editing?'Sửa loại hàng':'Khai báo hàng hóa'} eyebrow="ITEM SPECIFICATION" subtitle="Thông tin này mô tả quy cách hàng, chưa tạo tồn kho."
+  return <LiveScreen title={editing?'Sửa loại hàng':'Khai báo hàng hóa'} eyebrow="QUY CÁCH HÀNG HÓA" subtitle="Thông tin này mô tả quy cách hàng, chưa tạo tồn kho."
     onRefresh={()=>{item.reload();units.reload();specs.reload();}} refreshing={item.loading||units.loading||specs.loading}>
-    <Button label="Quay lại SKU" variant="quiet" onPress={()=>router.back()}/>
-    <ResourceState {...item} resource="SKU"/>
+    <Button label="Quay lại hàng hóa" variant="quiet" onPress={()=>router.back()}/>
+    <ResourceState {...item} resource="hàng hóa"/>
     {item.data&&<Card>
       <AppText variant="medium">{item.data.itemCode} · {item.data.name}</AppText>
-      {specId&&<ResourceState {...specs} resource="Item Specification"/>}
-      {specId&&!specs.loading&&!editing&&<StateCard kind="error" title="Không tìm thấy loại hàng" description="Tải lại SKU hoặc quay lại danh sách Item Specification."/>}
+      {specId&&<ResourceState {...specs} resource="loại hàng"/>}
+      {specId&&!specs.loading&&!editing&&<StateCard kind="error" title="Không tìm thấy loại hàng" description="Tải lại thông tin hàng hóa hoặc quay lại danh sách loại hàng."/>}
       <Input label="Mã loại hàng" value={values.code} onChangeText={code=>setValues(old=>({...old,code}))} autoCapitalize="characters" maxLength={48} editable={!pending&&!editing}/>
       <Input label="Tên loại hàng" value={values.name} onChangeText={name=>setValues(old=>({...old,name}))} maxLength={160} editable={!pending}/>
       <AppText variant="label">ĐƠN VỊ TÍNH</AppText>

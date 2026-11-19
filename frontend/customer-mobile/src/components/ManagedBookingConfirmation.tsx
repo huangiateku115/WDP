@@ -3,8 +3,9 @@ import {View} from 'react-native';
 import axios from 'axios';
 import {useRouter} from 'expo-router';
 import {apiIssue,MobileInputError} from '../api/client';
-import {createManagedBooking,managedBookingPolicy,managedCreationPriceReview,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
+import {createManagedBooking,managedBookingPolicy,managedBookingProfileEligible,managedCreationPriceReview,sameManagedQuote,verifyManagedCreation} from '../api/managedBookingV3';
 import {managedInventory,type ManagedQuote} from '../api/managedInventory';
+import {mobileRepo} from '../api/mobileRepository';
 import {journal,newAttempt} from '../state/attemptJournal';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card} from './ui';
@@ -26,6 +27,7 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
   activeScope.current=scope;
   const attempt=useResource(owner,()=>journal('managed-v3-booking',owner,'active').then(store=>store.read()));
   const policy=useResource(owner+':'+scope,signal=>review?managedBookingPolicy(signal):Promise.resolve(null));
+  const profile=useResource(owner+':managed-booking-profile',signal=>review?mobileRepo.profile(owner,signal):Promise.resolve(null));
   const versionId=policy.data?.versionId;
   const acceptance=managedTermsAcceptanceKey(scope,versionId);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -43,6 +45,8 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
       if(!recover){
         if(saved)throw new MobileInputError('Hãy kiểm tra yêu cầu tạo đơn đã lưu trước khi tạo đơn mới.');
         if(!review||!hasManagedTermsAcceptance(accepted,scope,versionId))return;
+        const currentProfile=await mobileRepo.profile(owner);
+        if(!current()||!managedBookingProfileEligible(currentProfile))throw new MobileInputError('Hồ sơ khách hàng cần được xác minh trước khi đặt thuê kho.');
         const range={startDate:review.startDate,endDate:review.endDate};
         const input={facilityId:review.facilityId,startDate:review.startDate,term:review.term,
           allocatedCapacityM3:review.allocatedCapacityM3,cellIds:review.cellIds};
@@ -97,6 +101,11 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
     {attempt.data?<Button label="Khôi phục yêu cầu đặt kho đã lưu" loading={pending} onPress={()=>void submit(true)}/>:null}
     {review&&!attempt.data&&<><ResourceState {...policy}/>
       {policy.data&&<>
+        <ResourceState {...profile}/>
+        {profile.data&&!managedBookingProfileEligible(profile.data)&&<Card>
+          <AppText>Hồ sơ khách hàng cần được xác minh trước khi đặt thuê kho.</AppText>
+          <Button label="Mở hồ sơ khách hàng" variant="outline" onPress={()=>router.push('/(tabs)/profile')}/>
+        </Card>}
         <TermsReviewCard title="Điều khoản thuê kho ký gửi" version={policy.data.version}
           accepted={hasManagedTermsAcceptance(accepted,scope,versionId)} onOpen={()=>setTermsExpanded(true)}/>
         <TermsModal visible={termsExpanded} title="Điều khoản thuê kho ký gửi" version={policy.data.version} disabled={pending}
@@ -109,7 +118,7 @@ export function ManagedBookingConfirmation({owner,review,onReviewChanged}:{owner
           </View>)}
         </TermsModal>
         <Button label="Xác nhận tạo đơn thuê" loading={pending}
-          disabled={attempt.loading||!!attempt.error||!hasManagedTermsAcceptance(accepted,scope,versionId)} onPress={()=>void submit(false)}/>
+          disabled={attempt.loading||!!attempt.error||profile.loading||!!profile.error||!managedBookingProfileEligible(profile.data)||!hasManagedTermsAcceptance(accepted,scope,versionId)} onPress={()=>void submit(false)}/>
       </>}
     </>}
     {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}

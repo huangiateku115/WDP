@@ -7,6 +7,7 @@ import {managedReservationReads} from '../api/managedReservationReads';
 import {useLiveSession} from '../state/useLiveSession';
 import {AppText,Button,Card,StateCard} from '../components/ui';
 import {LiveScreen,ResourceState,useResource} from '../components/liveUI';
+import {managedReservationInventoryTarget} from '../domain/managedInventoryNavigation';
 
 export function ManagedSessionSkuPicker({reservationId,sessionId}:{reservationId:string;sessionId:string}){
   const owner=useLiveSession(state=>state.user?._id??''),router=useRouter();
@@ -26,20 +27,20 @@ export function ManagedSessionSkuPicker({reservationId,sessionId}:{reservationId
       refId(item.managedReservationId)===reservation._id&&refId(item.facilityId)===refId(reservation.facilityId));
     return {reservation,session,skus,cellCount:eligibleInboundCells(reservation,session).length};
   });
-  return <LiveScreen title="Chọn hàng hóa nhập kho" eyebrow="PHIÊN ĐẾN KHO" subtitle="Chọn SKU thuộc đúng đơn thuê để tiếp tục kiểm tra nhập hàng."
+  return <LiveScreen title="Chọn hàng hóa nhập kho" eyebrow="PHIÊN ĐẾN KHO" subtitle="Chọn hàng hóa thuộc đơn thuê để tiếp tục nhập kho."
+    backButton={{disabled:!data.data,onPress:()=>data.data&&router.replace(managedReservationInventoryTarget(data.data.reservation._id,refId(data.data.reservation.facilityId)))}}
     onRefresh={data.reload} refreshing={data.loading}>
-    <Button label="Quay lại đơn thuê" variant="quiet" onPress={()=>router.back()}/>
     <ResourceState {...data}/>
     {data.data&&<Card>
       <AppText variant="medium">{data.data.reservation.reservationCode}</AppText>
       <AppText>Phiên INBOUND đang hiệu lực · {data.data.cellCount} ô được phép sử dụng.</AppText>
       <AppText>Phiên sẽ được xác minh lại trước khi xem trước và xác nhận nhập.</AppText>
     </Card>}
-    {data.data?.skus.length===0&&<StateCard title="Chưa có SKU đủ điều kiện nhập" description="Chỉ hiển thị hàng đã đăng ký, chưa được đặt vào ô và thuộc đơn thuê này."/>}
+    {data.data?.skus.length===0&&<StateCard title="Chưa có hàng hóa phù hợp để nhập" description="Danh sách này gồm hàng đã đăng ký nhưng chưa được lưu tại kho."/>}
     {data.data?.skus.map(item=><Card key={item._id}>
       <AppText variant="card">{item.name}</AppText>
       <AppText>Mã hàng: {item.itemCode}</AppText>
-      <AppText>Chỉ Item Specification đang hoạt động mới có thể lập dòng nhập.</AppText>
+      <AppText>Chỉ các loại hàng đang hoạt động mới có thể được nhập kho.</AppText>
       <Button label="Mở kiểm tra nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]',params:{id:item._id,accessSessionId:data.data!.session._id}} as unknown as Href)}/>
     </Card>)}
   </LiveScreen>;

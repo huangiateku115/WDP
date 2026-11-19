@@ -5,17 +5,25 @@ import {assertOwner,instant,nonnegative,objectId,positive,readData,refId,whole} 
 import type {ReservationDto} from './contracts/customer';
 import type {mobileRepo} from './mobileRepository';
 import type {managedReservationReads} from './managedReservationReads';
+import {managedSessionEligibility} from '../domain/managedAccessSessionEligibility';
 
 type Item=Awaited<ReturnType<typeof mobileRepo.item>>;
 type Session=Awaited<ReturnType<typeof managedReservationReads.sessions>>[number];
 type Spec=z.infer<typeof itemSpecificationDto>;
 const id=(value:unknown)=>objectId.parse(value);
 const isPositive=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>0;
-const itemSpecificationDto=z.object({_id:objectId,itemSpecId:objectId,skuId:objectId,code:z.string(),name:z.string(),
-  quantityUnitId:objectId,quantityUnit:z.string(),quantityUnitCode:z.string(),dimensionsM:z.object({widthM:positive,depthM:positive,heightM:positive}),
-  unitWeightKg:positive,unitVolumeM3:positive,revision:whole,status:z.enum(['ACTIVE','INACTIVE','DELETED'])}).passthrough();
+const contextUnit=z.union([objectId,z.object({_id:objectId,code:z.string().min(1),name:z.string().min(1)}).passthrough()]);
+const itemSpecificationDto=z.object({_id:objectId,itemSpecId:objectId.optional(),skuId:objectId,code:z.string(),name:z.string(),
+  quantityUnitId:contextUnit,quantityUnit:z.string().optional(),quantityUnitCode:z.string().optional(),dimensionsM:z.object({widthM:positive,depthM:positive,heightM:positive}),
+  unitWeightKg:positive,unitVolumeM3:positive,revision:whole,status:z.enum(['ACTIVE','INACTIVE','DELETED'])}).passthrough().transform(spec=>{
+    const unit=typeof spec.quantityUnitId==='string'?undefined:spec.quantityUnitId;
+    return {...spec,itemSpecId:spec.itemSpecId??spec._id,quantityUnitId:unit?unit._id:spec.quantityUnitId,
+      quantityUnit:spec.quantityUnit??unit?.name??unit?.code,quantityUnitCode:spec.quantityUnitCode??unit?.code};
+  }).pipe(z.object({_id:objectId,itemSpecId:objectId,skuId:objectId,code:z.string(),name:z.string(),quantityUnitId:objectId,
+    quantityUnit:z.string().min(1),quantityUnitCode:z.string().min(1),dimensionsM:z.object({widthM:positive,depthM:positive,heightM:positive}),
+    unitWeightKg:positive,unitVolumeM3:positive,revision:whole,status:z.enum(['ACTIVE','INACTIVE','DELETED'])}).passthrough());
 const inboundContextDto=z.object({skuId:objectId,reservationId:objectId,facilityId:objectId,skuRevision:whole,
-  specifications:z.array(itemSpecificationDto),apiVersion:z.literal(3)}).passthrough();
+  allocatedCellIds:z.array(objectId),specifications:z.array(itemSpecificationDto),apiVersion:z.literal(3)}).passthrough();
 const lineProofDto=z.object({lineId:z.string(),itemSpecId:objectId,itemName:z.string(),itemCode:z.string(),itemSpecRevision:whole,
   quantity:whole,quantityUnit:z.string(),unitWeightKg:positive,dimensionsM:z.object({widthM:positive,depthM:positive,heightM:positive}),
   unitVolumeM3:positive,totalWeightKg:nonnegative,totalVolumeM3:nonnegative,
@@ -26,6 +34,36 @@ const previewDto=z.object({status:z.literal('READY'),skuId:objectId,reservationI
   lines:z.array(lineProofDto).min(1),totalQuantity:whole,totalWeightKg:nonnegative,totalVolumeM3:nonnegative,
   previewRevision:z.object({skuRevision:whole,sessionRevision:whole,inventoryRevision:whole}),warnings:z.array(z.string())}).passthrough();
 const operationDto=z.object({status:z.literal('COMMITTED'),movement:z.unknown()}).passthrough();
+const inboundStockDto=z.object({skuId:objectId,reservationId:objectId,facilityId:objectId,
+  totalQuantity:whole.nullable(),totalWeightKg:nonnegative.nullable(),totalVolumeM3:nonnegative.nullable(),
+  reconciliationStatus:z.enum(['NO_ACTIVITY','VERIFIED','CHECKING']),verificationMessage:z.string().nullable().optional(),
+  itemSpecifications:z.array(z.object({itemSpecId:objectId,code:z.string(),name:z.string(),quantityUnit:z.string().nullable(),
+    quantityOnHand:whole.nullable(),quantityHeld:whole.nullable(),quantityAvailable:whole.nullable(),totalWeightKg:nonnegative.nullable(),totalVolumeM3:nonnegative.nullable(),
+    byCell:z.array(z.object({cellId:objectId,quantityOnHand:whole,quantityHeld:whole,quantityAvailable:whole,weightKg:nonnegative,volumeM3:nonnegative}).passthrough())}).passthrough()),
+  byCell:z.array(z.object({cellId:objectId,quantityOnHand:whole,quantityHeld:whole,quantityAvailable:whole,weightKg:nonnegative,volumeM3:nonnegative}).passthrough())}).passthrough()
+  .transform(stock=>{
+    if(stock.reconciliationStatus!=='VERIFIED'&&stock.reconciliationStatus!=='NO_ACTIVITY')return stock;
+    const totalByCell=stock.byCell.reduce((sum,row)=>sum+row.quantityOnHand,0);
+    const totalBySpecifications=stock.itemSpecifications.reduce((sum,row)=>sum+(row.quantityOnHand??0),0);
+    const verifiedShape=stock.totalQuantity!==null&&stock.totalQuantity===totalByCell&&stock.totalQuantity===totalBySpecifications&&
+      stock.itemSpecifications.every(row=>row.quantityOnHand!==null&&row.byCell.reduce((sum,cell)=>sum+cell.quantityOnHand,0)===row.quantityOnHand)&&
+      (stock.reconciliationStatus!=='NO_ACTIVITY'||stock.totalQuantity===0&&stock.byCell.length===0);
+    return verifiedShape?stock:{...stock,reconciliationStatus:'CHECKING' as const,
+      verificationMessage:'Số liệu tổng và phân bổ theo vị trí chưa khớp; đang cần đối soát.'};
+  });
+const confirmResponseDto=z.object({status:z.literal('COMMITTED'),replayed:z.boolean().optional(),movementId:objectId.optional(),movementCode:z.string().optional(),
+  quantity:whole.optional(),totalWeightKg:nonnegative.optional(),totalVolumeM3:nonnegative.optional(),lineCount:whole.optional(),sessionRevision:whole.optional(),movement:z.unknown().optional()}).passthrough();
+const specificationStockDto=z.object({skuId:objectId,itemSpecId:objectId,
+  reconciliationStatus:z.enum(['NO_ACTIVITY','VERIFIED','CHECKING']),quantityOnHand:whole.nullable(),quantityHeld:whole.nullable(),quantityAvailable:whole.nullable(),
+  totalWeightKg:nonnegative.nullable(),totalVolumeM3:nonnegative.nullable(),byCell:z.array(z.object({cellId:objectId,quantityOnHand:whole,quantityHeld:whole,quantityAvailable:whole,weightKg:nonnegative,volumeM3:nonnegative}).passthrough())}).passthrough()
+  .transform(stock=>{
+    if(stock.reconciliationStatus!=='VERIFIED'&&stock.reconciliationStatus!=='NO_ACTIVITY')return stock;
+    const byCellQuantity=stock.byCell.reduce((sum,row)=>sum+row.quantityOnHand,0);
+    const consistent=stock.quantityOnHand!==null&&stock.quantityOnHand===byCellQuantity&&
+      (stock.reconciliationStatus!=='NO_ACTIVITY'||stock.quantityOnHand===0&&stock.byCell.length===0);
+    return consistent?stock:{...stock,reconciliationStatus:'CHECKING' as const};
+  });
+export type InboundStockReadback=z.infer<typeof inboundStockDto>;
 const ref=(value:unknown)=>String((value as { _id?:unknown; id?:unknown }|null)?.['_id']??(value as { id?:unknown }|null)?.id??value??'');
 
 function scope(item:Item,r:ReservationDto,owner:string){
@@ -39,9 +77,7 @@ function scope(item:Item,r:ReservationDto,owner:string){
 
 export function eligibleInboundCells(r:ReservationDto,session:Session,now=Date.now()){
   if(r.status!=='ACTIVE'||Date.parse(r.startDate)>now||Date.parse(r.endDate)<=now||
-    session.status!=='ACTIVE'||Date.parse(session.startedAt)>now||Date.parse(session.expiresAt)<=now||
-    !session.allowedPurposes.includes('INBOUND')||ref(session.reservationId)!==r._id||
-    ref(session.customerId)!==ref(r.customerId)||ref(session.facilityId)!==ref(r.facilityId))return [];
+    !managedSessionEligibility(session,{customerId:ref(r.customerId),facilityId:ref(r.facilityId),reservationId:r._id,purpose:'INBOUND',now,primaryReservationOnly:true}).eligible)return [];
   const allowed=new Set(session.allowedCellIds.map(ref));
   return (r.allocatedCellIds??[]).map(ref).filter(cell=>allowed.has(cell));
 }
@@ -74,6 +110,9 @@ export const managedInboundPreview={
   async context(item:Item,r:ReservationDto,owner:string,signal?:AbortSignal){
     const data=readData(inboundContextDto,await wire('GET',scope(item,r,owner)+'inbound/context',{signal}));
     if(data.skuId!==item._id||data.reservationId!==r._id||data.facilityId!==ref(r.facilityId))throw new MobileInputError('Ngữ cảnh nhập hàng không khớp SKU/đơn thuê.');
+    const reservationCells=new Set((r.allocatedCellIds??[]).map(ref));
+    if(data.allocatedCellIds.some(cell=>!reservationCells.has(cell))||data.allocatedCellIds.length!==reservationCells.size||new Set(data.allocatedCellIds).size!==data.allocatedCellIds.length)
+      throw new MobileInputError('Các ô trong Context không khớp phạm vi Reservation.');
     return {...data,specifications:data.specifications.filter(spec=>spec.status==='ACTIVE').map(spec=>{
       if(spec.skuId!==item._id)throw new MobileInputError('Item Specification không thuộc SKU hiện tại.');return spec;
     })};
@@ -93,7 +132,9 @@ export const managedInboundPreview={
     return {proof,request:body};
   },
   async confirm(item:Item,r:ReservationDto,owner:string,body:ReturnType<typeof buildUnifiedInboundRequest>,key:string){
-    const path=scope(item,r,owner);await wire('POST',path+'inbound',{body,key});
+    const path=scope(item,r,owner),response=readData(confirmResponseDto,await wire('POST',path+'inbound',{body,key}));
+    if(response.status!=='COMMITTED')throw new MobileInputError('Backend chưa xác nhận phiếu nhập đã ghi nhận.');
+    return response;
   },
   async operation(item:Item,r:ReservationDto,owner:string,key:string){
     const path=scope(item,r,owner),result=readData(operationDto,await wire('GET',path+'operations',{params:{key}}));
@@ -103,5 +144,26 @@ export const managedInboundPreview={
       throw new MobileInputError('Bằng chứng phiếu nhập đã đối soát không khớp yêu cầu.');
     const movement=mapV3Movements({success:true,data:[row]},item,owner)[0];
     if(!movement)throw new MobileInputError('Chưa xác minh được phiếu nhập đã ghi sổ.');return movement;
+  },
+  async stockReadback(item:Item,r:ReservationDto,owner:string,signal?:AbortSignal){
+    const stock=readData(inboundStockDto,await wire('GET',scope(item,r,owner)+'stock',{signal}));
+    if(stock.skuId!==item._id||stock.reservationId!==r._id||stock.facilityId!==ref(r.facilityId))throw new MobileInputError('Tồn kho đọc lại không thuộc SKU, Reservation hoặc Facility này.');
+    return stock;
+  },
+  async cellStockReadback(item:Item,r:ReservationDto,owner:string,signal?:AbortSignal){
+    const stock=readData(inboundStockDto,await wire('GET',scope(item,r,owner)+'cell-stock',{signal}));
+    if(stock.skuId!==item._id||stock.reservationId!==r._id||stock.facilityId!==ref(r.facilityId))throw new MobileInputError('Cell Stock đọc lại không thuộc SKU, Reservation hoặc Facility này.');
+    return stock;
+  },
+  async specificationStockReadback(item:Item,r:ReservationDto,owner:string,specId:string,signal?:AbortSignal){
+    const path=scope(item,r,owner),stock=readData(specificationStockDto,
+      await wire('GET',path+'specifications/'+id(specId)+'/cell-stock',{signal}));
+    if(stock.skuId!==item._id||stock.itemSpecId!==specId)throw new MobileInputError('Cell Stock của Specification không khớp SKU.');
+    return stock;
+  },
+  async movementsReadback(item:Item,r:ReservationDto,owner:string,signal?:AbortSignal){
+    const rows=mapV3Movements(await wire('GET',scope(item,r,owner)+'movements',{signal}),item,owner);
+    if(rows.some(row=>ref(row.managedReservationId)!==r._id))throw new MobileInputError('Movement History có Reservation không khớp thao tác.');
+    return rows;
   },
 };

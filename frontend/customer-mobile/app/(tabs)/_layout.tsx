@@ -18,7 +18,8 @@ export default function CustomerTabs(){const insets=useSafeAreaInsets();return <
  <Tabs.Screen name="index" options={{title:'Trang chủ',tabBarIcon:tabIcon('home-outline')}}/>
  <Tabs.Screen name="explore" options={{title:'Khám phá',tabBarIcon:tabIcon('compass-outline')}}/>
  <Tabs.Screen name="rentals" options={{title:'Kho thuê',tabBarIcon:tabIcon('key-outline')}}/>
- <Tabs.Screen name="inventory" options={{title:'Hàng hóa',tabBarIcon:tabIcon('file-tray-stacked-outline')}}/>
+ <Tabs.Screen name="inventory" options={{title:'Hàng hóa',tabBarIcon:tabIcon('file-tray-stacked-outline'),popToTopOnBlur:true}}
+   listeners={({navigation})=>({tabPress:()=>navigation.navigate('inventory' as never,{screen:'index'} as never)})}/>
  <Tabs.Screen name="profile" options={{title:'Tài khoản',tabBarIcon:tabIcon('person-outline')}}/>
  </Tabs>;}
 

@@ -72,8 +72,8 @@ export function ManagedSkuEditor({r,item,onSaved}:{r:ReservationDto;item?:Item;o
   async function save(){
     if(busy.current||uncertain||pending)return;
     const code=values.code.trim().toUpperCase(),name=values.name.trim(),description=values.description.trim();
-    if(!item&&(!code||code.length>48||!/^[A-Z0-9][A-Z0-9_-]*$/.test(code))){setError('Mã SKU bắt buộc, tối đa 48 ký tự; chỉ dùng chữ, số, dấu gạch ngang hoặc gạch dưới.');return;}
-    if(!name||name.length>160){setError('Tên SKU bắt buộc và tối đa 160 ký tự.');return;}
+    if(!item&&(!code||code.length>48||!/^[A-Z0-9][A-Z0-9_-]*$/.test(code))){setError('Vui lòng nhập mã hàng tối đa 48 ký tự, gồm chữ, số, dấu gạch ngang hoặc gạch dưới.');return;}
+    if(!name||name.length>160){setError('Vui lòng nhập tên hàng hóa tối đa 160 ký tự.');return;}
     if(!values.categoryId){setError('Hãy chọn danh mục SKU đang hoạt động.');return;}
     if(description.length>2000){setError('Mô tả tối đa 2.000 ký tự.');return;}
     const current=()=>mounted.current&&useLiveSession.getState().user?._id===owner;
@@ -87,20 +87,20 @@ export function ManagedSkuEditor({r,item,onSaved}:{r:ReservationDto;item?:Item;o
       if(current()){
         const ambiguous=axios.isAxiosError(cause)&&(!cause.response||cause.response.status>=500);
         if(ambiguous)setUncertain(true);
-        setError(ambiguous?'Chưa rõ kết quả lưu. Hãy kiểm tra danh sách SKU trước khi gửi lại.':cause instanceof ZodError?'Mã SKU, tên hoặc danh mục chưa đúng định dạng.':apiIssue(cause));
+        setError(ambiguous?'Chưa rõ kết quả lưu. Hãy kiểm tra danh sách hàng hóa trước khi gửi lại.':cause instanceof ZodError?'Mã hàng, tên hoặc danh mục chưa đúng định dạng.':apiIssue(cause));
       }
     }finally{busy.current=false;if(current())setPending(false);}
   }
-  if(!eligible)return <Screen><ScreenHeading title={item?'Sửa thông tin SKU':'Khai báo hàng hóa'}/><Card><AppText accessibilityRole="alert">Reservation hoặc SKU chưa đủ điều kiện chỉnh sửa.</AppText></Card></Screen>;
+  if(!eligible)return <Screen><ScreenHeading title={item?'Sửa thông tin hàng hóa':'Khai báo hàng hóa'}/><Card><AppText accessibilityRole="alert">Đơn thuê hoặc hàng hóa chưa đủ điều kiện chỉnh sửa.</AppText></Card></Screen>;
   return <>
-    <Screen testID="managed-sku-form" footer={<Button label={item?'Lưu thông tin SKU':'Lưu SKU'} loading={pending} disabled={!eligible||uncertain||categories.loading||!!categories.error||imageBusy||!!pickedAsset} onPress={()=>void save()}/> }>
+    <Screen testID="managed-sku-form" footer={<Button label={item?'Lưu thông tin hàng hóa':'Lưu hàng hóa'} loading={pending} disabled={!eligible||uncertain||categories.loading||!!categories.error||imageBusy||!!pickedAsset} onPress={()=>void save()}/> }>
       <ScreenHeading title={item?'Sửa thông tin hàng hóa':'Khai báo hàng hóa'} eyebrow="KHO KÝ GỬI" subtitle={`Đơn ${r.reservationCode}`}/>
       <Card>
         <AppText>Khai báo thông tin hàng hóa để quản lý và nhập kho.</AppText>
-        {!item&&<Input label="Mã SKU" value={values.code} editable={!pending&&!uncertain} maxLength={48} autoCapitalize="characters" onChangeText={value=>{setValues(previous=>({...previous,code:value}));setError('');}} placeholder="Ví dụ: BOX-001"/>}
-        <Input label="Tên SKU" value={values.name} editable={!pending&&!uncertain} maxLength={160} onChangeText={value=>{setValues(previous=>({...previous,name:value}));setError('');}} placeholder="Tên hàng hóa"/>
+        {!item&&<Input label="Mã hàng" value={values.code} editable={!pending&&!uncertain} maxLength={48} autoCapitalize="characters" onChangeText={value=>{setValues(previous=>({...previous,code:value}));setError('');}} placeholder="Ví dụ: BOX-001"/>}
+        <Input label="Tên hàng hóa" value={values.name} editable={!pending&&!uncertain} maxLength={160} onChangeText={value=>{setValues(previous=>({...previous,name:value}));setError('');}} placeholder="Tên hàng hóa"/>
         <View style={{gap:6}}><AppText variant="label">Danh mục</AppText>
-          <Pressable accessibilityRole="button" accessibilityLabel="Chọn danh mục SKU" accessibilityState={{disabled:pending||uncertain}} disabled={pending||uncertain||categories.loading||!!categories.error} onPress={()=>{setQuery('');setPickerOpen(true);}} style={styles.categoryButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Chọn danh mục hàng hóa" accessibilityState={{disabled:pending||uncertain}} disabled={pending||uncertain||categories.loading||!!categories.error} onPress={()=>{setQuery('');setPickerOpen(true);}} style={styles.categoryButton}>
             <AppText style={{color:selectedCategory?colors.text:colors.muted}}>{selectedCategory?.name??(categories.loading?'Đang tải danh mục…':categories.error?'Không tải được danh mục':'Chọn danh mục')}</AppText>
             {categories.loading?<ActivityIndicator color={colors.primary}/>:null}
           </Pressable>
@@ -136,7 +136,7 @@ export function ManagedSkuEditor({r,item,onSaved}:{r:ReservationDto;item?:Item;o
 export function ManagedSkuEdit({item,owner,onSaved,accessSessionId}:{item:Item;owner:string;onSaved:(row:Item)=>void;accessSessionId?:string}){
   const router=useRouter();
   const r=useResource(owner+':'+item._id,signal=>managedInventory.rental(refId(item.managedReservationId),owner,refId(item.facilityId),signal));
-  return <><ResourceState {...r} resource="Reservation liên kết với SKU"/>{r.data&&<Button label="Kiểm tra nhập kho" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/inbound',params:{id:item._id,...(accessSessionId?{accessSessionId}:{})}} as unknown as Href)}/>}</>;
+  return <><ResourceState {...r} resource="đơn thuê liên quan"/>{r.data&&<Button label="Tiếp tục nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/inbound',params:{id:item._id,...(accessSessionId?{accessSessionId}:{})}} as unknown as Href)}/>}</>;
 }
 
 const styles=StyleSheet.create({categoryButton:{minHeight:52,borderWidth:1,borderColor:colors.line,borderRadius:12,backgroundColor:colors.soft,paddingHorizontal:14,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},scrim:{flex:1,justifyContent:'flex-end',backgroundColor:'#103D2B88'},sheet:{maxHeight:'88%',backgroundColor:colors.card,borderTopLeftRadius:22,borderTopRightRadius:22,padding:18,gap:14},sheetHandle:{width:42,height:4,borderRadius:2,backgroundColor:colors.line,alignSelf:'center'},sheetHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},categoryRow:{minHeight:58,paddingHorizontal:12,paddingVertical:8,borderBottomWidth:1,borderBottomColor:colors.line,flexDirection:'row',alignItems:'center'},categorySelected:{backgroundColor:colors.mint},imageHeading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},imageActions:{gap:8},imageGrid:{flexDirection:'row',flexWrap:'wrap',gap:8},imageCard:{width:'48%',borderWidth:1,borderColor:colors.line,borderRadius:12,padding:8,gap:6},imagePreview:{width:'100%',height:140,borderRadius:8,backgroundColor:colors.surface},uploading:{minHeight:60,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,backgroundColor:colors.mint,borderRadius:12}});

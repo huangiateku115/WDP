@@ -9,10 +9,10 @@ const stateLabel={COMPLETED:'Hoàn tất',CURRENT:'Đang thực hiện',PENDING:
 const stateTone={COMPLETED:colors.primary,CURRENT:colors.orange,BLOCKED:colors.danger,PENDING:colors.inactive} as const;
 const stateIcon={COMPLETED:'checkmark',CURRENT:'ellipse',PENDING:'ellipse-outline',BLOCKED:'alert-circle-outline'} as const;
 
-export function ManagedRentalProgress({reservation,payment='NONE',visitEligible,hasVisit,hasInboundSession,hasStoredItems}:{
-  reservation:ReservationDto;payment?:ManagedPaymentProgress;visitEligible?:boolean;hasVisit?:boolean;hasInboundSession?:boolean;hasStoredItems?:boolean;
+export function ManagedRentalProgress({reservation,payment='NONE',visitEligible,hasVisit,hasInboundSession,hasStoredItems,handoverComplete}:{
+  reservation:ReservationDto;payment?:ManagedPaymentProgress;visitEligible?:boolean;hasVisit?:boolean;hasInboundSession?:boolean;hasStoredItems?:boolean;handoverComplete?:boolean;
 }){
-  const steps=managedRentalProgress({reservationStatus:reservation.status,payment,visitEligible,hasVisit,hasInboundSession,hasStoredItems});
+  const steps=managedRentalProgress({reservationStatus:reservation.status,payment,visitEligible,hasVisit,hasInboundSession,hasStoredItems,handoverComplete});
   return <Card>
     <AppText variant="card">Tiến trình thuê kho</AppText>
     <View style={styles.list}>{steps.map((step,index)=>{
@@ -26,7 +26,7 @@ export function ManagedRentalProgress({reservation,payment='NONE',visitEligible,
         </View>
         <View style={styles.copy}>
           <View style={styles.heading}><AppText variant="medium" style={styles.title}>{index+1}. {step.title}</AppText>
-            <AppText variant="caption" style={{color:tone}}>{stateLabel[step.state]}</AppText></View>
+            <AppText variant="caption" style={{color:tone}}>{step.key==='payment'&&payment==='UNSYNCED'?'Chưa xác minh thanh toán':stateLabel[step.state]}</AppText></View>
           <AppText variant="caption" style={styles.detail}>{step.detail}</AppText>
         </View>
       </View>;

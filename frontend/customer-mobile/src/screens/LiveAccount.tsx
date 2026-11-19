@@ -1,8 +1,8 @@
 import {ManagedSkuEdit} from '../components/ManagedSkuEditor';
-import {ManagedOperationLookup} from '../components/ManagedOperationLookup';
-import {useRef,useState} from 'react';
+import {ManagedSkuStockPanel} from '../components/ManagedSkuStockPanel';
+import {useRef,useState,type ComponentProps} from 'react';
 import {useLocalSearchParams,useRouter,type Href} from 'expo-router';
-import {Image,View} from 'react-native';
+import {Image,Pressable,View} from 'react-native';
 import {apiIssue,wire,MobileInputError} from '../api/client';
 import {restoreNativePaymentReturnPath} from '../api/paymentReturnLink';
 import {mobileRepo} from '../api/mobileRepository';
@@ -11,12 +11,14 @@ import {refId} from '../api/contracts/core';
 import {buildRegistration,mapCurrentUser} from '../api/contracts/customer';
 import {accountUpdate,optionalAddress,profileUpdate} from '../api/contracts/profile';
 import {useLiveSession} from '../state/useLiveSession';
-import {AppText,Button,Card,Chip,Input,StateCard,ui} from '../components/ui';
+import {AppText,Button,Card,Chip,Filter,Icon,Input,Screen,SectionTitle,StateCard,ui} from '../components/ui';
 import {dateLabel,LiveScreen,ResourceState,UnavailableScreen,useResource} from '../components/liveUI';
 import {WarehouseArt} from '../components/WarehouseArt';
 import {CardHeading,MetricTile,TintedPanel} from '../components/livePresentation';
 import {colors} from '../theme/tokens';
+import {managedReservationInventoryTarget} from '../domain/managedInventoryNavigation';
 import {ManagedSpecifications} from '../components/ManagedSpecifications';
+import {movementAction,movementActionLabel,movementCellIds,movementIdentifier,movementOccurredAt,movementPlacements,movementTime} from '../domain/managedV3Movements';
 import {RentalCard,RentalDetail} from './LiveRental';
 import {FacilityDetail} from './LiveCatalog';
 
@@ -77,19 +79,31 @@ export function Register(){
 export function Dashboard(){
   const router=useRouter(),user=useLiveSession(s=>s.user),owner=useOwner();
   const rentals=useResource('rentals:'+owner,signal=>mobileRepo.rentals(owner,signal));
-  const inventory=useResource('inventory:'+owner,signal=>mobileRepo.inventory(owner,1,signal));
   const notices=useResource('notifications:'+owner,signal=>mobileRepo.notifications(owner,signal));
-  const contracts=useResource('contracts:'+owner,signal=>mobileRepo.contracts(owner,signal));
+  const active=rentals.data?.filter(r=>r.status==='ACTIVE')??[];
+  const soon=Date.now()+30*24*60*60*1000;
   const values=[
-    {icon:'key-outline',label:'Đơn thuê đang hoạt động',value:rentals.data?.filter(r=>r.status==='ACTIVE').length,loading:rentals.loading},
-    {icon:'document-text-outline',label:'Hợp đồng đã ký',value:contracts.data?.filter(c=>c.status==='SIGNED').length,loading:contracts.loading},
-    {icon:'cube-outline',label:'Mã hàng',value:inventory.data?.pagination.total,loading:inventory.loading},
-    {icon:'notifications-outline',label:'Thông báo chưa đọc',value:notices.data?.unread,loading:notices.loading},
+    {icon:'key-outline',label:'Đơn đang thuê',value:rentals.data?active.length:undefined,loading:rentals.loading},
+    {icon:'home-outline',label:'Kho tự quản',value:rentals.data?active.filter(r=>r.serviceType==='SELF_STORAGE').length:undefined,loading:rentals.loading},
+    {icon:'file-tray-stacked-outline',label:'Kho ký gửi',value:rentals.data?active.filter(r=>r.serviceType==='MANAGED_INVENTORY').length:undefined,loading:rentals.loading},
+    {icon:'time-outline',label:'Sắp hết hạn · 30 ngày',value:rentals.data?active.filter(r=>{const end=Date.parse(r.endDate);return end>Date.now()&&end<=soon;}).length:undefined,loading:rentals.loading},
   ] as const;
-  return <LiveScreen eyebrow="VAULTSPACE · KHÔNG GIAN CỦA BẠN" title={'Xin chào, '+(user?.displayName??'khách hàng')}
-    subtitle="Theo dõi đơn thuê, hợp đồng và hàng hóa tại một nơi." onRefresh={()=>{
-    rentals.reload();inventory.reload();notices.reload();contracts.reload();
-  }} refreshing={rentals.loading||inventory.loading||notices.loading||contracts.loading}>
+  const greetingName=user?.displayName?.trim().split(/\s+/)[0]||'bạn';
+  const unread=notices.data?.unread;
+  return <Screen testID="screen-live-home" onRefresh={()=>{rentals.reload();notices.reload();}}
+    refreshing={rentals.loading||notices.loading}>
+    <View style={{flexDirection:'row',alignItems:'center',gap:12,marginBottom:8}}>
+      <View style={{flex:1,minWidth:0}}>
+        <AppText variant="label" style={{color:colors.primary}}>VAULTSPACE · KHÔNG GIAN CỦA BẠN</AppText>
+        <AppText variant="title" numberOfLines={2}>Xin chào, {greetingName}</AppText>
+        <AppText style={{color:colors.muted}}>Theo dõi các đơn thuê của bạn tại một nơi.</AppText>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Mở thông báo${unread?`, ${unread} chưa đọc`:''}`}
+        onPress={()=>router.push('/notifications')} style={{width:48,height:48,borderRadius:16,backgroundColor:colors.card,borderWidth:1,borderColor:colors.line,alignItems:'center',justifyContent:'center'}}>
+        <Icon name="notifications-outline" size={22}/>
+        {!!unread&&unread>0&&<View style={{position:'absolute',right:-2,top:-2,minWidth:19,height:19,paddingHorizontal:4,borderRadius:10,backgroundColor:colors.orange,alignItems:'center',justifyContent:'center'}}><AppText variant="caption" style={{color:colors.white,fontSize:10}}>{unread>9?'9+':unread}</AppText></View>}
+      </Pressable>
+    </View>
     <TintedPanel tone="inverse">
       <AppText variant="label" style={{color:colors.inverseText}}>DỊCH VỤ LƯU TRỮ</AppText>
       <AppText variant="heading" style={{color:colors.white}}>Không gian phù hợp với bạn</AppText>
@@ -97,15 +111,14 @@ export function Dashboard(){
       <Button label="Khám phá kho" icon="compass-outline" onPress={()=>router.push('/(tabs)/explore')}/>
     </TintedPanel>
     <Card>
-      <CardHeading icon="grid-outline" title="Tổng quan tài khoản"/>
+      <CardHeading icon="grid-outline" title="Tổng quan thuê kho" subtitle="Số liệu từ các đơn thuê của bạn"/>
       <View style={ui.wrap}>{values.map(entry=><MetricTile key={entry.label} {...entry}/>)}</View>
-      <Button label="Thông báo" icon="notifications-outline" variant="outline" onPress={()=>router.push('/notifications')}/>
     </Card>
-    <AppText variant="heading" accessibilityRole="header">Đơn thuê gần đây</AppText>
+    <SectionTitle title="Đơn thuê của bạn" action="Xem tất cả" onPress={()=>router.push('/(tabs)/rentals')}/>
     <ResourceState {...rentals}/>
     {rentals.data?.length===0&&<StateCard title="Bạn chưa có đơn thuê"/>}
     {rentals.data?.slice(0,3).map(r=><RentalCard key={r._id} r={r}/>)}
-  </LiveScreen>;
+  </Screen>;
 }
 
 export function Profile(){
@@ -204,24 +217,48 @@ export function Notifications(){
     finally{lock.current=false;setBusy(false);}
   }
   return <LiveScreen title="Thông báo" eyebrow="HỘP THƯ" subtitle="Cập nhật về đơn thuê, thanh toán và hàng hóa." onRefresh={data.reload} refreshing={data.loading}>
-    <ResourceState {...data}/>{data.data?.items.length===0&&<StateCard title="Chưa có thông báo"/>}
+    {data.loading&&!data.data&&<StateCard kind="loading" title="Đang tải thông báo"/>}
+    {data.error&&<StateCard kind="error"
+      title={data.httpStatus===401?'Phiên đăng nhập đã hết hạn':data.httpStatus===403?'Bạn không có quyền xem thông báo này':data.httpStatus===undefined&&/^(Không thể kết nối|Kết nối mất nhiều thời gian)/.test(data.error)?'Không thể kết nối':'Chưa thể tải thông báo'}
+      description={data.error} onRetry={data.reload}/>}
+    {!data.loading&&!data.error&&data.data?.items.length===0&&<StateCard title="Chưa có thông báo" description="Thông báo sẽ xuất hiện tại đây khi có cập nhật cho đơn thuê của bạn."/>}
     {!!error&&<StateCard kind="error" title="Chưa cập nhật được thông báo" description={error}/>}
-    {data.data?.items.map(item=><Card key={item._id}><CardHeading icon={item.isRead?"mail-open-outline":"mail-unread-outline"} title={item.title}/>
-      <AppText>{item.content}</AppText><AppText variant="caption">{dateLabel(item.createdAt)}</AppText>
-      {!item.isRead&&<Button label="Đánh dấu đã đọc" variant="quiet" disabled={busy} onPress={()=>void mark(item._id)}/>}</Card>)}
+    {data.data?.items.map(item=><Card key={item._id} style={{borderLeftWidth:3,borderLeftColor:item.isRead?colors.line:colors.primary}}>
+      <View style={{flexDirection:'row',alignItems:'flex-start',gap:12}}>
+        <View style={{width:42,height:42,borderRadius:14,backgroundColor:item.isRead?colors.soft:colors.mint,alignItems:'center',justifyContent:'center'}}>
+          <Icon name={notificationIcon(item.type)} color={item.isRead?colors.muted:colors.primary} size={20}/>
+        </View>
+        <View style={{flex:1,minWidth:0,gap:4}}>
+          <AppText variant="card">{item.title}</AppText>
+          <AppText variant="caption" style={{color:colors.muted}}>{dateLabel(item.createdAt)}</AppText>
+        </View>
+        {!item.isRead&&<View accessibilityLabel="Chưa đọc" style={{width:9,height:9,borderRadius:5,backgroundColor:colors.orange,marginTop:6}}/>}
+      </View>
+      <AppText>{item.content}</AppText>
+      {!item.isRead&&<Button label="Đánh dấu đã đọc" variant="outline" disabled={busy} onPress={()=>void mark(item._id)}/>}
+    </Card>)}
   </LiveScreen>;
 }
 
-export {ManagedDashboard as Inventory} from './ManagedDashboard';
+function notificationIcon(type:string):ComponentProps<typeof Icon>['name']{
+  if(type==='PAYMENT_CONFIRMED'||type==='PAYMENT_REMINDER')return 'wallet-outline';
+  if(type==='CONTRACT_SIGNED')return 'document-text-outline';
+  if(type==='CHECKOUT_REMINDER')return 'time-outline';
+  if(type==='OVERDUE_ALERT')return 'alert-circle-outline';
+  return 'notifications-outline';
+}
 
-function ItemDetail({id,accessSessionId}:{id:string;accessSessionId?:string}){
+export {InventoryOverview as Inventory} from './ManagedDashboard';
+
+function ItemDetail({id,accessSessionId,operation}:{id:string;accessSessionId?:string;operation?:string}){
   const owner=useOwner(),router=useRouter();
+  const [stockRefreshRevision,setStockRefreshRevision]=useState(0);
   const item=useResource(owner+':'+id,signal=>mobileRepo.item(id,owner,signal));
-  const stock=useResource(owner+':'+id,async signal=>mobileRepo.inventoryStock(await mobileRepo.item(id,owner,signal),owner,signal));
-  const stockCellIds=stock.data?.kind==='V3'?stock.data.stock.byCell.map(row=>row.cellId):[];
-  const cellLabels=useResource(owner+':stock-cell-labels:'+stockCellIds.join(','),signal=>item.data&&stockCellIds.length
-    ?managedInventory.cellLabels(refId(item.data.facilityId),stockCellIds,signal):Promise.resolve({} as Record<string,string>));
-  return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký và tồn kho của mặt hàng." onRefresh={()=>{item.reload();stock.reload();}} refreshing={item.loading||stock.loading}>
+  return <LiveScreen title="Chi tiết hàng hóa" eyebrow="KHO KÝ GỬI" subtitle="Thông tin đăng ký, tồn kho và vị trí hiện tại."
+    backButton={{disabled:!item.data,onPress:()=>item.data?.inventorySchemaVersion===3
+      ?router.replace(managedReservationInventoryTarget(refId(item.data.managedReservationId),refId(item.data.facilityId),{sessionId:accessSessionId,operation}))
+      :router.replace('/(tabs)/inventory')}}
+    onRefresh={()=>{item.reload();setStockRefreshRevision(value=>value+1);}} refreshing={item.loading}>
     <ResourceState {...item}/>
     {item.data&&<Card><CardHeading icon="cube-outline" title={item.data.name}/><AppText>Mã hàng {item.data.itemCode}</AppText>
       {!!item.data.images?.length&&<View style={{gap:10}}>{item.data.images.map((url,index)=><Image key={`${url}-${index}`} source={{uri:url}} accessibilityLabel={`Ảnh hàng hóa ${index+1}`} resizeMode="cover" style={{width:'100%',height:220,borderRadius:12,backgroundColor:colors.surface}}/>)}</View>}
@@ -232,63 +269,63 @@ function ItemDetail({id,accessSessionId}:{id:string;accessSessionId?:string}){
         {!!item.data.unitDimensionsM&&<AppText>Kích thước {item.data.unitDimensionsM.widthM} × {item.data.unitDimensionsM.depthM} × {item.data.unitDimensionsM.heightM} m</AppText>}
       </>}
       {item.data.inventorySchemaVersion===3&&<>
-        <Button label="Sửa thông tin SKU" variant="outline" onPress={()=>router.push({pathname:'/inventory/edit/[id]',params:{id}})}/>
-        <Button label="Xuất hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/outbound',params:{id}} as unknown as Href)}/>
-        <Button label="Chuyển vị trí" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/relocation',params:{id}} as unknown as Href)}/>
-        <Button label="Nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/inbound',params:{id}} as unknown as Href)}/>
+        <Button label="Sửa thông tin hàng hóa" variant="outline" onPress={()=>router.push({pathname:'/inventory/edit/[id]',params:{id}})}/>
+        {(!operation||operation==='OUTBOUND')&&<Button label="Xuất hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/outbound',params:{id,...(accessSessionId?{sessionId:accessSessionId}:{})}} as unknown as Href)}/>}
+        {(!operation||operation==='RELOCATION')&&<Button label="Chuyển vị trí" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/relocation',params:{id,...(accessSessionId?{sessionId:accessSessionId}:{})}} as unknown as Href)}/>}
+        {(!operation||operation==='INBOUND')&&<Button label="Nhập hàng" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/inbound',params:{id,...(accessSessionId?{accessSessionId}:{})}} as unknown as Href)}/>}
       </>}
       <Button label="Lịch sử di chuyển" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history',params:{id}})}/></Card>}
     {item.data?.inventorySchemaVersion===3&&<ManagedSpecifications item={item.data} owner={owner}/>}
-    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();stock.reload();}} accessSessionId={accessSessionId}/>}
-    <ResourceState {...stock} resource="tồn kho (đọc Reservation và GET /inventory-items/{skuId}/v3/stock)"/>
-    {stock.data?.kind==='V3'&&<Card><CardHeading icon="layers-outline" title="Tồn kho theo ô"/>
-      {stock.data.stock.reconciliationStatus==='RECONCILED'?<>
-        <AppText>Đang lưu: {stock.data.stock.onHandQuantity}</AppText>
-        <AppText>Đang giữ: {stock.data.stock.heldQuantity}</AppText>
-        <AppText>{stock.data.stock.totalWeightKg} kg · {stock.data.stock.totalVolumeM3} m³</AppText>
-        <ResourceState {...cellLabels} resource="mã Cell từ sơ đồ kho"/>
-        {stock.data.stock.byCell.map(row=><AppText key={row.cellId}>Ô {cellLabels.data?.[row.cellId]??'Cell chưa xác định'} · {row.quantity} theo lô · {row.physicalUnitCount} kiện riêng</AppText>)}
-        {stock.data.stock.byBatch.map(row=><AppText key={row.batchId+':'+row.cellId}>Lô {row.batchId} · {row.quantity} {row.quantityUnit} · Ô {row.cellId}</AppText>)}
-        {stock.data.stock.byPhysicalUnit.map(row=><AppText key={row.physicalUnitId}>Kiện {row.physicalUnitId} · Ô {row.cellIds.join(', ')}</AppText>)}
-      </>:<AppText>Tồn kho chưa thể xác minh. Hãy liên hệ bộ phận hỗ trợ.</AppText>}
-    </Card>}
-    {stock.data?.kind==='V3'&&item.data&&<ManagedOperationLookup key={owner+':'+id} item={item.data} owner={owner}/>}
-    {stock.data?.kind==='LEGACY'&&<Card><CardHeading icon="layers-outline" title="Tồn kho"/>
-      <AppText variant="caption">{stock.data.stock.source==='LEDGER_V2'?'Sổ tồn kho theo lô':'Số liệu tồn kho đã đối chiếu từ dữ liệu cũ'}</AppText><AppText>Đang lưu {stock.data.stock.onHandQuantity} {stock.data.stock.quantityUnit}</AppText>
-      <AppText>Đang giữ {stock.data.stock.heldQuantity} {stock.data.stock.quantityUnit}</AppText>
-      <AppText>Có thể xuất {stock.data.stock.availableQuantity??'Chưa có xác nhận'}</AppText>
-      {stock.data.stock.batches.map(batch=><AppText key={batch.batchId}>Lô {batch.batchId} · {batch.quantity} {batch.quantityUnit}</AppText>)}</Card>}
+    {item.data?.inventorySchemaVersion===3&&<ManagedSkuEdit key={'edit:'+owner+':'+id} item={item.data} owner={owner} onSaved={()=>{item.reload();setStockRefreshRevision(value=>value+1);}} accessSessionId={accessSessionId}/>}
+    {item.data&&<ManagedSkuStockPanel item={item.data} owner={owner} refreshRevision={stockRefreshRevision}/>}
   </LiveScreen>;
 }
 export function Movements(){
-  const {id}=useLocalSearchParams<{id:string}>();
-  const owner=useOwner();
-  const data=useResource(owner+':'+id,async signal=>mobileRepo.inventoryMovements(await mobileRepo.item(id,owner,signal),owner,signal));
-  return <LiveScreen title="Lịch sử di chuyển" eyebrow="KHO KÝ GỬI" subtitle="Các lần nhập, xuất và di chuyển đã ghi nhận." onRefresh={data.reload} refreshing={data.loading}><ResourceState {...data}/>
-    {data.data?.rows.length===0&&<StateCard title="Chưa có lịch sử di chuyển"/>}
-    {data.data?.kind==='V3'&&data.data.rows.map(move=>{const effect=move.schemaVersion===4
-      ?move.stockEffect as {action:'ADD'|'MOVE'|'REMOVE';source?:{cellId:string}[];destination?:{cellId:string}[]}
-      :move.v3Effect as {action:'ADD'|'MOVE'|'REMOVE';source?:{cellId:string}[];destination?:{cellId:string}[]};return <Card key={move._id}>
-      <AppText variant="card">{{ADD:'Nhập kho',MOVE:'Chuyển ô',REMOVE:'Xuất kho'}[effect.action]}</AppText>
-      <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
-      <AppText>Thao tác {move.operationId}</AppText>
-      {effect.source?.map(row=>row.cellId).join(', ') ? <AppText>Ô nguồn: {effect.source.map(row=>row.cellId).join(', ')}</AppText>:null}
-      {effect.destination?.map(row=>row.cellId).join(', ') ? <AppText>Ô đích: {effect.destination.map(row=>row.cellId).join(', ')}</AppText>:null}
-    </Card>;})}
-    {data.data?.kind==='LEGACY'&&data.data.rows.map(move=><Card key={move._id}><AppText variant="card">{({INBOUND:'Nhập kho',OUTBOUND:'Xuất kho',RELOCATION:'Chuyển ô'})[move.type]}</AppText>
-      <AppText>{move.quantity} {move.quantityUnit} · {dateLabel(move.performedAt)}</AppText>
-      {!!move.inspectionNote&&<AppText>{move.inspectionNote}</AppText>}</Card>)}
+  const {id}=useLocalSearchParams<{id:string}>(),owner=useOwner(),router=useRouter();
+  const [type,setType]=useState('ALL'),[query,setQuery]=useState('');
+  const data=useResource(owner+':'+id,async signal=>{
+    const item=await mobileRepo.item(id,owner,signal),history=await mobileRepo.inventoryMovements(item,owner,signal);
+    return {item,history};
+  });
+  const rows=data.data?.history.rows??[];
+  const cellIds=[...new Set(rows.flatMap(row=>movementCellIds(row)))];
+  const labels=useResource(data.data&&cellIds.length?owner+':movement-cells:'+data.data.item._id+':'+cellIds.join(','):'',signal=>data.data&&cellIds.length
+    ?managedInventory.cellLabels(refId(data.data.item.facilityId),cellIds,signal):Promise.resolve({} as Record<string,string>));
+  const filtered=rows.filter(row=>{
+    const action=movementAction(row),where=movementCellIds(row).map(cellId=>labels.data?.[cellId]??'').join(' ');
+    return (type==='ALL'||action===type)&&`${movementIdentifier(row)} ${action} ${where}`.toLocaleLowerCase('vi').includes(query.trim().toLocaleLowerCase('vi'));
+  }).sort((a,b)=>Date.parse(String(movementOccurredAt(b)??''))-Date.parse(String(movementOccurredAt(a)??'')));
+  return <LiveScreen title="Lịch sử hàng hóa" eyebrow="KHO KÝ GỬI" subtitle={data.data?`${data.data.item.itemCode} · ${data.data.item.name}. Các lần nhập, xuất và chuyển vị trí đã hoàn tất.`:'Các lần nhập, xuất và chuyển vị trí đã hoàn tất.'}
+    backButton={{disabled:!data.data,onPress:()=>data.data&&router.replace({pathname:'/inventory/[id]',params:{id:data.data.item._id}} as unknown as Href)}} onRefresh={data.reload} refreshing={data.loading}>
+    <ResourceState {...data} resource="lịch sử hàng hóa"/>
+    <Input label="Tìm hoạt động" placeholder="Mã hoạt động hoặc vị trí" value={query} onChangeText={setQuery}/>
+    <View style={ui.wrap}>{([['ALL','Tất cả'],['INBOUND','Nhập kho'],['OUTBOUND','Xuất kho'],['RELOCATION','Điều chuyển']] as const).map(([key,label])=><Filter key={key} label={label} selected={type===key} onPress={()=>setType(key)}/>)}</View>
+    <AppText variant="caption">Hiển thị các hoạt động hàng hóa gần đây.</AppText>
+    <ResourceState {...labels} resource="tên vị trí"/>
+    {data.data&&filtered.length===0&&<StateCard title={rows.length?'Không có hoạt động phù hợp':'Chưa có hoạt động hàng hóa'} description={rows.length?'Thử thay đổi loại hoặc từ khóa tìm kiếm.':'Các lần nhập, xuất hoặc chuyển vị trí sẽ xuất hiện tại đây.'}/>}
+    {data.data&&filtered.map(row=>{
+      const source=movementPlacements(row,'source'),destination=movementPlacements(row,'destination'),occurred=movementOccurredAt(row);
+      const action=movementActionLabel(row),movementId=String(row._id);
+      return <Card key={movementId}>
+        <Chip label={action} tone={movementAction(row)==='OUTBOUND'?'orange':movementAction(row)==='RELOCATION'?'neutral':'green'}/>
+        <AppText variant="label">{movementIdentifier(row)}</AppText>
+        <AppText>{row.quantity} {row.quantityUnit} · {movementTime(occurred)}</AppText>
+        {source.map((line,index)=><AppText key={`source-${index}`}>Ô nguồn: {labels.data?.[line.cellId]??'Đang xác định vị trí'} · {line.quantity??row.quantity} {row.quantityUnit}</AppText>)}
+        {destination.map((line,index)=><AppText key={`destination-${index}`}>Ô đích: {labels.data?.[line.cellId]??'Đang xác định vị trí'} · {line.quantity??row.quantity} {row.quantityUnit}</AppText>)}
+        <Button label="Xem chi tiết hoạt động" variant="outline" onPress={()=>router.push({pathname:'/inventory/[id]/history/[movementId]',params:{id,movementId}} as unknown as Href)}/>
+      </Card>;
+    })}
   </LiveScreen>;
 }
 export function Detail(){
-  const {kind,id,accessSessionId}=useLocalSearchParams<{kind:string;id:string;accessSessionId?:string|string[]}>();
+  const {kind,id,accessSessionId,operation}=useLocalSearchParams<{kind:string;id:string;accessSessionId?:string|string[];operation?:string|string[]}>();
   if(kind==='facility')return <FacilityDetail key={id} id={id}/>;
   if(kind==='rental')return <RentalDetail key={id} id={id}/>;
-  if(kind==='inventory'||kind==='item')return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId}/>;
+  if(kind==='inventory'||kind==='item')return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId} operation={Array.isArray(operation)?operation[0]:operation}/>;
   return <UnavailableScreen/>;
 }
 export function InventoryItemDetail(){
-  const {id,accessSessionId}=useLocalSearchParams<{id:string;accessSessionId?:string|string[]}>();
+  const {id,accessSessionId,operation}=useLocalSearchParams<{id:string;accessSessionId?:string|string[];operation?:string|string[]}>();
   if(!id)return <UnavailableScreen/>;
-  return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId}/>;
+  return <ItemDetail key={id} id={id} accessSessionId={Array.isArray(accessSessionId)?accessSessionId[0]:accessSessionId} operation={Array.isArray(operation)?operation[0]:operation}/>;
 }

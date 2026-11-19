@@ -14,7 +14,7 @@ jest.mock('expo-crypto',()=>{
 });
 process.env.EXPO_PUBLIC_API_BASE_URL='https://fixture.invalid/api/v1';
 
-const {apiClient,wire,resolveApiBase,configureApiSession,apiIssue}=require('../src/api/client') as typeof import('../src/api/client');
+const {apiClient,wire,resolveApiBase,configureApiSession,apiIssue,apiIssueWithStatus}=require('../src/api/client') as typeof import('../src/api/client');
 const {mobileRepo}=require('../src/api/mobileRepository') as typeof import('../src/api/mobileRepository');
 const {useLiveSession}=require('../src/state/useLiveSession') as typeof import('../src/state/useLiveSession');
 const {journal,newAttempt}=require('../src/state/attemptJournal') as typeof import('../src/state/attemptJournal');
@@ -63,6 +63,20 @@ test('API base accepts HTTPS and development LAN only, and rejects foreign URLs 
   expect(adapter).not.toHaveBeenCalled();
 });
 
+test.each([
+  [410,{code:'STOCK_WORKFLOW_NOT_AVAILABLE'},/chưa khả dụng/],
+  [412,{},/đã thay đổi/],
+  [422,{},/chưa hợp lệ/],
+  [503,{code:'INBOUND_CONFIRM_ENVIRONMENT_BLOCKED'},/chưa khả dụng/],
+  [503,{code:'LEDGER_REPLAY_UNKNOWN'},/xác minh an toàn số tồn kho/],
+  [503,{code:'OUTCOME_UNKNOWN'},/Chưa xác định kết quả/],
+])('maps Managed V3 HTTP %s failures without treating them as success', (status,data,expected)=>{
+  const config={url:'/inventory-items/'+rentalId+'/v3/inbound',method:'POST',headers:{}} as InternalAxiosRequestConfig;
+  const error=new AxiosError('fixture','ERR_BAD_RESPONSE',config,undefined,{data,status,statusText:'Error',headers:{},config});
+  expect(apiIssue(error)).toMatch(expected);
+  expect(apiIssueWithStatus(error)).not.toContain(`HTTP ${status}`);
+});
+
 test('login verifies Customer identity, restores from SecureStore, and logout clears storage',async()=>{
   const adapter=fixture(c=>{
     if(c.url==='/auth/login'){
@@ -109,7 +123,7 @@ test('private 401 expires matching session, 403 leaves it intact and timeout is 
   expect(expired).toBe(1);
   await expect(wire('POST','/reservations')).rejects.toMatchObject({code:'ECONNABORTED'});
   expect(adapter.mock.calls.filter(([c])=>c.url==='/reservations')).toHaveLength(1);
-  expect(apiIssue(new AxiosError('fixture','ECONNABORTED'))).toMatch(/quá thời gian/);
+  expect(apiIssue(new AxiosError('fixture','ECONNABORTED'))).toMatch(/kiểm tra mạng/);
 });
 
 test('Facilities use verified paginated envelope and failure has no fallback',async()=>{
@@ -187,6 +201,15 @@ test('persisted attempts are scoped and only one concurrent submit can claim a k
   expect((await (await journal('deposit',owner,rentalId)).read())?.resourceId).toBe(paymentId);
   await second.clear();
   expect(await second.read()).toBeNull();
+});
+
+test('committed Managed V3 inbound journal survives reload and remains isolated on account switch',async()=>{
+  const first=await journal('managed-v3-inbound',owner,rentalId),saved={...newAttempt(),inboundCommitted:true,
+    inboundBody:{accessSessionId:paymentId,sessionRevision:3,skuRevision:4,lines:[]}};
+  expect(await first.claim(saved)).toBe(true);
+  const reloaded=await journal('managed-v3-inbound',owner,rentalId);
+  expect(await reloaded.read()).toEqual(saved);
+  expect(await (await journal('managed-v3-inbound',other,rentalId)).read()).toBeNull();
 });
 
 test('PayOS uses one authenticated Deposit POST and protects checkout identity and UNKNOWN',async()=>{
@@ -769,6 +792,7 @@ test('local defaults follow platform and release requires explicit HTTPS',()=>{
   const {configuredApiBase}=require('../src/api/client') as typeof import('../src/api/client');
   expect(configuredApiBase(undefined,true,'web')).toBe('http://localhost:5000/api/v1');
   expect(configuredApiBase(undefined,true,'android')).toBe('http://10.0.2.2:5000/api/v1');
+  expect(configuredApiBase('http://localhost:5000/api/v1',true,'android')).toBe('http://10.0.2.2:5000/api/v1');
   expect(configuredApiBase(undefined,false,'android')).toBeUndefined();
   expect(configuredApiBase('http://192.168.1.3:5000/api/v1',true,'android')).toBe('http://192.168.1.3:5000/api/v1');
   expect(configuredApiBase('http://192.168.1.3:5000/api/v1',false,'android')).toBeUndefined();
@@ -797,6 +821,23 @@ test('mixed Self Storage and Managed versions preserve owned rental lookup and r
   await expect(mobileRepo.rental(rentalId,owner)).rejects.toThrow();
   fixture(()=>envelope([reservation,{...v3,bookingFlowVersion:4}]));
   await expect(mobileRepo.rental(rentalId,owner)).rejects.toThrow();
+});
+
+test('Managed V3 SKU reservation lookup uses the customer-scoped detail endpoint',async()=>{
+  configureApiSession('fixture-access');
+  const managed={...reservation,serviceType:'MANAGED_INVENTORY' as const,bookingFlowVersion:3 as const};
+  const adapter=fixture(c=>{
+    expect(c.method).toBe('get');
+    expect(c.url).toBe('/reservations/managed/'+rentalId);
+    expect(c.headers.get('Authorization')).toBe('Bearer fixture-access');
+    return envelope(managed);
+  });
+  await expect(mobileRepo.managedRental(rentalId,owner)).resolves.toMatchObject({
+    _id:rentalId,customerId:owner,serviceType:'MANAGED_INVENTORY',bookingFlowVersion:3,
+  });
+  expect(adapter).toHaveBeenCalledTimes(1);
+  fixture(c=>envelope({...managed,customerId:other}));
+  await expect(mobileRepo.managedRental(rentalId,owner)).rejects.toThrow();
 });
 
 test('Customer checkout sends only note, confirms PENDING and preserves Backend CHECKED_OUT',async()=>{

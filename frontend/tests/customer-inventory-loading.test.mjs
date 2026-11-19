@@ -32,6 +32,7 @@ const modules={
  './InventoryItemForm':{default:()=>null},
  './ManagedSelfInboundV3':{default:()=>null},
  './ManagedSelfOutboundV3':{default:({item})=>{assert(registration.validInventoryId(item?._id));children.push('direct-outbound');return React.createElement('p',null,'Direct outbound fixture');}},
+ './ManagedSelfRelocationV3':{default:()=>null},
  './ItemSpecifications':{default:()=>null},
  './ManagedUnifiedSelfInbound':{default:({item})=>{assert(registration.validInventoryId(item?._id));children.push('unified-inbound');return React.createElement('p',null,'Unified inbound fixture');}},
  './RepeatedInboundRequests':{default:({item})=>{assert(item._id);children.push('inbound');return null;}},

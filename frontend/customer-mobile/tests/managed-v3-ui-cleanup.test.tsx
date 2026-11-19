@@ -1,8 +1,11 @@
 import {fireEvent,render,screen,waitFor} from '@testing-library/react-native';
 import {useState} from 'react';
 import {ManagedTermsAccordion} from '../src/components/ManagedTermsAccordion';
+import {ManagedRentalProgress} from '../src/components/ManagedRentalProgress';
 import {hasManagedTermsAcceptance,managedTermsAcceptanceKey} from '../src/domain/managedTermsAcceptance';
-import {managedPaperContractNextStep,managedPaymentLabel,managedPaymentProgress,managedRentalProgress} from '../src/domain/managedV3RentalProgress';
+import {managedPaperContractNextStep,managedPaymentLabel,managedPaymentProgress,managedRentalPaymentProgress,managedRentalProgress} from '../src/domain/managedV3RentalProgress';
+import {managedHandoverVerified} from '../src/domain/managedV3RentalProgress';
+import {rentalDetailTarget} from '../src/domain/rentalDetailTarget';
 
 const groups=[{id:'terms-1',title:'Quy định thuê',appliesTo:['MANAGED_INVENTORY'],sections:{MANAGED_INVENTORY:['Hàng hóa phải được khai báo.']}}];
 const row={status:'PENDING',providerSettlementStatus:'NOT_VERIFIED',applicationStatus:'NOT_APPLIED',checkoutStatus:'READY',reconciliationRequired:false};
@@ -25,6 +28,25 @@ test('Managed rental Terms start collapsed, expand and collapse on demand, and a
   await waitFor(()=>expect(screen.getByRole('button',{name:'Tôi chấp nhận điều khoản kho ký gửi'}).props.accessibilityState.selected).toBe(true));
 });
 
+test('My Rentals sends Managed Inventory to the live reservation detail and preserves Self Storage routing',()=>{
+  const reservationId='1'.repeat(24),facilityId='2'.repeat(24);
+  expect(rentalDetailTarget({_id:reservationId,facilityId,serviceType:'MANAGED_INVENTORY'})).toEqual({
+    pathname:'/managed/[facilityId]/confirmation',params:{facilityId,reservationId},
+  });
+  expect(rentalDetailTarget({_id:reservationId,facilityId,serviceType:'SELF_STORAGE'})).toEqual({
+    pathname:'/preview/[kind]/[id]',params:{kind:'rental',id:reservationId},
+  });
+});
+
+test('handover completion requires an ACTIVE Backend reservation and valid staff evidence',()=>{
+  const staffId='3'.repeat(24),handoverAt='2026-11-18T10:00:00.000Z';
+  expect(managedHandoverVerified({status:'ACTIVE',handoverAt,handoverByStaffId:staffId})).toBe(true);
+  expect(managedHandoverVerified({status:'ACTIVE',handoverAt})).toBe(false);
+  expect(managedHandoverVerified({status:'ACTIVE',handoverAt:'bad-date',handoverByStaffId:staffId})).toBe(false);
+  expect(managedHandoverVerified({status:'CHECKIN_READY',handoverAt,handoverByStaffId:staffId})).toBe(false);
+  expect(managedRentalProgress({reservationStatus:'ACTIVE',payment:'APPLIED',handoverComplete:false}).find(step=>step.key==='handover')?.state).toBe('PENDING');
+});
+
 test('Managed Terms acceptance is scoped to the current facility and policy version',()=>{
   const accepted=managedTermsAcceptanceKey('facility-a:quote-1','terms-2');
   expect(hasManagedTermsAcceptance(accepted,'facility-a:quote-1','terms-2')).toBe(true);
@@ -42,12 +64,40 @@ test('payment history translates mixed settlement, reconciliation and terminal s
   expect(managedPaymentLabel({...row,checkoutStatus:'CREATING'})).toBe('Đang xác minh');
   expect(managedPaymentLabel({...row,status:'FAILED'})).toBe('Thanh toán thất bại');
   expect(managedPaymentProgress(undefined)).toBe('NONE');
-  const applied={...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'};
+  const applied={...row,id:'4'.repeat(24),status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'};
   const needsReview={...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',reconciliationRequired:true};
-  expect(managedPaymentProgress([applied,needsReview])).toBe('REVIEW');
+  expect(managedPaymentProgress([applied,needsReview])).toBe('APPLIED');
 });
 
-test('rental progress uses Backend lifecycle and only marks inbound current with an eligible session',()=>{
+test('Managed payment progress follows verified payment evidence across reservation states',()=>{
+  const applied={...row,id:'4'.repeat(24),status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'};
+  const staleJournalState={...row,status:'RECONCILIATION_REQUIRED',reconciliationRequired:true};
+  expect(managedRentalPaymentProgress('RESERVED',[])).toBe('NONE');
+  expect(managedRentalPaymentProgress('RESERVED',[row])).toBe('PENDING');
+  expect(managedRentalPaymentProgress('PAID',[applied])).toBe('APPLIED');
+  expect(managedRentalPaymentProgress('ACTIVE',[applied],applied.id)).toBe('APPLIED');
+  expect(managedRentalPaymentProgress('ACTIVE',[applied])).toBe('UNSYNCED');
+  expect(managedRentalPaymentProgress('ACTIVE',[row],applied.id)).toBe('UNSYNCED');
+  expect(managedPaymentLabel({...row,status:'SUCCEEDED',providerSettlementStatus:'VERIFIED',applicationStatus:'APPLIED'})).toBe('Đã thanh toán');
+  expect(managedPaymentProgress([applied,staleJournalState])).toBe('APPLIED');
+});
+
+test('Payment History read failure is not classified as an interrupted payment',()=>{
+  // Failed History reads provide no rows. An ACTIVE reservation is visibly
+  // unsynchronized and retryable; a RESERVED reservation stays unconfirmed.
+  expect(managedRentalPaymentProgress('ACTIVE',undefined)).toBe('UNSYNCED');
+  expect(managedRentalPaymentProgress('RESERVED',undefined)).toBe('NONE');
+  const step=managedRentalProgress({reservationStatus:'ACTIVE',payment:'UNSYNCED'}).find(item=>item.key==='payment');
+  expect(step).toMatchObject({state:'BLOCKED',detail:expect.stringContaining('Chưa thể xác minh khoản thanh toán liên kết')});
+});
+
+test('ACTIVE without linked applied FULL_RENT evidence displays the synchronization label',async()=>{
+  await render(<ManagedRentalProgress reservation={{status:'ACTIVE'} as never} payment="UNSYNCED"/>);
+  expect(screen.getByText('Chưa xác minh thanh toán')).toBeTruthy();
+  expect(screen.getByText(/Chưa thể xác minh khoản thanh toán liên kết/)).toBeTruthy();
+});
+
+test('rental progress follows the rental status and only marks inbound current with an eligible session',()=>{
   const paid=managedRentalProgress({reservationStatus:'PAID',payment:'APPLIED'});
   expect(paid.find(step=>step.key==='contract')?.state).toBe('CURRENT');
   expect(paid.find(step=>step.key==='handover')?.state).toBe('PENDING');

@@ -34,8 +34,8 @@ export const capabilities=Object.freeze({liveTransport:false,booking:false,manag
 export function normalizeApiFailure(error:unknown){
   const e=error as {response?:{status?:number;data?:{code?:string;message?:string}}};
   const status=e?.response?.status??null,code=e?.response?.data?.code??null;
-  return {status,code,kind:status===401?'SESSION_EXPIRED':status===409||status===428?'CONFLICT':status===404?'UNAVAILABLE':status===503||status===null?'UNCERTAIN':'REJECTED',
-    automaticMutationRetry:false as const,retainIntent:status===503||status===null,refreshAuthoritativeState:status===409||status===428};
+  return {status,code,kind:status===401?'SESSION_EXPIRED':status===409||status===412||status===428?'CONFLICT':status===404||status===410?'UNAVAILABLE':status===422?'INVALID_INPUT':status===503||status===null?'UNCERTAIN':'REJECTED',
+    automaticMutationRetry:false as const,retainIntent:status===503||status===null,refreshAuthoritativeState:status===409||status===412||status===428};
 }
 export interface WireRequest {method:'GET'|'POST'|'PUT'|'PATCH';path:string;body?:unknown;headers?:Record<string,string>}
 

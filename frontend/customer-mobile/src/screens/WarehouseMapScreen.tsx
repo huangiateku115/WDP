@@ -57,7 +57,7 @@ export default function WarehouseMapScreen({loading = false, error}: {loading?: 
         </>}
       </> : <StateCard title="Chưa có khu lưu trữ mẫu"/>}
       <AvailabilityLegend/>
-      <AppText variant="caption" style={ui.muted}>Bạn chọn dung tích thuê, không chọn vị trí đặt hàng vật lý. Không có giữ chỗ Backend, thay đổi tồn kho hoặc quyền ra vào kho.</AppText>
+      <AppText variant="caption" style={ui.muted}>Bạn chọn dung tích thuê, không chọn vị trí đặt hàng thực tế. Bản xem thử không giữ chỗ, thay đổi tồn kho hoặc cấp quyền vào kho.</AppText>
     </>}
     <BackAction/>
   </Screen>;

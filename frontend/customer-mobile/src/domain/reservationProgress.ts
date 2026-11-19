@@ -107,7 +107,7 @@ export function reservationProgress(r:ReservationDto,evidence?:Evidence,now=Date
       return finish('contract','BLOCKED','BLOCKED','Trạng thái đơn thuê hoặc chữ ký chưa đủ điều kiện để ký.',viewContract);
     }
     if(!reviewDocument(contract).available){
-      return finish('contract','BLOCKED','BLOCKED','Backend chưa cung cấp nội dung hợp đồng để bạn đọc trước khi ký.',viewContract);
+      return finish('contract','BLOCKED','BLOCKED','Chưa có nội dung hợp đồng để bạn đọc trước khi ký.',viewContract);
     }
     return finish('contract','CURRENT','CUSTOMER_ACTION_REQUIRED','Xem và ký hợp đồng thuê kho để tiếp tục.',
       {destination:'CONTRACT',label:'Ký hợp đồng',intent:'SIGN'});

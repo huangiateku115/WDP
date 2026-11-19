@@ -3,19 +3,23 @@ import {wire,MobileInputError} from './client';
 import {assertOwner,idRef,instant,objectId,readData,refId,whole} from './contracts/core';
 import type {ReservationDto} from './contracts/customer';
 
-const purpose=z.enum(['INBOUND','OUTBOUND','RELOCATION','INSPECTION']);
+const purpose=z.enum(['INBOUND','OUTBOUND','RELOCATION','INSPECTION','WAREHOUSE_VISIT']);
 const common={_id:objectId,reservationId:idRef,scopedReservationIds:z.array(idRef).optional(),customerId:idRef,facilityId:idRef,revision:whole};
 const visitDto=z.object({...common,purpose,startsAt:instant,endsAt:instant,note:z.string().nullish(),
   assignedStaffId:z.union([idRef,z.object({_id:objectId,displayName:z.string().optional()}).passthrough()]).nullish(),
+  checkedInAt:instant.nullish(),checkedInByStaffId:z.union([idRef,z.object({_id:objectId,displayName:z.string().optional()}).passthrough()]).nullish(),
   status:z.enum(['SCHEDULED','CHECKED_IN','COMPLETED','CANCELLED','MISSED'])});
-const visitAvailabilityDto=z.object({timeZone:z.literal('Asia/Ho_Chi_Minh'),slotDurationMinutes:whole.min(1),
-  capacityBasis:z.string().min(1),staffAssignmentRequired:z.literal(true),
-  slots:z.array(z.object({startsAt:instant,endsAt:instant}).strict())});
-const visitCreateBody=z.object({reservationId:objectId,purpose,startsAt:instant,endsAt:instant,note:z.string().trim().max(500).optional()}).strict();
+const visitAvailabilityDto=z.object({timeZone:z.literal('Asia/Ho_Chi_Minh'),slotDurationMinutes:whole.min(1).nullable(),
+  capacityBasis:z.string().min(1),staffAssignmentRequired:z.literal(true),reservationScopeAvailable:z.boolean().optional(),
+  reservationScopePolicy:z.string().optional(),
+  slots:z.array(z.object({startsAt:instant,endsAt:instant,facilityId:objectId.optional(),facilityName:z.string().optional()}).passthrough())}).passthrough();
+const visitCreateBody=z.union([z.object({facilityId:objectId,startsAt:instant,endsAt:instant,note:z.string().trim().max(500).optional()}).strict(),
+  z.object({reservationId:objectId,purpose:z.enum(['INBOUND','OUTBOUND','RELOCATION','INSPECTION']),startsAt:instant,endsAt:instant,note:z.string().trim().max(500).optional()}).strict()]);
 export type ManagedVisit=z.infer<typeof visitDto>;
 export type ManagedVisitCreate=z.infer<typeof visitCreateBody>;
 const sessionDto=z.object({...common,visitId:idRef,assignedStaffId:idRef,allowedCellIds:z.array(idRef),allowedPurposes:z.array(purpose),
   startedAt:instant,expiresAt:instant,status:z.enum(['ACTIVE','CHECKED_OUT','REVOKED','EXPIRED'])});
+export type ManagedSession=z.infer<typeof sessionDto>;
 const readinessDto=z.object({
   reservationId:objectId,serviceType:z.literal('MANAGED_INVENTORY'),readonly:z.literal(true),
   overallReadiness:z.enum(['UNKNOWN','BLOCKED','READY']),
@@ -28,6 +32,9 @@ const readinessDto=z.object({
 function scope(r:ReservationDto,owner:string){
   assertOwner(r,owner);
   if(r.serviceType!=='MANAGED_INVENTORY'||r.bookingFlowVersion!==3)throw new MobileInputError('Đơn thuê không thuộc kho ký gửi V3.');
+}
+export function canReadManagedVisitEligibility(r:ReservationDto,now=Date.now()){
+  return ['CHECKIN_READY','ACTIVE'].includes(r.status)&&Date.parse(r.endDate)>now;
 }
 
 export function mapManagedAccessRows<T extends {customerId:z.infer<typeof idRef>;reservationId:z.infer<typeof idRef>;facilityId:z.infer<typeof idRef>;scopedReservationIds?:z.infer<typeof idRef>[]}>(
@@ -43,6 +50,7 @@ export function mapManagedAccessRows<T extends {customerId:z.infer<typeof idRef>
 export const managedReservationReads={
   async visitEligibility(r:ReservationDto,owner:string,date:string,signal?:AbortSignal){
     scope(r,owner);
+    if(!canReadManagedVisitEligibility(r))throw new MobileInputError('Đơn thuê chưa đủ điều kiện kiểm tra lịch đến kho.');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new MobileInputError('Ngày kiểm tra lịch không hợp lệ.');
     return readData(visitAvailabilityDto,await wire('GET','/access/managed-v3/visits/availability',{
       params:{reservationId:r._id,date},signal,
@@ -53,15 +61,17 @@ export const managedReservationReads={
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['CHECKIN_READY','ACTIVE'].includes(r.status)||Date.parse(r.endDate)<=Date.now())
       throw new MobileInputError('Đơn thuê chưa đủ điều kiện đặt lịch đến kho.');
     return readData(visitAvailabilityDto,await wire('GET','/access/managed-v3/visits/availability',{
-      params:{reservationId:r._id,date},signal,
+      params:{date,facilityId:refId(r.facilityId)},signal,
     }));
   },
   async createVisit(r:ReservationDto,owner:string,body:ManagedVisitCreate,key:string){
     scope(r,owner);
     const payload=visitCreateBody.parse(body);
-    if(payload.reservationId!==r._id)throw new MobileInputError('Lịch đến kho không thuộc đơn thuê này.');
+    if('reservationId' in payload&&payload.reservationId!==r._id)throw new MobileInputError('Lịch đến kho không thuộc đơn thuê này.');
+    if('facilityId' in payload&&payload.facilityId!==refId(r.facilityId))throw new MobileInputError('Cơ sở của lịch không khớp đơn thuê đã chọn.');
     const [created]=mapManagedAccessRows([readData(visitDto,await wire('POST','/access/managed-v3/visits',{body:payload,key}))],r,owner);
-    if(!created||created.purpose!==payload.purpose||created.startsAt!==payload.startsAt||created.endsAt!==payload.endsAt||created.status!=='SCHEDULED')
+    const expectedFacility='facilityId' in payload?payload.facilityId:refId(r.facilityId),expectedPurpose='facilityId' in payload?'WAREHOUSE_VISIT':payload.purpose;
+    if(!created||refId(created.facilityId)!==expectedFacility||created.purpose!==expectedPurpose||created.startsAt!==payload.startsAt||created.endsAt!==payload.endsAt||created.status!=='SCHEDULED')
       throw new MobileInputError('Chưa xác minh được lịch đến kho vừa tạo.');
     return created;
   },
@@ -75,9 +85,9 @@ export const managedReservationReads={
     if(!row)throw new MobileInputError('Không tìm thấy lịch đến kho này.');
     return row;
   },
-  async amendVisit(r:ReservationDto,owner:string,visit:ManagedVisit,body:Partial<ManagedVisitCreate>,key:string){
+  async amendVisit(r:ReservationDto,owner:string,visit:ManagedVisit,body:unknown,key:string){
     if(!mapManagedAccessRows([visit],r,owner).length||visit.status!=='SCHEDULED')throw new MobileInputError('Lịch không còn đủ điều kiện sửa.');
-    const payload=z.object({purpose:purpose.optional(),startsAt:instant.optional(),endsAt:instant.optional(),note:z.string().trim().max(500).optional()}).strict().parse(body);
+    const payload=z.object({startsAt:instant.optional(),endsAt:instant.optional(),note:z.string().trim().max(500).optional()}).strict().parse(body);
     if(!Object.keys(payload).length)throw new MobileInputError('Chưa có thay đổi lịch để lưu.');
     const [updated]=mapManagedAccessRows([readData(visitDto,await wire('PATCH','/access/managed-v3/visits/'+visit._id,{body:payload,key,ifMatch:visit.revision}))],r,owner);
     if(!updated||updated._id!==visit._id||updated.status!=='SCHEDULED'||updated.revision<=visit.revision)
@@ -94,6 +104,11 @@ export const managedReservationReads={
   async sessions(r:ReservationDto,owner:string,signal?:AbortSignal){
     scope(r,owner);
     return mapManagedAccessRows(readData(z.array(sessionDto),await wire('GET','/access/managed-v3/sessions/me',{signal})),r,owner);
+  },
+  async session(r:ReservationDto,owner:string,sessionId:string,signal?:AbortSignal){
+    scope(r,owner);
+    const [row]=mapManagedAccessRows([readData(sessionDto,await wire('GET','/access/managed-v3/sessions/'+objectId.parse(sessionId),{signal}))],r,owner);
+    return row??null;
   },
   async readiness(r:ReservationDto,owner:string,signal?:AbortSignal){
     scope(r,owner);

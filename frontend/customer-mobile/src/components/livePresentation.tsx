@@ -10,10 +10,11 @@ export function IconBadge({name,tone='green'}:{name:IconName;tone?:'green'|'ambe
   </View>;
 }
 
-export function ScreenHeading({title,eyebrow,subtitle,accessory}:{
-  title:string;eyebrow?:string;subtitle?:string;accessory?:ReactNode;
+export function ScreenHeading({title,eyebrow,subtitle,accessory,leading}:{
+  title:string;eyebrow?:string;subtitle?:string;accessory?:ReactNode;leading?:ReactNode;
 }){
   return <View style={styles.heading}>
+    {leading}
     <View style={styles.copy}>
       {!!eyebrow&&<AppText variant="label" style={styles.eyebrow}>{eyebrow}</AppText>}
       <AppText variant="title" accessibilityRole="header">{title}</AppText>

@@ -80,7 +80,7 @@ export function contractAvailabilityReason(scenario: RentalDocumentScenario) {
   if (scenario.contractAvailability !== 'AVAILABLE' || !scenario.contract) return 'Chưa có tài liệu hợp đồng trong dữ liệu mẫu.';
   const snapshot = scenario.contract.snapshot;
   if (!snapshot || snapshot.ownerId !== scenario.ownerId || snapshot.rentalId !== scenario.rentalId || snapshot.service !== scenario.service || !snapshot.terms) return 'Ảnh chụp nội dung hợp đồng thiếu hoặc không khớp kỳ thuê; không tạo nội dung thay thế.';
-  if (snapshot.terms.totalRent !== finance.total || snapshot.terms.depositRequired !== finance.required || snapshot.terms.depositCredited !== finance.credited || snapshot.terms.remainingInitialBalance !== finance.initialBalance) return 'Điều khoản tài chính của tài liệu không khớp ảnh chụp dữ liệu; cần kiểm tra phiên bản.';
+  if (snapshot.terms.totalRent !== finance.total || snapshot.terms.depositRequired !== finance.required || snapshot.terms.depositCredited !== finance.credited || snapshot.terms.remainingInitialBalance !== finance.initialBalance) return 'Thông tin tài chính trong tài liệu chưa khớp. Vui lòng tải lại để kiểm tra.';
   return null;
 }
 export function paymentPresentation(scenario: RentalDocumentScenario, purpose: PaymentPurpose) {

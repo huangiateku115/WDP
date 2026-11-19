@@ -1,7 +1,8 @@
-import { CardHeading, TintedPanel } from "../components/livePresentation";
-import { useEffect, useRef, useState } from "react";
+import { CardHeading, IconBadge, TintedPanel } from "../components/livePresentation";
+import {ContractSigningNotice} from '../components/ContractSigningNotice';
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import axios from "axios";
-import { AppState, Linking, Modal, View } from "react-native";
+import { AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { apiIssue, MobileInputError } from "../api/client";
 import { mobileRepo } from "../api/mobileRepository";
@@ -20,6 +21,8 @@ import {
   Card,
   Chip,
   Filter,
+  Icon,
+  NavigationRow,
   StateCard,
   ui,
 } from "../components/ui";
@@ -37,7 +40,10 @@ import { SelfStorageCheckoutRequest } from "../components/SelfStorageCheckoutReq
 import { FullRentCheckout } from "../components/FullRentCheckout";
 import {TermsModal,TermsReviewCard} from "../components/TermsReview";
 import { reservationProgress } from "../domain/reservationProgress";
+import {rentalDetailTarget} from '../domain/rentalDetailTarget';
+import {colors} from '../theme/tokens';
 import {selfBookingTermsAcceptanceKey} from "../domain/bookingTermsAcceptance";
+import {activeRentalFilterCount,emptyRentalFilters,filterAndSortRentals,rentalFacilityId,rentalFacilityName,rentalStatusOptions,type RentalListFilters,type RentalServiceFilter,type RentalSort,type RentalStatusFilter,type RentalTimeFilter} from '../domain/rentalList';
 import {
   BookingCalendar,
   bookingDateLabel,
@@ -67,52 +73,121 @@ function rentalLabel(r: ReservationDto) {
 
 function extensionStatusLabel(status:string){return ({PENDING_PAYMENT:'Chờ thanh toán',PAID:'Đã thanh toán · chờ ký phụ lục',ACTIVE:'Đã gia hạn',CANCELLED:'Đã hủy',REJECTED:'Không được chấp thuận'} as Record<string,string>)[status]??'Đang cập nhật';}
 
-export function RentalCard({ r }: { r: ReservationDto }) {
+export function RentalCard({ r,variant='compact' }: { r: ReservationDto;variant?:'compact'|'detailed' }) {
   const router = useRouter();
+  const openRental = () => router.push(rentalDetailTarget(r) as Href);
+  const facilityName=typeof r.facilityId==='object'&&typeof r.facilityId.name==='string'?r.facilityId.name:undefined;
+  const unit=typeof r.storageUnitId==='object'?r.storageUnitId:undefined;
+  const unitCount=r.serviceType==='SELF_STORAGE'?(r.storageUnitId?1:undefined):r.allocatedCellIds?.length;
+  const estimatedRent=r.estimatedRent;
+  const endAt=Date.parse(r.endDate),now=Date.now();
+  const expiringSoon=r.status==='ACTIVE'&&endAt>now&&endAt<=now+30*24*60*60*1000;
+  const statusTone=r.status==='CANCELLED'||r.status==='OVERDUE'?'danger':r.status==='CLOSED'||r.status==='CHECKED_OUT'?'neutral':r.status==='ACTIVE'?'green':'orange';
+  const sizeLabel=unit?.size==='SMALL'?'Nhỏ':unit?.size==='MEDIUM'?'Vừa':unit?.size==='LARGE'?'Lớn':undefined;
   return (
-    <Card>
-      <CardHeading icon="key-outline" title={r.reservationCode} />
-      <AppText>
-        {serviceLabel(r.serviceType)} · {rentalLabel(r)}
-      </AppText>
-      <AppText>
-        {dateLabel(r.startDate)} – {dateLabel(r.endDate)}
-      </AppText>
-      <Button
-        label="Xem đơn thuê"
-        icon="arrow-forward-outline"
-        variant="outline"
-        onPress={() =>
-          router.push({
-            pathname: "/preview/[kind]/[id]",
-            params: { kind: "rental", id: r._id },
-          })
-        }
-      />
+    <Card style={[r.status==='ACTIVE'?rentalCardStyles.activeCard:undefined,variant==='detailed'?rentalCardStyles.detailedCard:undefined]}>
+      <View style={rentalCardStyles.topRow}>
+        <View style={rentalCardStyles.titleGroup}>
+          <IconBadge name={r.serviceType==='SELF_STORAGE'?'key-outline':'file-tray-stacked-outline'}/>
+          <View style={rentalCardStyles.titleCopy}>
+            <AppText variant="card" numberOfLines={1}>{r.reservationCode}</AppText>
+            <AppText variant="caption" style={{color:colors.muted}}>{serviceLabel(r.serviceType)}</AppText>
+          </View>
+        </View>
+        {variant==='compact'&&<Chip label={rentalLabel(r)} tone={statusTone}/>}
+      </View>
+      {variant==='detailed'&&<View style={rentalCardStyles.statusRow}><Chip label={rentalLabel(r)} tone={statusTone}/></View>}
+      <ContractSigningNotice reservation={r}/>
+      {expiringSoon&&<TintedPanel tone="amber"><AppText variant="label" style={{color:colors.orangeText}}>Đơn thuê sẽ kết thúc trong 30 ngày</AppText></TintedPanel>}
+      <RentalInfo label="Cơ sở" value={facilityName}/>
+      {r.serviceType==='SELF_STORAGE'?<>
+        <RentalInfo label="Kho" value={unit?.unitCode}/>
+        {(sizeLabel||unit?.volumeM3!==undefined)&&<View style={rentalCardStyles.chips}>
+          {sizeLabel&&<Chip label={`Kích thước ${sizeLabel}`} tone="neutral"/>}
+          {unit?.volumeM3!==undefined&&<Chip label={`Thể tích ${unit.volumeM3.toLocaleString('vi-VN')} m³`} tone="neutral"/>}
+          {unitCount!==undefined&&<Chip label={`${unitCount} kho`} tone="neutral"/>}
+        </View>}
+      </>:<>
+        <RentalInfo label="Số ô được phân bổ" value={unitCount===undefined?undefined:String(unitCount)}/>
+      </>}
+      <RentalInfo label="Thời hạn" value={`${dateLabel(r.startDate)} – ${dateLabel(r.endDate)}`}/>
+      {estimatedRent!==undefined&&<View style={rentalCardStyles.priceRow}>
+        <AppText style={{color:colors.muted}}>Tổng tiền thuê</AppText>
+        <AppText variant="medium" style={{color:colors.primary}}>{money(estimatedRent)}</AppText>
+      </View>}
+      <NavigationRow label="Xem chi tiết" onPress={openRental}/>
     </Card>
   );
 }
+
+function RentalInfo({label,value}:{label:string;value?:string}){
+  return <View style={rentalCardStyles.infoRow}>
+    <AppText variant="caption" style={{color:colors.muted}}>{label}</AppText>
+    <AppText variant="medium" style={rentalCardStyles.infoValue}>{value||'Chưa có thông tin'}</AppText>
+  </View>;
+}
+
+const rentalCardStyles=StyleSheet.create({
+  activeCard:{borderColor:'#cce7d8',borderWidth:1},
+  detailedCard:{padding:18},
+  topRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  statusRow:{alignItems:'flex-start'},
+  titleGroup:{flex:1,minWidth:0,flexDirection:'row',alignItems:'center',gap:10},
+  titleCopy:{flex:1,minWidth:0},
+  infoRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:12},
+  infoValue:{flex:1,textAlign:'right'},
+  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},
+  priceRow:{borderTopWidth:1,borderColor:colors.line,paddingTop:10,flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8},
+});
 export function Rentals() {
+  const router=useRouter();
   const owner = useLiveSession((s) => s.user?._id ?? "");
   const data = useResource(owner, (signal) =>
     mobileRepo.rentals(owner, signal),
   );
+  const [query,setQuery]=useState('');
+  const [filters,setFilters]=useState<RentalListFilters>(emptyRentalFilters);
+  const [draft,setDraft]=useState<RentalListFilters>(emptyRentalFilters);
+  const [filterOpen,setFilterOpen]=useState(false);
+  const facilities=Array.from(new Map((data.data??[]).map(r=>{const id=rentalFacilityId(r);return [id,{id,name:rentalFacilityName(r)||`Cơ sở · ${id.slice(-4)}`} ] as const;})).values());
+  const visible=data.data?filterAndSortRentals(data.data,query,filters):[];
+  const activeCount=activeRentalFilterCount(filters)+(filters.service!=='ALL'?1:0)+(query.trim()?1:0);
+  const clearFilters=()=>{setQuery('');setFilters(emptyRentalFilters);};
   return (
     <LiveScreen
       title="Kho của tôi"
       eyebrow="ĐƠN THUÊ"
-      subtitle="Theo dõi trạng thái và các bước tiếp theo của từng đơn."
+      subtitle="Quản lý và theo dõi các đơn thuê kho"
       onRefresh={data.reload}
       refreshing={data.loading}
     >
       <ResourceState {...data} />
-      {data.data?.length === 0 && <StateCard title="Bạn chưa có đơn thuê" />}
-      {data.data?.map((r) => (
-        <RentalCard key={r._id} r={r} />
-      ))}
+      {data.data&&<>
+        <View style={rentalListStyles.searchRow}>
+          <View style={rentalListStyles.searchBox}><Icon name="search-outline" size={19} color={colors.muted}/><TextInput accessibilityLabel="Tìm mã đơn, cơ sở, mã kho" placeholder="Tìm mã đơn, cơ sở, mã kho..." placeholderTextColor={colors.inactive} value={query} onChangeText={setQuery} returnKeyType="search" style={rentalListStyles.searchInput}/>{!!query&&<Pressable accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm" hitSlop={10} onPress={()=>setQuery('')}><Icon name="close-circle" size={20} color={colors.muted}/></Pressable>}</View>
+          <Button label={activeCount?`Bộ lọc · ${activeCount}`:'Bộ lọc'} variant="outline" icon="options-outline" onPress={()=>{setDraft({...filters,statuses:[...filters.statuses]});setFilterOpen(true);}}/>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={rentalListStyles.serviceRow}>{([['ALL','Tất cả'],['SELF_STORAGE','Kho tự quản'],['MANAGED_INVENTORY','Kho ký gửi']] as [RentalServiceFilter,string][]).map(([value,label])=><Filter key={value} label={label} selected={filters.service===value} onPress={()=>setFilters(current=>({...current,service:value}))}/>)}</ScrollView>
+        <View style={rentalListStyles.resultRow}><AppText variant="caption" style={{color:colors.muted}}>{visible.length} đơn thuê</AppText>{activeCount>0&&<Pressable accessibilityRole="button" onPress={clearFilters}><AppText variant="caption" style={{color:colors.primary}}>Xóa bộ lọc</AppText></Pressable>}</View>
+        {data.data.length===0?<><StateCard title="Bạn chưa có đơn thuê nào." description="Khám phá các cơ sở và lựa chọn kho phù hợp với nhu cầu của bạn."/><Button label="Khám phá kho" onPress={()=>router.push('/(tabs)/explore')}/></>:visible.length===0?<><StateCard title="Không tìm thấy đơn thuê phù hợp." description="Thử đổi từ khóa hoặc xóa bộ lọc đang áp dụng."/><Button label="Xóa bộ lọc" variant="outline" onPress={clearFilters}/></>:visible.map(r=><RentalCard key={r._id} r={r} variant="detailed"/>)}
+        <Modal visible={filterOpen} transparent animationType="slide" onRequestClose={()=>setFilterOpen(false)}>
+          <Pressable style={rentalListStyles.scrim} onPress={()=>setFilterOpen(false)}><View/></Pressable>
+          <View style={rentalListStyles.sheet}><View style={rentalListStyles.sheetHeader}><AppText variant="heading">Bộ lọc</AppText><Pressable accessibilityRole="button" accessibilityLabel="Đóng bộ lọc" hitSlop={10} onPress={()=>setFilterOpen(false)}><Icon name="close-outline"/></Pressable></View>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:16,paddingBottom:12}}>
+              <FilterGroup title="Trạng thái"><View style={ui.wrap}>{rentalStatusOptions.map(option=><Filter key={option.id} label={option.label} selected={draft.statuses.includes(option.id)} onPress={()=>setDraft(current=>({...current,statuses:current.statuses.includes(option.id)?current.statuses.filter(s=>s!==option.id):[...current.statuses,option.id]}))}/>)}</View></FilterGroup>
+              <FilterGroup title="Cơ sở"><View style={ui.wrap}><Filter label="Tất cả" selected={draft.facilityId==='ALL'} onPress={()=>setDraft(current=>({...current,facilityId:'ALL'}))}/>{facilities.map(f=><Filter key={f.id} label={f.name} selected={draft.facilityId===f.id} onPress={()=>setDraft(current=>({...current,facilityId:f.id}))}/>)}</View></FilterGroup>
+              <FilterGroup title="Thời hạn thuê"><View style={ui.wrap}>{([['ALL','Tất cả'],['ENDING_30_DAYS','Sắp hết hạn trong 30 ngày'],['ENDED_TERM','Đã hết thời hạn']] as [RentalTimeFilter,string][]).map(([value,label])=><Filter key={value} label={label} selected={draft.time===value} onPress={()=>setDraft(current=>({...current,time:value}))}/>)}</View></FilterGroup>
+              <FilterGroup title="Sắp xếp"><View style={ui.wrap}>{([['NEWEST','Mới nhất'],['OLDEST','Cũ nhất'],['END_ASC','Ngày kết thúc gần nhất'],['END_DESC','Ngày kết thúc xa nhất']] as [RentalSort,string][]).map(([value,label])=><Filter key={value} label={label} selected={draft.sort===value} onPress={()=>setDraft(current=>({...current,sort:value}))}/>)}</View></FilterGroup>
+            </ScrollView>
+            <View style={rentalListStyles.sheetActions}><Button label="Đặt lại" variant="outline" onPress={()=>setDraft({...emptyRentalFilters,statuses:[]})}/><View style={{flex:1}}/><Button label="Áp dụng" onPress={()=>{setFilters({...draft,statuses:[...draft.statuses]});setFilterOpen(false);}}/></View>
+          </View>
+        </Modal>
+      </>}
     </LiveScreen>
   );
 }
+function FilterGroup({title,children}:{title:string;children:ReactNode}){return <View style={{gap:9}}><AppText variant="label">{title}</AppText>{children}</View>;}
+const rentalListStyles=StyleSheet.create({searchRow:{flexDirection:'row',alignItems:'center',gap:8},searchBox:{flex:1,minWidth:0,minHeight:48,flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:colors.line,borderRadius:14,backgroundColor:colors.card,paddingHorizontal:12},searchInput:{flex:1,minWidth:0,color:colors.text,paddingVertical:10,fontSize:14},serviceRow:{gap:8,paddingRight:8},resultRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},scrim:{...StyleSheet.absoluteFill,backgroundColor:'rgba(12,24,20,0.45)'},sheet:{position:'absolute',left:0,right:0,bottom:0,maxHeight:'88%',backgroundColor:colors.card,borderTopLeftRadius:22,borderTopRightRadius:22,padding:20,paddingBottom:28,gap:16},sheetHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},sheetActions:{flexDirection:'row',alignItems:'center',gap:10,borderTopWidth:1,borderColor:colors.line,paddingTop:12}});
 export function RentalDetail({ id }: { id: string }) {
   const owner = useLiveSession((s) => s.user?._id ?? ""),
     router = useRouter();
@@ -169,6 +244,7 @@ export function RentalDetail({ id }: { id: string }) {
         <Card>
           <AppText variant="card">{r.reservationCode}</AppText>
           <AppText>{rentalLabel(r)}</AppText>
+          <ContractSigningNotice reservation={r}/>
           {r.serviceType === "SELF_STORAGE" && r.rentalPaymentFlow === "FULL_UPFRONT_V1" && r.status === "ACTIVE" &&
             <AppText>Kho đã được bàn giao. Vui lòng liên hệ cơ sở để được hướng dẫn truy cập.</AppText>}
           <AppText>
